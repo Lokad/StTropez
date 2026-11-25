@@ -123,105 +123,105 @@ function readRequest(source: LspWorkspaceScope, interruptions: Set<() => void>, 
  * Feature scopes own requests and document participation; they never own the shared transport.
  */
 export class LspWorkspace {
-    private readonly workspace: Workspace;
-    private readonly options: LspWorkspaceOptions;
-    private readonly session: LspSession;
-    private readonly documents = new Map<DocumentId, DocumentEntry>();
-    private readonly uris = new Map<string, DocumentEntry>();
-    private readonly scopes = new Set<Scope>();
-    private readonly notifications: NotificationScope;
-    private readonly store: Store<LspWorkspaceSnapshot>;
-    private readonly observers = new Set<() => void>();
-    private readonly stopState: () => void;
-    private readonly stopApply: (() => void) | undefined;
-    private readonly stopDiagnostics: (() => void) | undefined;
-    private notificationQueued = false;
-    private changed = new Set<Store<unknown>>();
-    private disposed = false;
-    private created = 0;
-    private terminated = 0;
-    private unknownDiagnosticUris = 0;
-    private command: CommandIntent | undefined;
-    private quarantinedEpoch: number | undefined;
+    readonly #workspace: Workspace;
+    readonly #options: LspWorkspaceOptions;
+    readonly #session: LspSession;
+    readonly #documents = new Map<DocumentId, DocumentEntry>();
+    readonly #uris = new Map<string, DocumentEntry>();
+    readonly #scopes = new Set<Scope>();
+    readonly #notifications: NotificationScope;
+    readonly #store: Store<LspWorkspaceSnapshot>;
+    readonly #observers = new Set<() => void>();
+    readonly #stopState: () => void;
+    readonly #stopApply: (() => void) | undefined;
+    readonly #stopDiagnostics: (() => void) | undefined;
+    #notificationQueued = false;
+    #changed = new Set<Store<unknown>>();
+    #disposed = false;
+    #created = 0;
+    #terminated = 0;
+    #unknownDiagnosticUris = 0;
+    #command: CommandIntent | undefined;
+    #quarantinedEpoch: number | undefined;
     readonly getSnapshot: Observable<LspWorkspaceSnapshot>["getSnapshot"];
     readonly subscribe: Observable<LspWorkspaceSnapshot>["subscribe"];
 
     constructor(workspace: Workspace, options: LspWorkspaceOptions) {
-        this.workspace = workspace; this.options = options;
+        this.#workspace = workspace; this.#options = options;
         if (!isPositiveInteger(options.maxScopes ?? wireLimits.scopes)) throw new RangeError("Invalid provider scope limit.");
-        this.notifications = workspace.createNotificationScope(error => this.report(error));
-        this.session = new LspSession({ ...options, connect: async context => {
-            const transport = await options.connect(context); this.created++; let released = false;
+        this.#notifications = workspace.createNotificationScope(error => this.#report(error));
+        this.#session = new LspSession({ ...options, connect: async context => {
+            const transport = await options.connect(context); this.#created++; let released = false;
             return { send: text => transport.send(text), subscribe: listener => transport.subscribe(listener), dispose: () => {
-                if (released) return; released = true; this.terminated++; transport.dispose();
+                if (released) return; released = true; this.#terminated++; transport.dispose();
             } };
         } });
-        this.store = new Store(this.snapshotState(), this.notifications);
-        this.getSnapshot = this.store.observable.getSnapshot;
+        this.#store = new Store(this.#snapshotState(), this.#notifications);
+        this.getSnapshot = this.#store.observable.getSnapshot;
         this.subscribe = listener => {
-            this.writable(); const stop = this.store.observable.subscribe(listener);
-            const release = () => { stop(); this.observers.delete(release); }; this.observers.add(release); return release;
+            this.#writable(); const stop = this.#store.observable.subscribe(listener);
+            const release = () => { stop(); this.#observers.delete(release); }; this.#observers.add(release); return release;
         };
-        this.stopState = this.session.subscribe(() => {
-            const next = this.session.getSnapshot();
-            if (next.phase !== "ready" || next.epoch !== this.store.get().epoch) for (const entry of this.documents.values()) this.expireDiagnostics(entry);
-            if (this.command && (this.command.epoch !== next.epoch || this.command.registrationGeneration !== next.registrationVersion(executeCommandMethod))) this.endCommand(this.command, this.command.sent && this.command.epoch === next.epoch);
-            if (this.quarantinedEpoch !== next.epoch) this.quarantinedEpoch = undefined;
-            this.store.set(this.snapshotState(), this.changed);
+        this.#stopState = this.#session.subscribe(() => {
+            const next = this.#session.getSnapshot();
+            if (next.phase !== "ready" || next.epoch !== this.#store.get().epoch) for (const entry of this.#documents.values()) this.#expireDiagnostics(entry);
+            if (this.#command && (this.#command.epoch !== next.epoch || this.#command.registrationGeneration !== next.registrationVersion(executeCommandMethod))) this.#endCommand(this.#command, this.#command.sent && this.#command.epoch === next.epoch);
+            if (this.#quarantinedEpoch !== next.epoch) this.#quarantinedEpoch = undefined;
+            this.#store.set(this.#snapshotState(), this.#changed);
             // Bind/close operations finish their ownership changes before observers can react.
-            this.queueDelivery();
+            this.#queueDelivery();
         });
-        this.stopDiagnostics = options.diagnostics !== false ? this.session.onNotification("textDocument/publishDiagnostics", value => {
+        this.#stopDiagnostics = options.diagnostics !== false ? this.#session.onNotification("textDocument/publishDiagnostics", value => {
             const uri = value && typeof value === "object" && "uri" in value ? value.uri : undefined;
-            const entry = typeof uri === "string" ? this.uris.get(uri) : undefined;
-            if (!entry) { this.unknownDiagnosticUris++; return; }
-            const previous = entry.diagnostics.get(), sent = this.session.synchronized(entry.binding);
-            const isCurrent = () => { const now = this.session.synchronized(entry.binding); return this.live(entry) && !!sent && !!now && now.epoch === sent.epoch && now.version === sent.version && now.document === sent.document; };
+            const entry = typeof uri === "string" ? this.#uris.get(uri) : undefined;
+            if (!entry) { this.#unknownDiagnosticUris++; return; }
+            const previous = entry.diagnostics.get(), sent = this.#session.synchronized(entry.binding);
+            const isCurrent = () => { const now = this.#session.synchronized(entry.binding); return this.#live(entry) && !!sent && !!now && now.epoch === sent.epoch && now.version === sent.version && now.document === sent.document; };
             try {
                 if (!sent || !isCurrent()) throw staleRequest();
                 const result = decodeLspDiagnostics(value, Object.freeze({ ...sent, isCurrent }));
-                entry.diagnostics.set(Object.freeze({ ...previous, status: "current", result, received: previous.received + 1, isCurrent, isPlacementCurrent: isCurrent }), this.changed);
+                entry.diagnostics.set(Object.freeze({ ...previous, status: "current", result, received: previous.received + 1, isCurrent, isPlacementCurrent: isCurrent }), this.#changed);
             } catch (error) {
                 if (!(error instanceof ProtocolDecodeError) && !(error instanceof RpcError && error.code === rpcCodes.contentModified)) throw error;
                 const key = error instanceof RpcError && error.code === rpcCodes.contentModified ? "stale" : "invalid";
-                entry.diagnostics.set(Object.freeze({ ...previous, [key]: previous[key] + 1 }), this.changed);
+                entry.diagnostics.set(Object.freeze({ ...previous, [key]: previous[key] + 1 }), this.#changed);
             }
-            this.queueDelivery();
+            this.#queueDelivery();
         }) : undefined;
-        this.stopApply = options.applyEdit ? this.session.onRequest(applyEditMethod, (value, context) => {
-            const owner = this.command;
-            if (!owner?.sent || !owner.applyEdit || !this.commandCurrent(owner) || owner.epoch !== context.epoch) return { applied: false, failureReason: "No available captured command review intent." };
-            const isCurrent = () => context.isCurrent() && this.commandCurrent(owner);
+        this.#stopApply = options.applyEdit ? this.#session.onRequest(applyEditMethod, (value, context) => {
+            const owner = this.#command;
+            if (!owner?.sent || !owner.applyEdit || !this.#commandCurrent(owner) || owner.epoch !== context.epoch) return { applied: false, failureReason: "No available captured command review intent." };
+            const isCurrent = () => context.isCurrent() && this.#commandCurrent(owner);
             const captured: LspRequestContext = Object.freeze({ id: context.id, epoch: context.epoch, get cancelled() { return context.cancelled || !isCurrent(); }, isCurrent,
-                onCancel: listener => { let done = false; const notify = () => { if (!done) { done = true; void Promise.resolve().then(listener).catch(error => this.report(error)); } }; const stop = context.onCancel(notify);
+                onCancel: listener => { let done = false; const notify = () => { if (!done) { done = true; void Promise.resolve().then(listener).catch(error => this.#report(error)); } }; const stop = context.onCancel(notify);
                     owner.listeners.add(notify); if (!isCurrent()) notify(); return () => { done = true; stop(); owner.listeners.delete(notify); }; } });
             return owner.applyEdit(value, captured);
         }) : undefined;
     }
-    private report(error: unknown): void { try { this.options.onError?.(error instanceof Error ? error : new Error(String(error))); } catch { /* Reporting cannot prevent cleanup. */ } }
-    private commandCurrent(intent: CommandIntent): boolean { const state = this.session.getSnapshot(); return this.command === intent && !intent.cancelled && intent.scope.active && intent.scope.generation === intent.generation && state.phase === "ready" && state.epoch === intent.epoch && state.registrationVersion(executeCommandMethod) === intent.registrationGeneration; }
-    private endCommand(intent: CommandIntent, quarantine: boolean, cancelled = true): void {
-        if (quarantine) this.quarantinedEpoch = intent.epoch; if (cancelled) intent.cancelled = true;
-        if (this.command === intent) this.command = undefined;
+    #report(error: unknown): void { try { this.#options.onError?.(error instanceof Error ? error : new Error(String(error))); } catch { /* Reporting cannot prevent cleanup. */ } }
+    #commandCurrent(intent: CommandIntent): boolean { const state = this.#session.getSnapshot(); return this.#command === intent && !intent.cancelled && intent.scope.active && intent.scope.generation === intent.generation && state.phase === "ready" && state.epoch === intent.epoch && state.registrationVersion(executeCommandMethod) === intent.registrationGeneration; }
+    #endCommand(intent: CommandIntent, quarantine: boolean, cancelled = true): void {
+        if (quarantine) this.#quarantinedEpoch = intent.epoch; if (cancelled) intent.cancelled = true;
+        if (this.#command === intent) this.#command = undefined;
         for (const listener of [...intent.listeners]) listener(); intent.listeners.clear();
-        this.store.set(this.snapshotState(), this.changed); this.queueDelivery();
+        this.#store.set(this.#snapshotState(), this.#changed); this.#queueDelivery();
     }
-    private snapshotState(): LspWorkspaceSnapshot { const state = this.session.getSnapshot(), commandRequiresReconnect = this.quarantinedEpoch === state.epoch;
-        return Object.freeze({ ...state, commandAvailable: state.phase === "ready" && !this.command && !commandRequiresReconnect, commandRequiresReconnect }); }
-    private writable(): void { this.notifications.assertWritable(); if (this.disposed) throw closedConnection("Provider owner is disposed."); }
-    private deliver(): void { this.notificationQueued = false; const changed = this.changed; this.changed = new Set(); if (changed.size) this.notifications.deliver([...changed]); }
-    private queueDelivery(): void { if (!this.notificationQueued) { this.notificationQueued = true; void Promise.resolve().then(() => this.deliver()).catch(error => this.report(error)); } }
-    private expireDiagnostics(entry: DocumentEntry): void {
+    #snapshotState(): LspWorkspaceSnapshot { const state = this.#session.getSnapshot(), commandRequiresReconnect = this.#quarantinedEpoch === state.epoch;
+        return Object.freeze({ ...state, commandAvailable: state.phase === "ready" && !this.#command && !commandRequiresReconnect, commandRequiresReconnect }); }
+    #writable(): void { this.#notifications.assertWritable(); if (this.#disposed) throw closedConnection("Provider owner is disposed."); }
+    #deliver(): void { this.#notificationQueued = false; const changed = this.#changed; this.#changed = new Set(); if (changed.size) this.#notifications.deliver([...changed]); }
+    #queueDelivery(): void { if (!this.#notificationQueued) { this.#notificationQueued = true; void Promise.resolve().then(() => this.#deliver()).catch(error => this.#report(error)); } }
+    #expireDiagnostics(entry: DocumentEntry): void {
         const before = entry.diagnostics.get(); if (before.result === null) return;
-        entry.diagnostics.set(Object.freeze({ ...before, status: "expired", result: null, isCurrent: () => false, isPlacementCurrent: () => false }), this.changed); this.queueDelivery();
+        entry.diagnostics.set(Object.freeze({ ...before, status: "expired", result: null, isCurrent: () => false, isPlacementCurrent: () => false }), this.#changed); this.#queueDelivery();
     }
-    private mapDiagnostics(entry: DocumentEntry): void {
+    #mapDiagnostics(entry: DocumentEntry): void {
         const before = entry.diagnostics.get(), result = before.result;
         if (!result) return;
-        const next = this.workspace.observeDocument(entry.id).getSnapshot(), session = this.session.getSnapshot();
-        if (!next || next.language !== entry.language || session.phase !== "ready") { this.expireDiagnostics(entry); return; }
+        const next = this.#workspace.observeDocument(entry.id).getSnapshot(), session = this.#session.getSnapshot();
+        if (!next || next.language !== entry.language || session.phase !== "ready") { this.#expireDiagnostics(entry); return; }
         if (next.revision === result.snapshotRevision) return;
-        if (next.change?.previousRevision !== result.snapshotRevision) { this.expireDiagnostics(entry); return; }
+        if (next.change?.previousRevision !== result.snapshotRevision) { this.#expireDiagnostics(entry); return; }
         const mapping = next.change.mapping;
         const items = result.items.flatMap(item => {
             if (item.placement !== "placed") return [item];
@@ -230,120 +230,120 @@ export class LspWorkspace {
         });
         const isPlacementCurrent = () => {
             if (!entry.active) return false;
-            const now = this.workspace.observeDocument(entry.id).getSnapshot(), provider = this.session.getSnapshot();
+            const now = this.#workspace.observeDocument(entry.id).getSnapshot(), provider = this.#session.getSnapshot();
             return provider.phase === "ready" && provider.epoch === session.epoch
                 && now?.language === entry.language && now.revision === next.revision && now.buffer === next.buffer;
         };
         // Preserve provider version, original wire ranges and metadata as provenance, not fresh edit authority.
         entry.diagnostics.set(Object.freeze({ ...before, status: "pending", result: Object.freeze({ ...result, snapshotRevision: next.revision, items: Object.freeze(items) }),
-            isCurrent: () => false, isPlacementCurrent }), this.changed); this.queueDelivery();
+            isCurrent: () => false, isPlacementCurrent }), this.#changed); this.#queueDelivery();
     }
     /** Read the current host mapping/capabilities without acquiring document participation. */
     queryFeatureOptions(method: LspDocumentFeature, document: DocumentSnapshot): readonly Readonly<Record<string, JsonValue>>[] {
-        if (this.disposed) return emptyList;
-        const current = this.workspace.observeDocument(document.id).getSnapshot();
+        if (this.#disposed) return emptyList;
+        const current = this.#workspace.observeDocument(document.id).getSnapshot();
         if (!sameDocument(current, document)) throw staleRequest();
         const info = document.language;
-        return info ? this.session.queryFeatureOptions(method, info) : emptyList;
+        return info ? this.#session.queryFeatureOptions(method, info) : emptyList;
     }
-    private document(id: DocumentId): DocumentEntry {
-        this.writable(); const current = this.workspace.document(id), info = current.language;
+    #document(id: DocumentId): DocumentEntry {
+        this.#writable(); const current = this.#workspace.document(id), info = current.language;
         if (!info) throw new Error("Document is outside this provider configuration.");
-        const old = this.documents.get(id);
-        if (old?.language === info) { this.synchronize(old); if (!old.active) throw staleRequest(); return old; }
-        if (old) this.closeDocument(old);
-        const owner = this.uris.get(info.uri);
+        const old = this.#documents.get(id);
+        if (old?.language === info) { this.#synchronize(old); if (!old.active) throw staleRequest(); return old; }
+        if (old) this.#closeDocument(old);
+        const owner = this.#uris.get(info.uri);
         if (owner) {
-            if (this.bindingCurrent(owner)) throw new Error("Provider URI is already owned by another document.");
-            this.closeDocument(owner);
+            if (this.#bindingCurrent(owner)) throw new Error("Provider URI is already owned by another document.");
+            this.#closeDocument(owner);
         }
-        const lease = this.workspace.acquire(current.resourceId); let binding: LspDocument;
-        try { binding = this.session.bindDocument({ ...info, resourceId: current.resourceId, documentId: id, revision: current.revision, buffer: current.buffer }); }
+        const lease = this.#workspace.acquire(current.resourceId); let binding: LspDocument;
+        try { binding = this.#session.bindDocument({ ...info, resourceId: current.resourceId, documentId: id, revision: current.revision, buffer: current.buffer }); }
         catch (error) { lease.release(); throw error; }
         const entry: DocumentEntry = { id, language: info, binding, lease, active: true, queued: false, stop: () => {}, users: new Set(),
-            diagnostics: new Store<LspDiagnosticState>(Object.freeze({ status: "empty", result: null, received: 0, stale: 0, invalid: 0, isCurrent: () => false, isPlacementCurrent: () => false }), this.notifications) };
-        this.documents.set(id, entry); this.uris.set(info.uri, entry);
-        entry.stop = this.workspace.observeDocument(id).subscribe(() => {
-            this.mapDiagnostics(entry);
+            diagnostics: new Store<LspDiagnosticState>(Object.freeze({ status: "empty", result: null, received: 0, stale: 0, invalid: 0, isCurrent: () => false, isPlacementCurrent: () => false }), this.#notifications) };
+        this.#documents.set(id, entry); this.#uris.set(info.uri, entry);
+        entry.stop = this.#workspace.observeDocument(id).subscribe(() => {
+            this.#mapDiagnostics(entry);
             if (!entry.active || entry.queued) return; entry.queued = true;
-            void Promise.resolve().then(() => { entry.queued = false; this.synchronize(entry); });
+            void Promise.resolve().then(() => { entry.queued = false; this.#synchronize(entry); });
         });
         return entry;
     }
-    private bindingCurrent(entry: DocumentEntry | undefined): boolean {
-        return !!entry?.active && this.workspace.observeDocument(entry.id).getSnapshot()?.language === entry.language;
+    #bindingCurrent(entry: DocumentEntry | undefined): boolean {
+        return !!entry?.active && this.#workspace.observeDocument(entry.id).getSnapshot()?.language === entry.language;
     }
-    private live(entry: DocumentEntry): boolean {
+    #live(entry: DocumentEntry): boolean {
         if (!entry.active) return false;
-        const current = this.workspace.observeDocument(entry.id).getSnapshot(), sent = entry.binding.getSnapshot();
+        const current = this.#workspace.observeDocument(entry.id).getSnapshot(), sent = entry.binding.getSnapshot();
         return current?.language === entry.language && current.revision === sent.revision && current.buffer === sent.buffer;
     }
-    private synchronize(entry: DocumentEntry): void {
-        if (!entry.active) return; const next = this.workspace.observeDocument(entry.id).getSnapshot();
-        if (next?.language !== entry.language) { this.closeDocument(entry); return; }
+    #synchronize(entry: DocumentEntry): void {
+        if (!entry.active) return; const next = this.#workspace.observeDocument(entry.id).getSnapshot();
+        if (next?.language !== entry.language) { this.#closeDocument(entry); return; }
         try { const before = entry.binding.getSnapshot();
             if (before.revision !== next.revision) entry.binding.update(before.revision, next.revision, next.buffer,
                 next.change?.previousRevision === before.revision ? next.change.edits : undefined);
             else if (before.buffer !== next.buffer) throw new Error("A provider revision cannot name different buffers.");
-        } catch (error) { this.closeDocument(entry); this.report(error); }
+        } catch (error) { this.#closeDocument(entry); this.#report(error); }
     }
-    private closeDocument(entry: DocumentEntry): void {
-        if (!entry.active) return; entry.active = false; this.expireDiagnostics(entry); this.documents.delete(entry.id); this.uris.delete(entry.binding.getSnapshot().uri);
+    #closeDocument(entry: DocumentEntry): void {
+        if (!entry.active) return; entry.active = false; this.#expireDiagnostics(entry); this.#documents.delete(entry.id); this.#uris.delete(entry.binding.getSnapshot().uri);
         entry.stop(); entry.binding.dispose(); for (const close of [...entry.users]) close();
         // Workspace observers run inside commit delivery, where lease writes must be deferred.
-        void Promise.resolve().then(() => { try { entry.lease.release(); } catch (error) { this.report(error); } });
+        void Promise.resolve().then(() => { try { entry.lease.release(); } catch (error) { this.#report(error); } });
     }
-    connect(): Promise<void> { this.writable(); for (const entry of [...this.documents.values()]) this.synchronize(entry); return this.session.connect(); }
-    flush(): Promise<void> { this.writable(); for (const entry of [...this.documents.values()]) this.synchronize(entry); return this.session.flush(); }
-    disconnect(): void { this.writable(); this.session.disconnect(); }
+    connect(): Promise<void> { this.#writable(); for (const entry of [...this.#documents.values()]) this.#synchronize(entry); return this.#session.connect(); }
+    flush(): Promise<void> { this.#writable(); for (const entry of [...this.#documents.values()]) this.#synchronize(entry); return this.#session.flush(); }
+    disconnect(): void { this.#writable(); this.#session.disconnect(); }
     async reconnect(): Promise<void> { this.disconnect(); await this.connect(); }
-    shutdown(): Promise<void> { this.writable(); for (const entry of [...this.documents.values()]) this.synchronize(entry); return this.session.shutdown(); }
+    shutdown(): Promise<void> { this.#writable(); for (const entry of [...this.#documents.values()]) this.#synchronize(entry); return this.#session.shutdown(); }
 
-    private async loadTarget(uri: string, context: LspTargetContext, scopeCurrent: () => boolean): Promise<LspResolvedTarget | undefined> {
-        const session = this.session.getSnapshot();
+    async #loadTarget(uri: string, context: LspTargetContext, scopeCurrent: () => boolean): Promise<LspResolvedTarget | undefined> {
+        const session = this.#session.getSnapshot();
         const connected = () => {
-            const now = this.session.getSnapshot();
+            const now = this.#session.getSnapshot();
             return scopeCurrent() && now.phase === "ready" && now.epoch === session.epoch && now.registrationVersion(didChangeMethod) === session.registrationVersion(didChangeMethod);
         };
         if (!isLspUri(uri)) throw new TypeError("Invalid target URI.");
         if (!connected() || !context.isCurrent()) throw staleRequest();
-        const source = await this.options.resolveTarget?.(uri, context);
+        const source = await this.#options.resolveTarget?.(uri, context);
         if (!source) return;
         let lease: ResourceLease | undefined, released = false;
         const release = () => {
             if (released) return; released = true;
             try { lease?.release(); } finally {
-                try { void Promise.resolve(source.release?.()).catch(error => this.report(error)); } catch (error) { this.report(error); }
+                try { void Promise.resolve(source.release?.()).catch(error => this.#report(error)); } catch (error) { this.#report(error); }
             }
         };
         try {
             if (!connected() || !context.isCurrent()) throw staleRequest();
-            const limit = this.options.maxDocumentUnits ?? defaultDocumentUnits;
+            const limit = this.#options.maxDocumentUnits ?? defaultDocumentUnits;
             let doc: DocumentSnapshot;
             if ("document" in source) {
                 doc = source.document;
                 if (doc.language?.uri !== uri) throw new TypeError("Resolved document does not match the requested URI.");
                 if (!isLspIdentityPart(doc.language.languageId)) throw new TypeError("Invalid target language ID.");
-                if (this.workspace.document(doc.id) !== doc) throw staleRequest();
+                if (this.#workspace.document(doc.id) !== doc) throw staleRequest();
                 if (doc.buffer.length > limit) throw new RangeError("LSP target size limit exceeded.");
-                lease = this.workspace.acquire(doc.resourceId);
+                lease = this.#workspace.acquire(doc.resourceId);
             } else {
                 if (context.purpose === "edit") throw new TypeError("An editable target requires a project document.");
                 if (!isLspIdentityPart(source.languageId) || !(typeof source.text === "string" || source.text instanceof TextBuffer)) throw new TypeError("Invalid read-only target.");
                 if (source.text.length > limit) throw new RangeError("LSP target size limit exceeded.");
                 const buffer = typeof source.text === "string" ? TextBuffer.from(source.text) : source.text;
-                const resource = this.workspace.createTextResourceFromBuffer(this.workspace.createResourceKey("lsp", uri), uri, { buffer },
+                const resource = this.#workspace.createTextResourceFromBuffer(this.#workspace.createResourceKey("lsp", uri), uri, { buffer },
                     { edit: [], save: false }, { visibility: "internal", language: { uri, languageId: source.languageId } });
-                lease = this.workspace.acquire(resource.id);
-                this.workspace.releaseResourceWhenUnowned(resource.id);
-                doc = this.workspace.document(resource.documentId);
+                lease = this.#workspace.acquire(resource.id);
+                this.#workspace.releaseResourceWhenUnowned(resource.id);
+                doc = this.#workspace.document(resource.documentId);
             }
-            const documents = this.workspace.observeDocument(doc.id), metadata = this.workspace.resourceForDocument(doc.id).metadata, access = metadata.getSnapshot();
-            const entry = this.uris.get(uri);
-            if (entry && entry.id !== doc.id && this.bindingCurrent(entry)) throw staleRequest();
-            const capture = entry && this.live(entry) ? this.session.synchronized(entry.binding, didChangeMethod) : undefined;
+            const documents = this.#workspace.observeDocument(doc.id), metadata = this.#workspace.resourceForDocument(doc.id).metadata, access = metadata.getSnapshot();
+            const entry = this.#uris.get(uri);
+            if (entry && entry.id !== doc.id && this.#bindingCurrent(entry)) throw staleRequest();
+            const capture = entry && this.#live(entry) ? this.#session.synchronized(entry.binding, didChangeMethod) : undefined;
             const isCurrent = () => {
-                const now = metadata.getSnapshot(), owner = this.uris.get(uri);
+                const now = metadata.getSnapshot(), owner = this.#uris.get(uri);
                 return !released && connected() && documents.getSnapshot() === doc && now.capabilities === access.capabilities && now.editLock === access.editLock
                     && (!owner || owner.id === doc.id) && (!capture || capture.isCurrent());
             };
@@ -354,10 +354,10 @@ export class LspWorkspace {
                     if (!isCurrent() || !context.isCurrent()) throw staleRequest();
                 };
                 const pause = () => new Promise<void>((resolve, reject) => {
-                    const cancel = this.options.schedule(0, () => { interrupt = undefined; resolve(); });
+                    const cancel = this.#options.schedule(0, () => { interrupt = undefined; resolve(); });
                     interrupt = () => { cancel(); reject(staleRequest()); };
                 });
-                const index = capture?.index ?? await LspLineIndex.create(doc.buffer, cooperateDuringScan(check, pause, this.options.now));
+                const index = capture?.index ?? await LspLineIndex.create(doc.buffer, cooperateDuringScan(check, pause, this.#options.now));
                 check();
                 const document = Object.freeze({ ...doc.language!, resourceId: doc.resourceId, documentId: doc.id, revision: doc.revision, buffer: doc.buffer });
                 return Object.freeze({ target: Object.freeze({ document, index, version: capture?.version ?? null, isCurrent }), release });
@@ -366,13 +366,13 @@ export class LspWorkspace {
     }
 
     createScope(): LspWorkspaceScope {
-        this.writable(); if (this.scopes.size >= (this.options.maxScopes ?? wireLimits.scopes)) throw new RangeError("Provider scope limit exceeded.");
+        this.#writable(); if (this.#scopes.size >= (this.#options.maxScopes ?? wireLimits.scopes)) throw new RangeError("Provider scope limit exceeded.");
         const scope: Scope = { active: true, generation: 0, close: () => {}, interruptions: new Set() }, documents = new Map<string, LspDocument>();
         const handles = new Map<LspDocument, DocumentEntry>(), pending = new Set<{ cancel: () => void }>(), stops = new Set<() => void>();
         const documentCalls = new Map<LspDocument, Set<{ cancel: () => void }>>();
         let closedState: LspWorkspaceSnapshot | undefined;
-        const writable = () => { this.writable(); if (!scope.active) throw cancelledRequest(); };
-        const current = (generation: number) => scope.active && scope.generation === generation && !this.disposed;
+        const writable = () => { this.#writable(); if (!scope.active) throw cancelledRequest(); };
+        const current = (generation: number) => scope.active && scope.generation === generation && !this.#disposed;
         const track = <T, C extends { result: Promise<T>; cancel: () => void }>(call: C): C => {
             const generation = scope.generation; let wasCancelled = false;
             const tracked = Object.freeze({ ...call, cancel: () => { wasCancelled = true; call.cancel(); }, result: call.result.then(result => {
@@ -382,21 +382,21 @@ export class LspWorkspace {
         const unwrap = (document: LspDocument) => { const entry = handles.get(document); if (!scope.active || !entry?.active) throw staleRequest(); return entry.binding; };
         const scopedCapture = (document: LspDocument, entry: DocumentEntry, value: LspDocumentCapture, generation: number): LspDocumentCapture =>
             Object.freeze({ ...value,
-                isBindingCurrent: () => current(generation) && handles.has(document) && this.bindingCurrent(entry) && (value.isBindingCurrent?.() ?? value.isCurrent()),
-                isCurrent: () => current(generation) && handles.has(document) && this.live(entry) && value.isCurrent() });
+                isBindingCurrent: () => current(generation) && handles.has(document) && this.#bindingCurrent(entry) && (value.isBindingCurrent?.() ?? value.isCurrent()),
+                isCurrent: () => current(generation) && handles.has(document) && this.#live(entry) && value.isCurrent() });
         const capture = (document: LspDocument, method?: Parameters<LspSession["synchronized"]>[1]): LspDocumentCapture | undefined => {
-            const entry = handles.get(document); if (!scope.active || !entry || !this.live(entry)) return;
-            const value = this.session.synchronized(unwrap(document), method);
+            const entry = handles.get(document); if (!scope.active || !entry || !this.#live(entry)) return;
+            const value = this.#session.synchronized(unwrap(document), method);
             return value && scopedCapture(document, entry, value, scope.generation);
         };
         const attach = (id: DocumentId): LspDocument => {
-            writable(); const entry = this.document(id), existing = documents.get(id);
+            writable(); const entry = this.#document(id), existing = documents.get(id);
             if (existing && handles.get(existing) === entry) return existing;
             let active = true;
             const close = () => { if (!active) return; active = false; for (const call of documentCalls.get(document) ?? []) call.cancel(); documentCalls.delete(document);
-                handles.delete(document); documents.delete(id); entry.users.delete(close); if (entry.active && !entry.users.size) this.closeDocument(entry); };
+                handles.delete(document); documents.delete(id); entry.users.delete(close); if (entry.active && !entry.users.size) this.#closeDocument(entry); };
             const document: LspDocument = Object.freeze({ getSnapshot: entry.binding.getSnapshot, dispose: close, update: (expected, revision, buffer) => {
-                writable(); if (!active || !entry.active) throw staleRequest(); const latest = this.workspace.document(id), before = entry.binding.getSnapshot();
+                writable(); if (!active || !entry.active) throw staleRequest(); const latest = this.#workspace.document(id), before = entry.binding.getSnapshot();
                 if (latest.language !== entry.language || latest.revision !== revision || latest.buffer !== buffer) throw staleRequest();
                 if (before.revision === revision && before.buffer === buffer) return;
                 if (before.revision !== expected) throw staleRequest(); entry.binding.update(expected, revision, buffer,
@@ -405,33 +405,33 @@ export class LspWorkspace {
             documents.set(id, document); handles.set(document, entry); entry.users.add(close); return document;
         };
         const listen = (stop: () => void) => { const release = () => { stops.delete(release); stop(); }; stops.add(release); return release; };
-        const cancel = () => { if (!scope.active) return; scope.generation++; if (this.command?.scope === scope) this.endCommand(this.command, this.command.sent); for (const notify of [...scope.interruptions]) notify(); for (const call of [...pending]) call.cancel(); };
+        const cancel = () => { if (!scope.active) return; scope.generation++; if (this.#command?.scope === scope) this.#endCommand(this.#command, this.#command.sent); for (const notify of [...scope.interruptions]) notify(); for (const call of [...pending]) call.cancel(); };
         scope.close = () => {
             if (!scope.active) return; cancel(); scope.active = false; closedState = Object.freeze({ ...this.getSnapshot(), phase: "disposed", commandAvailable: false });
-            for (const stop of [...stops]) stop(); for (const document of [...documents.values()]) document.dispose(); this.scopes.delete(scope);
+            for (const stop of [...stops]) stop(); for (const document of [...documents.values()]) document.dispose(); this.#scopes.delete(scope);
         };
-        this.scopes.add(scope);
+        this.#scopes.add(scope);
         const state: Observable<LspWorkspaceSnapshot> = Object.freeze({ getSnapshot: () => closedState ?? this.getSnapshot(), subscribe: listener => { writable(); return listen(this.subscribe(listener)); } });
         const reserve = (applyEdit?: Handler): CommandIntent => {
-            writable(); const state = this.session.getSnapshot();
-            if (state.phase !== "ready" || this.command || this.quarantinedEpoch === state.epoch) throw staleRequest("Provider command lane requires an available captured intent or fresh connection.");
+            writable(); const state = this.#session.getSnapshot();
+            if (state.phase !== "ready" || this.#command || this.#quarantinedEpoch === state.epoch) throw staleRequest("Provider command lane requires an available captured intent or fresh connection.");
             const intent: CommandIntent = { scope, epoch: state.epoch, generation: scope.generation, registrationGeneration: state.registrationVersion(executeCommandMethod), sent: false, cancelled: false, listeners: new Set(), applyEdit };
-            this.command = intent; this.store.set(this.snapshotState(), this.changed); this.queueDelivery(); return intent;
+            this.#command = intent; this.#store.set(this.#snapshotState(), this.#changed); this.#queueDelivery(); return intent;
         };
         const sendCommand = (intent: CommandIntent, ...args: Parameters<LspSession["requestCommand"]>) => {
-            if (intent.sent || !this.commandCurrent(intent)) throw staleRequest();
+            if (intent.sent || !this.#commandCurrent(intent)) throw staleRequest();
             intent.sent = true;
             let waiting = true;
             try {
-                const raw = this.session.requestCommand(...args);
-                const call = track({ ...raw, cancel: () => { if (waiting) this.endCommand(intent, true); raw.cancel(); } });
+                const raw = this.#session.requestCommand(...args);
+                const call = track({ ...raw, cancel: () => { if (waiting) this.#endCommand(intent, true); raw.cancel(); } });
                 const result = call.result.catch(error => {
-                    if (error instanceof RpcError && error.code === rpcCodes.timeout) this.endCommand(intent, true);
+                    if (error instanceof RpcError && error.code === rpcCodes.timeout) this.#endCommand(intent, true);
                     throw error;
-                }).finally(() => { waiting = false; this.endCommand(intent, false, false); });
+                }).finally(() => { waiting = false; this.#endCommand(intent, false, false); });
                 return Object.freeze({ ...call, result, isCurrent: () => current(intent.generation) && !intent.cancelled && raw.isCurrent() });
             } catch (error) {
-                this.endCommand(intent, false);
+                this.#endCommand(intent, false);
                 throw error;
             }
         };
@@ -442,41 +442,41 @@ export class LspWorkspace {
             const invalidated = () => { if (isCurrent()) return;
                 for (const listener of [...listeners]) listener(); finish(() => reject(cancelledRequest())); };
             const captured: LspRequestContext = Object.freeze({ id: context.id, epoch: context.epoch, get cancelled() { return context.cancelled || !isCurrent(); }, isCurrent,
-                onCancel: listener => { let stopped = false; const notify = () => { if (!stopped) { stopped = true; void Promise.resolve().then(listener).catch(error => this.report(error)); } };
+                onCancel: listener => { let stopped = false; const notify = () => { if (!stopped) { stopped = true; void Promise.resolve().then(listener).catch(error => this.#report(error)); } };
                     if (!isCurrent()) notify(); else listeners.add(notify); return () => { stopped = true; listeners.delete(notify); }; } });
             scope.interruptions.add(invalidated); stopRemote = context.onCancel(invalidated); if (done) stopRemote(); else invalidated();
             void Promise.resolve().then(() => { if (!isCurrent()) throw cancelledRequest(); return handler(value, captured); }).then(
                 result => finish(() => { if (isCurrent()) resolve(result); else reject(cancelledRequest()); }), error => finish(() => reject(error)));
         });
-        const api: LspWorkspaceScope = Object.freeze({ ...state, reportError: error => this.report(error),
+        const api: LspWorkspaceScope = Object.freeze({ ...state, reportError: error => this.#report(error),
             [beginReadRequest]: (interrupted, documents) => {
                 writable();
                 return readRequest(api, scope.interruptions, interrupted, documents);
             },
             resolveTarget: (uri, context) => {
                 writable(); const generation = scope.generation;
-                return this.loadTarget(uri, context, () => current(generation));
+                return this.#loadTarget(uri, context, () => current(generation));
             },
             reserveCommand: applyEdit => { const intent = reserve(applyEdit); return Object.freeze({
                 requestCommand: (...args: Parameters<LspSession["requestCommand"]>) => sendCommand(intent, ...args),
-                isCurrent: () => this.commandCurrent(intent),
-                release: () => { if (this.command === intent) this.endCommand(intent, intent.sent); } }); },
+                isCurrent: () => this.#commandCurrent(intent),
+                release: () => { if (this.#command === intent) this.#endCommand(intent, intent.sent); } }); },
             attachDocument: attach,
             isDocumentCurrent: (document, snapshot) => {
                 const entry = handles.get(document);
-                return scope.active && !this.disposed && !!entry?.active && entry.binding.getSnapshot() === snapshot && this.live(entry);
+                return scope.active && !this.#disposed && !!entry?.active && entry.binding.getSnapshot() === snapshot && this.#live(entry);
             },
             observeDiagnostics: document => {
                 writable(); unwrap(document); const store = handles.get(document)!.diagnostics;
                 return Object.freeze({ getSnapshot: store.observable.getSnapshot, subscribe: listener => {
-                    writable(); const stop = store.observable.subscribe(listener); const release = () => { stop(); this.observers.delete(release); };
-                    this.observers.add(release); return listen(release);
+                    writable(); const stop = store.observable.subscribe(listener); const release = () => { stop(); this.#observers.delete(release); };
+                    this.#observers.add(release); return listen(release);
                 } });
             },
             [bindProject]: snapshots => {
                 writable(); const ids = new Set(snapshots.map(snapshot => snapshot.id)); if (ids.size !== snapshots.length) throw new Error("Provider project repeats a document.");
                 const uris = new Set<string>();
-                for (const snapshot of snapshots) { const live = this.workspace.document(snapshot.id), info = live.language;
+                for (const snapshot of snapshots) { const live = this.#workspace.document(snapshot.id), info = live.language;
                     if (!sameDocument(live, snapshot)) throw staleRequest();
                     if (!info || uris.has(info.uri)) throw new Error("Provider project has unavailable or repeated URI mappings."); uris.add(info.uri);
                 }
@@ -505,61 +505,61 @@ export class LspWorkspace {
                 }));
             },
             captureBinding: (document, method) => {
-                const entry = handles.get(document); if (!scope.active || !entry?.active || !this.live(entry)) return;
-                const value = this.session.synchronized(entry.binding, method); if (!value) return;
+                const entry = handles.get(document); if (!scope.active || !entry?.active || !this.#live(entry)) return;
+                const value = this.#session.synchronized(entry.binding, method); if (!value) return;
                 return Object.freeze({ document: value.document, getSnapshot: () => {
-                    if (!scope.active || this.disposed || handles.get(document) !== entry || !entry.active || !value.isBindingCurrent?.()) return;
-                    const current = this.workspace.observeDocument(entry.id).getSnapshot();
+                    if (!scope.active || this.#disposed || handles.get(document) !== entry || !entry.active || !value.isBindingCurrent?.()) return;
+                    const current = this.#workspace.observeDocument(entry.id).getSnapshot();
                     return current?.language === entry.language ? current : undefined;
                 } });
             },
             bindDocument: snapshot => {
-                writable(); const live = this.workspace.document(snapshot.documentId as DocumentId), info = live.language;
+                writable(); const live = this.#workspace.document(snapshot.documentId as DocumentId), info = live.language;
                 if (live.resourceId !== snapshot.resourceId || live.revision !== snapshot.revision || live.buffer !== snapshot.buffer || info?.uri !== snapshot.uri || info.languageId !== snapshot.languageId) throw staleRequest();
                 return attach(live.id);
             },
             ensureConnected: async () => { writable(); const generation = scope.generation; await this.connect(); if (!current(generation)) throw cancelledRequest(); },
-            cancel, dispose: () => { if (!scope.active) return; this.notifications.assertWritable(); scope.close(); },
+            cancel, dispose: () => { if (!scope.active) return; this.#notifications.assertWritable(); scope.close(); },
             flush: async selected => { writable(); const generation = scope.generation, captured = selected && [...selected];
                 if (captured) {
-                    const bindings = captured.map(document => { const entry = handles.get(document); if (!entry) throw staleRequest(); this.synchronize(entry); return unwrap(document); });
-                    await this.session.flush(bindings);
+                    const bindings = captured.map(document => { const entry = handles.get(document); if (!entry) throw staleRequest(); this.#synchronize(entry); return unwrap(document); });
+                    await this.#session.flush(bindings);
                 } else await this.flush();
                 if (!current(generation)) throw cancelledRequest();
                 for (const document of captured ?? []) unwrap(document); },
             synchronized: capture,
-            canRequest: (method, document) => scope.active && this.bindingCurrent(handles.get(document)) && this.session.canRequest(method, unwrap(document)),
-            featureOptions: (method, document) => scope.active && this.bindingCurrent(handles.get(document)) ? this.session.featureOptions(method, unwrap(document)) : emptyList,
-            commandNames: () => scope.active ? this.session.commandNames() : emptyList,
+            canRequest: (method, document) => scope.active && this.#bindingCurrent(handles.get(document)) && this.#session.canRequest(method, unwrap(document)),
+            featureOptions: (method, document) => scope.active && this.#bindingCurrent(handles.get(document)) ? this.#session.featureOptions(method, unwrap(document)) : emptyList,
+            commandNames: () => scope.active ? this.#session.commandNames() : emptyList,
             requestDocument: (method: Parameters<LspSession["requestDocument"]>[0], document: LspDocument, params: Parameters<LspSession["requestDocument"]>[2]) => {
-                writable(); const generation = scope.generation, entry = handles.get(document); if (!entry) throw staleRequest(); this.synchronize(entry);
-                const raw = this.session.requestDocument(method, unwrap(document), (index, snapshot, captured) =>
+                writable(); const generation = scope.generation, entry = handles.get(document); if (!entry) throw staleRequest(); this.#synchronize(entry);
+                const raw = this.#session.requestDocument(method, unwrap(document), (index, snapshot, captured) =>
                     params(index, snapshot, scopedCapture(document, entry, captured, generation)));
-                const call = track({ ...raw, result: raw.result.then(value => { if (!handles.has(document) || !this.live(entry)) throw staleRequest(); return value; }) });
+                const call = track({ ...raw, result: raw.result.then(value => { if (!handles.has(document) || !this.#live(entry)) throw staleRequest(); return value; }) });
                 const calls = documentCalls.get(document) ?? new Set(); documentCalls.set(document, calls); calls.add(call);
                 const settled = () => { calls.delete(call); if (!calls.size) documentCalls.delete(document); }; void call.result.then(settled, settled); return call;
             },
-            request: (method: string, params?: JsonValue): RpcCall<JsonValue> => { writable(); return track(this.session.request(method, params)); },
-            notify: (method, params) => { writable(); this.session.notify(method, params); },
+            request: (method: string, params?: JsonValue): RpcCall<JsonValue> => { writable(); return track(this.#session.request(method, params)); },
+            notify: (method, params) => { writable(); this.#session.notify(method, params); },
             onRequest: (method, handler) => {
                 writable();
                 if (method === applyEditMethod) throw new TypeError("Reserve the command to handle workspace edits.");
-                return listen(this.session.onRequest(method, scopedHandler(handler)));
+                return listen(this.#session.onRequest(method, scopedHandler(handler)));
             },
-            onNotification: (method, handler) => { writable(); return listen(this.session.onNotification(method, (value, epoch) => { if (scope.active) return handler(value, epoch); })); },
+            onNotification: (method, handler) => { writable(); return listen(this.#session.onNotification(method, (value, epoch) => { if (scope.active) return handler(value, epoch); })); },
             requestCommand: (...args: Parameters<LspSession["requestCommand"]>) => sendCommand(reserve(), ...args),
-            snapshotOwnership: () => this.session.snapshotOwnership(),
+            snapshotOwnership: () => this.#session.snapshotOwnership(),
         });
         return api;
     }
     snapshot() {
-        return Object.freeze({ disposed: this.disposed, scopes: this.scopes.size, documents: this.documents.size,
-            documentParticipants: [...this.documents.values()].reduce((sum, entry) => sum + entry.users.size, 0), created: this.created, terminated: this.terminated,
-            commandPending: !!this.command, commandQuarantined: this.quarantinedEpoch === this.getSnapshot().epoch, unknownDiagnosticUris: this.unknownDiagnosticUris, protocol: this.session.snapshotOwnership() });
+        return Object.freeze({ disposed: this.#disposed, scopes: this.#scopes.size, documents: this.#documents.size,
+            documentParticipants: [...this.#documents.values()].reduce((sum, entry) => sum + entry.users.size, 0), created: this.#created, terminated: this.#terminated,
+            commandPending: !!this.#command, commandQuarantined: this.#quarantinedEpoch === this.getSnapshot().epoch, unknownDiagnosticUris: this.#unknownDiagnosticUris, protocol: this.#session.snapshotOwnership() });
     }
     dispose(): void {
-        if (this.disposed) return; this.notifications.assertWritable(); this.disposed = true;
-        for (const scope of [...this.scopes]) scope.close(); for (const entry of [...this.documents.values()]) this.closeDocument(entry);
-        this.stopApply?.(); this.stopDiagnostics?.(); this.session.dispose(); this.stopState(); this.deliver(); for (const stop of [...this.observers]) stop();
+        if (this.#disposed) return; this.#notifications.assertWritable(); this.#disposed = true;
+        for (const scope of [...this.#scopes]) scope.close(); for (const entry of [...this.#documents.values()]) this.#closeDocument(entry);
+        this.#stopApply?.(); this.#stopDiagnostics?.(); this.#session.dispose(); this.#stopState(); this.#deliver(); for (const stop of [...this.#observers]) stop();
     }
 }

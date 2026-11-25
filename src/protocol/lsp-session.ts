@@ -93,69 +93,69 @@ const reservedIncoming = (method: string) => ["initialize", "initialized", "shut
 
 /** Host-driven LSP 3.17 session. This module owns no sockets, timers, documents or editor UI. */
 export class LspSession {
-    private readonly options: LspSessionOptions;
-    private readonly scope: NotificationScope;
-    private readonly store: Store<LspSessionSnapshot>;
-    private readonly subscriptions = new Set<() => void>();
+    readonly #options: LspSessionOptions;
+    readonly #scope: NotificationScope;
+    readonly #store: Store<LspSessionSnapshot>;
+    readonly #subscriptions = new Set<() => void>();
     readonly getSnapshot: Observable<LspSessionSnapshot>["getSnapshot"];
     readonly subscribe: Observable<LspSessionSnapshot>["subscribe"];
-    private readonly documents = new Map<string, Entry>();
-    private readonly handles = new WeakMap<LspDocument, Entry>();
-    private readonly remote = new Map<string, Remote>();
-    private registrations = new Map<string, Registration>();
-    private readonly staticSelectors = new Map<string, LspSelector>();
-    private readonly requests = new Map<string, RequestHandler>();
-    private readonly requestStops = new Map<string, () => void>();
-    private readonly notifications = new Map<string, Set<NotificationHandler>>();
-    private readonly notificationStops = new Map<string, () => void>();
-    private readonly initializeBase: Readonly<Record<string, JsonValue>>;
-    private features = new Set<LspFeature>();
-    private clientFeatures: readonly LspClientFeature[] = emptyList;
-    private readonly maxDocuments: number;
-    private readonly maxDocumentUnits: number;
-    private readonly maxTotalUnits: number;
-    private totalUnits = 0;
-    private rpc: JsonRpcConnection | undefined;
-    private epoch = 0;
-    private generation = 0;
-    private syncGeneration = 0;
-    private methodVersions: ReadonlyMap<string, number> = new Map();
-    private capabilities: Readonly<Record<string, JsonValue>> = empty;
-    private sync = { openClose: false, change: false };
-    private connectWork: Promise<void> | undefined;
-    private cancelOpening: (() => void) | undefined;
-    private scheduled: (() => void) | undefined;
-    private pumping = false;
-    private readonly dirty = new Set<string>();
-    private readonly pauses = new Set<{ stop: () => void; reject: (error: Error) => void }>();
-    private readonly waiters = new Set<SyncWaiter>();
-    private readonly documentCalls = new Set<LspCall<unknown>>();
+    readonly #documents = new Map<string, Entry>();
+    readonly #handles = new WeakMap<LspDocument, Entry>();
+    readonly #remote = new Map<string, Remote>();
+    #registrations = new Map<string, Registration>();
+    readonly #staticSelectors = new Map<string, LspSelector>();
+    readonly #requests = new Map<string, RequestHandler>();
+    readonly #requestStops = new Map<string, () => void>();
+    readonly #notifications = new Map<string, Set<NotificationHandler>>();
+    readonly #notificationStops = new Map<string, () => void>();
+    readonly #initializeBase: Readonly<Record<string, JsonValue>>;
+    #features = new Set<LspFeature>();
+    #clientFeatures: readonly LspClientFeature[] = emptyList;
+    readonly #maxDocuments: number;
+    readonly #maxDocumentUnits: number;
+    readonly #maxTotalUnits: number;
+    #totalUnits = 0;
+    #rpc: JsonRpcConnection | undefined;
+    #epoch = 0;
+    #generation = 0;
+    #syncGeneration = 0;
+    #methodVersions: ReadonlyMap<string, number> = new Map();
+    #capabilities: Readonly<Record<string, JsonValue>> = empty;
+    #sync = { openClose: false, change: false };
+    #connectWork: Promise<void> | undefined;
+    #cancelOpening: (() => void) | undefined;
+    #scheduled: (() => void) | undefined;
+    #pumping = false;
+    readonly #dirty = new Set<string>();
+    readonly #pauses = new Set<{ stop: () => void; reject: (error: Error) => void }>();
+    readonly #waiters = new Set<SyncWaiter>();
+    readonly #documentCalls = new Set<LspCall<unknown>>();
 
     constructor(options: LspSessionOptions) {
-        this.options = Object.freeze({ ...options,
+        this.#options = Object.freeze({ ...options,
             ...(options.features ? { features: Object.freeze([...options.features]) } : {}),
             ...(options.rpc ? { rpc: Object.freeze({ ...options.rpc }) } : {}) });
-        this.initializeBase = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
+        this.#initializeBase = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
             ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null }) as Readonly<Record<string, JsonValue>>;
-        this.maxDocuments = options.maxDocuments ?? 100; this.maxDocumentUnits = options.maxDocumentUnits ?? defaultDocumentUnits; this.maxTotalUnits = options.maxTotalUnits ?? 16 * 1024 * 1024;
-        if (![this.maxDocuments, this.maxDocumentUnits, this.maxTotalUnits].every(isPositiveInteger)) throw new RangeError("Invalid LSP document limits.");
-        this.scope = new NotificationScope(error => this.report(error));
-        this.store = new Store(this.snapshot("disconnected", null), this.scope);
-        this.getSnapshot = this.store.observable.getSnapshot;
+        this.#maxDocuments = options.maxDocuments ?? 100; this.#maxDocumentUnits = options.maxDocumentUnits ?? defaultDocumentUnits; this.#maxTotalUnits = options.maxTotalUnits ?? 16 * 1024 * 1024;
+        if (![this.#maxDocuments, this.#maxDocumentUnits, this.#maxTotalUnits].every(isPositiveInteger)) throw new RangeError("Invalid LSP document limits.");
+        this.#scope = new NotificationScope(error => this.#report(error));
+        this.#store = new Store(this.#snapshot("disconnected", null), this.#scope);
+        this.getSnapshot = this.#store.observable.getSnapshot;
         this.subscribe = listener => {
-            this.writable();
-            const stop = this.store.observable.subscribe(listener); const release = () => { stop(); this.subscriptions.delete(release); };
-            this.subscriptions.add(release); return release;
+            this.#writable();
+            const stop = this.#store.observable.subscribe(listener); const release = () => { stop(); this.#subscriptions.delete(release); };
+            this.#subscriptions.add(release); return release;
         };
     }
-    private registrationVersion(method: RegistrationMethod) { return this.store.get().registrationVersion(method); }
-    private get timeoutMs() { return this.options.rpc?.timeoutMs ?? wireLimits.timeoutMs; }
-    private get phase() { return this.store.get().phase; }
-    private initializeParams(): JsonValue {
-        const options = this.options;
-        this.features = new Set(options.features ?? Object.keys(providers) as LspFeature[]);
+    #registrationVersion(method: RegistrationMethod) { return this.#store.get().registrationVersion(method); }
+    get #timeoutMs() { return this.#options.rpc?.timeoutMs ?? wireLimits.timeoutMs; }
+    get #phase() { return this.#store.get().phase; }
+    #initializeParams(): JsonValue {
+        const options = this.#options;
+        this.#features = new Set(options.features ?? Object.keys(providers) as LspFeature[]);
         const diagnostics = options.diagnostics !== false;
-        this.clientFeatures = Object.freeze(diagnostics ? [...this.features, "textDocument/publishDiagnostics"] : [...this.features]);
+        this.#clientFeatures = Object.freeze(diagnostics ? [...this.#features, "textDocument/publishDiagnostics"] : [...this.#features]);
         const textDocument: Record<string, JsonValue> = { synchronization: { dynamicRegistration: true, didSave: false, willSave: false, willSaveWaitUntil: false } };
         const documentationFormat = options.markdownDocumentation ? ["markdown", "plaintext"] : ["plaintext"];
         const details: Partial<Record<LspFeature, Record<string, JsonValue>>> = {
@@ -175,7 +175,7 @@ export class LspSession {
                 disabledSupport: true, isPreferredSupport: true, dataSupport: true,
                 resolveSupport: { properties: ["edit"] }, honorsChangeAnnotations: false },
         };
-        for (const method of this.features) {
+        for (const method of this.#features) {
             if (!method.startsWith("textDocument/")) continue;
             const name = method === documentColorMethod || method === colorPresentationMethod
                 ? "colorProvider" : method.slice("textDocument/".length);
@@ -184,62 +184,62 @@ export class LspSession {
         if (diagnostics) textDocument.publishDiagnostics = { versionSupport: true, relatedInformation: true,
             tagSupport: { valueSet: [1, 2] }, codeDescriptionSupport: true, dataSupport: true };
         const workspaceEdits = options.workspaceEdits || options.applyEdit;
-        const commands = this.features.has(executeCommandMethod);
-        return jsonSnapshot({ ...this.initializeBase,
+        const commands = this.#features.has(executeCommandMethod);
+        return jsonSnapshot({ ...this.#initializeBase,
             capabilities: { general: { positionEncodings: ["utf-16"], ...(options.markdownDocumentation ? { markdown: { parser: "sttropez-documentation-subset", version: "1", allowedTags: [] } } : {}) }, textDocument,
                 ...(workspaceEdits || commands ? { workspace: {
                     ...(workspaceEdits ? { workspaceEdit: { documentChanges: true, resourceOperations: [], failureHandling: "transactional", normalizesLineEndings: false } } : {}),
                     ...(options.applyEdit ? { applyEdit: true } : {}), ...(commands ? { executeCommand: { dynamicRegistration: true } } : {}) } } : {}) } });
     }
-    private report(error: unknown): void { try { this.options.onError?.(error instanceof Error ? error : new Error(String(error))); } catch { /* Reporting cannot interrupt disposal. */ } }
-    private release(stop: (() => void) | undefined): void { try { stop?.(); } catch (error) { this.report(error); } }
-    private writable(): void { this.scope.assertWritable(); if (this.phase === "disposed") throw closed(); }
-    private snapshot(phase: LspSessionSnapshot["phase"], error: string | null): LspSessionSnapshot {
-        const versions = this.methodVersions, sync = this.syncGeneration;
+    #report(error: unknown): void { try { this.#options.onError?.(error instanceof Error ? error : new Error(String(error))); } catch { /* Reporting cannot interrupt disposal. */ } }
+    #release(stop: (() => void) | undefined): void { try { stop?.(); } catch (error) { this.#report(error); } }
+    #writable(): void { this.#scope.assertWritable(); if (this.#phase === "disposed") throw closed(); }
+    #snapshot(phase: LspSessionSnapshot["phase"], error: string | null): LspSessionSnapshot {
+        const versions = this.#methodVersions, sync = this.#syncGeneration;
         const registrationVersion = (method: RegistrationMethod) => Math.max(sync, versions.get(method) ?? 0);
-        return Object.freeze({ phase, registrationVersion, epoch: this.epoch, clientFeatures: this.clientFeatures, capabilities: this.capabilities,
-            registrations: Object.freeze([...this.registrations.values()].map(item => item.value)), registrationGeneration: this.generation, documents: this.documents.size, error });
+        return Object.freeze({ phase, registrationVersion, epoch: this.#epoch, clientFeatures: this.#clientFeatures, capabilities: this.#capabilities,
+            registrations: Object.freeze([...this.#registrations.values()].map(item => item.value)), registrationGeneration: this.#generation, documents: this.#documents.size, error });
     }
-    private publish(phase = this.phase, error: string | null = null): void {
-        this.scope.publish(this.store, this.snapshot(phase, error));
+    #publish(phase = this.#phase, error: string | null = null): void {
+        this.#scope.publish(this.#store, this.#snapshot(phase, error));
     }
-    private current(epoch: number): boolean { return this.epoch === epoch && this.phase !== "disconnected" && this.phase !== "disposed"; }
-    private ready(epoch = this.epoch): JsonRpcConnection { if (epoch !== this.epoch || this.phase !== "ready" || !this.rpc) throw closed(); return this.rpc; }
+    #current(epoch: number): boolean { return this.#epoch === epoch && this.#phase !== "disconnected" && this.#phase !== "disposed"; }
+    #ready(epoch = this.#epoch): JsonRpcConnection { if (epoch !== this.#epoch || this.#phase !== "ready" || !this.#rpc) throw closed(); return this.#rpc; }
 
     connect(): Promise<void> {
-        this.writable(); if (this.phase === "ready") return Promise.resolve();
-        if (this.options.applyEdit && !this.requests.has(applyEditMethod)) return Promise.reject(new TypeError("Advertised applyEdit requires a registered request handler before connection."));
-        if (this.connectWork) return this.connectWork;
-        if (this.phase !== "disconnected") return Promise.reject(closed());
-        const epoch = ++this.epoch, listeners = new Set<() => void>(); let cancelled = false, rejectOpening!: (reason: Error) => void;
+        this.#writable(); if (this.#phase === "ready") return Promise.resolve();
+        if (this.#options.applyEdit && !this.#requests.has(applyEditMethod)) return Promise.reject(new TypeError("Advertised applyEdit requires a registered request handler before connection."));
+        if (this.#connectWork) return this.#connectWork;
+        if (this.#phase !== "disconnected") return Promise.reject(closed());
+        const epoch = ++this.#epoch, listeners = new Set<() => void>(); let cancelled = false, rejectOpening!: (reason: Error) => void;
         const cancelledResult = new Promise<never>((_yes, no) => { rejectOpening = no; });
-        this.cancelOpening = () => { if (cancelled) return; cancelled = true; rejectOpening(closed()); for (const listener of [...listeners]) this.release(listener); listeners.clear(); };
+        this.#cancelOpening = () => { if (cancelled) return; cancelled = true; rejectOpening(closed()); for (const listener of [...listeners]) this.#release(listener); listeners.clear(); };
         const context: LspConnectContext = Object.freeze({ epoch, get cancelled() { return cancelled; }, onCancel: listener => {
-            if (cancelled) { this.release(listener); return () => {}; } listeners.add(listener); return () => { listeners.delete(listener); };
+            if (cancelled) { this.#release(listener); return () => {}; } listeners.add(listener); return () => { listeners.delete(listener); };
         } });
-        this.publish("connecting");
-        const work = this.open(epoch, context, cancelledResult).catch(error => { if (this.current(epoch)) this.drop(error instanceof Error ? error : new Error(String(error))); throw error; });
-        this.connectWork = work; const finished = () => { listeners.clear(); if (this.connectWork === work) this.connectWork = undefined; }; void work.then(finished, finished);
+        this.#publish("connecting");
+        const work = this.#open(epoch, context, cancelledResult).catch(error => { if (this.#current(epoch)) this.#drop(error instanceof Error ? error : new Error(String(error))); throw error; });
+        this.#connectWork = work; const finished = () => { listeners.clear(); if (this.#connectWork === work) this.#connectWork = undefined; }; void work.then(finished, finished);
         return work;
     }
-    private async open(epoch: number, context: LspConnectContext, cancelled: Promise<never>): Promise<void> {
-        const opening = Promise.resolve().then(() => this.options.connect(context)).then(transport => {
-            if (!this.current(epoch) || context.cancelled) { this.release(() => transport.dispose()); throw closed(); } return transport;
+    async #open(epoch: number, context: LspConnectContext, cancelled: Promise<never>): Promise<void> {
+        const opening = Promise.resolve().then(() => this.#options.connect(context)).then(transport => {
+            if (!this.#current(epoch) || context.cancelled) { this.#release(() => transport.dispose()); throw closed(); } return transport;
         });
         const raced = Promise.race([opening, cancelled]);
         let stopDeadline: (() => void) | undefined;
         let transport: RpcTransport;
-        try { stopDeadline = this.options.schedule(this.timeoutMs, () => { if (this.current(epoch)) this.drop(new RpcError(rpcCodes.timeout, "LSP opening timed out.")); }); transport = await raced; }
-        catch (error) { void raced.catch(() => {}); throw error; } finally { this.release(stopDeadline); }
-        if (!this.current(epoch)) { this.release(() => transport.dispose()); throw closed(); }
-        const rpc = new JsonRpcConnection(transport, { ...this.options.rpc, schedule: this.options.schedule, onError: error => this.report(error),
-            notifyCancellation: () => this.current(epoch) && this.phase !== "stopping",
-            onClose: error => { void Promise.resolve().then(() => { if (this.current(epoch)) this.drop(error); }); } });
-        this.rpc = rpc;
-        const params = this.initializeParams();
-        this.install(rpc, epoch); this.publish("initializing");
+        try { stopDeadline = this.#options.schedule(this.#timeoutMs, () => { if (this.#current(epoch)) this.#drop(new RpcError(rpcCodes.timeout, "LSP opening timed out.")); }); transport = await raced; }
+        catch (error) { void raced.catch(() => {}); throw error; } finally { this.#release(stopDeadline); }
+        if (!this.#current(epoch)) { this.#release(() => transport.dispose()); throw closed(); }
+        const rpc = new JsonRpcConnection(transport, { ...this.#options.rpc, schedule: this.#options.schedule, onError: error => this.#report(error),
+            notifyCancellation: () => this.#current(epoch) && this.#phase !== "stopping",
+            onClose: error => { void Promise.resolve().then(() => { if (this.#current(epoch)) this.#drop(error); }); } });
+        this.#rpc = rpc;
+        const params = this.#initializeParams();
+        this.#install(rpc, epoch); this.#publish("initializing");
         const response = await rpc.request("initialize", params).result;
-        if (!this.current(epoch)) throw closed();
+        if (!this.#current(epoch)) throw closed();
         if (!isRecord(response) || !isRecord(response.capabilities)) throw new ProtocolDecodeError("Malformed LSP initialize result.");
         const capabilities = response.capabilities;
         if (capabilities.positionEncoding !== undefined && capabilities.positionEncoding !== "utf-16") throw new ProtocolDecodeError("LSP session requires UTF-16 positions.");
@@ -249,59 +249,59 @@ export class LspSession {
         for (const provider of Object.values(providers)) {
             const value = capabilities[provider];
             if (value !== undefined && typeof value !== "boolean" && !isRecord(value)) throw new ProtocolDecodeError("Malformed feature capability.");
-            if (isRecord(value) && Object.hasOwn(value, "documentSelector")) this.staticSelectors.set(provider, compileLspSelector(value.documentSelector, this.options.pathForUri)); }
-        if (this.features.has(executeCommandMethod) && capabilities.executeCommandProvider !== undefined) commandOptions(capabilities.executeCommandProvider);
-        this.capabilities = capabilities as Readonly<Record<string, JsonValue>>;
-        this.sync = { openClose: sync === 2 || isRecord(sync) && sync.openClose === true, change: sync === 2 || isRecord(sync) && sync.change === 2 };
-        rpc.notify("initialized", {}); this.cancelOpening = undefined; this.publish("ready"); this.reconcile(); await this.flush();
+            if (isRecord(value) && Object.hasOwn(value, "documentSelector")) this.#staticSelectors.set(provider, compileLspSelector(value.documentSelector, this.#options.pathForUri)); }
+        if (this.#features.has(executeCommandMethod) && capabilities.executeCommandProvider !== undefined) commandOptions(capabilities.executeCommandProvider);
+        this.#capabilities = capabilities as Readonly<Record<string, JsonValue>>;
+        this.#sync = { openClose: sync === 2 || isRecord(sync) && sync.openClose === true, change: sync === 2 || isRecord(sync) && sync.change === 2 };
+        rpc.notify("initialized", {}); this.#cancelOpening = undefined; this.#publish("ready"); this.#reconcile(); await this.flush();
     }
-    private install(rpc: JsonRpcConnection, epoch: number): void {
+    #install(rpc: JsonRpcConnection, epoch: number): void {
         rpc.onRequest("window/showMessageRequest", () => null);
-        rpc.onRequest(registerCapabilityMethod, params => { this.ready(epoch); return this.register(params); });
-        rpc.onRequest(unregisterCapabilityMethod, params => { this.ready(epoch); return this.unregister(params); });
-        for (const [method, handler] of this.requests) this.requestStops.set(method, this.installRequest(rpc, epoch, method, handler));
-        for (const method of this.notifications.keys()) this.notificationStops.set(method, this.installNotification(rpc, epoch, method));
+        rpc.onRequest(registerCapabilityMethod, params => { this.#ready(epoch); return this.#register(params); });
+        rpc.onRequest(unregisterCapabilityMethod, params => { this.#ready(epoch); return this.#unregister(params); });
+        for (const [method, handler] of this.#requests) this.#requestStops.set(method, this.#installRequest(rpc, epoch, method, handler));
+        for (const method of this.#notifications.keys()) this.#notificationStops.set(method, this.#installNotification(rpc, epoch, method));
     }
-    private installRequest(rpc: JsonRpcConnection, epoch: number, method: string, handler: RequestHandler): () => void {
+    #installRequest(rpc: JsonRpcConnection, epoch: number, method: string, handler: RequestHandler): () => void {
         return rpc.onRequest(method, (params, context) => {
-            if (!this.current(epoch) || this.requests.get(method) !== handler) throw closed();
-            if (this.phase !== "ready") throw new RpcError(rpcCodes.serverNotInitialized, "Server not initialized.");
-            return handler(params, Object.freeze({ ...context, get cancelled() { return context.cancelled; }, epoch, isCurrent: () => this.epoch === epoch && this.phase === "ready" && !context.cancelled }));
+            if (!this.#current(epoch) || this.#requests.get(method) !== handler) throw closed();
+            if (this.#phase !== "ready") throw new RpcError(rpcCodes.serverNotInitialized, "Server not initialized.");
+            return handler(params, Object.freeze({ ...context, get cancelled() { return context.cancelled; }, epoch, isCurrent: () => this.#epoch === epoch && this.#phase === "ready" && !context.cancelled }));
         });
     }
-    private installNotification(rpc: JsonRpcConnection, epoch: number, method: string): () => void {
+    #installNotification(rpc: JsonRpcConnection, epoch: number, method: string): () => void {
         return rpc.onNotification(method, async params => {
-            if (!this.current(epoch) || this.phase !== "ready" && !["window/showMessage", "window/logMessage", "telemetry/event"].includes(method)) return;
-            for (const handler of [...this.notifications.get(method) ?? []]) {
-                if (!this.current(epoch)) return; if (!this.notifications.get(method)?.has(handler)) continue;
-                try { await handler(params, epoch); } catch (error) { this.report(error); }
+            if (!this.#current(epoch) || this.#phase !== "ready" && !["window/showMessage", "window/logMessage", "telemetry/event"].includes(method)) return;
+            for (const handler of [...this.#notifications.get(method) ?? []]) {
+                if (!this.#current(epoch)) return; if (!this.#notifications.get(method)?.has(handler)) continue;
+                try { await handler(params, epoch); } catch (error) { this.#report(error); }
             }
         });
     }
-    private register(params: unknown): null {
+    #register(params: unknown): null {
         const items = registrationItems(params, "registrations", "Invalid capability registrations.");
-        const next = new Map(this.registrations);
+        const next = new Map(this.#registrations);
         const methods: string[] = [];
         for (const item of items) {
             if (!isRecord(item) || typeof item.id !== "string" || !item.id || typeof item.method !== "string" || next.has(item.id) ||
-                !syncMethods.includes(item.method) && !this.features.has(item.method as LspFeature) && !(item.method === documentColorMethod && this.features.has(colorPresentationMethod)) || !isRecord(item.registerOptions)) throw invalidParams("Unsupported or duplicate registration.");
+                !syncMethods.includes(item.method) && !this.#features.has(item.method as LspFeature) && !(item.method === documentColorMethod && this.#features.has(colorPresentationMethod)) || !isRecord(item.registerOptions)) throw invalidParams("Unsupported or duplicate registration.");
             if (item.method === didChangeMethod && item.registerOptions.syncKind !== 2) throw invalidParams("Only incremental changes are supported.");
             if (item.id.length > 256 || JSON.stringify(item.registerOptions).length > 65536) throw invalidParams("Registration options exceed their limit.");
             let selector: LspSelector;
             try {
                 if (item.method === executeCommandMethod) { commandOptions(item.registerOptions); if ("documentSelector" in item.registerOptions) throw new ProtocolDecodeError("Command registration cannot select documents."); selector = () => true; }
-                else selector = compileLspSelector(item.registerOptions.documentSelector, this.options.pathForUri);
+                else selector = compileLspSelector(item.registerOptions.documentSelector, this.#options.pathForUri);
             } catch (error) { if (!(error instanceof ProtocolDecodeError)) throw error; throw invalidParams("Invalid registration selector or command options."); }
             const value = Object.freeze({ id: item.id, method: item.method, registerOptions: jsonSnapshot(item.registerOptions) }); next.set(item.id, { value, selector });
             methods.push(item.method);
         }
         if (next.size > wireLimits.registrations || [...next.values()].reduce((units, item) => units + JSON.stringify(item.value.registerOptions).length, 0) > 1024 * 1024) throw invalidParams("Capability registry exceeds its limit.");
-        if (this.collectCommands(next).length > 256) throw invalidParams("Command registry exceeds its limit.");
-        return this.registrationChanged(next, methods);
+        if (this.#collectCommands(next).length > 256) throw invalidParams("Command registry exceeds its limit.");
+        return this.#registrationChanged(next, methods);
     }
-    private unregister(params: unknown): null {
+    #unregister(params: unknown): null {
         const items = registrationItems(params, "unregisterations", "Invalid capability unregistrations.");
-        const next = new Map(this.registrations);
+        const next = new Map(this.#registrations);
         const methods: string[] = [];
         for (const item of items) {
             if (!isRecord(item) || typeof item.method !== "string" || typeof item.id !== "string"
@@ -309,154 +309,154 @@ export class LspSession {
             next.delete(item.id);
             methods.push(item.method);
         }
-        return this.registrationChanged(next, methods);
+        return this.#registrationChanged(next, methods);
     }
-    private registrationChanged(next: Map<string, Registration>, methods: readonly string[]): null {
-        this.registrations = next;
-        const version = ++this.generation, versions = new Map(this.methodVersions);
+    #registrationChanged(next: Map<string, Registration>, methods: readonly string[]): null {
+        this.#registrations = next;
+        const version = ++this.#generation, versions = new Map(this.#methodVersions);
         let syncChanged = false;
         for (const method of methods) {
             if (syncMethods.includes(method)) syncChanged = true;
             versions.set(method, version);
             if (method === documentColorMethod) versions.set(colorPresentationMethod, version);
         }
-        if (syncChanged) this.syncGeneration = version;
-        this.methodVersions = versions;
-        this.publish();
-        if (syncChanged) this.reconcile();
+        if (syncChanged) this.#syncGeneration = version;
+        this.#methodVersions = versions;
+        this.#publish();
+        if (syncChanged) this.#reconcile();
         return null;
     }
-    private matchesRegistration(registered: string, method: string): boolean { return registered === method || registered === documentColorMethod && method === colorPresentationMethod; }
-    private matches(selector: LspSelector, entry: SelectorEntry): boolean {
-        if (entry.selectors?.generation !== this.generation) entry.selectors = { generation: this.generation, values: new Map() };
+    #matchesRegistration(registered: string, method: string): boolean { return registered === method || registered === documentColorMethod && method === colorPresentationMethod; }
+    #matches(selector: LspSelector, entry: SelectorEntry): boolean {
+        if (entry.selectors?.generation !== this.#generation) entry.selectors = { generation: this.#generation, values: new Map() };
         const cached = entry.selectors.values.get(selector); if (cached !== undefined) return cached;
         const value = selector(entry.snapshot); entry.selectors.values.set(selector, value); return value;
     }
-    private registered(method: string, entry: SelectorEntry): boolean {
-        for (const item of this.registrations.values()) if (this.matchesRegistration(item.value.method, method) && this.matches(item.selector, entry)) return true;
+    #registered(method: string, entry: SelectorEntry): boolean {
+        for (const item of this.#registrations.values()) if (this.#matchesRegistration(item.value.method, method) && this.#matches(item.selector, entry)) return true;
         return false;
     }
-    private syncs(entry: SelectorEntry): boolean { return (this.sync.openClose || this.registered(didOpenMethod, entry)) && (this.sync.change || this.registered(didChangeMethod, entry)); }
-    private failed(entry: Entry): Error | undefined {
-        return entry.failure?.snapshot === entry.snapshot && entry.failure.generation === this.syncGeneration ? entry.failure.error : undefined;
+    #syncs(entry: SelectorEntry): boolean { return (this.#sync.openClose || this.#registered(didOpenMethod, entry)) && (this.#sync.change || this.#registered(didChangeMethod, entry)); }
+    #failed(entry: Entry): Error | undefined {
+        return entry.failure?.snapshot === entry.snapshot && entry.failure.generation === this.#syncGeneration ? entry.failure.error : undefined;
     }
     canRequest(method: LspDocumentFeature, document: LspDocument): boolean {
-        const entry = this.entry(document);
-        return !this.failed(entry) && this.supports(method, entry);
+        const entry = this.#entry(document);
+        return !this.#failed(entry) && this.#supports(method, entry);
     }
-    private supports(method: LspDocumentFeature, entry: SelectorEntry): boolean {
-        return this.phase === "ready" && this.features.has(method) && this.syncs(entry) && (this.staticAvailable(method, entry) || this.registered(method, entry));
+    #supports(method: LspDocumentFeature, entry: SelectorEntry): boolean {
+        return this.#phase === "ready" && this.#features.has(method) && this.#syncs(entry) && (this.#staticAvailable(method, entry) || this.#registered(method, entry));
     }
-    private staticAvailable(method: LspDocumentFeature, entry: SelectorEntry): boolean {
-        const provider = providers[method], capability = this.capabilities[provider], selector = this.staticSelectors.get(provider);
-        return (capability === true || isRecord(capability)) && (!selector || this.matches(selector, entry));
+    #staticAvailable(method: LspDocumentFeature, entry: SelectorEntry): boolean {
+        const provider = providers[method], capability = this.#capabilities[provider], selector = this.#staticSelectors.get(provider);
+        return (capability === true || isRecord(capability)) && (!selector || this.#matches(selector, entry));
     }
     /** Static and matching dynamic options only; selectors and session readiness use the request policy. */
     featureOptions(method: LspDocumentFeature, document: LspDocument): readonly Readonly<Record<string, JsonValue>>[] {
         if (!this.canRequest(method, document)) return emptyList;
-        return this.optionsFor(method, this.entry(document));
+        return this.#optionsFor(method, this.#entry(document));
     }
     /** Read capabilities without binding, synchronizing or reserving a document. */
     queryFeatureOptions(method: LspDocumentFeature, document: LspSelectorDocument): readonly Readonly<Record<string, JsonValue>>[] {
         const { uri, languageId } = document;
         if (!isLspUri(uri) || !isLspIdentityPart(languageId)) throw new TypeError("Invalid LSP document identity.");
-        const bound = this.documents.get(uri), same = bound?.snapshot.languageId === languageId;
-        if (same && this.failed(bound)) return emptyList;
+        const bound = this.#documents.get(uri), same = bound?.snapshot.languageId === languageId;
+        if (same && this.#failed(bound)) return emptyList;
         const entry: SelectorEntry = same ? bound : { snapshot: Object.freeze({ uri, languageId }) };
-        return this.supports(method, entry) ? this.optionsFor(method, entry) : emptyList;
+        return this.#supports(method, entry) ? this.#optionsFor(method, entry) : emptyList;
     }
-    private optionsFor(method: LspDocumentFeature, entry: SelectorEntry): readonly Readonly<Record<string, JsonValue>>[] {
-        const capability = this.capabilities[providers[method]], values: Readonly<Record<string, JsonValue>>[] = [];
-        if (this.staticAvailable(method, entry)) { if (isRecord(capability)) values.push(capability); else if (capability === true) values.push(empty); }
-        for (const item of this.registrations.values()) if (this.matchesRegistration(item.value.method, method) && this.matches(item.selector, entry) && isRecord(item.value.registerOptions)) values.push(item.value.registerOptions);
+    #optionsFor(method: LspDocumentFeature, entry: SelectorEntry): readonly Readonly<Record<string, JsonValue>>[] {
+        const capability = this.#capabilities[providers[method]], values: Readonly<Record<string, JsonValue>>[] = [];
+        if (this.#staticAvailable(method, entry)) { if (isRecord(capability)) values.push(capability); else if (capability === true) values.push(empty); }
+        for (const item of this.#registrations.values()) if (this.#matchesRegistration(item.value.method, method) && this.#matches(item.selector, entry) && isRecord(item.value.registerOptions)) values.push(item.value.registerOptions);
         return Object.freeze(values);
     }
-    private collectCommands(registrations: ReadonlyMap<string, Registration> = this.registrations): readonly string[] {
-        const values = new Set<string>(), provider = this.capabilities.executeCommandProvider;
-        if (this.features.has(executeCommandMethod) && provider !== undefined) for (const name of commandOptions(provider)) values.add(name);
+    #collectCommands(registrations: ReadonlyMap<string, Registration> = this.#registrations): readonly string[] {
+        const values = new Set<string>(), provider = this.#capabilities.executeCommandProvider;
+        if (this.#features.has(executeCommandMethod) && provider !== undefined) for (const name of commandOptions(provider)) values.add(name);
         for (const item of registrations.values()) if (item.value.method === executeCommandMethod) for (const name of commandOptions(item.value.registerOptions)) values.add(name);
         return Object.freeze([...values]);
     }
-    commandNames(): readonly string[] { return this.phase === "ready" && this.features.has(executeCommandMethod) ? this.collectCommands() : emptyList; }
+    commandNames(): readonly string[] { return this.#phase === "ready" && this.#features.has(executeCommandMethod) ? this.#collectCommands() : emptyList; }
     /** Explicit caller policy/confirmation is required; commands are never replayed across a session. */
-    requestCommand(command: string, args: readonly JsonValue[] = [], timeoutMs = this.timeoutMs, authorization?: LspCommandAuthorization): LspCommandCall<JsonValue> {
-        this.writable();
+    requestCommand(command: string, args: readonly JsonValue[] = [], timeoutMs = this.#timeoutMs, authorization?: LspCommandAuthorization): LspCommandCall<JsonValue> {
+        this.#writable();
         const argumentsValue = commandArguments(args);
         if (authorization && (authorization.command !== command || !jsonEqual(authorization.arguments, argumentsValue))) throw new RpcError(rpcCodes.methodNotFound, "Host command authorization does not match this invocation.");
         const permitted = authorization?.isCurrent ?? (() => this.commandNames().includes(command));
-        if (!this.features.has(executeCommandMethod) || !permitted()) throw new RpcError(rpcCodes.methodNotFound, "LSP command is neither advertised nor authorized by the host.");
-        const method = executeCommandMethod, epoch = this.epoch, version = this.registrationVersion(method);
-        const isCurrent = () => this.epoch === epoch && this.phase === "ready"
-            && this.registrationVersion(method) === version && permitted();
-        const call = this.ready(epoch).request(executeCommandMethod, { command, arguments: argumentsValue }, timeoutMs);
+        if (!this.#features.has(executeCommandMethod) || !permitted()) throw new RpcError(rpcCodes.methodNotFound, "LSP command is neither advertised nor authorized by the host.");
+        const method = executeCommandMethod, epoch = this.#epoch, version = this.#registrationVersion(method);
+        const isCurrent = () => this.#epoch === epoch && this.#phase === "ready"
+            && this.#registrationVersion(method) === version && permitted();
+        const call = this.#ready(epoch).request(executeCommandMethod, { command, arguments: argumentsValue }, timeoutMs);
         return Object.freeze({ id: call.id, cancel: call.cancel, isCurrent, result: call.result.then(result => { if (!isCurrent()) throw staleRequest(); return result; }) });
     }
-    private entry(handle: LspDocument): Entry { const entry = this.handles.get(handle); if (!entry || this.documents.get(entry.snapshot.uri) !== entry) throw staleRequest(); return entry; }
-    private size(length: number, previous: number): void {
-        if (!isNonNegativeInteger(length) || length > this.maxDocumentUnits || this.totalUnits - previous + length > this.maxTotalUnits) throw new RangeError("LSP document size limit exceeded.");
+    #entry(handle: LspDocument): Entry { const entry = this.#handles.get(handle); if (!entry || this.#documents.get(entry.snapshot.uri) !== entry) throw staleRequest(); return entry; }
+    #size(length: number, previous: number): void {
+        if (!isNonNegativeInteger(length) || length > this.#maxDocumentUnits || this.#totalUnits - previous + length > this.#maxTotalUnits) throw new RangeError("LSP document size limit exceeded.");
     }
     bindDocument(snapshot: LspDocumentSnapshot): LspDocument {
-        this.writable(); const { uri, languageId, resourceId, documentId, revision, buffer } = snapshot;
+        this.#writable(); const { uri, languageId, resourceId, documentId, revision, buffer } = snapshot;
         if (!isLspUri(uri) || ![languageId, resourceId, documentId].every(isLspIdentityPart) || !isNonNegativeInteger(revision)) throw new TypeError("Invalid LSP document identity.");
-        if (this.documents.has(uri) || this.documents.size >= this.maxDocuments) throw new Error("LSP URI is already bound or document limit exceeded."); this.size(buffer.length, 0);
+        if (this.#documents.has(uri) || this.#documents.size >= this.#maxDocuments) throw new Error("LSP URI is already bound or document limit exceeded."); this.#size(buffer.length, 0);
         const entry: Entry = { snapshot: Object.freeze({ uri, languageId, resourceId, documentId, revision, buffer }), handle: undefined! };
         const handle: LspDocument = Object.freeze({ getSnapshot: () => entry.snapshot,
             update: (expectedRevision, nextRevision, nextBuffer, edits) => {
-                this.writable(); this.entry(handle); if (entry.snapshot.revision !== expectedRevision || !isNonNegativeInteger(nextRevision) || nextRevision <= expectedRevision) throw staleRequest(); this.size(nextBuffer.length, entry.snapshot.buffer.length);
+                this.#writable(); this.#entry(handle); if (entry.snapshot.revision !== expectedRevision || !isNonNegativeInteger(nextRevision) || nextRevision <= expectedRevision) throw staleRequest(); this.#size(nextBuffer.length, entry.snapshot.buffer.length);
                 if (edits) entry.change = { before: entry.snapshot.buffer, edits: edits.map(({ from, to, insert }) => ({ from, to, insert })) };
                 else delete entry.change;
-                this.totalUnits += nextBuffer.length - entry.snapshot.buffer.length; entry.snapshot = Object.freeze({ ...entry.snapshot, revision: nextRevision, buffer: nextBuffer }); delete entry.failure; this.kick(uri);
+                this.#totalUnits += nextBuffer.length - entry.snapshot.buffer.length; entry.snapshot = Object.freeze({ ...entry.snapshot, revision: nextRevision, buffer: nextBuffer }); delete entry.failure; this.#kick(uri);
             }, dispose: () => {
-                if (this.phase === "disposed") return; this.writable(); if (this.documents.get(uri) !== entry) return;
-                this.documents.delete(uri); delete entry.change; delete entry.selectors; this.totalUnits -= entry.snapshot.buffer.length; this.publish(); this.kick(uri);
+                if (this.#phase === "disposed") return; this.#writable(); if (this.#documents.get(uri) !== entry) return;
+                this.#documents.delete(uri); delete entry.change; delete entry.selectors; this.#totalUnits -= entry.snapshot.buffer.length; this.#publish(); this.#kick(uri);
             } });
-        entry.handle = handle; this.handles.set(handle, entry); this.documents.set(uri, entry); this.totalUnits += buffer.length; this.publish(); this.kick(uri); return handle;
+        entry.handle = handle; this.#handles.set(handle, entry); this.#documents.set(uri, entry); this.#totalUnits += buffer.length; this.#publish(); this.#kick(uri); return handle;
     }
     /** Capability/connection changes reconcile every binding, including pending closes. */
-    private reconcile(): void {
-        for (const uri of this.remote.keys()) this.dirty.add(uri);
-        for (const [uri, entry] of this.documents) { delete entry.selectors; this.dirty.add(uri); }
-        this.kick();
+    #reconcile(): void {
+        for (const uri of this.#remote.keys()) this.#dirty.add(uri);
+        for (const [uri, entry] of this.#documents) { delete entry.selectors; this.#dirty.add(uri); }
+        this.#kick();
     }
-    private kick(uri?: string): void {
-        if (this.phase !== "ready") return;
+    #kick(uri?: string): void {
+        if (this.#phase !== "ready") return;
         // Offline captures reconcile on connect. A binding closed before its first send
         // has no wire cleanup; churn must not accumulate obsolete queued URI strings.
-        if (uri !== undefined) { if (this.documents.has(uri) || this.remote.has(uri)) this.dirty.add(uri); else this.dirty.delete(uri); }
-        if (!this.dirty.size) return;
-        this.settle(undefined, true); if (this.scheduled || this.pumping) return;
-        const epoch = this.epoch;
-        try { this.scheduled = this.options.schedule(0, () => {
-            this.scheduled = undefined; if (!this.current(epoch)) return; this.pumping = true;
-            void this.pump(epoch).then(() => { if (!this.current(epoch)) return; this.pumping = false;
-                if (this.dirty.size) this.kick(); else this.settle();
-            }, error => { if (this.current(epoch)) this.drop(error instanceof Error ? error : new Error(String(error))); });
-        }); } catch (error) { this.drop(error instanceof Error ? error : new Error(String(error))); }
+        if (uri !== undefined) { if (this.#documents.has(uri) || this.#remote.has(uri)) this.#dirty.add(uri); else this.#dirty.delete(uri); }
+        if (!this.#dirty.size) return;
+        this.#settle(undefined, true); if (this.#scheduled || this.#pumping) return;
+        const epoch = this.#epoch;
+        try { this.#scheduled = this.#options.schedule(0, () => {
+            this.#scheduled = undefined; if (!this.#current(epoch)) return; this.#pumping = true;
+            void this.#pump(epoch).then(() => { if (!this.#current(epoch)) return; this.#pumping = false;
+                if (this.#dirty.size) this.#kick(); else this.#settle();
+            }, error => { if (this.#current(epoch)) this.#drop(error instanceof Error ? error : new Error(String(error))); });
+        }); } catch (error) { this.#drop(error instanceof Error ? error : new Error(String(error))); }
     }
-    private pause(epoch: number): Promise<void> {
+    #pause(epoch: number): Promise<void> {
         return new Promise((resolve, reject) => {
-            const pause = { stop: () => {}, reject }; this.pauses.add(pause);
-            try { pause.stop = this.options.schedule(0, () => { this.pauses.delete(pause); if (this.epoch === epoch && this.phase === "ready") resolve(); else reject(closed()); }); }
-            catch (error) { this.pauses.delete(pause); reject(error); }
+            const pause = { stop: () => {}, reject }; this.#pauses.add(pause);
+            try { pause.stop = this.#options.schedule(0, () => { this.#pauses.delete(pause); if (this.#epoch === epoch && this.#phase === "ready") resolve(); else reject(closed()); }); }
+            catch (error) { this.#pauses.delete(pause); reject(error); }
         });
     }
-    private async pump(epoch: number): Promise<void> {
+    async #pump(epoch: number): Promise<void> {
         const replaced = Symbol();
-        const checkpoint = cooperateDuringScan(() => { this.ready(epoch); }, () => this.pause(epoch), this.options.now);
-        while (this.dirty.size) {
-            const uri = this.dirty.values().next().value!; this.dirty.delete(uri);
-            const rpc = this.ready(epoch), generation = this.syncGeneration, entry = this.documents.get(uri), remote = this.remote.get(uri);
+        const checkpoint = cooperateDuringScan(() => { this.#ready(epoch); }, () => this.#pause(epoch), this.#options.now);
+        while (this.#dirty.size) {
+            const uri = this.#dirty.values().next().value!; this.#dirty.delete(uri);
+            const rpc = this.#ready(epoch), generation = this.#syncGeneration, entry = this.#documents.get(uri), remote = this.#remote.get(uri);
             try {
-                if (remote && (remote.entry !== entry || !this.syncs(entry!))) {
-                    rpc.notify(didCloseMethod, { textDocument: { uri } }); this.remote.delete(uri);
+                if (remote && (remote.entry !== entry || !this.#syncs(entry!))) {
+                    rpc.notify(didCloseMethod, { textDocument: { uri } }); this.#remote.delete(uri);
                 }
                 if (!entry) continue;
-                if (this.failed(entry)) continue;
+                if (this.#failed(entry)) continue;
                 delete entry.failure;
-                if (!this.syncs(entry)) continue; const snapshot = entry.snapshot, old = this.remote.get(uri), hint = entry.change;
+                if (!this.#syncs(entry)) continue; const snapshot = entry.snapshot, old = this.#remote.get(uri), hint = entry.change;
                 if (old?.snapshot === snapshot) continue;
-                const retained = () => this.documents.get(uri) === entry;
-                const valid = () => entry.snapshot === snapshot && retained() && this.syncGeneration === generation;
+                const retained = () => this.#documents.get(uri) === entry;
+                const valid = () => entry.snapshot === snapshot && retained() && this.#syncGeneration === generation;
                 const cooperate = async () => {
                     await checkpoint();
                     if (!retained()) throw replaced;
@@ -467,12 +467,12 @@ export class LspSession {
                 const plan = base ? await base.change(snapshot.buffer, cooperate, planHint)
                     : { index: await LspLineIndex.create(snapshot.buffer, cooperate), changes: [] };
                 // Restart ownership cleanup too: replacing a URI during planning must close/open, never change the old resource.
-                this.ready(epoch); if (!retained()) { this.dirty.add(uri); continue; }
+                this.#ready(epoch); if (!retained()) { this.#dirty.add(uri); continue; }
                 // A revision/capability change does not invalidate useful text indexing work.
-                entry.index = plan.index; if (!valid()) { this.dirty.add(uri); continue; }
+                entry.index = plan.index; if (!valid()) { this.#dirty.add(uri); continue; }
                 let changes = old && old.index !== base
                     ? await lspTextChanges(old.index, snapshot.buffer, cooperate, planHint) : plan.changes;
-                this.ready(epoch); if (!valid()) { this.dirty.add(uri); continue; }
+                this.#ready(epoch); if (!valid()) { this.#dirty.add(uri); continue; }
                 const version = (old?.version ?? 0) + 1; if (version > 0x7fffffff) throw new RangeError("LSP document version exhausted; reconnect required.");
                 if (old) {
                     const send = () => rpc.notify(didChangeMethod, { textDocument: { uri, version }, contentChanges: changes });
@@ -482,134 +482,134 @@ export class LspSession {
                         const retryRanges = compact && hint?.before === old.index.buffer;
                         if ((!retryRanges && changes.length < 2) || rpc.snapshot().disposed || !(error instanceof TypeError || error instanceof RangeError)) throw error;
                         changes = await lspTextChanges(old.index, snapshot.buffer, cooperate, retryRanges ? hint : undefined);
-                        this.ready(epoch); if (!valid()) { this.dirty.add(uri); continue; }
+                        this.#ready(epoch); if (!valid()) { this.#dirty.add(uri); continue; }
                         send();
                     }
                 }
                 else rpc.notify(didOpenMethod, { textDocument: { uri, languageId: snapshot.languageId, version, text: snapshot.buffer.slice(0, snapshot.buffer.length) } });
-                this.ready(epoch); this.remote.set(uri, { entry, snapshot, index: plan.index, version });
+                this.#ready(epoch); this.#remote.set(uri, { entry, snapshot, index: plan.index, version });
                 // A host transport can edit or close the binding synchronously during send.
-                if (!valid()) this.dirty.add(uri);
+                if (!valid()) this.#dirty.add(uri);
                 if (entry.snapshot === snapshot) delete entry.change;
             } catch (error) {
-                if (error === replaced) this.dirty.add(uri);
-                else this.failDocument(entry ?? remote!.entry, error, epoch);
+                if (error === replaced) this.#dirty.add(uri);
+                else this.#failDocument(entry ?? remote!.entry, error, epoch);
             }
             finally {
-                this.settle(undefined, true);
-                if (this.dirty.size && this.current(epoch)) await checkpoint();
+                this.#settle(undefined, true);
+                if (this.#dirty.size && this.#current(epoch)) await checkpoint();
             }
         }
     }
-    private failDocument(entry: Entry, cause: unknown, epoch: number): void {
-        const rpc = this.ready(epoch); if (rpc.snapshot().disposed) throw cause;
+    #failDocument(entry: Entry, cause: unknown, epoch: number): void {
+        const rpc = this.#ready(epoch); if (rpc.snapshot().disposed) throw cause;
         const snapshot = entry.snapshot, error = new RpcError(rpcCodes.pendingLimit, `LSP synchronization failed for ${snapshot.uri}: ${cause instanceof Error ? cause.message : String(cause)}`);
-        if (this.remote.get(snapshot.uri)?.entry === entry) {
-            rpc.notify(didCloseMethod, { textDocument: { uri: snapshot.uri } }); this.remote.delete(snapshot.uri);
+        if (this.#remote.get(snapshot.uri)?.entry === entry) {
+            rpc.notify(didCloseMethod, { textDocument: { uri: snapshot.uri } }); this.#remote.delete(snapshot.uri);
         }
-        delete entry.change; entry.failure = { snapshot, generation: this.syncGeneration, error }; this.report(error);
+        delete entry.change; entry.failure = { snapshot, generation: this.#syncGeneration, error }; this.#report(error);
     }
-    private settle(error?: Error, documentsOnly = false): void {
-        for (const waiter of this.waiters) {
+    #settle(error?: Error, documentsOnly = false): void {
+        for (const waiter of this.#waiters) {
             try {
                 if (error) throw error;
                 if (waiter.ready ? !waiter.ready() : documentsOnly) continue;
                 waiter.resolve();
             } catch (cause) { waiter.reject(cause instanceof Error ? cause : new Error(String(cause))); }
-            this.waiters.delete(waiter);
+            this.#waiters.delete(waiter);
         }
     }
-    private waitForSync(entries?: readonly Entry[]): LspCall<void> {
-        this.ready(); const generation = this.syncGeneration, captures = entries?.map(entry => ({ entry, snapshot: entry.snapshot }));
+    #waitForSync(entries?: readonly Entry[]): LspCall<void> {
+        this.#ready(); const generation = this.#syncGeneration, captures = entries?.map(entry => ({ entry, snapshot: entry.snapshot }));
         const ready = captures ? () => {
             let synchronized = true;
             for (const { entry, snapshot } of captures) {
-                if (generation !== this.syncGeneration || this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot) throw staleRequest();
-                const failure = this.failed(entry); if (failure) throw failure;
-                if (this.remote.get(snapshot.uri)?.snapshot !== snapshot && this.syncs(entry)) synchronized = false;
+                if (generation !== this.#syncGeneration || this.#documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot) throw staleRequest();
+                const failure = this.#failed(entry); if (failure) throw failure;
+                if (this.#remote.get(snapshot.uri)?.snapshot !== snapshot && this.#syncs(entry)) synchronized = false;
             }
             return synchronized;
         } : undefined;
-        try { if (ready ? ready() : !this.dirty.size && !this.scheduled && !this.pumping) return { result: Promise.resolve(), cancel: () => {} }; }
+        try { if (ready ? ready() : !this.#dirty.size && !this.#scheduled && !this.#pumping) return { result: Promise.resolve(), cancel: () => {} }; }
         catch (error) { return { result: Promise.reject(error), cancel: () => {} }; }
-        this.kick();
-        if (this.waiters.size >= wireLimits.synchronizationWaits) throw new RpcError(rpcCodes.pendingLimit, "Too many pending synchronization waits.");
+        this.#kick();
+        if (this.#waiters.size >= wireLimits.synchronizationWaits) throw new RpcError(rpcCodes.pendingLimit, "Too many pending synchronization waits.");
         let waiter!: SyncWaiter;
-        const result = new Promise<void>((resolve, reject) => { waiter = { resolve, reject, ready }; this.waiters.add(waiter); });
-        return { result, cancel: () => { if (this.waiters.delete(waiter)) waiter.reject(cancelledRequest()); } };
+        const result = new Promise<void>((resolve, reject) => { waiter = { resolve, reject, ready }; this.#waiters.add(waiter); });
+        return { result, cancel: () => { if (this.#waiters.delete(waiter)) waiter.reject(cancelledRequest()); } };
     }
     /** With documents, wait only for those exact captures; otherwise drain all synchronization work. */
-    flush(documents?: readonly LspDocument[]): Promise<void> { this.scope.assertWritable(); return this.waitForSync(documents?.map(document => this.entry(document))).result; }
+    flush(documents?: readonly LspDocument[]): Promise<void> { this.#scope.assertWritable(); return this.#waitForSync(documents?.map(document => this.#entry(document))).result; }
     /** The exact sent snapshot, never a guessed provider-analysis revision. Unsynced local edits return undefined. */
     synchronized(document: LspDocument, method?: RegistrationMethod): LspDocumentCapture | undefined {
-        const entry = this.handles.get(document); if (this.phase !== "ready" || !entry || this.failed(entry) || this.documents.get(entry.snapshot.uri) !== entry) return undefined;
-        const remote = this.remote.get(entry.snapshot.uri); if (!remote || remote.snapshot !== entry.snapshot) return undefined;
-        const version = () => method ? this.registrationVersion(method) : this.generation;
-        const epoch = this.epoch, generation = version();
-        const isBindingCurrent = () => this.phase === "ready" && this.epoch === epoch
-            && version() === generation && this.documents.get(remote.snapshot.uri) === entry;
-        return Object.freeze({ document: remote.snapshot, index: remote.index, version: remote.version, epoch, registrationGeneration: generation, maxDocumentUnits: this.maxDocumentUnits,
+        const entry = this.#handles.get(document); if (this.#phase !== "ready" || !entry || this.#failed(entry) || this.#documents.get(entry.snapshot.uri) !== entry) return undefined;
+        const remote = this.#remote.get(entry.snapshot.uri); if (!remote || remote.snapshot !== entry.snapshot) return undefined;
+        const version = () => method ? this.#registrationVersion(method) : this.#generation;
+        const epoch = this.#epoch, generation = version();
+        const isBindingCurrent = () => this.#phase === "ready" && this.#epoch === epoch
+            && version() === generation && this.#documents.get(remote.snapshot.uri) === entry;
+        return Object.freeze({ document: remote.snapshot, index: remote.index, version: remote.version, epoch, registrationGeneration: generation, maxDocumentUnits: this.#maxDocumentUnits,
             isBindingCurrent,
             isCurrent: () => isBindingCurrent()
-                && entry.snapshot === remote.snapshot && this.remote.get(remote.snapshot.uri) === remote });
+                && entry.snapshot === remote.snapshot && this.#remote.get(remote.snapshot.uri) === remote });
     }
     requestDocument(method: LspDocumentFeature | "textDocument/prepareRename", document: LspDocument, params: (index: LspLineIndex, snapshot: LspDocumentSnapshot, capture: LspDocumentCapture) => Readonly<Record<string, JsonValue>>): LspCall<JsonValue> {
-        this.writable(); this.ready(); if (this.documentCalls.size >= (this.options.rpc?.maxPending ?? wireLimits.pendingRequests)) throw new RpcError(rpcCodes.pendingLimit, "Too many pending document requests.");
+        this.#writable(); this.#ready(); if (this.#documentCalls.size >= (this.#options.rpc?.maxPending ?? wireLimits.pendingRequests)) throw new RpcError(rpcCodes.pendingLimit, "Too many pending document requests.");
         const feature = method === "textDocument/prepareRename" ? renameMethod : method;
-        const entry = this.entry(document), snapshot = entry.snapshot, epoch = this.epoch, generation = this.registrationVersion(feature), waiting = this.waitForSync([entry]); let cancelled = false, call: RpcCall<JsonValue> | undefined;
-        const guard = () => { if (cancelled) throw cancelledRequest(); this.ready(epoch); if (this.documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.registrationVersion(feature)) throw staleRequest(); };
-        const result = (async () => { await waiting.result; guard(); const failure = this.failed(entry); if (failure) throw failure;
+        const entry = this.#entry(document), snapshot = entry.snapshot, epoch = this.#epoch, generation = this.#registrationVersion(feature), waiting = this.#waitForSync([entry]); let cancelled = false, call: RpcCall<JsonValue> | undefined;
+        const guard = () => { if (cancelled) throw cancelledRequest(); this.#ready(epoch); if (this.#documents.get(snapshot.uri) !== entry || entry.snapshot !== snapshot || generation !== this.#registrationVersion(feature)) throw staleRequest(); };
+        const result = (async () => { await waiting.result; guard(); const failure = this.#failed(entry); if (failure) throw failure;
             const supported = method === "textDocument/prepareRename"
                 ? this.featureOptions(renameMethod, document).some(options => options.prepareProvider === true)
                 : this.canRequest(method, document);
             if (!supported) throw new RpcError(rpcCodes.methodNotFound, "LSP feature unavailable for this document.");
             const capture = this.synchronized(document, feature); if (capture?.document !== snapshot) throw staleRequest();
-            const value = params(capture.index, snapshot, capture); guard(); call = this.ready(epoch).request(method, { ...value, textDocument: { uri: snapshot.uri } }); const response = await call.result; guard(); return response;
+            const value = params(capture.index, snapshot, capture); guard(); call = this.#ready(epoch).request(method, { ...value, textDocument: { uri: snapshot.uri } }); const response = await call.result; guard(); return response;
         })();
-        const handle = Object.freeze({ result, cancel: () => { cancelled = true; waiting.cancel(); call?.cancel(); } }); this.documentCalls.add(handle);
-        void result.then(() => { this.documentCalls.delete(handle); }, () => { this.documentCalls.delete(handle); }); return handle;
+        const handle = Object.freeze({ result, cancel: () => { cancelled = true; waiting.cancel(); call?.cancel(); } }); this.#documentCalls.add(handle);
+        void result.then(() => { this.#documentCalls.delete(handle); }, () => { this.#documentCalls.delete(handle); }); return handle;
     }
-    private customConnection(method: string) {
-        this.writable();
+    #customConnection(method: string) {
+        this.#writable();
         if (reserved(method)) throw new TypeError("Use the LSP lifecycle or captured document API.");
-        return this.ready();
+        return this.#ready();
     }
-    request(method: string, params?: JsonValue): RpcCall<JsonValue> { return this.customConnection(method).request(method, params); }
-    notify(method: string, params?: JsonValue): void { this.customConnection(method).notify(method, params); }
+    request(method: string, params?: JsonValue): RpcCall<JsonValue> { return this.#customConnection(method).request(method, params); }
+    notify(method: string, params?: JsonValue): void { this.#customConnection(method).notify(method, params); }
     onRequest(method: string, handler: RequestHandler): () => void {
-        this.writable(); if (!method || method.startsWith("rpc.") || reservedIncoming(method) || method === "window/showMessageRequest" || this.requests.has(method) || this.requests.size >= wireLimits.handlers) throw new TypeError("Reserved, duplicate or excessive LSP handler.");
-        this.requests.set(method, handler); if (this.rpc) this.requestStops.set(method, this.installRequest(this.rpc, this.epoch, method, handler));
-        return () => { if (this.phase === "disposed") return; this.writable(); if (this.requests.get(method) !== handler) return; this.requests.delete(method); this.release(this.requestStops.get(method)); this.requestStops.delete(method); };
+        this.#writable(); if (!method || method.startsWith("rpc.") || reservedIncoming(method) || method === "window/showMessageRequest" || this.#requests.has(method) || this.#requests.size >= wireLimits.handlers) throw new TypeError("Reserved, duplicate or excessive LSP handler.");
+        this.#requests.set(method, handler); if (this.#rpc) this.#requestStops.set(method, this.#installRequest(this.#rpc, this.#epoch, method, handler));
+        return () => { if (this.#phase === "disposed") return; this.#writable(); if (this.#requests.get(method) !== handler) return; this.#requests.delete(method); this.#release(this.#requestStops.get(method)); this.#requestStops.delete(method); };
     }
     onNotification(method: string, handler: NotificationHandler): () => void {
-        this.writable(); if (!method || method.startsWith("rpc.") || reservedIncoming(method) || !this.notifications.has(method) && this.notifications.size >= wireLimits.handlers) throw new TypeError("Reserved or excessive LSP notification."); let handlers = this.notifications.get(method);
-        if (!handlers) { handlers = new Set(); this.notifications.set(method, handlers); if (this.rpc) this.notificationStops.set(method, this.installNotification(this.rpc, this.epoch, method)); } handlers.add(handler);
-        return () => { if (this.phase === "disposed") return; this.writable(); handlers.delete(handler);
-            if (!handlers.size && this.notifications.get(method) === handlers) { this.notifications.delete(method); this.release(this.notificationStops.get(method)); this.notificationStops.delete(method); } };
+        this.#writable(); if (!method || method.startsWith("rpc.") || reservedIncoming(method) || !this.#notifications.has(method) && this.#notifications.size >= wireLimits.handlers) throw new TypeError("Reserved or excessive LSP notification."); let handlers = this.#notifications.get(method);
+        if (!handlers) { handlers = new Set(); this.#notifications.set(method, handlers); if (this.#rpc) this.#notificationStops.set(method, this.#installNotification(this.#rpc, this.#epoch, method)); } handlers.add(handler);
+        return () => { if (this.#phase === "disposed") return; this.#writable(); handlers.delete(handler);
+            if (!handlers.size && this.#notifications.get(method) === handlers) { this.#notifications.delete(method); this.#release(this.#notificationStops.get(method)); this.#notificationStops.delete(method); } };
     }
     async shutdown(): Promise<void> {
-        this.writable(); const rpc = this.ready(), epoch = this.epoch; do { await this.flush(); this.ready(epoch); } while (this.dirty.size || this.scheduled || this.pumping); this.publish("stopping");
-        try { const result = await rpc.request("shutdown").result; if (result !== null) throw new TypeError("Invalid LSP shutdown result."); if (this.current(epoch)) rpc.notify("exit"); }
-        finally { if (this.current(epoch)) this.drop(new Error("LSP session shut down.")); }
+        this.#writable(); const rpc = this.#ready(), epoch = this.#epoch; do { await this.flush(); this.#ready(epoch); } while (this.#dirty.size || this.#scheduled || this.#pumping); this.#publish("stopping");
+        try { const result = await rpc.request("shutdown").result; if (result !== null) throw new TypeError("Invalid LSP shutdown result."); if (this.#current(epoch)) rpc.notify("exit"); }
+        finally { if (this.#current(epoch)) this.#drop(new Error("LSP session shut down.")); }
     }
-    disconnect(): void { this.writable(); this.drop(new Error("LSP session disconnected.")); }
-    private drop(error: Error, dispose = false): void {
+    disconnect(): void { this.#writable(); this.#drop(new Error("LSP session disconnected.")); }
+    #drop(error: Error, dispose = false): void {
         const failure = error instanceof RpcError ? error : new RpcError(rpcCodes.closed, error.message);
-        this.epoch++; this.release(this.cancelOpening); this.cancelOpening = undefined; this.connectWork = undefined;
-        this.release(this.scheduled); this.scheduled = undefined; for (const pause of this.pauses) { this.release(pause.stop); pause.reject(failure); } this.pauses.clear();
-        const rpc = this.rpc; this.rpc = undefined; this.release(() => rpc?.dispose(failure)); this.pumping = false; this.dirty.clear(); this.settle(failure); this.documentCalls.clear();
-        this.features.clear(); this.clientFeatures = emptyList;
-        this.remote.clear(); this.registrations.clear(); this.staticSelectors.clear(); this.requestStops.clear(); this.notificationStops.clear(); this.capabilities = empty; this.sync = { openClose: false, change: false };
-        this.methodVersions = new Map();
-        this.syncGeneration = ++this.generation;
-        for (const entry of this.documents.values()) { delete entry.failure; delete entry.change; delete entry.selectors; }
-        if (dispose) { this.documents.clear(); this.totalUnits = 0; this.requests.clear(); this.notifications.clear(); }
-        this.publish(dispose ? "disposed" : "disconnected", error.message);
-        if (dispose) for (const stop of [...this.subscriptions]) this.release(stop);
+        this.#epoch++; this.#release(this.#cancelOpening); this.#cancelOpening = undefined; this.#connectWork = undefined;
+        this.#release(this.#scheduled); this.#scheduled = undefined; for (const pause of this.#pauses) { this.#release(pause.stop); pause.reject(failure); } this.#pauses.clear();
+        const rpc = this.#rpc; this.#rpc = undefined; this.#release(() => rpc?.dispose(failure)); this.#pumping = false; this.#dirty.clear(); this.#settle(failure); this.#documentCalls.clear();
+        this.#features.clear(); this.#clientFeatures = emptyList;
+        this.#remote.clear(); this.#registrations.clear(); this.#staticSelectors.clear(); this.#requestStops.clear(); this.#notificationStops.clear(); this.#capabilities = empty; this.#sync = { openClose: false, change: false };
+        this.#methodVersions = new Map();
+        this.#syncGeneration = ++this.#generation;
+        for (const entry of this.#documents.values()) { delete entry.failure; delete entry.change; delete entry.selectors; }
+        if (dispose) { this.#documents.clear(); this.#totalUnits = 0; this.#requests.clear(); this.#notifications.clear(); }
+        this.#publish(dispose ? "disposed" : "disconnected", error.message);
+        if (dispose) for (const stop of [...this.#subscriptions]) this.#release(stop);
     }
-    dispose(): void { if (this.phase === "disposed") return; this.scope.assertWritable(); this.drop(new Error("LSP session disposed."), true); }
+    dispose(): void { if (this.#phase === "disposed") return; this.#scope.assertWritable(); this.#drop(new Error("LSP session disposed."), true); }
     snapshotOwnership(): Readonly<{ documents: number; remoteDocuments: number; registrations: number; subscriptions: number; scheduledTasks: number; pendingDocumentRequests: number; pendingRequests: number; incomingRequests: number }> {
-        const rpc = this.rpc?.snapshot(); return Object.freeze({ documents: this.documents.size, remoteDocuments: this.remote.size, registrations: this.registrations.size, subscriptions: this.scope.subscriptionCount(),
-            scheduledTasks: this.pauses.size + Number(!!this.scheduled), pendingDocumentRequests: this.documentCalls.size, pendingRequests: rpc?.pendingRequests ?? 0, incomingRequests: rpc?.incomingRequests ?? 0 });
+        const rpc = this.#rpc?.snapshot(); return Object.freeze({ documents: this.#documents.size, remoteDocuments: this.#remote.size, registrations: this.#registrations.size, subscriptions: this.#scope.subscriptionCount(),
+            scheduledTasks: this.#pauses.size + Number(!!this.#scheduled), pendingDocumentRequests: this.#documentCalls.size, pendingRequests: rpc?.pendingRequests ?? 0, incomingRequests: rpc?.incomingRequests ?? 0 });
     }
 }
