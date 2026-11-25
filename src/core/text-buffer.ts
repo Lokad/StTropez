@@ -8,9 +8,10 @@ import { partitionPoint } from "./bound-search.ts";
 
 type LineIndex = Readonly<Uint32Array | Float64Array>;
 type Backing = Readonly<{ text: string; lines: LineIndex; gaps: LineIndex; gapBase: number }>;
-type Piece = Readonly<{ backing: Backing; from: number; length: number; firstLine: number; breaks: number }>;
 type LineMeasure = Readonly<{ prefix: number; suffix: number; longest: number }>;
-type Leaf = LineMeasure & Readonly<{ kind: "leaf"; piece: Piece; length: number; breaks: number; height: 1 }>;
+type Leaf = LineMeasure & Readonly<{
+    kind: "leaf"; backing: Backing; from: number; length: number; firstLine: number; breaks: number; height: 1;
+}>;
 type Branch = LineMeasure & Readonly<{ kind: "branch"; left: Node; right: Node; length: number; breaks: number; height: number }>;
 type Node = Leaf | Branch;
 type Root = Node | null;
@@ -32,7 +33,7 @@ function piece(backing: Backing, from: number, length: number): Leaf {
         if (right % 2) longest = Math.max(longest, backing.gaps[--right]!);
         left = Math.floor(left / 2); right = Math.floor(right / 2);
     }
-    return Object.freeze({ kind: "leaf", piece: Object.freeze({ backing, from, length, firstLine, breaks }), length, breaks, height: 1, prefix, suffix, longest });
+    return { kind: "leaf", backing, from, length, firstLine, breaks, height: 1, prefix, suffix, longest };
 }
 function backing(text: string): Backing {
     let count = 0;
@@ -47,15 +48,15 @@ function backing(text: string): Backing {
     for (let index = 0; index + 1 < lines.length; index++) gaps[gapBase + index] = lines[index + 1]! - lines[index]! - 1;
     for (let index = gapBase - 1; index > 0; index--) gaps[index] = Math.max(gaps[index * 2]!, gaps[index * 2 + 1]!);
     // Owned indexes never escape the private root or change after construction.
-    return Object.freeze({ text, lines, gaps, gapBase });
+    return { text, lines, gaps, gapBase };
 }
 function original(text: string): Root { return text.length ? piece(backing(text), 0, text.length) : null; }
 function branch(left: Node, right: Node): Branch {
-    return Object.freeze({ kind: "branch", left, right, length: left.length + right.length,
+    return { kind: "branch", left, right, length: left.length + right.length,
         breaks: left.breaks + right.breaks, height: 1 + Math.max(left.height, right.height),
         prefix: left.breaks ? left.prefix : left.length + right.prefix,
         suffix: right.breaks ? right.suffix : right.length + left.suffix,
-        longest: Math.max(left.longest, right.longest, left.suffix + right.prefix) });
+        longest: Math.max(left.longest, right.longest, left.suffix + right.prefix) };
 }
 function join(left: Root, right: Root): Root {
     return joinTrees(left, right, branch);
@@ -64,8 +65,7 @@ function split(root: Root, offset: number): readonly [Root, Root] {
     if (!root) return [null, null];
     if (offset === 0) return [null, root]; if (offset === root.length) return [root, null];
     if (root.kind === "leaf") {
-        const value = root.piece;
-        return [piece(value.backing, value.from, offset), piece(value.backing, value.from + offset, value.length - offset)];
+        return [piece(root.backing, root.from, offset), piece(root.backing, root.from + offset, root.length - offset)];
     }
     if (offset < root.left.length) {
         const [left, middle] = split(root.left, offset); return [left, join(middle, root.right)];
@@ -73,7 +73,7 @@ function split(root: Root, offset: number): readonly [Root, Root] {
     const [middle, right] = split(root.right, offset - root.left.length); return [join(root.left, middle), right];
 }
 function leafText(leaf: Leaf | null): string {
-    return leaf ? leaf.piece.backing.text.slice(leaf.piece.from, leaf.piece.from + leaf.length) : "";
+    return leaf ? leaf.backing.text.slice(leaf.from, leaf.from + leaf.length) : "";
 }
 /** Pack only the edited seam; immutable large ranges and all other subtrees stay shared. */
 function joinEdit(left: Root, insert: string, right: Root): Root {
@@ -117,7 +117,7 @@ function* sharedEdge(a: Root, b: Root, side: "start" | "end", range: PairRange):
         const x = left.at(-1)!, y = right.at(-1)!, length = Math.min(x.to - x.from, y.to - y.from);
         const xf = side === "start" ? x.from : x.to - length, yf = side === "start" ? y.from : y.to - length;
         const same = x.node === y.node && xf === yf || x.node.kind === "leaf" && y.node.kind === "leaf"
-            && x.node.piece.backing === y.node.piece.backing && x.node.piece.from + xf === y.node.piece.from + yf;
+            && x.node.backing === y.node.backing && x.node.from + xf === y.node.from + yf;
         if (same) { matched += length; consume(left, length); consume(right, length); }
         else if (x.node.kind === "leaf" && y.node.kind === "leaf") { yield matched; return; }
         else if (x.node.kind === "branch" && (y.node.kind === "leaf" || x.node.height >= y.node.height)) descend(left);
@@ -125,7 +125,7 @@ function* sharedEdge(a: Root, b: Root, side: "start" | "end", range: PairRange):
         yield matched;
     }
 }
-function* pieces(root: Root, from = 0, to = root?.length ?? 0): Generator<Pick<Piece, "backing" | "from" | "length">> {
+function* pieces(root: Root, from = 0, to = root?.length ?? 0): Generator<Pick<Leaf, "backing" | "from" | "length">> {
     if (!root || from === to) return;
     const stack: Node[] = []; let node: Node | undefined = root, remaining = to - from;
     while (node) {
@@ -133,20 +133,20 @@ function* pieces(root: Root, from = 0, to = root?.length ?? 0): Generator<Pick<P
             if (from >= node.left.length) { from -= node.left.length; node = node.right; }
             else { stack.push(node.right); node = node.left; }
         }
-        const value = node.piece, length = Math.min(remaining, value.length - from);
-        yield from === 0 && length === value.length ? value : { backing: value.backing, from: value.from + from, length };
+        const length = Math.min(remaining, node.length - from);
+        yield from === 0 && length === node.length ? node : { backing: node.backing, from: node.from + from, length };
         remaining -= length; if (!remaining) return;
         node = stack.pop(); from = 0;
     }
 }
 function* ranges(root: Root, from: number, to: number): Generator<string> {
     if (!root || from === to) return;
-    if (root.kind === "leaf") { yield root.piece.backing.text.slice(root.piece.from + from, root.piece.from + to); return; }
+    if (root.kind === "leaf") { yield root.backing.text.slice(root.from + from, root.from + to); return; }
     for (const value of pieces(root, from, to)) yield value.backing.text.slice(value.from, value.from + value.length);
 }
 function rangeText(root: Root, from: number, to: number): string {
     if (!root || from === to) return "";
-    if (root.kind === "leaf") return root.piece.backing.text.slice(root.piece.from + from, root.piece.from + to);
+    if (root.kind === "leaf") return root.backing.text.slice(root.from + from, root.from + to);
     return [...ranges(root, from, to)].join("");
 }
 
@@ -190,8 +190,9 @@ function batch(root: Root, edits: readonly TextEdit[]): Root {
                 if (node.length <= until - position) { if (keep) { flushFragments(); appendTree(node); } position += node.length; node = pending.pop(); }
                 else { pending.push(node.right); node = node.left; }
             } else {
-                const length = Math.min(until - position, node.length - leafOffset), value = node.piece;
-                if (keep) appendPiece(value.backing, value.from + leafOffset, length, leafOffset === 0 && length === node.length ? node : undefined);
+                const length = Math.min(until - position, node.length - leafOffset);
+                if (keep) appendPiece(node.backing, node.from + leafOffset, length,
+                    leafOffset === 0 && length === node.length ? node : undefined);
                 position += length; leafOffset += length;
                 if (leafOffset === node.length) { leafOffset = 0; node = pending.pop(); }
             }
@@ -253,7 +254,7 @@ export class TextBuffer {
             if (offset < node.left.length) node = node.left;
             else { offset -= node.left.length; count += node.left.breaks; node = node.right; }
         }
-        return node ? count + lowerBound(node.piece.backing.lines, node.piece.from + offset) - node.piece.firstLine : count;
+        return node ? count + lowerBound(node.backing.lines, node.from + offset) - node.firstLine : count;
     }
     line(index: number): BufferLine {
         const from = this.offsetAt(index), to = lineContentEnd(this, index), buffer = this;
@@ -278,7 +279,7 @@ export class TextBuffer {
             if (line <= node.left.breaks) node = node.left;
             else { line -= node.left.breaks; offset += node.left.length; node = node.right; }
         }
-        return offset + node.piece.backing.lines[node.piece.firstLine + line - 1]! - node.piece.from + 1;
+        return offset + node.backing.lines[node.firstLine + line - 1]! - node.from + 1;
     }
     /** Cumulative equal edge lengths proved only by immutable node/backing identity.
      * Each yield charges one node-pair decision: a proof, branch descent or unproved leaf.
@@ -316,7 +317,7 @@ export class TextBuffer {
         const visit = (node: Root): void => {
             if (!node || nodes.has(node)) return;
             nodes.add(node);
-            if (node.kind === "leaf") { buffers.add(node.piece.backing); return; }
+            if (node.kind === "leaf") { buffers.add(node.backing); return; }
             if (Math.abs(node.left.height - node.right.height) > 1 || node.height !== 1 + Math.max(node.left.height, node.right.height)
                 || node.length !== node.left.length + node.right.length || node.breaks !== node.left.breaks + node.right.breaks
                 || node.prefix !== (node.left.breaks ? node.left.prefix : node.left.length + node.right.prefix)
