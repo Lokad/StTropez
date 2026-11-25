@@ -276,6 +276,8 @@ Call `request()` or press Ctrl/Cmd+Shift+Space to show parameter help, including
 view. In a focused editor, an explicit request brings the caret into view. If the caret is
 already visible, the page keeps its scroll position. An accepted trigger such as `(` requests
 help at the resulting caret, including when the editor supplies the closing parenthesis.
+Typing more of the argument can share that request. Moving elsewhere before the first
+request goes out discards the trigger.
 An intercepted key leaves help closed. Up and Down
 cycle through overloads. Escape closes the topmost popup. A higher-priority completion list gets
 these keys first.

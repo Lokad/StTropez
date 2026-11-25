@@ -1,19 +1,17 @@
 import type { DocumentId, DocumentViewSnapshot, ResourceMetadata } from "../core/workspace.ts";
 import type { TextEdit } from "../core/changes.ts";
-import type { SelectionSet } from "../core/selections.ts";
 
 /** Character input accepted by this editor, once per committed gesture or replay batch. */
 export const typedTextEvent = "sttropez-typed-text";
-export type TypedTextDetail = Readonly<{ documentId: DocumentId; revision: number; selectionSet: SelectionSet; text: string }>;
-export function dispatchTypedText(root: HTMLElement, { documentId, revision, selectionSet }: DocumentViewSnapshot, text: string): void {
+export type TypedTextDetail = Readonly<{ before: DocumentViewSnapshot; after: DocumentViewSnapshot; text: string }>;
+export function dispatchTypedText(root: HTMLElement, before: DocumentViewSnapshot, after: DocumentViewSnapshot, text: string): void {
     root.dispatchEvent(new CustomEvent<TypedTextDetail>(typedTextEvent, { bubbles: true,
-        detail: Object.freeze({ documentId, revision, selectionSet, text }) }));
+        detail: Object.freeze({ before, after, text }) }));
 }
 
-export function acceptedTypedText(event: Event, root: HTMLElement, view: DocumentViewSnapshot): string | undefined {
+export function acceptedTypedText(event: Event, root: HTMLElement, view: DocumentViewSnapshot): TypedTextDetail | undefined {
     const detail = (event as CustomEvent<TypedTextDetail>).detail;
-    if (event.target === root && detail?.documentId === view.documentId && detail.revision === view.revision
-        && detail.selectionSet === view.selectionSet && typeof detail.text === "string") return detail.text;
+    if (event.target === root && detail?.after === view && typeof detail.text === "string") return detail;
 }
 
 /** Dispatched on the editor's input. Bubbles within its root; does not cross shadow boundaries. */

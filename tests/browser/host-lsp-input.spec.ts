@@ -77,7 +77,6 @@ async function previews(page: Page, checkComposition = false): Promise<void> {
     expect(after.bindings.navigation.requested).toBe(before.bindings.navigation.requested + 1);
     expect(after.bindings.rename.requested).toBe(before.bindings.rename.requested + 1);
     expect(after.bindings.actions.requested).toBe(before.bindings.actions.requested + 1);
-    expect(after.bindings.signature.requested).toBe(before.bindings.signature.requested + 1);
     expect(after.bindings.links.requested).toBe(before.bindings.links.requested + 1);
     expect(after.bindings.colors.requested).toBe(before.bindings.colors.requested + 1);
     expect(after.bindings.colors.previews).toBe(before.bindings.colors.previews + 1);
@@ -110,7 +109,6 @@ async function blocked(page: Page, kind: "movement" | "composition" | "paste", t
             navigation: after.bindings.navigation.requested - before.bindings.navigation.requested,
             rename: after.bindings.rename.requested - before.bindings.rename.requested,
             actions: after.bindings.actions.requested - before.bindings.actions.requested,
-            signature: after.bindings.signature.requested - before.bindings.signature.requested,
             links: after.bindings.links.requested - before.bindings.links.requested,
             colors: after.bindings.colors.requested - before.bindings.colors.requested,
             colorPreviews: after.bindings.colors.previews - before.bindings.colors.previews,
@@ -121,7 +119,7 @@ async function blocked(page: Page, kind: "movement" | "composition" | "paste", t
             revision: after.source.revision - before.source.revision, historyUnchanged: JSON.stringify(after.history) === JSON.stringify(before.history),
         };
     }, { kind, text });
-    expect(result).toMatchObject({ navigation: 0, rename: 0, actions: 0, signature: 0, links: 0, colors: 0, colorPreviews: 0, domain: 0, saves: 0, runs: 0, revision: 0, historyUnchanged: true });
+    expect(result).toMatchObject({ navigation: 0, rename: 0, actions: 0, links: 0, colors: 0, colorPreviews: 0, domain: 0, saves: 0, runs: 0, revision: 0, historyUnchanged: true });
     if (kind === "movement") expect(result.movement).toBe(true);
     if (kind === "composition") expect(result).toMatchObject({ renameApplicable: false, actionApplicable: false, colorApplicable: false, signatureVisible: false, linksAvailable: 0 });
     if (kind === "paste") expect(result).toMatchObject({ paste: true, pasteStillPending: true });
@@ -184,15 +182,13 @@ test(`plain LSP captures wait for movement, composition and table input before f
     // Authority cancellation is established before Escape. Dismiss the legitimate automatic
     // retrigger so only the held old response can affect the following publication checks.
     await input(page).press("Escape"); await settled(page);
-    const beforeReply = await snapshot(page), sentBeforeReply = [...wire];
+    const sentBeforeReply = [...wire];
     await replies.release(); await settled(page);
     await expect(signature(page)).toBeHidden();
-    expect((await snapshot(page)).bindings.signature.applied).toBe(beforeReply.bindings.signature.applied);
     expect(wire).toEqual(sentBeforeReply);
     expect((await snapshot(page)).history).toEqual(beforeAuthority.history); await exact(page, source);
     await input(page).press("Control+Shift+Space");
     await expect(signature(page).getByLabel("Active signature parameter", { exact: true })).toHaveText("fallback?: string");
-    expect((await snapshot(page)).bindings.signature.requested).toBe(beforeReply.bindings.signature.requested + 1);
     expect(wire).toEqual([...sentBeforeReply, "textDocument/signatureHelp"]);
     await page.evaluate(() => window.hostFixture.dispose());
     const final = await snapshot(page);

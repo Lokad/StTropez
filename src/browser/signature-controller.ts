@@ -31,7 +31,6 @@ export type SignatureSnapshot = Readonly<{
 }>;
 export type SignatureController = Observable<SignatureSnapshot> & Readonly<{
     request: () => Promise<Outcome<SignatureSnapshot>>; cancel: () => void; dispose: () => void;
-    getDiagnostics: () => Readonly<{ requested: number; applied: number; scheduled: boolean }>;
 }>;
 type Call = ReturnType<LspSignatureClient["run"]>;
 type Request = { capture: CapturedViewRequest<TextEditor["tab"]>; call?: Call; help?: NonNullable<Awaited<Call["result"]>>;
@@ -53,8 +52,8 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     const currentView = view.getSnapshot;
     const focused = () => editor.getSnapshot().focused;
     const liveHelp = (current: Request) => current.capture.isCurrent() && (!current.help || current.help.isCurrent());
-    let job: Request | undefined, armed = false, requested = 0, applied = 0;
-    let queued: { timer: number; context: LspSignatureContext } | undefined;
+    let job: Request | undefined, armed = false;
+    let queued: { timer: number; context: LspSignatureContext; target: DocumentViewSnapshot | undefined } | undefined;
     function publish(next: SignatureSnapshot) {
         notifications.publish(cell, Object.freeze(next));
         return next;
@@ -95,7 +94,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
             }
             request(context);
         };
-        queued = { context, timer: win.setTimeout(poll, 50) };
+        queued = { context, target: afterTyping, timer: win.setTimeout(poll, 50) };
     }
     function expire(current: Request, followCaret = true) {
         if (current !== job) return;
@@ -137,7 +136,6 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
             }
             const { capture } = current;
             const doc = capture.document, offset = capture.selectionSet.ranges[capture.selectionSet.primary]!.head;
-            requested++;
             const call = client.run({ document: doc, offset, context, prepare: options.prepareRequest });
             current.call = call;
             current.timer = win.setTimeout(() => {
@@ -151,7 +149,6 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
                 expire(current);
                 return stale;
             }
-            applied++;
             win.clearTimeout(current.timer);
             if (!help?.signatures.length) {
                 end();
@@ -214,8 +211,14 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     }
     function typed(event: Event) {
         const after = currentView();
-        const text = acceptedTypedText(event, element, after);
-        if (text === undefined || !workspace.ownsDocumentView(view, tab)) return;
+        const input = acceptedTypedText(event, element, after);
+        if (!input || !workspace.ownsDocumentView(view, tab)) return;
+        const { before, text } = input;
+        if (queued?.target && queued.target !== before) {
+            // An open signature may refresh at the new caret. A first trigger belongs to its original call.
+            if (queued.context.isRetrigger) stopTimer();
+            else cancel();
+        }
         const doc = workspace.document(view.documentId);
         let trigger = "";
         for (const option of provider.queryFeatureOptions(signatureHelpMethod, doc)) {
@@ -282,5 +285,6 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         publish({ ...idle, status: "disposed" });
         cell.clearSnapshotListeners();
     }
-    return Object.freeze({ request: () => request(), cancel, dispose, ...controllerObservable(cell, "Signature", () => signal.aborted), getDiagnostics: () => Object.freeze({ requested, applied, scheduled: !!queued }) });
+    return Object.freeze({ request: () => request(), cancel, dispose,
+        ...controllerObservable(cell, "Signature", () => signal.aborted) });
 }

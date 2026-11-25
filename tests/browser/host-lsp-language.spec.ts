@@ -2,7 +2,6 @@ import { ready, isolatedTest as test, expect, expectPanelKeyReserved } from "./f
 import type { Page } from "@playwright/test";
 import { holdLspReplies } from "../helpers/lsp-replies.ts";
 import { hostTextEquals } from "../../scripts/host-scene.mjs";
-import { typedTextEvent } from "../../src/browser/input-events.ts";
 
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const field = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
@@ -653,37 +652,68 @@ test.describe("plain selected LSP features", () => {
         await expect(back).toBeDisabled();
         await field(page, "Secondary source").press("Shift+F4"); await expect(field(page, "Secondary source")).toBeFocused();
     });
+    test("a queued signature trigger belongs to the typing that follows it", async ({ page }) => {
+        const replies = await holdLspReplies(page, "textDocument/signatureHelp");
+        await page.reload();
+        const raw = "format(1)\nlookup";
+        await seed(page, raw);
+        const popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
+        await page.clock.install();
+        await page.clock.pauseAt(await page.evaluate(() => new Date(Date.now() + 300).toISOString()));
+        const deliver = async () => {
+            await page.clock.runFor(150);
+            await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {}));
+        };
+        await field(page).evaluate(node => node.addEventListener("keydown", event => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, { capture: true, once: true }));
+        await page.keyboard.press("(");
+        await deliver();
+        await exact(page, raw);
+        expect(replies.requestCount()).toBe(0);
+
+        await page.keyboard.type("(");
+        await page.keyboard.press("ArrowUp");
+        await page.keyboard.type("2");
+        await deliver();
+        expect(replies.requestCount()).toBe(0);
+        await expect(popup).toBeHidden();
+
+        await seed(page, "lookup");
+        await page.keyboard.type("(a");
+        await deliver();
+        await expect(popup.getByLabel("Active signature parameter")).toHaveText("key: string");
+        expect(replies.requestCount()).toBe(1);
+
+        await page.keyboard.type(",");
+        await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
+        await deliver();
+        expect(replies.requestCount()).toBe(1);
+        await expect(popup).toBeHidden();
+    });
     test("advertised signature triggers and retriggers show active parameters without taking completion shortcuts", async ({ page }) => {
-        const replies = await holdLspReplies(page, "textDocument/signatureHelp"); await page.reload();
+        const replies = await holdLspReplies(page, "textDocument/signatureHelp");
         const contexts: { triggerKind: number; triggerCharacter?: string; isRetrigger: boolean; activeSignatureHelp?: unknown }[] = [];
         page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/signatureHelp") contexts.push(value.params.context); }));
+        await page.reload();
         const popup = page.getByRole("tooltip", { name: "Signature help", exact: true }), parameter = popup.getByLabel("Active signature parameter", { exact: true });
-        await seed(page, "lookup");
-        await field(page).evaluate(node => node.addEventListener("keydown", e => {
-            e.preventDefault(); e.stopImmediatePropagation();
-            const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: 5, head: 5 });
-        }, { capture: true, once: true }));
-        await field(page).press("("); await expect.poll(async () => (await snapshot(page)).bindings.signature.scheduled).toBe(false);
-        expect((await snapshot(page)).bindings.signature.requested).toBe(0); await exact(page, "lookup");
-        await field(page).press("End"); expect(contexts).toHaveLength(0);
-        await field(page).evaluate((node, name) => node.closest(".st-editor")!.addEventListener(name, () => queueMicrotask(() => {
-            const f = window.hostFixture; f.selectSource("primary", f.snapshot().source.revision, { anchor: 0, head: 0 });
-        }), { once: true }), typedTextEvent);
-        await field(page).press("("); await expect.poll(async () => (await snapshot(page)).bindings.signature.scheduled).toBe(false);
-        expect((await snapshot(page)).bindings.signature.requested).toBe(0);
         await seed(page, "lookup");
         await field(page).pressSequentially("("); await expect(parameter).toHaveText("key: string"); expect(contexts[0]).toMatchObject({ triggerKind: 2, triggerCharacter: "(", isRetrigger: false });
         await field(page).press("ArrowDown"); await expect(parameter).toHaveText("keys: readonly string[]");
-        await field(page).evaluate((input, name) => input.closest(".st-editor")!.addEventListener(name, () => queueMicrotask(() => {
-            const { presentation, scheduled } = window.hostFixture.snapshot().bindings.signature;
-            input.setAttribute("data-refresh-parameter", scheduled ? presentation.signature?.label ?? "" : "");
-        }), { once: true }), typedTextEvent);
-        replies.hold(); await field(page).pressSequentially("x.");
-        await expect(field(page)).toHaveAttribute("data-refresh-parameter", /keys: readonly string\[\]/);
+        await page.clock.install();
+        await page.clock.pauseAt(await page.evaluate(() => new Date(Date.now() + 300).toISOString()));
+        const firstRequest = replies.requestCount();
+        replies.hold();
+        await page.keyboard.type("x.");
+        await expect(parameter).toHaveText("keys: readonly string[]");
+        expect(replies.requestCount()).toBe(firstRequest);
+        await page.clock.runFor(150);
         await expect.poll(replies.waiting).toBe(true);
         await expect(parameter).toHaveText("keys: readonly string[]");
         await expect(popup).toBeVisible();
         await replies.release();
+        await page.clock.resume();
         await expect.poll(() => contexts.at(-1)).toMatchObject({ triggerKind: 3, isRetrigger: true, activeSignatureHelp: { activeSignature: 1 } });
         await expect.poll(async () => (await snapshot(page)).bindings.signature.presentation.status).toBe("ready");
         const priorLabel = await popup.locator("pre").innerText();
@@ -692,8 +722,9 @@ test.describe("plain selected LSP features", () => {
         await replies.release(); await expect(parameter).toHaveText("fallback?: string");
         expect(contexts.at(-1)).toMatchObject({ triggerKind: 2, triggerCharacter: ",", isRetrigger: true }); expect(contexts.at(-1)!.activeSignatureHelp).toBeTruthy();
         const before = await snapshot(page);
-        await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.applied).toBe(before.bindings.signature.applied + 1); await expect(parameter).toHaveText("fallback?: string");
-        expect(contexts.at(-1)).toMatchObject({ triggerKind: 1, isRetrigger: false });
+        await field(page).press("Control+Shift+Space");
+        await expect.poll(() => contexts.at(-1)).toMatchObject({ triggerKind: 1, isRetrigger: false });
+        await expect(parameter).toHaveText("fallback?: string");
         await expect(page.getByRole("option")).toHaveCount(0);
         expect((await snapshot(page)).history).toEqual(before.history);
         await field(page).press("Escape"); await expect(popup).not.toBeVisible();
@@ -790,7 +821,7 @@ test.describe("plain selected LSP features", () => {
         await field(page).press("Escape"); expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet.ranges).toHaveLength(1);
         expect((await snapshot(page)).history).toEqual(before.history); await exact(page, raw);
         await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
-        expect(final.bindings.signature).toMatchObject({ pending: false, scheduled: false, sessions: 0, subscriptions: 0, capture: null });
+        expect(final.bindings.signature).toMatchObject({ pending: false, sessions: 0, subscriptions: 0, capture: null });
         expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
     });
 

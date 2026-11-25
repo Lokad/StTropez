@@ -53,5 +53,6 @@ demo-language.spec.ts > the type error sample offers a spelling fix from Problem
 demo-language.spec.ts > real member completion preserves provider punctuation, resolves, applies once and undoes
 host-find-regex.spec.ts > plain regex worker captures Unicode replacements through comparison, save and remount
 host-lsp-language.spec.ts > plain selected LSP features > a failed color preview keeps swatches available for retry in another pane
+host-lsp-language.spec.ts > plain selected LSP features > a queued signature trigger belongs to the typing that follows it
 host-lsp-navigation.spec.ts > plain LSP inspection/navigation > F12 follows a newly typed import while its background link reply is held
 host-lsp-rename.spec.ts > plain LSP rename host > new-name preview applies exact provider edits across captured resources with shared complete-set history

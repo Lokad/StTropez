@@ -25,7 +25,6 @@ export class HostSignatureTools {
     private readonly cell = new HostCell(idle);
     readonly state = this.cell.observable;
     private readonly sessions = new Map<Session, () => void>();
-    private readonly retired = { requested: 0, applied: 0 };
     private active: Session | undefined;
     private disconnected = false;
     private disposed = false;
@@ -77,16 +76,13 @@ export class HostSignatureTools {
             controller.subscribe(() => { if (this.active === session) this.publish(); });
             onSourceFocus(editor, signal, () => { this.active = session; this.publish(); });
         }, () => {
-            const counts = controller.getDiagnostics();
-            this.retired.requested += counts.requested; this.retired.applied += counts.applied;
             if (this.active === session) this.active = undefined;
             this.publish();
         }, inspection.dispose);
     }
     debug() {
-        const counts = { ...this.retired }, state = this.cell.get();
-        for (const s of this.sessions.keys()) { const d = s.controller.getDiagnostics(); counts.requested += d.requested; counts.applied += d.applied; }
-        return { ...counts, pending: state.pending, scheduled: this.active?.controller.getDiagnostics().scheduled ?? false,
+        const state = this.cell.get();
+        return { pending: state.pending,
             sessions: this.sessions.size, subscriptions: this.cell.count(), presentation: state, capture: state.anchor, disposed: this.disposed };
     }
     dispose() { if (!this.disposed) { this.disposed = true; this.stopProvider(); for (const detach of this.sessions.values()) detach(); } }

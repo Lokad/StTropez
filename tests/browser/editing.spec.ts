@@ -540,7 +540,7 @@ test("line indentation/outdent, CRLF Enter, paired brackets and vertical navigat
     expect(await page.evaluate(() => window.editingFixture.range(14, 16))).toBe("()");
     await page.keyboard.type(")"); expect((await state(page)).document!.length).toBe(16); expect((await state(page)).primary.selection.head).toBe(16);
     const pairRevision = (await state(page)).document!.revision;
-    expect(await events.evaluate(list => list.map(e => [e.text, e.revision, e.selectionSet.ranges[e.selectionSet.primary]!.head])))
+    expect(await events.evaluate(list => list.map(({ text, after }) => [text, after.revision, after.selection.head])))
         .toEqual([["(", pairRevision, 15], [")", pairRevision, 16]]);
     await page.keyboard.press("ControlOrMeta+Home"); await ready(page); await page.keyboard.press("ArrowDown");
     expect((await state(page)).primary.selection.head).toBe(4);

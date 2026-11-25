@@ -332,6 +332,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         applying = true;
         let result;
         const first = plan.snippet?.[0];
+        const before = currentView();
         try { result = workspace.edit({ documentId, expectedRevision: captured.revision, origin: "human", edits: plan.edits, view: editor.view,
             selectionSet: plan.selectionSet, history: { kind: "replace" } }); } finally { applying = false; }
         if (!result.applied) { closeList(`LSP completion rejected: ${result.reason}.`); return false; }
@@ -343,7 +344,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         closeList("LSP completion applied.");
         editor.viewport.revealOffset(after.selection.head);
         editor.focus();
-        if (character && available() && after.revision === result.revision) dispatchTypedText(editor.element, after, character);
+        if (character && available() && after.revision === result.revision) dispatchTypedText(editor.element, before, after, character);
         return true;
     };
     function stopListRefresh(captured: Job) {
@@ -455,7 +456,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     };
     function acceptedText(event: Event): void {
         const after = currentView();
-        const text = acceptedTypedText(event, editor.element, after);
+        const text = acceptedTypedText(event, editor.element, after)?.text;
         if (!text || !available()) return;
         cancelAuto();
         if (options.automatic === false || !editor.getSnapshot().focused || !snippet && after.selectionSet.ranges.length !== 1

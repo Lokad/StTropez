@@ -419,7 +419,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         cancelPendingCommand(); preferred = undefined;
         if (!live()) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         let key: string | undefined;
-        const before = currentSelections(), typed = type === "insertText" ? edits[0]?.insert : undefined;
+        const before = currentView(), typed = type === "insertText" ? edits[0]?.insert : undefined;
         let tail: NonNullable<typeof group>["tail"] = typed === undefined ? undefined : typingRun(typed);
         const document = currentDocument();
         const trimmed = document.revision === expectedRevision && automaticIndent.trim(document.buffer, edits, selection);
@@ -429,7 +429,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             ...(adjustNewlines ? { adjustNewlines: true } : {}) }));
         if (transformed) { edits = transformed.edits; selection = transformed.selectionSet; }
         if (type) {
-            const adjacent = group?.type === type && group.revision === expectedRevision && group.selectionSet === before
+            const adjacent = group?.type === type && group.revision === expectedRevision && group.selectionSet === before.selectionSet
                 && tail !== "mixed" && group.tail !== "mixed"
                 && !(tail === "space" && group.tail === "word" || tail === "word" && group.tail === "spaces");
             if (tail === "space" && (typed!.length > 1 || adjacent)) tail = "spaces";
@@ -452,7 +452,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             committing = false;
             try { transformed?.complete?.(applied); } finally {
                 refresh();
-                if (typedAt && typedText && !disposed && live()) dispatchTypedText(root, typedAt, typedText);
+                if (typedAt && typedText && !disposed && live()) dispatchTypedText(root, before, typedAt, typedText);
             }
         }
         return applied;
@@ -1024,9 +1024,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                         : typeof command === "object" ? acceptPairs : undefined });
                 if (overtyped.length) acceptPairs(plan.edits);
                 group = undefined;
+                const before = currentView();
                 if (!setSelectionSet(capture.revision, plan.selectionSet)) return false;
                 revealCaret(); refresh();
-                if (overtyped.length && typeof command === "object") dispatchTypedText(root, currentView(), command.character);
+                if (overtyped.length && typeof command === "object") dispatchTypedText(root, before, currentView(), command.character);
                 return true;
             });
         }, typeof command === "object" ? command.character : "");
