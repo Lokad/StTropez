@@ -1049,7 +1049,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         coordsAt: coordinates,
         rowBounds: (line: number) => {
             const current = currentDocument(), folding = currentFolds();
-            if (disposed || frame !== undefined || !live() || current?.revision !== renderedRevision || folding.generation !== renderedFoldGeneration
+            // A queued paint can update widths while the current row is still on screen.
+            if (disposed || !live() || current?.revision !== renderedRevision || folding.generation !== renderedFoldGeneration
                 || !isIndex(line, current.buffer.lineCount) || renderedIndex.hiddenBy(line)) return undefined;
             const row = rows.get(line); if (!row) return undefined; const rectangle = row.getBoundingClientRect();
             return Object.freeze({ revision: current.revision, foldGeneration: folding.generation, line, top: rectangle.top, height: rectangle.height });
