@@ -27,6 +27,7 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
     alpha.min = "0";
     alpha.max = "100";
     alpha.step = "any";
+    alpha.required = true;
     const format = node("select");
     for (const [label, field] of [["Color", rgb], ["Opacity (%)", alpha], ["Format", format]] as const) {
         const wrap = node("label");
@@ -41,10 +42,7 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
         dismissOn: ["focus-leave", "outside-pointerdown"],
         onHide(reason, focused) {
             if (reason === "hide" || reason === "disposed") return;
-            const previous = source;
-            queueMicrotask(() => {
-                if (source === previous) close(focused && (reason === "clipped" || reason === "expired"));
-            });
+            closeLater(source, focused && (reason === "clipped" || reason === "expired"));
         },
     });
     onAbort(signal, overlay.dispose);
@@ -53,6 +51,11 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
     let source: Capture | undefined;
     let choice: DocumentColorChoice | undefined;
     let proposed: LspColor;
+    function closeLater(target: Capture | undefined, focus?: boolean) {
+        queueMicrotask(() => {
+            if (source === target) close(focus ?? panel.matches(":focus-within"));
+        });
+    }
     function close(focus = false) {
         if (!source) return;
         const previous = source;
@@ -71,11 +74,10 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
     }
     function render() {
         if (!source) return;
-        const state = colors.getSnapshot();
-        const selection = state.review;
-        if (state.status !== "review") format.replaceChildren();
-        if (state.status === "presentations") {
-            for (const item of state.presentations) {
+        const { status, message: detail, presentations, review: selection } = colors.getSnapshot();
+        if (status !== "review") format.replaceChildren();
+        if (status === "presentations") {
+            for (const item of presentations) {
                 const option = node("option");
                 option.textContent = item.label;
                 format.append(option);
@@ -87,43 +89,46 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
         }, apply);
         apply.disabled = !selection?.canApply;
         showEdits(selection);
-        message.textContent = text(state.status === "failed" ? state.message
-            : state.status === "discovering" || state.status === "previewing" ? "Getting color formats…"
-            : state.status === "presentations" && !format.length ? "No formats for this color."
+        message.textContent = text(status === "failed" ? detail
+            : status === "discovering" || status === "previewing" ? "Getting color formats…"
+            : status === "presentations" && !format.length ? "No formats for this color."
             : selection && !selection.canApply ? "This file is read-only." : "");
-        if (state.status === "expired" || state.status === "idle" || state.status === "applied") {
-            const previous = source;
-            queueMicrotask(() => {
-                if (source === previous) close(panel.matches(":focus-within"));
-            });
+        if (status === "expired" || status === "idle" || status === "applied") {
+            closeLater(source);
         }
     }
     async function update() {
         win.clearTimeout(timer);
         const item = choice;
-        if (!item || !source?.isCurrent()) return;
-        if (!Number.isFinite(proposed.alpha) || !alpha.validity.valid) return;
+        if (!item || !source?.isCurrent() || !alpha.validity.valid) return;
         const reply = await item.presentations(proposed);
         if (reply.status === "done" && source?.isCurrent() && colors.getSnapshot().presentations === reply.value) review();
     }
-    async function open(mark: LspDocumentColor) {
+    function open(mark: LspDocumentColor | DocumentColorChoice) {
+        // Closing an open picker cancels its discovery, including any choices it returned.
+        const discovered = !source && "presentations" in mark ? mark : undefined;
         close();
         const target = capture();
-        if (!target) return;
+        if (!target) return false;
         source = target;
         proposed = mark.color;
         rgb.value = hex(proposed);
         alpha.value = String(proposed.alpha * 100);
         overlay.show({ revision: target.document.revision, offset: mark.from });
-        onAbort(target.signal, () => queueMicrotask(() => {
-            if (source === target) close(panel.matches(":focus-within"));
-        }));
-        const reply = await colors.request();
-        if (source !== target || !target.isCurrent() || reply.status !== "done") return;
-        choice = reply.value.find(item => item.from === mark.from && item.to === mark.to
-            && item.color.alpha === mark.color.alpha && channels.every(key => item.color[key] === mark.color[key]));
-        if (choice) await update();
-        else close(panel.matches(":focus-within"));
+        onAbort(target.signal, () => closeLater(target));
+        if (discovered) {
+            choice = discovered;
+            void update();
+        } else {
+            void colors.request().then(reply => {
+                if (source !== target || !target.isCurrent() || reply.status !== "done") return;
+                choice = reply.value.find(item => item.from === mark.from && item.to === mark.to
+                    && item.color.alpha === mark.color.alpha && channels.every(key => item.color[key] === mark.color[key]));
+                if (choice) void update();
+                else close(panel.matches(":focus-within"));
+            });
+        }
+        return true;
     }
     const listen = listenUntil(signal);
     listen(panel, "toggle", () => {
@@ -145,7 +150,7 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
         }
         win.clearTimeout(timer);
         colors.dismissPreview();
-        if (Number.isFinite(proposed.alpha) && alpha.validity.valid) timer = win.setTimeout(update, 120);
+        if (alpha.validity.valid) timer = win.setTimeout(update, 120);
         else message.textContent = text("Enter an opacity between 0 and 100.");
     });
     listen(format, "change", review);

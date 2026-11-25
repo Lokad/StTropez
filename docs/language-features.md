@@ -550,8 +550,11 @@ A superseded request returns `stale`.
 Pass `colors: { picker: true }` to `attachEditorLanguage` to make provider swatches clickable.
 Click a swatch to change its color or opacity, choose a provider format and review its edits.
 Apply writes the changes together and returns focus to the editor. Escape closes the picker.
-Opening it preserves the source selection. Moving the selection or editing the document
-expires the review. Pass `picker: { text: translate }` to translate control labels.
+Opening it preserves the source selection. For a menu or hover button, keep the mark returned
+by `colors.colorAt(offset)` and pass it to `colors.openPicker(mark)` on activation. A choice
+from `colors.request()` also works. The call returns false if the mark has expired or the
+built-in picker is unavailable. Moving the selection or editing the document expires an open
+review. Pass `picker: { text: translate }` to translate control labels.
 
 Use `colors: { swatches: true }` for painted swatches alone.
 Views of the same document share one scan. Edits move the painted ranges while fresh colors

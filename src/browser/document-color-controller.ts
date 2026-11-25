@@ -42,6 +42,7 @@ export type DocumentColorControllerOptions = Readonly<{
 }>;
 export type DocumentColorController = Observable<DocumentColorSnapshot> & Readonly<{
     colorAt: (offset: number) => LspDocumentColor | undefined;
+    openPicker: (mark: LspDocumentColor) => boolean;
     setSwatches: (enabled: boolean) => void;
     request: () => Promise<Outcome<readonly DocumentColorChoice[]>>;
     dismissPreview: () => void; cancel: () => void; dispose: () => void;
@@ -78,7 +79,7 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
         scope.assertWritable();
         if (signal.aborted || enabled === !!swatches) return;
         if (enabled) {
-            const activate = typeof options.swatches === "function" ? options.swatches : picker?.open;
+            const activate = typeof options.swatches === "function" ? options.swatches : picker && controller.openPicker;
             swatches = mountSwatches(editor, owner, activate);
         } else {
             picker?.close();
@@ -271,6 +272,13 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
     });
     const controller: DocumentColorController = Object.freeze({
         ...controls, request, dismissPreview, setSwatches, colorAt: offset => swatches?.at(offset),
+        openPicker(mark) {
+            scope.assertWritable();
+            if (!picker) return false;
+            const choice = state.get().colors.find(item => item === mark);
+            if (choice && active.job && current(active.job)) return picker.open(choice);
+            return !!swatches?.at(mark.from, item => item === mark) && picker.open(mark);
+        },
     });
     try {
         if (options.picker && typeof options.swatches !== "function") {

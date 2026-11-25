@@ -14,8 +14,10 @@ export function mountSwatches(editor: TextEditor, owner: LspDocumentOwner,
     activate?: (item: LspDocumentColor) => void) {
     const group = watch(editor, owner);
     const events = new AbortController();
+    const { element } = editor;
+    const interactive = "st-interactive-swatches";
     if (activate) {
-        editor.element.classList.add("st-interactive-swatches");
+        element.classList.add(interactive);
         const hit = (event: PointerEvent) => {
             const mark = event.target;
             if (!(mark instanceof HTMLElement) || !mark.classList.contains("st-color-swatch")) return;
@@ -27,29 +29,31 @@ export function mountSwatches(editor: TextEditor, owner: LspDocumentOwner,
         };
         let press: { id: number; item: LspDocumentColor; x: number; y: number } | undefined;
         const options = { capture: true, signal: events.signal };
-        editor.element.addEventListener("pointerdown", event => {
+        function consume(event: PointerEvent) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        element.addEventListener("pointerdown", event => {
             press = undefined;
             if (!event.isPrimary || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
             const item = hit(event);
             if (!item) return;
             press = { id: event.pointerId, item, x: event.clientX, y: event.clientY };
-            event.preventDefault();
-            event.stopPropagation();
+            consume(event);
         }, options);
-        editor.element.addEventListener("pointerup", event => {
+        element.addEventListener("pointerup", event => {
             const down = press;
             press = undefined;
             if (!down || event.pointerId !== down.id || hit(event) !== down.item
                 || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) return;
-            event.preventDefault();
-            event.stopPropagation();
+            consume(event);
             activate(down.item);
         }, options);
-        editor.element.addEventListener("pointercancel", () => { press = undefined; }, options);
+        element.addEventListener("pointercancel", () => { press = undefined; }, options);
     }
     return { ...group, dispose() {
         events.abort();
-        if (activate) editor.element.classList.remove("st-interactive-swatches");
+        if (activate) element.classList.remove(interactive);
         group.dispose();
     } };
 }

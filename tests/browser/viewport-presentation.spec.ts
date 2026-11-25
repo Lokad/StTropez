@@ -63,6 +63,50 @@ test("fold labels describe the hidden imports and their changes in each review p
     await review.evaluate(review => review.dispose());
 });
 
+test("a saved color action cannot open or displace a picker after editing and Undo", async ({ page }) => {
+    const fixture = await page.evaluateHandle(async () => {
+        const path = "/presentation-fixture/";
+        const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { BrowserLspWorkspace, attachEditorLanguage, mountTextEditor, openWebSocketTransport } =
+            await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const file = workspace.createTextResource({ scope: "test", resource: "colors", variant: "working" }, "Colors",
+            { value: '"#5fae99"' }, undefined, { language: { uri: "fixture:/colors", languageId: "generic" } });
+        const host = document.body.appendChild(document.createElement("main"));
+        host.style.height = "220px";
+        const editor = mountTextEditor(host, workspace, file.documentId, { ariaLabel: "Colors" });
+        const provider = new BrowserLspWorkspace(workspace, {
+            connect: signal => openWebSocketTransport("ws://" + location.host + "/lsp-fixture", { signal }),
+        });
+        const { colors } = attachEditorLanguage(editor, provider, { colors: { picker: true } });
+        await provider.connect();
+        async function discover() {
+            const result = await colors.request();
+            if (result.status !== "done" || !result.value.length) throw new Error("Expected a document color.");
+            return result.value[0]!;
+        }
+        const choice = await discover();
+        const mark = colors.colorAt(choice.from)!;
+        return {
+            retired: () => [colors.openPicker(mark), colors.openPicker(choice)],
+            open: async () => colors.openPicker(await discover()),
+            dispose() { editor.dispose(); provider.dispose(); },
+        };
+    });
+    const source = page.getByRole("textbox", { name: "Colors", exact: true });
+    await source.press("End");
+    await source.press("x");
+    await source.press("ControlOrMeta+z");
+    expect(await fixture.evaluate(api => api.open())).toBe(true);
+    const picker = page.getByRole("dialog", { name: "Color picker" });
+    await expect(picker.getByRole("combobox", { name: "Format" })).toBeEnabled();
+    expect(await fixture.evaluate(api => api.retired())).toEqual([false, false]);
+    await expect(picker.getByLabel("Color", { exact: true })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(source).toBeFocused();
+    await fixture.evaluate(api => api.dispose());
+});
+
 test("definition lookup uses its attached scope and recovers from a refused mount", async ({ page }) => {
     const fixture = await page.evaluateHandle(async () => {
         const path = "/presentation-fixture/";
