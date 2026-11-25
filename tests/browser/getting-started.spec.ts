@@ -3,7 +3,7 @@ import { relative, resolve, sep } from "node:path";
 import { build } from "esbuild";
 import { libraryCss, libraryModules } from "../../scripts/library-entries.mjs";
 import { parseDocumentation } from "../../scripts/documentation-audit.mjs";
-import { expect, test } from "./fixtures.ts";
+import { expect, pauseBetweenCommandTurns, test } from "./fixtures.ts";
 
 test("the tutorial keeps a pending split edit through Save and Close", async ({ page }) => {
     const path = "docs/getting-started.md";
@@ -37,7 +37,7 @@ test("the tutorial keeps a pending split edit through Save and Close", async ({ 
     await split.press("Control+a");
     await page.keyboard.insertText("0\n".repeat(lines));
     await split.press("Control+a");
-    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
+    const resume = await pauseBetweenCommandTurns(page);
     await page.keyboard.press("Control+]");
     await save.click({ force: true });
     expect(await page.evaluate(() => sessionStorage.getItem("tasks.md"))).toBeNull();
@@ -49,8 +49,14 @@ test("the tutorial keeps a pending split edit through Save and Close", async ({ 
     await page.getByRole("button", { name: "Close", exact: true }).click({ force: true });
     expect(confirmations).toBe(0);
     await expect(split).toBeAttached();
-    await page.clock.resume();
+    await resume();
     await expect(page.locator("main .st-viewport-row").first()).toHaveJSProperty("textContent", "  0");
     await save.click();
     expect(await page.evaluate(() => sessionStorage.getItem("tasks.md"))).toBe("  0\n".repeat(lines));
+    await page.evaluate(() => sessionStorage.setItem("tasks.md", "Another saved checklist"));
+    await save.click();
+    await expect(page.locator("body > output")).toHaveText("Another view saved first. Choose Compare saved.");
+    await page.getByRole("button", { name: "Compare saved" }).click();
+    await expect(page.getByRole("textbox", { name: "Comparison baseline source" })).toHaveValue("Another saved checklist");
+    expect(await page.evaluate(() => sessionStorage.getItem("tasks.md"))).toBe("Another saved checklist");
 });

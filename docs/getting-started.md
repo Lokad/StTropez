@@ -30,6 +30,9 @@ Save and Run execute. [Regex worker](search.md#regular-expressions-and-worker-li
 Run `npm run demo` and open `http://127.0.0.1:4173/reference/` for a complete host.
 Edit `quote.ts` and choose **Changes** to review it. Use **Save for this tab** or press
 Ctrl+S (Cmd+S on macOS) in either pane. Reload the tab to reopen the saved text.
+If another view in the tab saves first, Changes shows its saved text beside your draft.
+Choose **Save reviewed working copy** to keep your version. If the saved text changes again,
+review the new comparison before saving.
 **Connect language server** enables the local example provider. In Changes, focus the working
 copy to use its language commands. You can search either pane.
 
@@ -50,9 +53,10 @@ import { mountTextEditor } from "sttropez/browser";
 
 const workspace = new Workspace();
 const name = "tasks.md";
-const openedText = sessionStorage.getItem(name) ?? "- [ ] Review the draft\n";
+const readSaved = () => sessionStorage.getItem(name) ?? "- [ ] Review the draft\n";
+const openedText = readSaved();
 const file = workspace.createTextResource(
-    { scope: "checklist", resource: name, variant: "working" }, name, { value: openedText }, undefined,
+    { scope: "checklist", resource: name, variant: "working" }, name, { value: openedText, serverVersion: openedText }, undefined,
     { language: { uri: "file:///tasks.md", languageId: "markdown" } });
 
 const primary = document.querySelector("main");
@@ -303,11 +307,10 @@ const stopDirty = file.metadata.subscribe(showDirty);
 showDirty();
 ```
 
-Save checks every pane that can edit the checklist, including the working pane in a comparison.
-Once those edits commit, the host writes to session storage and keeps the text as its review baseline.
-`captureSave` fixes the text before the write starts. If the user keeps typing, the later edits stay
-unsaved. For shared storage, send `expectedServerVersion` with the write. Call `ticket.conflict()`
-if the server reports a competing version.
+Save checks for pending edits in every checklist pane. The sample uses the stored text as its version.
+If another view saved first, **Compare saved** lets the user inspect that copy alongside the draft.
+A remote service must check `expectedServerVersion` when it accepts the write.
+[Conflict review and retry](workspace.md#save-and-conflicts)
 
 ```js file=app.js
 import { TextBuffer } from "sttropez";
@@ -320,9 +323,17 @@ button("Save", () => {
     if (!checklistReady()) return;
     const ticket = workspace.captureSave(file);
     try {
-        sessionStorage.setItem(name, ticket.start().value);
-        const receipt = ticket.accept({ serverVersion: String(ticket.revision) });
-        baseline = { buffer: TextBuffer.from(receipt.savedValue), version: receipt.serverVersion };
+        const submission = ticket.start();
+        const stored = readSaved();
+        if (stored !== submission.expectedServerVersion && stored !== submission.value) {
+            ticket.conflict();
+            baseline = { buffer: TextBuffer.from(stored), version: "saved in this tab" };
+            output.textContent = "Another view saved first. Choose Compare saved.";
+            return;
+        }
+        sessionStorage.setItem(name, submission.value);
+        ticket.accept({ serverVersion: submission.value });
+        baseline = { buffer: workspace.document(file.documentId).buffer, version: String(ticket.revision) };
         output.textContent = "Saved";
     } catch (error) {
         ticket.fail();

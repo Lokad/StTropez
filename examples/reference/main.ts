@@ -1,4 +1,4 @@
-import { discoverIndentationFolds, Workspace } from "sttropez";
+import { discoverIndentationFolds, TextBuffer, Workspace, type SaveReview } from "sttropez";
 import type { TextComparison } from "sttropez/browser";
 import {
     BrowserLspWorkspace, mountFindBar, createFoldingController,
@@ -25,16 +25,19 @@ const find = mountFindBar(document.querySelector<HTMLElement>("#search")!, {
 });
 document.querySelector("#find")!.addEventListener("click", () => find.open());
 const saved = document.querySelector<HTMLOutputElement>("#saved")!;
+const saveReviewed = document.querySelector<HTMLButtonElement>("#save-reviewed")!;
+let competingText: string | undefined;
+const readSaved = () => sessionStorage.getItem(key) ?? initial;
 let opened = initial;
 try {
-    opened = sessionStorage.getItem(key) ?? initial;
+    opened = readSaved();
 } catch {
     saved.value = "Tab storage unavailable";
 }
 
 const workspace = new Workspace();
 const file = workspace.createTextResource({ scope: "quote", resource: name, variant: "working" }, name,
-    { value: opened }, undefined, { language: { uri: "file:///reference/quote.ts", languageId: "typescript" } });
+    { value: opened, serverVersion: opened }, undefined, { language: { uri: "file:///reference/quote.ts", languageId: "typescript" } });
 const view = workspace.createDocumentView(file.documentId);
 const settings = { minimap: true, bracketMatching: true, language: { tabSize: 4, lineComment: "//" } };
 let baseline = { buffer: workspace.document(file.documentId).buffer, version: "opened" };
@@ -53,8 +56,14 @@ function mount(review: boolean) {
     if (review) comparison = mountTextComparison(pane, workspace, file.documentId, baseline, { view, settings });
     const editor = comparison?.panes.working
         ?? mountTextEditor(pane, workspace, file.documentId, { ariaLabel: name, view, settings });
-    (comparison ?? editor).commands.register({ id: "source.save", label: "Save for this tab", run: save },
+    (comparison ?? editor).commands.register({ id: "source.save", label: "Save for this tab", run: () => save() },
         { keys: ["Mod+s"], repeat: false });
+    function showReviewSave() {
+        saveReviewed.hidden = !comparison || competingText === undefined;
+        saveReviewed.disabled = comparison?.controller.getSnapshot().status !== "ready";
+    }
+    const stopReview = comparison?.controller.subscribe(showReviewSave);
+    showReviewSave();
     const folds = createFoldingController(editor, doc => discoverIndentationFolds(doc.buffer));
     const referenceFolds = comparison && createFoldingController(comparison.panes.reference,
         doc => discoverIndentationFolds(doc.buffer));
@@ -66,6 +75,7 @@ function mount(review: boolean) {
     }
     if (languageEnabled) enableLanguage();
     return { editor, comparison, enableLanguage, dispose() {
+        stopReview?.();
         stopLanguage?.();
         referenceFolds?.dispose();
         folds.dispose();
@@ -96,7 +106,8 @@ connect.onclick = () => {
 };
 const pendingNotice = "An edit is pending. Try again when it finishes.";
 function showSaveState() {
-    saved.value = file.metadata.getSnapshot().dirty ? "Unsaved changes" : "No unsaved changes";
+    saved.value = competingText !== undefined ? "The saved copy changed. Review it in Changes."
+        : file.metadata.getSnapshot().dirty ? "Unsaved changes" : "No unsaved changes";
 }
 function readyForHostAction() {
     const { composing, pendingInput, pendingCommand } = current.editor.activity();
@@ -119,15 +130,28 @@ function switchView(review: boolean) {
     document.querySelector("#changes")!.setAttribute("aria-pressed", String(review));
     current.editor.focus();
 }
+function refreshBaseline() {
+    const refresh = current.comparison?.controller.beginRefresh();
+    if (refresh) {
+        try { refresh.complete(baseline); } finally { refresh.finish(); }
+    }
+}
 const stopDirty = workspace.onDocumentChange(file.documentId, showSaveState);
-function save() {
+function save(review?: SaveReview) {
     if (!readyForHostAction()) return;
-    const ticket = workspace.captureSave(file);
+    const ticket = workspace.captureSave(file, review);
     const buffer = workspace.document(file.documentId).buffer;
-    const version = String(ticket.revision);
+    let conflict: string | undefined;
     try {
-        sessionStorage.setItem(key, ticket.start().value);
-        ticket.accept({ serverVersion: version });
+        const submission = ticket.start();
+        const stored = readSaved();
+        if (stored !== submission.expectedServerVersion && stored !== submission.value) {
+            ticket.conflict();
+            conflict = stored;
+        } else {
+            sessionStorage.setItem(key, submission.value);
+            ticket.accept({ serverVersion: submission.value });
+        }
     } catch (error) {
         ticket.fail();
         saved.value = error instanceof Error ? error.message : "Save failed";
@@ -135,16 +159,31 @@ function save() {
     } finally {
         ticket.finish();
     }
-    baseline = { buffer, version };
-    const refresh = current.comparison?.controller.beginRefresh();
-    if (refresh) {
-        try { refresh.complete(baseline); } finally { refresh.finish(); }
+    if (conflict !== undefined) {
+        if (conflict !== competingText) {
+            competingText = conflict;
+            baseline = { buffer: TextBuffer.from(conflict), version: "saved in this tab" };
+            refreshBaseline();
+        }
+        if (!current.comparison) switchView(true);
+        showSaveState();
+        return;
     }
+    competingText = undefined;
+    baseline = { buffer, version: String(ticket.revision) };
+    refreshBaseline();
     saved.value = "Saved";
 }
 document.querySelector("#source")!.addEventListener("click", () => switchView(false));
 document.querySelector("#changes")!.addEventListener("click", () => switchView(true));
-document.querySelector("#save")!.addEventListener("click", save);
+document.querySelector("#save")!.addEventListener("click", () => save());
+saveReviewed.addEventListener("click", () => {
+    const state = current.comparison?.controller.getSnapshot();
+    if (competingText !== undefined && state?.status === "ready" && state.working && state.baseline?.buffer === baseline.buffer) {
+        save({ target: workspace.captureResource(file.id), expectedRevision: state.working.revision,
+            expectedServerVersion: competingText });
+    }
+});
 window.addEventListener("pagehide", event => {
     if (event.persisted) return;
     stopConnection();

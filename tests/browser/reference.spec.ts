@@ -217,6 +217,50 @@ test("a rename reports success after changing the reference document and Undo cl
     await expect(page.locator("#result")).toBeEmpty();
 });
 
+test("two reference hosts review a competing save before replacing it", async ({ page }) => {
+    await page.goto("/reference/");
+    await page.evaluate(() => {
+        const other = document.createElement("iframe");
+        other.title = "Second host";
+        other.src = "/reference/";
+        document.body.append(other);
+    });
+    const other = page.frameLocator('iframe[title="Second host"]');
+    const firstSource = page.getByRole("textbox", { name: "quote.ts" });
+    const secondSource = other.getByRole("textbox", { name: "quote.ts" });
+    const stored = () => page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"));
+    await firstSource.press("Control+Home");
+    await page.keyboard.insertText("// My draft\n");
+    const draft = await firstSource.inputValue();
+    await secondSource.press("Control+Home");
+    await page.keyboard.insertText("// Saved elsewhere\n");
+    await secondSource.press("ControlOrMeta+s");
+    const competing = await stored();
+    expect(competing).toMatch(/^\/\/ Saved elsewhere/);
+
+    await firstSource.press("ControlOrMeta+s");
+    const baseline = page.getByRole("textbox", { name: "Comparison baseline source" });
+    const working = page.getByRole("textbox", { name: "Comparison working source" });
+    const overwrite = page.getByRole("button", { name: "Save reviewed working copy" });
+    await expect(baseline).toHaveValue(competing!);
+    await expect(working).toHaveValue(draft);
+    await baseline.press("ControlOrMeta+s");
+    expect(await stored()).toBe(competing);
+
+    await secondSource.press("Control+a");
+    await secondSource.press("Backspace");
+    await secondSource.press("ControlOrMeta+s");
+    await overwrite.click();
+    await expect(baseline).toHaveValue("");
+    expect(await stored()).toBe("");
+    await expect(working).toHaveValue(draft);
+    await overwrite.click();
+    await expect(overwrite).toBeHidden();
+    await expect(page.locator("#saved")).toHaveText("Saved");
+    await page.reload();
+    await expect(firstSource).toHaveValue(draft);
+});
+
 test("Save and Changes preserve a pending edit in the reference host", async ({ page }) => {
     await page.clock.install();
     await page.goto("/reference/");
