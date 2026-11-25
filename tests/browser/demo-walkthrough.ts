@@ -1020,7 +1020,6 @@ export async function runDemoConflict(page: Page, url = "/") {
             reviewedSave: true, reviewedAdoptionAndUndo: true, reloadBothFiles: true });
     } finally { await peer.close(); }
 }
-/** One real-provider journey shared by source, static and restored-package demos. */
 export async function runDemoProjectResults(page: Page, url = "/") {
     await page.goto(url); await page.locator("#sample").selectOption("results");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
@@ -1029,9 +1028,19 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     const problems = page.locator(".demo-problems"), rows = problems.locator(".problem-location");
     await expect(rows).toHaveCount(64);
     await expect(rows.first()).toContainText("problems.ts:1:7 · TS2322:");
-    await problems.getByRole("button", { name: "Next problems", exact: true }).focus();
+    const nextPage = problems.getByRole("button", { name: "Next problems", exact: true });
+    const previousPage = problems.getByRole("button", { name: "Previous problems", exact: true });
+    const range = problems.locator(".problem-pages > span").first();
+    await nextPage.press("Enter");
+    await previousPage.press("Enter");
+    await expect(range).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(range).toHaveText("1–64 of 300");
+    await page.keyboard.press("Tab");
+    await expect(nextPage).toBeFocused();
     for (let i = 0; i < 4; i++) await page.keyboard.press("Space");
-    await expect(problems.getByRole("button", { name: "Previous problems" })).toBeFocused();
+    await expect(range).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(rows).toHaveCount(44); await expect(problems).toContainText("257–300 of 300");
     await expect(rows.last()).toContainText("problems.ts:300:7 · TS2322:");
     await rows.first().click();

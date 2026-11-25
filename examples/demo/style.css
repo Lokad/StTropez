@@ -63,7 +63,7 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 button, select, input { font: inherit; font-size: 13px; color: inherit; border: 1px solid #36435a; border-radius: 5px; background: #1b273a; padding: 7px 11px; }
 button { cursor: pointer; } button:hover { background: #25354e; } button:disabled { opacity: .5; cursor: default; }
 button.primary { color: #0d201d; background: #8ce0ca; border-color: #8ce0ca; font-weight: 600; }
-button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #88dcca; outline-offset: 2px; }
+button:focus-visible, select:focus-visible, input:focus-visible, .problem-pages > span:focus-visible { outline: 2px solid #88dcca; outline-offset: 2px; }
 .toolbar label { color: #a9b8ce; font-size: 12px; } select { margin-left: 5px; max-width: 240px; }
 .intro { display: flex; justify-content: space-between; align-items: center; padding: 10px 24px; gap: 12px; }
 .intro p { margin: 0; color: #aebed3; font-size: 13px; line-height: 1.6; }
