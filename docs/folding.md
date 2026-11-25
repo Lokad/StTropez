@@ -23,9 +23,10 @@ export function attachFolding(editor: TextEditor): FoldingController {
 }
 ```
 
-Build controls from `FoldingController.getSnapshot()` and `subscribe()`. To collapse a group, call
-`editor.commands.run("fold.collapse-all", "regions")`. Call `refresh()` after a rule change. Disposing the editor cancels pending discovery
-and disposes this controller.
+Build controls from `FoldingController.getSnapshot()` and `subscribe()`. A toolbar can call
+`controller.setCollapsed(true, "regions")` to collapse a group while keeping focus and selection.
+The viewport stays where the user scrolled, within the new document height.
+Omit the group to act on all folds. Call `refresh()` after a rule change. Disposing the editor cancels discovery.
 
 If you already have an outline, pass its ranges to `DocumentView.folding`.
 
@@ -113,7 +114,8 @@ span 4,096 units. A large delimiter, native operation or host callback can run p
 Measure time to visible folds separately.
 
 `reconcileFoldRanges(buffer, discovered, previous)` keeps one outer range per header, drops crossings
-and reuses IDs for matching mapped headers and groups. Combine your sources before calling it. Include
+and reuses IDs for matching mapped headers and groups. Set `initiallyCollapsed: true` on a discovered
+range to start it folded. A matching range keeps its view's current choice on refresh. Combine your sources before calling it. Include
 reconciliation and installation in measurements of time to visible folds. Both run synchronously after
 discovery.
 

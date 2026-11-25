@@ -230,6 +230,44 @@ test("group folding preserves every selection and typing replaces the retained h
     expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
 
+test("initial fold choices survive refresh and a host can fold a group while typing in another control", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.evaluate(() => {
+        const f = window.editingFixture;
+        const text = "line\n".repeat(300) + "first\n  body\nsecond\n  caret\nother\n  tail";
+        f.setText(text);
+        const head = text.indexOf("caret");
+        f.select("primary", { anchor: head, head });
+        f.discoverFolds(() => [
+            { from: text.indexOf("first"), to: text.indexOf("second"), group: "sections", initiallyCollapsed: true },
+            { from: text.indexOf("second"), to: text.indexOf("other"), group: "sections", initiallyCollapsed: true },
+            { from: text.indexOf("other"), to: text.length, group: "other" },
+        ]);
+    });
+    const choices = () => page.evaluate(() => window.editingFixture.folding().regions.map(r => r.collapsed));
+    await expect.poll(choices).toEqual([true, false, false]);
+    const viewport = page.locator("#primary .st-viewport");
+    await viewport.evaluate(node => { node.scrollTop = node.scrollHeight; });
+    await page.locator('#primary .st-fold-button[aria-expanded="false"]').click();
+    await page.evaluate(() => window.editingFixture.refreshFolds());
+    await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
+    expect(await choices()).toEqual([false, false, false]);
+
+    const field = page.locator("#replacement");
+    await field.focus();
+    await viewport.evaluate(node => { node.scrollTop = 900; });
+    await expect.poll(() => viewport.evaluate(node => node.scrollTop)).toBe(900);
+    const selection = await page.evaluate(() => window.editingFixture.selectionSet());
+    expect(await page.evaluate(() => window.editingFixture.setGroupCollapsed(true, "sections"))).toBe(true);
+    await ready(page);
+    expect(await choices()).toEqual([true, true, false]);
+    await expect(field).toBeFocused();
+    expect(Math.abs(await viewport.evaluate(node => node.scrollTop) - 900)).toBeLessThanOrEqual(1);
+    expect(await page.evaluate(() => window.editingFixture.selectionSet())).toEqual(selection);
+    await page.keyboard.type("x");
+    await expect(field).toHaveValue("x");
+});
+
 test("nested fold shortcuts move insertion carets to each visible header and preserve child folds", async ({ page }) => {
     await page.goto("/editing/");
     const text = "outer\r\n  first\r\n    second\r\n  third\r\ntail", at = text.indexOf("second") + 3;

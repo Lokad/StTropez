@@ -48,7 +48,7 @@ export function sameFoldRegions(a: readonly FoldRegion[], b: readonly FoldRegion
 export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange[], previous: readonly FoldRegion[] = empty): readonly FoldRegion[] {
     const prepared = resolved.get(buffer)?.get(ranges);
     if (prepared) {
-        if (ranges === previous && owned.has(previous)) return previous;
+        if (prepared === ranges) return owned.has(previous) && sameFoldRegions(previous, prepared) ? previous : prepared;
         const prior = new Map(previous.map(r => [r.id, r])); let changed = false;
         const regions = prepared.map((r, i) => {
             const collapsed = ranges[i]!.collapsed ?? prior.get(r.id)?.collapsed ?? false;
@@ -150,12 +150,10 @@ export function collapseFoldRegions(regions: readonly FoldRegion[], ids: string 
     });
     if (!remaining.size) return changed ? retain(next) : regions;
 }
-export function revealSelectionFolds(buffer: TextBuffer, regions: readonly FoldRegion[], selections: SelectionSet, index?: FoldIndex, previous?: FoldIndex): readonly FoldRegion[] {
-    if (index?.collapsedCount === 0) return regions;
-    const metadata = owned.get(regions);
-    if (metadata?.collapsed === 0) return regions;
-    if (!metadata && !regions.some(r => r.collapsed)) return regions;
-    return revealEndpoints(regions, selectionEndpoints(buffer, selections, index, previous));
+export function revealSelectionFolds(buffer: TextBuffer, regions: readonly FoldRegion[], selections: SelectionSet,
+    previous?: FoldIndex): readonly FoldRegion[] {
+    if (!(owned.get(regions)?.collapsed ?? regions.some(r => r.collapsed))) return regions;
+    return revealEndpoints(regions, selectionEndpoints(buffer, selections, undefined, previous));
 }
 function selectionEndpoints(buffer: TextBuffer, selections: SelectionSet, index?: FoldIndex, previous?: FoldIndex) {
     const endpoints = new Set<number>();

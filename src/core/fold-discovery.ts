@@ -6,7 +6,7 @@ import { appendNestedFold } from "./fold-nesting.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 
-export type DiscoveredFold = Readonly<{ from: number; to: number; group?: string }>;
+export type DiscoveredFold = Readonly<{ from: number; to: number; group?: string; initiallyCollapsed?: boolean }>;
 const discoveredRows = new WeakMap<TextBuffer, WeakMap<DiscoveredFold, Readonly<{ lineFrom: number; lineTo: number }>>>();
 export type IndentationFoldingOptions = Readonly<{ tabSize?: number; indentation?: boolean; group?: string;
     markers?: readonly Readonly<{ start: string; end: string; group: string }>[] }>;
@@ -121,12 +121,16 @@ export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly Dis
     for (const item of sorted) {
         if (item.lineTo < item.lineFrom + 2 || item.lineFrom === last) continue;
         if (!appendNestedFold(stack, item)) continue;
-        const old = prior.get(item.lineFrom); let id = old?.group === item.group ? old?.id : undefined;
+        const old = prior.get(item.lineFrom);
+        let id = old?.group === item.group ? old?.id : undefined;
+        const collapsed = !id && item.initiallyCollapsed === true;
         if (!id) { do { id = `discovered-${++serial}`; } while (ids.has(id)); ids.add(id); }
         if (id.length > 256 || assigned.has(id)) throw new TypeError("Expected unique fold identities.");
         assigned.add(id);
-        ranges.push(Object.freeze({ id, from: item.from, to: item.to, ...(item.group === undefined ? {} : { group: item.group }) }));
-        regions.push(Object.freeze({ ...ranges.at(-1)!, lineFrom: item.lineFrom, lineTo: item.lineTo, collapsed: false }));
+        const range = Object.freeze({ id, from: item.from, to: item.to,
+            ...(item.group === undefined ? {} : { group: item.group }), ...(collapsed ? { collapsed } : {}) });
+        ranges.push(range);
+        regions.push(Object.freeze({ ...range, lineFrom: item.lineFrom, lineTo: item.lineTo, collapsed }));
         last = item.lineFrom;
     }
     Object.freeze(ranges); prepareFoldRanges(buffer, ranges, regions); return ranges;

@@ -5,7 +5,7 @@ import { reconcileFoldRanges } from "../core/fold-discovery.ts";
 import type { DiscoveredFold } from "../core/fold-discovery.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
-import { createFoldRegions, FoldIndex, foldSummary, matchingFoldIds, revealSelectionFolds } from "../core/folding.ts";
+import { createFoldRegions, foldSummary, matchingFoldIds, revealSelectionFolds } from "../core/folding.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
 import type { KernelCursor, KernelStatus } from "../core/kernel-cursor.ts";
 
@@ -19,7 +19,11 @@ export type FoldCommand = keyof typeof foldLabels;
 export type FoldingStatus = Readonly<{ status: "pending" | "ready" | "failed" | "disposed"; revision: number; regions: number; collapsed: number;
     groups: readonly string[]; message: string }>;
 
-export type FoldingController = Observable<FoldingStatus> & Readonly<{ refresh: () => void; dispose: () => void }>;
+export type FoldingController = Observable<FoldingStatus> & Readonly<{
+    setCollapsed: (collapsed: boolean, group?: string) => boolean;
+    refresh: () => void;
+    dispose: () => void;
+}>;
 
 /** One discovery policy for one retained view. Providers own syntax; the editor owns fold projection. */
 export function createFoldingController(editor: TextEditor, discover: FoldDiscovery,
@@ -31,8 +35,9 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
     const notifications = workspace.createNotificationScope();
     const cell = new Store<FoldingStatus>(Object.freeze({ status: "pending", revision: workspace.document(view.documentId).revision,
         regions: 0, collapsed: 0, groups: emptyList, message: "Discovering folds…" }), notifications);
-    const listeners = new AbortController(), runner = createCooperativeRunner(win); let disposed = false, generation = 0;
-    let job: { generation: number; document: DocumentSnapshot; abort: AbortController; pumping?: boolean; cursor?: FoldDiscoveryCursor } | undefined;
+    const listeners = new AbortController(), runner = createCooperativeRunner(win);
+    let disposed = false;
+    let job: { document: DocumentSnapshot; abort: AbortController; pumping?: boolean; cursor?: FoldDiscoveryCursor } | undefined;
     const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view, target);
     const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand; };
     const publish = (status: FoldingStatus["status"], message = "") => {
@@ -42,13 +47,16 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
     };
     const release = (capture: NonNullable<typeof job>) => { const cursor = capture.cursor; delete capture.cursor; cursor?.dispose(); };
     const cancel = () => {
-        generation++; runner.cancel();
+        runner.cancel();
         const previous = job; job = undefined; previous?.abort.abort();
         if (previous && !previous.pumping) release(previous);
     };
-    const later = (work: () => void, ms: number) => { runner.schedule(work, ms); };
-    const current = (capture: NonNullable<typeof job>) => available() && job === capture && capture.generation === generation
-        && workspace.document(view.documentId).buffer === capture.document.buffer && workspace.document(view.documentId).revision === capture.document.revision;
+    const later = runner.schedule;
+    const current = (capture: NonNullable<typeof job>) => {
+        if (job !== capture || !available()) return false;
+        const document = workspace.document(view.documentId);
+        return document.buffer === capture.document.buffer && document.revision === capture.document.revision;
+    };
     const fail = (capture: NonNullable<typeof job>, error: unknown) => {
         if (!current(capture)) return; cancel(); publish("failed", error instanceof Error ? error.message : "Fold discovery failed.");
     };
@@ -58,15 +66,10 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         if (busy()) { later(() => accept(capture, ranges, authority), 16); return; }
         try {
             const before = view.folding.getSnapshot(), buffer = capture.document.buffer;
-            let planned = reconcileFoldRanges(buffer, ranges, before.regions);
-            if (before.index.collapsedCount) {
-                const regions = createFoldRegions(buffer, planned, before.regions);
-                planned = regions;
-                if (regions !== before.regions) {
-                    const index = new FoldIndex(buffer.lineCount, regions);
-                    planned = revealSelectionFolds(buffer, regions, view.getSnapshot().selectionSet, index, before.index);
-                }
-            }
+            const matched = reconcileFoldRanges(buffer, ranges, before.regions);
+            const regions = createFoldRegions(buffer, matched, before.regions);
+            const planned = regions === before.regions ? regions
+                : revealSelectionFolds(buffer, regions, view.getSnapshot().selectionSet, before.index);
             if (!view.folding.setRanges(before, planned)) throw new Error("Fold discovery target changed.");
             job = undefined; publish("ready");
         } catch (error) { fail(capture, error); }
@@ -87,7 +90,8 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
     const start = () => {
         if (!available()) { cancel(); return; }
         if (busy()) { later(start, 16); return; }
-        const capture = { generation, document: workspace.document(view.documentId), abort: new AbortController() }; job = capture;
+        const capture = { document: workspace.document(view.documentId), abort: new AbortController() };
+        job = capture;
         void Promise.resolve().then(() => current(capture) ? discover(capture.document, capture.abort.signal) : []).then(result => {
             if (!current(capture)) { if ("next" in result) result.dispose(); return; }
             if (Array.isArray(result)) accept(capture, result);
@@ -102,21 +106,23 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         const line = atCaret ? workspace.document(view.documentId).buffer.lineAt(view.getSnapshot().selection.head) : undefined;
         return matchingFoldIds(view.folding.getSnapshot().index, collapsed, group, line);
     };
-    const runCommand = (command: FoldCommand, group: unknown): boolean => {
+    const runCommand = (command: FoldCommand, group: unknown, activate = true): boolean => {
         notifications.assertWritable();
         if (group !== undefined && typeof group !== "string") return false;
-        const document = workspace.document(view.documentId), before = view.folding.getSnapshot(), state = view.getSnapshot();
-        const line = document.buffer.lineAt(state.selection.head), collapse = command === "fold.collapse" || command === "fold.collapse-all";
+        const before = view.folding.getSnapshot();
+        const collapse = command === "fold.collapse" || command === "fold.collapse-all";
         let candidates = [...commandTargets(command, group)];
         if (command === "fold.collapse" || command === "fold.expand") {
             const chosen = collapse ? candidates.at(-1) : candidates[0]; candidates = chosen ? [chosen] : [];
         }
         if (!candidates.length) return false;
-        const applied = view.folding.setCollapsed(before, candidates, collapse, { moveHiddenCarets: true });
-        if (applied) {
+        const applied = view.folding.setCollapsed(before, candidates, collapse, { moveHiddenCarets: activate });
+        if (applied && activate) {
             // A nonempty selection can intentionally end in the hidden body.
-            const hidden = view.folding.getSnapshot().index.hiddenBy(line);
-            editor.viewport.revealOffset(hidden ? lineContentEnd(document.buffer, hidden.lineFrom) : view.getSnapshot().selection.head);
+            const buffer = workspace.document(view.documentId).buffer;
+            const head = view.getSnapshot().selection.head;
+            const hidden = view.folding.getSnapshot().index.hiddenBy(buffer.lineAt(head));
+            editor.viewport.revealOffset(hidden ? lineContentEnd(buffer, hidden.lineFrom) : head);
             editor.focus();
         }
         return applied;
@@ -154,5 +160,8 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
     };
     editor.signal.addEventListener("abort", dispose, { once: true, signal: listeners.signal });
     refresh();
-    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, dispose });
+    return Object.freeze({ ...cell.observable,
+        setCollapsed: (collapsed: boolean, group?: string) => available() && !busy()
+            && runCommand(collapsed ? "fold.collapse-all" : "fold.expand-all", group, false),
+        refresh: () => { notifications.assertWritable(); refresh(); }, dispose });
 }
