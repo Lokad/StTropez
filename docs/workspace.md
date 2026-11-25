@@ -160,9 +160,18 @@ history writes until delivery ends. Keep mutations out of component rendering.
 
 `edit` changes one document. `editDocuments` validates every participant before changing any of
 them. Name each document once, use a common origin and history policy, and give sorted,
-non-overlapping UTF-16 ranges in original coordinates. The workspace checks identity, readiness,
-revision, permissions, edit lease, view ownership and ranges. Inspect `applied` and the rejection
-reason. Malformed arguments can throw.
+non-overlapping UTF-16 ranges in original coordinates. Malformed arguments can throw. If a
+workspace write returns `applied: false`, use its `reason` to decide what the host does next.
+
+| Reason | Host action |
+| --- | --- |
+| `missing-document`, `missing-resource` | Drop the command for that target. A replacement opened under the same name has its own identity. |
+| `stale-revision` | Read the current text and recompute the edit or ask for a fresh review. The old offsets belong to the captured revision. |
+| `not-ready` | Wait for the document to load. For saved-text adoption, also let pending saves and reloads finish. |
+| `read-only` | Check the edit permission for the initiating origin. |
+| `edit-locked` | Pass the matching edit lease for that origin, or wait for its owner to release it. Saved-text adoption requires release. |
+| `history-empty` | Disable Undo or Redo for that direction. |
+| `history-blocked` | A linked edit must be next in every participating file. For Undo, let the user undo intervening edits in the other file first. |
 
 Use `replaceText(documentId, text, options)` for a whole document. Pass `origin` and a `history`
 policy of `"record"` or `"reset"`. Supply `expectedRevision` for a delayed command. A successful
@@ -257,14 +266,13 @@ export function forwardEdits(workspace: Workspace, uri: string,
 }
 ```
 
-History follows the document across tabs and views. `undo` and `redo` check every participant’s
-history boundary and permissions. If later work in another file blocks a shared undo, the result is
-`history-blocked`. `observeHistory` depths include blocked entries.
+History follows the document across tabs and views. `undo` and `redo` check each participant's
+permissions. `observeHistory` depths include blocked entries.
 [Which selections undo restores](#document-views)
 
-An omitted history policy creates a standalone `replace` unit. Use `human` for user edits, `agent` for edits made by an automated agent
-and `host` for application updates. Each origin has its own edit permission. `EditKind` distinguishes typing, deletion, paste, composition, form, refactor,
-proposal, live update, replacement and canonical response. An explicit group joins only
+Use `human` for user edits, `agent` for automated edits and `host` for application updates.
+The origin selects the permission. The history kind (`EditKind`) describes the change. A host replacement
+defaults to `replace`. Pass `kind: "refactor"` to `replaceText` for a refactoring. An explicit group joins only
 consecutive compatible edits with the same document, origin, kind, group, initiating view and set of open views.
 Core grouping has no timer. Selection movement, undo/redo and that document's save
 capture/settlement seal its group; unrelated background documents do not split it.
