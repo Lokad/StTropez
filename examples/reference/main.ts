@@ -5,6 +5,7 @@ import {
     mountTextComparison, mountTextEditor, openWebSocketTransport,
 } from "sttropez/browser";
 import { bindLanguage } from "./language.js";
+import { findStatus } from "../shared/find-status.js";
 
 const name = "quote.ts";
 const initial = `export const accent = "#5fae99";
@@ -61,8 +62,7 @@ function mount(review: boolean) {
     });
     const result = document.querySelector<HTMLOutputElement>("#match-count")!;
     function renderFind() {
-        const state = find.getSnapshot();
-        result.value = state.query ? state.status === "ready" ? `${state.count} matches` : state.message : "";
+        result.value = findStatus(find.getSnapshot());
     }
     const stopFind = find.subscribe(renderFind);
     find.setFlags({ regularExpression: regex.checked });

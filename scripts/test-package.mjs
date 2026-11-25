@@ -20,6 +20,7 @@ async function smoke() {
     await cp("tests/fixtures/consumer", consumer, { recursive: true });
     const reference = join(consumer, "reference");
     await cp("examples/reference", reference, { recursive: true });
+    await cp("examples/shared/find-status.ts", join(consumer, "shared", "find-status.ts"));
     await mkdir(join(consumer, "feed"));
     await cp(join("artifacts/nuget/feed", archive), join(consumer, "feed", archive));
     await writeFile(join(consumer, "NuGet.Config"),

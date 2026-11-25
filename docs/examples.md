@@ -1,6 +1,6 @@
 # Examples
 
-Open the [TypeScript demo](https://lokad.github.io/StTropez/) to edit a project, inspect its JavaScript and review changes. To embed the editor in your own app, start with the [one-file reference host](../examples/reference/main.ts).
+Open the [TypeScript demo](https://lokad.github.io/StTropez/) to edit a project, inspect its JavaScript and review changes. To embed the editor in your own app, start with the [reference host](../examples/reference/main.ts).
 
 ## Development routes
 

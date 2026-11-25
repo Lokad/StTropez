@@ -1,4 +1,4 @@
-import type { FindSnapshot } from "../../src/browser/index.ts";
+import type { FindSnapshot } from "sttropez/browser";
 
 function matchCount(count: number): string {
     return `${count} ${count === 1 ? "match" : "matches"}`;

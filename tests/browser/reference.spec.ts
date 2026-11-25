@@ -1,5 +1,19 @@
 import { test, expect } from "./fixtures.ts";
 
+test("the reference Find shows the selected match and where navigation wraps", async ({ page }) => {
+    await page.goto("/reference/");
+    const query = page.getByRole("searchbox", { name: "Find" });
+    const status = page.locator("#match-count");
+    await query.fill("quote");
+    await expect(status).toHaveText("2 matches");
+    await query.press("Enter");
+    await expect(status).toHaveText("1 of 2");
+    await page.getByRole("button", { name: "Previous" }).click();
+    await expect(status).toHaveText("2 of 2 · Wrapped to end");
+    await query.fill("TODO");
+    await expect(status).toHaveText("1 match");
+});
+
 test("the reference host highlights the completion that Enter inserts", async ({ page }) => {
     await page.goto("/reference/");
     await page.getByRole("button", { name: "Connect language server" }).click();

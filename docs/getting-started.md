@@ -36,7 +36,7 @@ is pending, finish the edit and retry. This keeps the working view alive until t
 
 The host keeps its working view with `workspace.createDocumentView(file.documentId)` and passes
 it to both mounts. The selection and folds follow the working document into comparison.
-[Editor, Find and saving](../examples/reference/main.ts) · [Language attachment](../examples/reference/language.ts)
+[Editor, Find and saving](../examples/reference/main.ts) · [Find status text](../examples/shared/find-status.ts) · [Language attachment](../examples/reference/language.ts)
 
 ### Open the first editor
 
