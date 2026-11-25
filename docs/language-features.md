@@ -518,25 +518,24 @@ to hide the marks, or `setPaint(true)` to resume. `linkAt(offset)` returns the f
 choice in the current explicit result, then checks the painted ranges. Both use UTF-16
 offsets and exclude the end of the range. Pass a choice's `open(visit)` action to your menu
 or modifier-click handler. A lazy link resolves on the clicked pane even if a sibling closes.
+When opening a tab, keep the visit tied to the click that requested it. Here the host aborts
+`intent` when focus leaves, another action starts, or the pane closes.
 
 ```ts
 import type { DocumentLinkChoice } from "sttropez/browser";
 
-export function linkButton(link: DocumentLinkChoice, visit: (uri: string) => void) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = link.tooltip || link.target || "Open link";
-    button.disabled = link.target === null && !link.canResolve;
-    button.onclick = () => link.open(visit);
-    return button;
+export function openLink(link: DocumentLinkChoice, intent: AbortSignal, visit: (uri: string) => void) {
+    return link.open(uri => {
+        if (!intent.aborted) visit(uri);
+    });
 }
 ```
 
 `open(visit)` resolves a missing target when the provider supports resolution. After `visit(uri)`
 returns, the outcome is `done` with that URI. A refusal gives the reason `no-target`, `resolving`
 or `unavailable-view`. A provider or presentation error returns `failed` with the error.
-The host decides which URIs to open, where to show them and how to return. If the user clicks elsewhere during resolution, keep focus there. Read the updated
-link from the snapshot for a fresh click.
+The host chooses permitted URIs, their destination and how to return. Read the updated link
+from the snapshot for a fresh click.
 
 Caret movement cancels an explicit lookup or pending navigation. The automatic scan and completed list survive caret movement.
 An edit or authority change in a captured document, a new request, cancellation or editor
