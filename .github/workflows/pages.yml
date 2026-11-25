@@ -9,14 +9,13 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: qualify-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: qualify-${{ github.ref }}
+      cancel-in-progress: true
     env:
       STTROPEZ_PORT: '4183'
       STTROPEZ_DEMO_PORT: '4184'
