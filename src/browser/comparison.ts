@@ -1,3 +1,4 @@
+import { editorElement } from "./editor-element.ts";
 import { Store } from "../core/observable.ts";
 import { validateWorkBudget } from "../core/kernel-cursor.ts";
 import { partitionPoint } from "../core/bound-search.ts";
@@ -105,16 +106,20 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const controller = compareText(workspace, identity, baseline, options, typeof baseline === "string" ? undefined : next =>
         !!display && workspace.adoptSaved(display.id, { text: next.buffer, serverVersion: next.version, history: "reset" }).applied);
     const runner = createCooperativeRunner(win);
-    const root = owner.createElement("div"), panes = owner.createElement("div");
-    root.className = "st-comparison"; root.setAttribute("role", "group"); root.setAttribute("aria-label", options.ariaLabel ?? "Text comparison");
-    panes.className = "st-comparison-panes";
+    const root = editorElement(owner, "div", "comparison");
+    const panes = editorElement(owner, "div", "comparison-panes");
+    root.setAttribute("role", "group"); root.setAttribute("aria-label", options.ariaLabel ?? "Text comparison");
     const pane = () => {
-        const section = owner.createElement("section"), content = owner.createElement("div");
-        content.className = "st-comparison-editor"; section.append(content); panes.append(section); return { section, content };
+        const section = owner.createElement("section");
+        const content = editorElement(owner, "div", "comparison-editor");
+        section.append(content);
+        panes.append(section);
+        return { section, content };
     };
     const referencePane = pane(), workingPane = pane();
     root.append(panes); host.append(root);
-    let state = controller.getSnapshot();
+    const comparisonState = controller.getSnapshot;
+    let state = comparisonState();
     let referenceBuffer = state.baseline?.buffer;
     let epoch = -1, scheduled = false, disposed = false;
     let measuredGeneration = -1, steps = 0, advances = 0, maxStepMs = 0, totalStepMs = 0;
@@ -149,7 +154,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const sharedCommands = new Map<string, EditorCommand>();
     const presentation = (side: "baseline" | "working") => ({
         commands: sharedCommands,
-        epoch: () => controller.getSnapshot().baseline?.epoch,
+        epoch: () => comparisonState().baseline?.epoch,
         foldContainsChange: (buffer: TextBuffer, from: number, to: number) =>
             (side === "baseline" ? referenceBuffer : state.working?.buffer) === buffer && firstHunkInLines(side, from, to) !== undefined,
         gutterLineCount: () => Math.max(state.working?.buffer.lineCount ?? 0, state.baseline?.buffer.lineCount ?? 0),
@@ -201,7 +206,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const stateScope = workspace.createNotificationScope(), stateStore = new Store(captureState(), stateScope);
     let stopControls: (() => void) | undefined;
     function captureState(): TextComparisonSnapshot {
-        const comparison = controller.getSnapshot(), ready = !disposed && comparison.status === "ready";
+        const comparison = comparisonState(), ready = !disposed && comparison.status === "ready";
         const canNavigate = ready && comparison.hunks.length > 0 && !!referenceViewport() && epoch === comparison.baseline?.epoch && !composing();
         const selectedHunk = ready && epoch === comparison.baseline?.epoch && comparison.hunks.length ? caretPosition(comparison, activePane()).selected : null;
         const metadata = comparison.working ? workspace.resource(comparison.working.resourceId).metadata.getSnapshot() : undefined;
@@ -229,7 +234,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         if (display) { const retired = display; display = undefined; workspace.releaseResourceWhenUnowned(retired.id); }
     }
     function render(): void {
-        if (disposed) return; state = controller.getSnapshot();
+        if (disposed) return; state = comparisonState();
         if (state.baseline && !referenceEditor()) {
             if (typeof baseline !== "string") display = workspace.createTextResourceFromBuffer(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false }, { visibility: "internal" });
@@ -262,7 +267,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     function schedule(): void { if (!disposed && !scheduled) { runner.schedule(step); scheduled = true; } }
     function step(): void {
         scheduled = false; if (disposed) return;
-        const current = controller.getSnapshot();
+        const current = comparisonState();
         if (current.status === "running") {
             if (measuredGeneration !== current.generation) { measuredGeneration = current.generation; steps = advances = maxStepMs = totalStepMs = 0; }
             const start = win!.performance.now();
@@ -271,11 +276,11 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             const elapsed = win!.performance.now() - start;
             steps++; totalStepMs += elapsed; maxStepMs = Math.max(maxStepMs, elapsed);
         }
-        render(); if (controller.getSnapshot().status === "running") schedule();
+        render(); if (comparisonState().status === "running") schedule();
     }
     function revealHunk(generation: number, index: number, selectRange: boolean): boolean {
         stateScope.assertWritable();
-        const current = controller.getSnapshot(), reference = referenceViewport();
+        const current = comparisonState(), reference = referenceViewport();
         if (disposed || composing() || current.status !== "ready" || current.generation !== generation || !Number.isSafeInteger(index)) return false;
         const hunk = current.hunks[index]; if (!hunk || !current.working || !current.baseline || !reference || epoch !== current.baseline.epoch) return false;
         const target = (pane: TextViewport, range: DiffRange, buffer: TextBuffer, revision: number) => ({
@@ -323,7 +328,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     function hunkAt(index: number): TextComparisonHunk | undefined {
         const hunk = controller.hunkAt(index);
         if (!hunk) return;
-        const generation = controller.getSnapshot().generation;
+        const generation = comparisonState().generation;
         return Object.freeze({ ...hunk, select: () => revealHunk(generation, index, true), revert: () => {
             stateScope.assertWritable();
             const access = working.getSnapshot();
@@ -332,7 +337,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     }
     // A document notification can paint the working viewport before the scheduled controls.
     // Decoration queries must already see the mapped capture for that same revision.
-    const unsubscribe = controller.subscribe(() => { state = controller.getSnapshot(); changed(); }),
+    const unsubscribe = controller.subscribe(() => { state = comparisonState(); changed(); }),
         stopMetadata = workspace.resourceForDocument(controller.view.documentId).metadata.subscribe(changed);
     function dispose(): void {
         if (disposed) return; stateScope.assertWritable(); disposed = true; runner.cancel(); scheduled = false;
@@ -341,7 +346,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             unsubscribe(); stopMetadata(); scroll.dispose(); alignment.dispose();
             try { clearReference(); } finally { pair.dispose(); working.dispose(); }
         } finally {
-            try { controller.dispose(); } finally { state = controller.getSnapshot(); publishState(); stopControls?.(); root.remove(); }
+            try { controller.dispose(); } finally { state = comparisonState(); publishState(); stopControls?.(); root.remove(); }
         }
     }
     try {

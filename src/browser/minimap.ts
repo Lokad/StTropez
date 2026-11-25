@@ -1,3 +1,4 @@
+import { editorElement } from "./editor-element.ts";
 import type { ComparisonRowIndex } from "../core/comparison-rows.ts";
 import type { FoldIndex } from "../core/folding.ts";
 import type { DocumentSnapshot } from "../core/workspace.ts";
@@ -77,18 +78,25 @@ function paintThumbnail(canvas: HTMLCanvasElement, probe: HTMLElement, view: Ove
 }
 
 export function mountMinimap(root: HTMLElement, scroll: (top: number) => void, decorate?: LineDecorator, lineClass?: LineClass) {
-    const owner = root.ownerDocument, anchor = owner.createElement("div"), track = owner.createElement("div");
-    const canvas = owner.createElement("canvas"), marker = owner.createElement("div"), palette = owner.createElement("div");
+    const owner = root.ownerDocument;
+    const anchor = editorElement(owner, "div", "minimap-anchor");
+    const track = editorElement(owner, "div", "minimap");
+    const marker = editorElement(owner, "div", "minimap-marker");
+    const preview = editorElement(owner, "div", "minimap-preview");
+    const canvas = owner.createElement("canvas");
     canvas.width = canvas.height = 0;
-    const probe = owner.createElement("span"), preview = owner.createElement("div");
-    anchor.className = "st-minimap-anchor"; track.className = "st-minimap"; palette.hidden = true; palette.append(probe);
-    preview.className = "st-minimap-preview"; preview.hidden = true;
-    marker.className = "st-minimap-marker"; anchor.setAttribute("aria-hidden", "true");
+    const palette = owner.createElement("div");
+    const probe = owner.createElement("span");
+    palette.hidden = true;
+    preview.hidden = true;
+    palette.append(probe);
+    anchor.setAttribute("aria-hidden", "true");
     track.append(canvas, marker); anchor.append(track, palette, preview); root.prepend(anchor);
     const listeners = new AbortController(), options = { signal: listeners.signal };
     let view: Overview | undefined, previous: readonly unknown[] | undefined, cancel: (() => void) | undefined;
     let maximum = 0, travel = 0, markerTop = 0, markerHeight = 0, paneHeight = 0, scrollTop = 0;
     let drag: { id: number; pointer: number; scrollFraction: number } | undefined;
+    let previewLabel: (line: number | null) => string;
     let previewRow = -1, pointerY: number | undefined;
     const hidePreview = () => {
         pointerY = undefined; previewRow = -1;
@@ -106,7 +114,8 @@ export function mountMinimap(root: HTMLElement, scroll: (top: number) => void, d
         if (row === previewRow) return;
         previewRow = row;
         const line = excerpt(view, row);
-        const title = owner.createElement("strong"); title.textContent = line ? "Line " + (line.line + 1).toLocaleString() : "Alignment gap";
+        const title = owner.createElement("strong");
+        title.textContent = previewLabel(line ? line.line + 1 : null);
         const lines: HTMLElement[] = [title];
         for (let i = Math.max(0, row - 1); i <= Math.min(view.index.visibleLineCount - 1, row + 1); i++) {
             const code = owner.createElement("span"); code.textContent = (i === row ? line : excerpt(view, i))?.text || " ";
@@ -147,7 +156,12 @@ export function mountMinimap(root: HTMLElement, scroll: (top: number) => void, d
     track.addEventListener("dblclick", event => { event.preventDefault(); event.stopPropagation(); }, options);
     return {
         paint(document: DocumentSnapshot, index: Overview["index"], width: number, height: number, top: number, extent: number,
-            lineHeight: number, padding: number, color: string, tabSize: number, pixelRatio: number, epoch: number) {
+            lineHeight: number, padding: number, color: string, tabSize: number, pixelRatio: number, epoch: number,
+            label: (line: number | null) => string) {
+            if (label !== previewLabel) {
+                previewLabel = label;
+                previewRow = -1;
+            }
             const mapHeight = Math.min(height, Math.max(1, Math.ceil(extent * rowPitch / lineHeight)));
             const key = [document.buffer, index, width, mapHeight, extent, lineHeight, color, tabSize, pixelRatio, epoch, document.revision];
             if (!previous || key.some((value, i) => value !== previous![i])) {

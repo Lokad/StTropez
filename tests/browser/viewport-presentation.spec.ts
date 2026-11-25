@@ -437,7 +437,9 @@ test("minimap projects comparison gaps and follows linked and independent scroll
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "map-review", variant: "text" }, "Working", { value: lines.join("\n") });
         const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "review"), host = document.createElement("section");
         host.style.width = "900px"; document.body.append(host); lines.splice(40, 0, ...Array<string>(80).fill("baseline section"));
-        const comparison = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from(lines.join("\n")), version: "one" }, { rowsAligned: true, settings: { minimap: true } });
+        const comparison = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from(lines.join("\n")), version: "one" }, { rowsAligned: true, settings: {
+            minimap: true, minimapLabel: line => line === null ? "Espace" : "Ligne " + line,
+        } });
         window.presentationFixture = { workspace, host, tab, resource: resource.id, editor: comparison.panes.working, comparison };
     });
     await page.waitForFunction(() => window.presentationFixture.editor.viewport.activity().aligned);
@@ -447,6 +449,19 @@ test("minimap projects comparison gaps and follows linked and independent scroll
         return c.width ? c.getContext("2d")!.getImageData(0, Math.round(c.height / 3), c.width, 10).data.some((v, i) => i % 4 === 3 && v > 0) : undefined;
     });
     await expect.poll(() => bandHasInk(saved)).toBe(true); await expect.poll(() => bandHasInk(working)).toBe(false);
+    const preview = page.locator(".st-minimap-preview:visible strong");
+    const hoverBand = async (map: typeof saved) => {
+        const box = (await map.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 3);
+    };
+    await hoverBand(saved);
+    await expect(preview).toHaveText(/^Ligne \d+$/);
+    await hoverBand(working);
+    await expect(preview).toHaveText("Espace");
+    await page.evaluate(() => window.presentationFixture.editor.configure({
+        minimapLabel: line => line === null ? "Comparison gap" : String(line),
+    }));
+    await expect(preview).toHaveText("Comparison gap");
     await page.evaluate(() => {
         const pane = window.presentationFixture.editor.viewport;
         pane.scrollTo({ top: 70 * pane.getSnapshot().lineHeight }); pane.flush();

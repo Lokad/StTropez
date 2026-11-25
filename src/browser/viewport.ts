@@ -158,7 +158,7 @@ export type FoldLabels = Readonly<{
     summary?: (region: FoldRegion, containsChanges: boolean) => string | undefined;
 }>;
 export type ViewportSettings = Readonly<{ columnRulers: readonly number[]; highlightCurrentLine: boolean; gutter: boolean;
-    fontLigatures: boolean; scrollBeyondLastLine: boolean; minimap: boolean; foldLabels: FoldLabels }>;
+    fontLigatures: boolean; scrollBeyondLastLine: boolean; minimap: boolean; minimapLabel: (line: number | null) => string; foldLabels: FoldLabels }>;
 export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; settings?: Partial<ViewportSettings> }>;
 export type ComparisonPresentation = Readonly<{
     foldContainsChange: (buffer: TextBuffer, firstHiddenLine: number, lineTo: number) => boolean;
@@ -166,7 +166,8 @@ export type ComparisonPresentation = Readonly<{
 }>;
 
 const defaultSettings: ViewportSettings = Object.freeze({ columnRulers: resolveColumnRulers(), highlightCurrentLine: false,
-    fontLigatures: false, scrollBeyondLastLine: false, minimap: false, gutter: true, foldLabels: Object.freeze({}) });
+    fontLigatures: false, scrollBeyondLastLine: false, minimap: false, gutter: true,
+    minimapLabel: line => line === null ? "Alignment gap" : "Line " + line.toLocaleString(), foldLabels: Object.freeze({}) });
 const settingKeys = Object.keys(defaultSettings) as (keyof ViewportSettings)[];
 function viewportSettings(previous: ViewportSettings, changes?: Partial<ViewportSettings>): ViewportSettings {
     if (!changes) return previous;
@@ -175,6 +176,11 @@ function viewportSettings(previous: ViewportSettings, changes?: Partial<Viewport
         if (key === "columnRulers" || key === "foldLabels") continue;
         const value = changes[key];
         if (value === undefined) continue;
+        if (key === "minimapLabel") {
+            if (typeof value !== "function") throw new TypeError("Invalid minimap label.");
+            next.minimapLabel = value;
+            continue;
+        }
         if (typeof value !== "boolean") throw new TypeError(`${key} must be a boolean.`);
         next[key] = value;
     }
@@ -739,7 +745,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (nextWidth !== spacerWidth) { spacerWidth = nextWidth; spacer.style.width = `${spacerWidth}px`; }
         top = position(y, top); left = position(x, left);
         minimap?.paint(document, index, mapWidth, height, top, y.extent, lineHeight, padding, style.color,
-            Math.max(1, parseFloat(style.tabSize) || 4), Math.max(2, Math.min(3, win.devicePixelRatio * zoom)), paintEpoch + overviewEpoch);
+            Math.max(1, parseFloat(style.tabSize) || 4), Math.max(2, Math.min(3, win.devicePixelRatio * zoom)), paintEpoch + overviewEpoch, settings.minimapLabel);
         // Presentation-only configuration can repaint guides without reading or rebuilding rows.
         rulers.paint(settings.columnRulers, columnWidth, left, width);
         const { selection: selected, selectionSet } = viewState();

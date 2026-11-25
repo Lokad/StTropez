@@ -145,8 +145,9 @@ row backgrounds, including in read-only views. Pass `minimap: false` when adding
 to leave it out of the overview. Folded lines disappear and alignment gaps stay blank. The previous
 image stays visible until its replacement is complete.
 
-Hover for a line number and text. Click outside the marker to center that location, or drag the
-marker to scroll. Both preserve focus, horizontal position and all selections. The marker covers a
+Hover for a line number and text. Supply `minimapLabel(line)` to format the preview heading. It receives
+a one-based source line number or `null` for a comparison gap. Click outside the marker to center that
+location, or drag the marker to scroll. Both preserve focus, horizontal position and all selections. The marker covers a
 document that fits and keeps a minimum grab height on long files. Style its edge and fill with
 `--st-minimap-border` and `--st-minimap-marker`.
 
