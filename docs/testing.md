@@ -68,8 +68,8 @@ Reviewers check the accuracy of the contracts.
 ### Where to put a regression test
 
 Model tests live in `tests/`. Browser tests in `tests/browser/` add native events, layout and
-view remounts. The package smoke test builds a separate application from the NuGet
-archive. Add another host or engine when it exercises a different behavior.
+view remounts. The package smoke test runs the reference host against the NuGet archive.
+Add another host or engine when it exercises a different behavior.
 
 | Behavior | Where to test the rule | Where to check the integration |
 | --- | --- | --- |
@@ -279,8 +279,8 @@ and background jobs alongside an idle editor.
 
 CI runs `npm run test:package` with the .NET 10 SDK and headless Chromium. A temporary consumer
 restores from a local-only feed and stages the assets through MSBuild. The smoke test checks the archive,
-manifest, hashes and public exports. It compiles the consumer with strict TypeScript, loads the CSS and a
-host-supplied font, runs a regex search in the packaged worker, and types one character in the editor.
+manifest, hashes and public exports. It compiles the reference host with strict TypeScript, loads the CSS
+and a host-supplied font, runs a regex search in the packaged worker, and types into the editor.
 The consumer directory is removed on exit. [Package layout and host setup](packaging.md)
 
 Demo feature tests run on the development server with the WebSocket or browser provider.

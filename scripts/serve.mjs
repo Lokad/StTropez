@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
 import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { demoLibraries } from "./demo-libraries.mjs";
+import { libraryCss } from "./library-entries.mjs";
 import { demoFontFiles, stageDemoFonts } from "./demo-fonts.mjs";
 import { closePackageResources, closePackageServer, listenPackageServer } from "./package-host.mjs";
 
@@ -25,12 +26,14 @@ export async function startServer(port, { watch = true } = {}) {
     await copyFile("examples/comparison/index.html", "artifacts/site/comparison/index.html");
     await mkdir("artifacts/site/protocol", { recursive: true });
     await copyFile("examples/protocol/index.html", "artifacts/site/protocol/index.html");
+    await mkdir("artifacts/site/reference", { recursive: true });
+    await copyFile("examples/reference/index.html", "artifacts/site/reference/index.html");
     for (const mode of ["plain", "react"]) {
         await mkdir(`artifacts/site/hosts/${mode}`, { recursive: true });
         await copyFile(`examples/hosts/${mode}.html`, `artifacts/site/hosts/${mode}/index.html`);
     }
     const site = resolve("artifacts/site"), pages = new Map(await Promise.all(
-        ["/", "/viewport/", "/editing/", "/comparison/", "/protocol/", "/hosts/plain/", "/hosts/react/"].flatMap(path => [path, path + "index.html"])
+        ["/", "/viewport/", "/editing/", "/comparison/", "/protocol/", "/reference/", "/hosts/plain/", "/hosts/react/"].flatMap(path => [path, path + "index.html"])
             .map(async path => /** @type {[string, Buffer]} */ ([path, await readFile(resolve(site, "." + (path.endsWith("/") ? path + "index.html" : path)))]))));
     pages.set("/typescript-libs.json", Buffer.from(await demoLibraries()));
     pages.set("/presentation-fixture/", Buffer.from("<!doctype html>"));
@@ -54,7 +57,9 @@ export async function startServer(port, { watch = true } = {}) {
             firstBuild();
         });
     } }], entryPoints: { app: "examples/demo/main.ts", "demo-syntax-worker": "examples/demo/syntax-worker.ts", "demo-language-worker": "examples/demo/language-worker.ts", comparison: "examples/comparison/main.ts", editing: "examples/editing/main.ts", viewport: "examples/viewport/main.ts",
-        "regex-worker": "src/browser/regex-worker.ts", "protocol-fixture": "examples/protocol/main.ts", "host-plain": "fixtures/hosts/plain-main.ts", "host-react": "fixtures/hosts/react-main.ts" }, outdir: "artifacts/site",
+        "regex-worker": "src/browser/regex-worker.ts", "protocol-fixture": "examples/protocol/main.ts", "host-plain": "fixtures/hosts/plain-main.ts", "host-react": "fixtures/hosts/react-main.ts",
+        "reference/app": "examples/reference/main.ts", "reference/style": "examples/reference/style.css" }, outdir: "artifacts/site",
+        alias: { [libraryCss.specifier]: resolve(libraryCss.source) },
         bundle: true, format: "esm", platform: "browser", target: "es2022", sourcemap: true });
     const server = createServer((request, response) => { void handle(request, response).catch(() => { if (!response.headersSent) response.writeHead(500); response.end("Development service failed."); }); });
     const demoProvider = attachDemoProvider(server);
@@ -70,7 +75,7 @@ export async function startServer(port, { watch = true } = {}) {
         try { path = decodeURIComponent(new URL(/** @type {string} */ (request.url), "http://localhost").pathname); }
         catch { response.writeHead(400).end(); return; }
         if (failed) { response.writeHead(503).end("Development build failed."); return; }
-        const bytes = pages.get(path) ?? modules.get(path);
+        const bytes = pages.get(path) ?? modules.get(path === "/reference/regex-worker.js" ? "/regex-worker.js" : path);
         if (!bytes) { response.writeHead(404).end(); return; }
         response.writeHead(200, { "Content-Type": path.endsWith(".woff2") ? "font/woff2" : path.endsWith(".txt") ? "text/plain" : /\.js$/.test(path) ? "text/javascript" : /\.css$/.test(path) ? "text/css" : /\.(map|json)$/.test(path) ? "application/json" : "text/html",
             "Content-Length": bytes.length, "Cache-Control": "no-store" });

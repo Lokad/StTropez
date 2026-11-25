@@ -4,6 +4,11 @@
     "types": ["node"],
     "allowJs": true,
     "checkJs": true,
+    "paths": {
+      "sttropez": ["./src/index.ts"],
+      "sttropez/browser": ["./src/browser/index.ts"],
+      "sttropez/protocol": ["./src/protocol/index.ts"]
+    },
     "incremental": true,
     "tsBuildInfoFile": "artifacts/types/development.tsbuildinfo"
   },

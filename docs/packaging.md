@@ -146,7 +146,7 @@ into a local archive. Packing requires the compiled manifest and excludes manage
 dependencies. Publishing is separate.
 
 The CI smoke test restores the package outside the checkout, checks its manifest and exports, and compiles
-a consumer against the shipped declarations. Chromium loads the stylesheet, a host-supplied font and the
+the reference host against the shipped declarations. Chromium loads the stylesheet, a host-supplied font and the
 regex worker, then types into the mounted editor. [Run the smoke test](testing.md#package-qualification)
 
 <a id="bounds-and-validation"></a>

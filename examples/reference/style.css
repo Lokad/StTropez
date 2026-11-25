@@ -1,0 +1,22 @@
+@import "sttropez/editor.css";
+
+:root { color-scheme: dark; font: 15px/1.5 Inter, system-ui, sans-serif; background: #0d141d; color: #e2ebf5; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 76rem; margin: auto; padding: clamp(.75rem, 3vw, 2rem); }
+header, nav, form, .bar, #choices { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+header { border-bottom: 1px solid #354455; padding-bottom: .85rem; }
+h1 { margin: 0 auto 0 0; font: 600 1.45rem/1.2 ui-monospace, Consolas, monospace; }
+nav, form, .bar { padding: .45rem 0; }
+button, input { font: inherit; color: inherit; }
+button, input[type="search"] { border: 1px solid #42546a; background: #182535; border-radius: .3rem; padding: .25rem .65rem; }
+button:enabled { cursor: pointer; }
+button:hover:enabled { background: #24394b; }
+button[aria-pressed="true"] { background: #22483f; border-color: #73bcac; }
+button:disabled, output { color: #aebcca; }
+input:focus-visible, button:focus-visible { outline: 2px solid #82d5c3; outline-offset: 2px; }
+#pane { height: clamp(17rem, 55vh, 42rem); border: 1px solid #354455; margin-block: .5rem; }
+#pane > .st-comparison { height: 100%; }
+#choices, #completions, #diagnostics { max-height: 12rem; overflow: auto; }
+#diagnostics button { display: block; margin-block: .25rem; text-align: left; }
+[hidden] { display: none; }

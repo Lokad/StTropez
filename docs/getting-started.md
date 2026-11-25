@@ -27,6 +27,14 @@ Save and Run execute. [Regex worker](search.md#regular-expressions-and-worker-li
 
 ## Use
 
+Run `npm run demo` and open `http://127.0.0.1:4173/reference/` for a complete host.
+Edit `quote.ts`, choose **Changes** to review it, then **Save for this tab**. The saved text
+survives a reload in that tab. **Connect language server** enables the local example provider.
+
+The host keeps its working view with `workspace.createDocumentView(file.documentId)` and passes
+it to both mounts. The selection and folds follow the working document into comparison.
+[Editor, Find and saving](../examples/reference/main.ts) · [Language attachment](../examples/reference/language.ts)
+
 ### Open the first editor
 
 Start `app.js` with a checklist. Create a resource for the file and mount its document in the page.

@@ -30,6 +30,7 @@ For a single feature or host workflow, open its route on the
 | Route | Purpose | Entry source |
 | --- | --- | --- |
 | `/` | TypeScript editing, language tools, JavaScript output, Problems, Changes and local save/recovery | [Demo](../examples/demo/main.ts) |
+| `/reference/` | A one-file host with folding, Find, optional language tools and an editable comparison against its saved text | [Reference integration](../examples/reference/main.ts) |
 | `/editing/` | Bounded input, selections, commands and local highlighting | [Editing fixture](../examples/editing/main.ts) |
 | `/viewport/` | Read-only virtualized text and geometry | [Viewport fixture](../examples/viewport/main.ts) |
 | `/comparison/` | Working/reference comparison and hunk commands | [Comparison fixture](../examples/comparison/main.ts) |

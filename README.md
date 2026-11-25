@@ -28,6 +28,10 @@ JavaScript, review Changes and save in the browser. Edited programs are not exec
 The server binds to loopback and does not open a browser window. Compiler/provider dependencies
 belong to the example and are excluded from the editor package.
 
+For a small integration you can read end to end, open `/reference/` on the same server.
+It edits one file, compares it with the last save and connects to a local language server on request.
+[Reference host source](examples/reference/main.ts)
+
 The [example guide](docs/examples.md) describes the samples, providers and development hosts;
 [static hosting](docs/examples.md#static-build-and-deployment) describes the deployment build.
 Use `STTROPEZ_PORT` for a different source-server port and `STTROPEZ_DEMO_PORT` for static preview.

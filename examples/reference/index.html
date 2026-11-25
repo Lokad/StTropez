@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>quote.ts · StTropez</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <main>
+        <header>
+            <h1>quote.ts</h1>
+            <output id="saved"></output>
+            <button id="save" type="button">Save for this tab</button>
+        </header>
+        <nav aria-label="Document view">
+            <button id="source" aria-pressed="true">Source</button>
+            <button id="changes" aria-pressed="false">Changes</button>
+        </nav>
+        <form id="find" role="search">
+            <label>Find <input id="query" type="search" autocomplete="off" spellcheck="false"></label>
+            <label><input id="regex" type="checkbox"> Regex</label>
+            <button id="back" type="button">Previous</button>
+            <button type="submit">Next</button>
+            <output id="matches"></output>
+        </form>
+        <div id="pane"></div>
+        <section aria-label="Language tools">
+            <div class="bar">
+                <button id="connect">Connect language server</button>
+                <output id="connection"></output>
+            </div>
+            <div id="tools" hidden>
+                <div class="bar">
+                    <button id="complete">Complete</button>
+                    <button id="hover">Hover</button>
+                    <button id="signature">Signature</button>
+                    <button id="definition">Definition</button>
+                    <button id="rename">Rename</button>
+                    <button id="actions">Code actions</button>
+                    <button id="links">Document links</button>
+                    <button id="command">Run server command</button>
+                </div>
+                <output id="result"></output>
+                <div id="choices"></div>
+                <div id="completions" aria-label="Completions"></div>
+                <output id="hint"></output>
+                <div id="diagnostics" aria-label="Diagnostics"></div>
+            </div>
+        </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+</body>
+</html>

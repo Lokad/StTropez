@@ -1,0 +1,31 @@
+import { test, expect } from "./fixtures.ts";
+
+test("the reference app edits, reviews and saves the document while its language tools follow the working view", async ({ page }) => {
+    await page.goto("/reference/");
+    const source = page.getByRole("textbox", { name: "quote.ts" });
+    await expect(page.locator("#pane .st-minimap")).toBeVisible();
+    const fold = page.getByRole("button", { name: /Collapse lines/ }).first();
+    await fold.click();
+    await expect(page.locator(".st-fold-summary")).toBeVisible();
+    await page.getByRole("button", { name: /Expand lines/ }).first().click();
+    await page.getByRole("button", { name: "Connect language server" }).click();
+    await expect(page.getByRole("button", { name: "Resolve this placeholder." })).toBeVisible();
+    await source.press("Control+Home");
+    await page.keyboard.type("// Review this quote");
+    await source.press("Enter");
+    await page.getByRole("button", { name: "Changes", exact: true }).click();
+    const working = page.getByRole("textbox", { name: "Comparison working source" });
+    await expect(working).toBeFocused();
+    await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
+    await expect(page.locator(".st-comparison-added").first()).toContainText("Review this quote");
+    await page.getByRole("button", { name: "Hover", exact: true }).click();
+    await expect(page.locator("#result")).toContainText("file:///reference/quote.ts");
+    await working.press("Control+Home");
+    await page.keyboard.type("// Approved ");
+    await page.getByRole("button", { name: "Save for this tab" }).click();
+    await expect(page.locator("#saved")).toHaveText("Saved");
+    await page.getByRole("button", { name: "Source", exact: true }).click();
+    await expect(source).toBeFocused();
+    await page.reload();
+    await expect(page.locator("#pane .st-viewport-row").first()).toHaveText("// Approved // Review this quote");
+});
