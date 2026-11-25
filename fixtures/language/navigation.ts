@@ -1,7 +1,6 @@
-import type { TextBuffer } from "../../src/index.ts";
-import { provideHover } from "./hover.ts";
+import { maxIdentifierUnits } from "../../examples/shared/language/identifier.ts";
 
-export const navigationLimits = Object.freeze({ documents: 100, sourceUnits: 16777216, chunkUnits: 16384, symbolUnits: 256, locations: 1024, page: 64, responseUnits: 524288 });
+export const navigationLimits = Object.freeze({ documents: 100, sourceUnits: 16777216, chunkUnits: 16384, symbolUnits: maxIdentifierUnits, locations: 1024, page: 64, responseUnits: 524288 });
 export type NavigationDocument = Readonly<{ document: string; revision: number; length: number }>;
 export type NavigationFault = "malformed" | "failure";
 export type NavigationLocation = Readonly<{ document: string; revision: number; from: number; to: number; declaration: boolean }>;
@@ -9,13 +8,6 @@ const record = (value: unknown): value is Record<string, unknown> => value !== n
 const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const word = /^[\p{L}\p{N}\p{Pc}\p{M}\u200c\u200d]$/u;
 
-/** Reuse the bounded hover fixture's symbol policy, with guards for cut window edges. */
-export function navigationSymbol(buffer: TextBuffer, offset: number): string | undefined {
-    const from = Math.max(0, offset - 258), to = Math.min(buffer.length, offset + 258), text = buffer.slice(from, to);
-    const range = provideHover({ operation: "hover", id: 1, revision: 0, text, offset: offset - from, delay: 0 }).range;
-    if (!range || range.from === 0 && from > 0 || range.to === text.length && to < buffer.length) return;
-    return text.slice(range.from, range.to);
-}
 export function validateNavigationDocuments(value: unknown): readonly NavigationDocument[] {
     if (!Array.isArray(value) || !value.length || value.length > navigationLimits.documents) throw new Error("Invalid project documents.");
     const ids = new Set<string>(); let units = 0;

@@ -10,7 +10,8 @@ import type { DocumentId, TabId, TabTarget } from "../../src/index.ts";
 import { attachEditorLanguage } from "../../src/browser/index.ts";
 import type { NavigationChoice, NavigationController, NavigationDestination, NavigationOrigin, NavigationPointerLink, NavigationResult, TextEditor } from "../../src/browser/index.ts";
 import type { LspNavigationRequest, LspPrepare, LspWorkspace } from "../../src/protocol/index.ts";
-import { navigationSymbol, validateNavigationDocuments } from "../../fixtures/language/navigation.ts";
+import { identifierAt } from "../shared/language/identifier.ts";
+import { validateNavigationDocuments } from "../../fixtures/language/navigation.ts";
 import type { NavigationFault } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
@@ -169,7 +170,8 @@ export class HostNavigationTools {
             const link = this.options.linkAt?.(origin.editor, offset);
             if (link) { link.open(); return; }
         }
-        const document = this.host.workspace.document(origin.editor.view.documentId), symbol = navigationSymbol(document.buffer, offset) ?? "position";
+        const document = this.host.workspace.document(origin.editor.view.documentId);
+        const symbol = identifierAt(document.buffer, offset)?.name ?? "position";
         const documents = this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null), sources = new Set(documents.map(doc => doc.id));
         if (!sources.has(document.id)) { this.clear("failed", "This source is outside the host navigation scope."); return; }
         try {

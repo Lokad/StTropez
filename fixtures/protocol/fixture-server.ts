@@ -6,7 +6,7 @@ import { setImmediate } from "node:timers/promises";
 import type { RpcTransport } from "../../src/protocol/json-rpc.ts";
 import { referencePeer } from "./reference-peer.ts";
 import { provide } from "../language/provider.ts";
-import { provideHover } from "../language/hover.ts";
+import { identifierAt } from "../../examples/shared/language/identifier.ts";
 import { SymbolScanner } from "../language/navigation.ts";
 import { renameName } from "../language/rename.ts";
 import type { Location, TextEdit, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";
@@ -117,9 +117,8 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
             return { uri: doc.uri, version: doc.version, length: doc.getText().length, text: doc.getText().slice(params.from, params.to), syncFailures: [...syncFailures] };
         });
         const symbolAt = (doc: TextDocument, position: { line: number; character: number }) => {
-            const text = doc.getText(), offset = doc.offsetAt(position), from = Math.max(0, offset - 2047), to = Math.min(text.length, offset + 2047);
-            const result = provideHover({ operation: "hover", id: 1, revision: doc.version, text: text.slice(from, to), offset: offset - from, delay: 0 });
-            return { text, from, result, range: result.range && { start: doc.positionAt(from + result.range.from), end: doc.positionAt(from + result.range.to) } };
+            const symbol = identifierAt(doc.getText(), doc.offsetAt(position));
+            if (symbol) return { name: symbol.name, range: { start: doc.positionAt(symbol.from), end: doc.positionAt(symbol.to) } };
         };
         peer.onRequest("textDocument/documentColor", (params: { textDocument: { uri: string }; _fixture?: unknown }, token) => {
             const doc = documents.get(params.textDocument.uri); if (!doc) throw new ResponseError(-32602, "Document not open");
@@ -191,8 +190,13 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture hover unavailable");
                 if (config.fault === "malformed") return { contents: ["valid prefix", { language: "fixture", value: 42 }] };
                 if (config.fault === "markup") return { contents: { kind: "markdown", value: '<img src="x" onerror="hoverExecuted=1"> **literal information**' } };
-                const symbol = symbolAt(doc, params.position); if (!symbol.result.range) return null;
-                return { contents: [{ language: "fixture", value: symbol.text.slice(symbol.from + symbol.result.range.from, symbol.from + symbol.result.range.to) }, symbol.result.text], range: symbol.range };
+                const symbol = symbolAt(doc, params.position);
+                if (!symbol) return null;
+                const description = symbol.name === "const" ? "Declares a constant binding."
+                    : symbol.name === "let" ? "Declares a variable binding."
+                    : symbol.name === "TODO" ? "Unresolved placeholder." : "Symbol in this source.";
+                return { contents: [{ language: "fixture", value: symbol.name }, `${symbol.name}\n${description}`],
+                    range: symbol.range };
             });
         });
         const scanLocations = async (project: readonly TextDocument[], name: string, kind: "definition" | "references", includeDeclaration: boolean, token: CancellationToken) => {
@@ -208,19 +212,19 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
         };
         peer.onRequest("textDocument/documentHighlight", async (params: { textDocument: { uri: string }; position: { line: number; character: number } }, token) => {
             const doc = documents.get(params.textDocument.uri); if (!doc) throw new ResponseError(-32602, "Document not open");
-            const symbol = symbolAt(doc, params.position); if (!symbol.result.range) return [];
-            const name = symbol.text.slice(symbol.from + symbol.result.range.from, symbol.from + symbol.result.range.to);
+            const symbol = symbolAt(doc, params.position);
+            if (!symbol) return [];
             // The lexical fixture proves document-local protocol shape, not read/write semantics.
-            return (await scanLocations([doc], name, "references", true, token)).map(location => ({ range: location.range, kind: 1 }));
+            return (await scanLocations([doc], symbol.name, "references", true, token)).map(location => ({ range: location.range, kind: 1 }));
         });
         peer.onRequest("textDocument/rename", (params: { textDocument: { uri: string }; position: { line: number; character: number }; newName: string; _fixture?: unknown }, token) => {
             const origin = documents.get(params.textDocument.uri); if (!origin || typeof params.newName !== "string" || !renameName(params.newName)) throw new ResponseError(-32602, "Fixture rename needs an open source and a supported new identifier");
             const config = requestPolicy(params._fixture, ["malformed", "failure"]), project = [...documents.values()];
             return deferred(config.delay, token, async (): Promise<WorkspaceEdit | null> => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture rename unavailable");
-                const symbol = symbolAt(origin, params.position); if (!symbol.result.range) return null;
-                const name = symbol.text.slice(symbol.from + symbol.result.range.from, symbol.from + symbol.result.range.to);
-                const locations = await scanLocations(project, name, "references", true, token);
+                const symbol = symbolAt(origin, params.position);
+                if (!symbol) return null;
+                const locations = await scanLocations(project, symbol.name, "references", true, token);
                 if (!locations.some(location => location.uri === origin.uri && origin.offsetAt(location.range.start) <= origin.offsetAt(params.position) && origin.offsetAt(params.position) <= origin.offsetAt(location.range.end))) return null;
                 const changes = new Map<string, TextEdit[]>();
                 for (const location of locations) { const edits = changes.get(location.uri) ?? []; edits.push({ range: location.range, newText: params.newName }); changes.set(location.uri, edits); }
@@ -236,9 +240,9 @@ export function attachProtocolFixture(server: Server, options: Readonly<{ allowO
             const config = requestPolicy(params._fixture, ["malformed", "failure"]), project = [...documents.values()];
             return deferred(config.delay, token, async () => {
                 if (config.fault === "failure") throw new ResponseError(-32001, "Fixture navigation unavailable");
-                const symbol = symbolAt(origin, params.position); if (!symbol.result.range) return [];
-                const name = symbol.text.slice(symbol.from + symbol.result.range.from, symbol.from + symbol.result.range.to);
-                const locations = await scanLocations(project, name, kind, params.context?.includeDeclaration ?? true, token);
+                const symbol = symbolAt(origin, params.position);
+                if (!symbol) return [];
+                const locations = await scanLocations(project, symbol.name, kind, params.context?.includeDeclaration ?? true, token);
                 if (config.fault === "malformed") locations.push({ uri: "host+fixture:unknown-target", range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } });
                 if (kind === "definition" && definitionLinks) return locations.map(location => ({ originSelectionRange: symbol.range, targetUri: location.uri, targetRange: location.range, targetSelectionRange: location.range }));
                 return kind === "definition" && locations.length === 1 ? locations[0] : locations;

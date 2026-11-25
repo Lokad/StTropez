@@ -9,7 +9,7 @@ import type { DocumentId, TabId } from "../../src/index.ts";
 import { attachEditorLanguage } from "../../src/browser/index.ts";
 import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace, LspWorkspaceEditNote } from "../../src/protocol/index.ts";
-import { navigationSymbol } from "../../fixtures/language/navigation.ts";
+import { identifierAt } from "../shared/language/identifier.ts";
 import type { NavigationFault } from "../../fixtures/language/navigation.ts";
 import { HostCell } from "../shared/observable.ts";
 
@@ -120,7 +120,10 @@ export class HostRenameTools {
             else this.publish();
         }, dispose);
     }
-    private hint(session: Session) { return navigationSymbol(this.host.workspace.document(session.editor.view.documentId).buffer, session.editor.view.getSnapshot().selection.head); }
+    private hint(session: Session) {
+        const view = session.editor.view;
+        return identifierAt(this.host.workspace.document(view.documentId).buffer, view.getSnapshot().selection.head)?.name;
+    }
     private prompt(session: Session, name = this.hint(session) ?? "") {
         this.cancel(); this.owner = session;
         this.publish({ name, message: "Enter a name, then preview its changes." });

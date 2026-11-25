@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
-import { SymbolScanner, navigationSymbol } from "../fixtures/language/navigation.ts";
+import { SymbolScanner } from "../fixtures/language/navigation.ts";
+import { identifierAt } from "../examples/shared/language/identifier.ts";
 import type { LspNavigationRequest } from "../src/protocol/index.ts";
 function run(texts: readonly string[], kind: LspNavigationRequest["kind"] = "references", includeDeclaration = true, budget = 3, name = "café") {
     const locations: { document: string; revision: number; from: number; to: number; declaration: boolean }[] = [];
@@ -29,8 +30,12 @@ test("streamed project navigation retains raw Unicode/CRLF ranges, declarations 
     const astral = "const 𐐀value = 1;\r\n𐐀value"; for (const budget of [1, 2, 3]) assert.deepEqual(run([astral], "references", true, budget, "𐐀value").result.locations.map(at => at.from), [6, 20]);
 });
 test("captured symbol lookup is bounded on huge lines and rejects a cut or oversized symbol", () => {
-    const buffer = TextBuffer.from("x".repeat(24_000) + " café 𐐀value"), offset = 24_004;
-    assert.equal(navigationSymbol(buffer, offset), "café"); assert.equal(navigationSymbol(buffer, buffer.length), "𐐀value"); assert.equal(navigationSymbol(buffer, 10_000), undefined);
+    const prefix = "x".repeat(24_000) + "\r\n";
+    const buffer = TextBuffer.from(prefix + "café 𐐀value");
+    assert.deepEqual(identifierAt(buffer, prefix.length + 1), { name: "café", from: prefix.length, to: prefix.length + 5 });
+    assert.deepEqual(identifierAt(buffer, buffer.length), { name: "𐐀value", from: buffer.length - 7, to: buffer.length });
+    assert.equal(identifierAt(buffer, 10_000), undefined);
+    assert.equal(identifierAt(prefix, prefix.length), undefined);
 });
 test("oversized lexical tokens do not hide later symbols or retain unbounded token text", () => {
     assert.equal(run(["x".repeat(32_768) + " café "], "references", true, 16384).result.locations.length, 1);

@@ -39,7 +39,7 @@ const disabled = new Set(Object.entries(compilerMetadata.browser).filter(([, val
 for (const [input, metadata] of Object.entries(result.metafile.inputs)) {
     if (disabled.has(input)) { assert.equal(metadata.bytes, 0); continue; }
     const path = resolve(input);
-    assert.ok(within(resolve("examples"), path) || within(resolve("fixtures/language"), path) || within(dist, path) && /\.(js|css)$/.test(path)
+    assert.ok(within(resolve("examples"), path) || within(dist, path) && /\.(js|css)$/.test(path)
         || hostPackages.some(name => within(resolve("node_modules", name), path)), `Unexpected static demo input: ${input}`);
 }
 assert.ok(Object.keys(result.metafile.inputs).some(input => within(dist, resolve(input))));
