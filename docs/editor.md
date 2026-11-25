@@ -90,8 +90,10 @@ Use the [edit refusal event](host-integration.md#input-conflict-recovery) to exp
 Call `editor.reveal(target, options)` to open folds covering a destination and scroll it into view
 inside the editor. If a host panel opens a destination elsewhere on the page, call
 `editor.element.scrollIntoView({ block: "nearest", inline: "nearest" })` to show the pane.
-Pass a zero-based `{ line, column }` or half-open UTF-16 offsets `{ from, to }`. Coordinates must be safe
-integers. Out-of-bounds values clamp to the document or line. Reversed ranges throw before the view changes.
+Pass a zero-based `{ line, column }`, a pair of positions `{ start, end }`, or half-open UTF-16
+offsets `{ from, to }`. Use safe integers. Lines clamp to the document and columns to the line.
+Position pairs select the span between their endpoints in either order. Offset ranges require
+`from <= to` and clamp to the document.
 
 `align` controls vertical placement. The default, `"nearest"`, scrolls just enough to show the range.
 `"center-if-outside"` centers an off-screen range and keeps a visible range in place.
@@ -107,8 +109,9 @@ when the captured editor is unavailable, input or a command is pending, composit
 ```ts
 import type { TextEditor } from "sttropez/browser";
 
-export function openProblem(editor: TextEditor, revision: number, from: number, to: number) {
-    return editor.reveal({ from, to }, { expectedRevision: revision, select: true, focus: true });
+export function openProblem(editor: TextEditor, revision: number, line: number, first: number, last: number) {
+    const start = { line, column: first }, end = { line, column: last };
+    return editor.reveal({ start, end }, { expectedRevision: revision, select: true, focus: true });
 }
 ```
 

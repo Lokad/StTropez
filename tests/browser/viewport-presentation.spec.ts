@@ -297,7 +297,8 @@ test("revealing a source range in a read-only editor aligns the painted rows and
             folding.setRanges(folding.getSnapshot(), [{ id: "section", from: buffer.offsetAt(12), to: buffer.offsetAt(160), collapsed: true }]);
             viewport.flush(); other.focus();
             const origin = editor.captureView(), row = buffer.line(80);
-            const stale = editor.reveal(row, { expectedRevision: revision + 1, select: true, focus: true });
+            const positions = { start: { line: 80, column: 999 }, end: { line: 80, column: -3 } };
+            const stale = editor.reveal(positions, { expectedRevision: revision + 1, select: true, focus: true });
             let rejected = false;
             try { editor.reveal({ from: row.to, to: row.from }, { select: true, focus: true }); } catch (error) { rejected = error instanceof RangeError; }
             const untouched = view.getSnapshot().selectionSet === selection && folding.getSnapshot().index.collapsedCount === 1 && document.activeElement === other;
@@ -306,20 +307,20 @@ test("revealing a source range in a read-only editor aligns the painted rows and
             const preview = point?.from === row.to && point.to === row.to && !!viewport.coordsAt(row.to)
                 && view.getSnapshot().selectionSet === selection && document.activeElement === other && folding.getSnapshot().index.collapsedCount === 0;
             editor.reveal(row); viewport.flush(); const kept = viewport.getSnapshot().scrollTop === start;
-            const selected = editor.reveal(row, { align: "center", select: true, focus: true, expectedRevision: revision });
+            const selected = editor.reveal(positions, { align: "center", select: true, focus: true, expectedRevision: revision });
             viewport.flush(); const centered = viewport.getDiagnostics();
             const centerDelta = start - centered.scrollTop;
             const center = Math.abs(centerDelta - (centered.height - centered.lineHeight) / 2) < centered.lineHeight;
             const chosen = selected?.from === row.from && selected.to === row.to && view.getSnapshot().selection.head === row.to
                 && view.getSnapshot().selection.anchor === row.from && editor.getSnapshot().focused;
-            const eof = editor.reveal({ line: 999, column: 999 });
+            const full = editor.reveal({ start: { line: 999, column: 999 }, end: { line: -9, column: 0 } });
             editor.restoreView(origin); viewport.flush();
             const returned = viewport.getSnapshot().scrollTop === origin.scrollTop && view.getSnapshot().selection.anchor === 5 && view.getSnapshot().selection.head === 1
                 && view.getSnapshot().selectionSet.ranges.length === 2;
-            return { stale, rejected, untouched, preview, kept, center, chosen, eof: eof?.from === buffer.length, returned };
+            return { stale, rejected, untouched, preview, kept, center, chosen, full: full?.from === 0 && full.to === buffer.length, returned };
         } finally { editor.dispose(); other.remove(); host.remove(); }
     });
-    expect(result).toEqual({ stale: null, rejected: true, untouched: true, preview: true, kept: true, center: true, chosen: true, eof: true, returned: true });
+    expect(result).toEqual({ stale: null, rejected: true, untouched: true, preview: true, kept: true, center: true, chosen: true, full: true, returned: true });
 });
 
 test("minimap gestures preserve focus and multiple selections as the document projection changes", async ({ page }) => {

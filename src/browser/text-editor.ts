@@ -76,6 +76,7 @@ export type EditorSettings = Partial<ViewportSettings> & Readonly<{ language?: L
 export type ResolvedEditorSettings = ViewportSettings & Readonly<{ language: ResolvedLanguageConfiguration;
     pasteLineEndings: "local" | "preserve"; bracketMatching: false | Required<BracketMatchOptions>; characterWarnings: false | CharacterWarningConfiguration }>;
 export type EditorRevealRange = Readonly<{ from: number; to: number }>;
+type RevealTarget = BufferPosition | EditorRevealRange | Readonly<{ start: BufferPosition; end: BufferPosition }>;
 export type EditorRevealOptions = Readonly<{ align?: RevealAlignment; select?: boolean; focus?: boolean; expectedRevision?: number }>;
 export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; requestLine?: LinePrompt; settings?: EditorSettings }>;
 export type EditorPasteHandler = (data: DataTransfer) => ((insertion: CapturedInsertion) => void) | undefined;
@@ -96,7 +97,7 @@ export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HT
     characterWarnings: CharacterWarningHighlights;
     /** Returns whether the command was accepted; long selections finish asynchronously. */
     commands: EditorCommands; keymap: EditorKeymap;
-    reveal: (target: BufferPosition | EditorRevealRange, options?: EditorRevealOptions) => EditorRevealRange | null;
+    reveal: (target: RevealTarget, options?: EditorRevealOptions) => EditorRevealRange | null;
     focus: () => void; captureView: () => ViewState; restoreView: TextViewport["restoreView"];
     /** Immutable activity capture, reused while its fields are unchanged. Does not collect metrics. */
     activity: () => TextEditorActivity;
@@ -134,6 +135,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const surface = captureTextSurface(workspace, identity), { documentId, resource, tab: target } = surface;
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
+    const source = workspace.observeDocument(documentId);
     const live = () => workspace.ownsDocumentView(view, target);
     let setComparisonRows: MountedTextEditor["setComparisonRows"], viewport: TextViewport, navigation: MountedViewport["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
     try { const mounted = mountViewport(host, workspace, surface, { ...options, view }, comparison);
@@ -147,11 +149,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     input.className = "st-input-context"; input.wrap = "off"; input.spellcheck = false; input.autocomplete = "off";
     // The native projection belongs to the editor, independently of enclosing host forms.
     input.setAttribute("form", "");
-    input.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
+    const initialDocument = workspace.document(documentId);
+    input.setAttribute("aria-label", options.ariaLabel ?? initialDocument.title);
     input.setAttribute("autocapitalize", "off");
     root.append(input);
-    let contextBuffer: TextBuffer | undefined = workspace.document(documentId).buffer, contextSelection = view.getSnapshot().selection;
-    let revision = workspace.document(documentId).revision, context: InputContext = inputContext(contextBuffer, contextSelection);
+    let contextBuffer: TextBuffer | undefined = initialDocument.buffer, contextSelection = view.getSnapshot().selection;
+    let revision = initialDocument.revision, context: InputContext = inputContext(contextBuffer, contextSelection);
     let disposed = false, composing = false, selecting = false, committing = false;
     const notifications = workspace.createNotificationScope();
     const editorState = new Store<TextEditorSnapshot>(Object.freeze({ focused: false, disabled: false, composing: false, readOnlyReason: null }), notifications);
@@ -205,7 +208,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         command: () => rangeCommand, capture: () => commandCapture(false), disposed: () => disposed,
         validCommand: capture => validCommand(capture),
         valid: (capture, editing) => validCommand(capture) && root.isConnected && workspace.ownsDocumentView(view) && !(editing && input.readOnly),
-        committed: capture => committing && workspace.observeDocument(documentId).getSnapshot()?.revision !== capture.revision,
+        committed: capture => committing && source.getSnapshot()?.revision !== capture.revision,
         pairKey: text => pairKey(text), replay: replayInput, commandTurn,
         recover: (pending, text, reason) => {
             if (nativeOrder?.order === pending) { nativeOrder.invalid = true;
@@ -252,7 +255,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         finally { if (pending) inputQueue.recover(pending, "pending-input-cancelled"); }
     }
     const caretLayer = mountInputCaret(root, input, view, viewport,
-        () => workspace.observeDocument(documentId).getSnapshot(), () => composing);
+        source.getSnapshot, () => composing);
     const scheduleCaret = caretLayer.schedule;
     function refresh(): void {
         if (escapeSelection && escapeSelection !== view.getSnapshot().selectionSet) escapeState(false);
@@ -334,27 +337,37 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             finally { commandRunner.cancel(); }
             if (pending) inputQueue.recover(pending, "pending-input-failed");
             if (executing && executing !== pending) inputQueue.recover(executing, "pending-input-failed");
-            const unapplied = !executing && workspace.observeDocument(documentId).getSnapshot()?.revision === expectedRevision ? attemptedText : "";
+            const unapplied = !executing && source.getSnapshot()?.revision === expectedRevision ? attemptedText : "";
             conflict("command-failed", undefined, expectedRevision, 0, unapplied, cause);
         }
     }
     const revealScope = workspace.createNotificationScope();
-    function reveal(target: BufferPosition | EditorRevealRange, options: EditorRevealOptions = {}): EditorRevealRange | null {
+    function reveal(target: RevealTarget, options: EditorRevealOptions = {}): EditorRevealRange | null {
         const { align = "nearest", select = false, focus: takeFocus = false, expectedRevision } = options;
         validateRevealAlignment(align);
         if (typeof select !== "boolean" || typeof takeFocus !== "boolean") throw new TypeError("Invalid reveal flags.");
-        if (expectedRevision !== undefined && (!isNonNegativeInteger(expectedRevision)))
+        if (expectedRevision !== undefined && !isNonNegativeInteger(expectedRevision))
             throw new RangeError("Invalid reveal revision.");
         if (disposed || input.disabled || !live() || resource.getSnapshot().state !== "ready") return null;
         const state = activity();
         if (state.composing || state.pendingInput || state.pendingCommand) return null;
         const { revision, buffer } = workspace.document(documentId);
         if (expectedRevision !== undefined && revision !== expectedRevision) return null;
+        function offset(position: BufferPosition): number {
+            if (!Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.column)) {
+                throw new RangeError("Invalid reveal position.");
+            }
+            const line = Math.max(0, Math.min(position.line, buffer.lineCount - 1));
+            return buffer.offsetAt({ line, column: Math.max(0, position.column) });
+        }
         let from: number, to: number;
         if ("line" in target) {
-            if (!Number.isSafeInteger(target.line) || !Number.isSafeInteger(target.column)) throw new RangeError("Invalid reveal position.");
-            const line = Math.max(0, Math.min(target.line, buffer.lineCount - 1));
-            from = to = buffer.offsetAt({ line, column: Math.max(0, target.column) });
+            from = to = offset(target);
+        } else if ("start" in target) {
+            const first = offset(target.start);
+            const last = offset(target.end);
+            from = Math.min(first, last);
+            to = Math.max(first, last);
         } else {
             if (!Number.isSafeInteger(target.from) || !Number.isSafeInteger(target.to) || target.from > target.to)
                 throw new RangeError("Invalid reveal range.");
@@ -440,8 +453,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const projection = captured.context;
         if (input.value === projection.text && input.selectionStart === (captured.target?.from ?? Math.min(projection.nativeAnchor, projection.nativeHead))
             && input.selectionEnd === (captured.target?.to ?? Math.max(projection.nativeAnchor, projection.nativeHead))) { refresh(); return; }
-        if ((captured.target && captured.target.before !== projection.text) || captured.revision !== workspace.observeDocument(documentId).getSnapshot()?.revision || captured.selectionSet !== view.getSnapshot().selectionSet) {
-            conflict(type === "insertCompositionText" && captured.revision !== workspace.observeDocument(documentId).getSnapshot()?.revision ? "stale-revision" : "stale-text-input", undefined, captured.revision, projection.from); refresh(); return;
+        if ((captured.target && captured.target.before !== projection.text) || captured.revision !== source.getSnapshot()?.revision || captured.selectionSet !== view.getSnapshot().selectionSet) {
+            conflict(type === "insertCompositionText" && captured.revision !== source.getSnapshot()?.revision ? "stale-revision" : "stale-text-input", undefined, captured.revision, projection.from); refresh(); return;
         }
         const native = captured.target && resolveNativeInsertion(captured.target, input, type);
         const edit = native || textDifference(projection.text, input.value);
@@ -498,7 +511,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     // cancelWord releases scans, row preparation and ordered input; no focused-view lookup occurs later.
     const validCommand = (capture: CommandCapture) => !disposed && !composing && !input.disabled
         && !(capture.deleting && input.readOnly) && live()
-        && workspace.observeDocument(documentId).getSnapshot()?.revision === capture.revision
+        && source.getSnapshot()?.revision === capture.revision
         && view.getSnapshot().selectionSet === capture.selectionSet;
     function withGraphemes(capture: CommandCapture, offset: number, side: -1 | 1, purpose: "word" | "grapheme", done: (point: GraphemePoint) => void,
         turn: (work: () => void) => void = work => work()): void {
@@ -609,7 +622,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const job = { cursor: createWordCommandCursor(capture.buffer, start, direction, deleting), revision: capture.revision }; wordJob = job;
         const step = () => commandTurn(() => {
             if (wordJob !== job) return;
-            const current = workspace.observeDocument(documentId).getSnapshot();
+            const current = source.getSnapshot();
             if (!validCommand(capture) || current?.revision !== job.revision) { cancelWord(); return; }
             const result = commandRunner.slice(() => job.cursor.next(commandBudget.cursorUnits), result => result.status === "running", commandBudget.wordCalls);
             if (result.status === "running") {
@@ -1609,7 +1622,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }
         lastCaret = next; refresh();
     };
-    const subscriptions = [viewport.onRender(scheduleCaret), workspace.observeDocument(documentId).subscribe(refresh), view.subscribe(observeCaret),
+    const subscriptions = [viewport.onRender(scheduleCaret), source.subscribe(refresh), view.subscribe(observeCaret),
         view.folding.subscribe(() => { const revision = view.folding.getSnapshot().revision;
             if (revision === observedFoldRevision) { cancelWord(); stopDrag(); preferred = undefined; }
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh)];
