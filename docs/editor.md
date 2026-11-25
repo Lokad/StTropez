@@ -267,9 +267,13 @@ Host tools get first chance at shortcuts. Cancelled events and composition event
 Double-click selects a run up to a grapheme boundary and excludes the line ending. Shift+click
 extends from a double-clicked word and keeps that entire word selected in either direction.
 Keyboard word movement follows the [code-word rules](unicode.md#graphemes-and-word-movement).
-A single separator next to an identifier is skipped when moving toward that identifier. Beyond the last word, movement
-stops at the line boundary. Press again to enter the adjacent line. Word Backspace at column one
-deletes the line break. Word Delete at the end of a line also removes the next line’s indentation.
+A single separator next to an identifier is skipped when moving toward that identifier. With
+multiple carets, backward word movement stops at the separator. Put carets just after the
+dots in `a.name` and `b.name`, then select one word backward to select both dots. Starting
+inside an operator such as `?.` stops at its edge in either direction.
+Beyond the last word, movement stops at the line boundary. Press again to enter the adjacent
+line. Word Backspace at column one deletes the line break. Word Delete at the end of a line
+also removes the next line’s indentation.
 PageUp and PageDown
 move `max(1, floor(viewportHeight / lineHeight) - 1)` visible rows, accounting for folds and
 [aligned comparison rows](comparison.md).

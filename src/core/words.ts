@@ -61,7 +61,8 @@ function* scan(buffer: TextBuffer, start: number, direction: -1 | 1, counters: C
     return direction < 0 ? pending !== undefined && current === "word" ? pending : bounds.from : bounds.to;
 }
 
-function* commandOffset(buffer: TextBuffer, offset: number, direction: -1 | 1, deleting: boolean, counters: Counters): Generator<void, number> {
+function* commandOffset(buffer: TextBuffer, offset: number, direction: -1 | 1, deleting: boolean,
+    caretCount: number, counters: Counters): Generator<void, number> {
     let line = buffer.lineAt(offset), from = buffer.offsetAt(line), to = lineContentEnd(buffer, line);
     let start = Math.min(offset, to);
     const crossing = direction > 0 ? start === to : start === from;
@@ -71,12 +72,11 @@ function* commandOffset(buffer: TextBuffer, offset: number, direction: -1 | 1, d
         from = buffer.offsetAt(line); to = lineContentEnd(buffer, line); start = direction < 0 ? to : from;
         if (deleting && direction < 0) return to;
     }
-    const bound = direction < 0 ? from : to;
-    const adjacentKind = (at: number): Kind | undefined => {
-        if (at === bound) return;
-        const text = direction < 0 ? buffer.slice(Math.max(from, at - 2), at) : buffer.slice(at, Math.min(to, at + 2));
+    const adjacentKind = (at: number, side = direction): Kind | undefined => {
+        if (at === (side < 0 ? from : to)) return;
+        const text = side < 0 ? buffer.slice(Math.max(from, at - 2), at) : buffer.slice(at, Math.min(to, at + 2));
         counters.reads += text.length;
-        return kind(direction < 0 ? Array.from(text).at(-1)! : String.fromCodePoint(text.codePointAt(0)!));
+        return kind(side < 0 ? Array.from(text).at(-1)! : String.fromCodePoint(text.codePointAt(0)!));
     };
     const run = (at: number) => scan(buffer, at, direction, counters, { from, to }, false);
     let type = adjacentKind(start);
@@ -87,8 +87,21 @@ function* commandOffset(buffer: TextBuffer, offset: number, direction: -1 | 1, d
     }
     if (!type || deleting && crossing) return start;
     const end = yield* run(start);
-    // In member access, one press from a separator reaches the adjoining identifier.
-    if (!deleting && type === "symbol" && Math.abs(end - start) === 1 && adjacentKind(end) === "word") return yield* run(end);
+    const skipSeparator = !deleting && (direction > 0 || caretCount === 1);
+    if (skipSeparator && type === "symbol" && Math.abs(end - start) === 1 && adjacentKind(end) === "word") {
+        const reverse = direction < 0 ? 1 : -1;
+        let neighbor = adjacentKind(start, reverse);
+        // A preceding mark belongs to its base, which can lie outside the two-unit window.
+        if (neighbor === "extend" && reverse < 0) {
+            for (const unit of units(buffer, start, reverse, counters, { from, to })) {
+                neighbor = unit.kind;
+                if (neighbor !== "extend") break;
+                yield;
+            }
+        }
+        if (neighbor === "symbol" || neighbor === "extend") return end;
+        return yield* run(end);
+    }
     return end;
 }
 
@@ -98,9 +111,10 @@ function wordDriver(work: Generator<void, number>, counters: Counters): KernelCu
 }
 
 /** Keyboard commands stop at logical line boundaries. The editor snaps both ends to graphemes. */
-export function createWordCommandCursor(buffer: TextBuffer, offset: number, direction: -1 | 1, deleting: boolean): KernelCursor<WordStep> {
+export function createWordCommandCursor(buffer: TextBuffer, offset: number, direction: -1 | 1,
+    deleting: boolean, caretCount: number): KernelCursor<WordStep> {
     const counters: Counters = { work: 0, yielded: 0, reads: 0 };
-    return wordDriver(commandOffset(buffer, offset, direction, deleting, counters), counters);
+    return wordDriver(commandOffset(buffer, offset, direction, deleting, caretCount, counters), counters);
 }
 
 /** Code-oriented word starts. Set skipWhitespace:false for run edges within captured bounds.

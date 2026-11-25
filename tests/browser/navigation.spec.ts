@@ -163,6 +163,30 @@ test("word keys navigate full model ranges, extend selections and delete one und
     expect(await page.evaluate(() => window.editingFixture.range(0, 4))).toBe("  αβ");
 });
 
+test("backward word selection at multiple member names replaces only their separators", async ({ page }) => {
+    const text = "basket.total\r\ninvoice.tax";
+    await setup(page, text);
+    const heads = [text.indexOf("total"), text.indexOf("tax")];
+    await page.evaluate(heads => window.editingFixture.selections(heads.map(head => ({ anchor: head, head }))), heads);
+    await page.keyboard.press("Control+Shift+ArrowLeft");
+    await ready(page);
+    await page.keyboard.type("_");
+    await ready(page);
+    const source = () => page.evaluate(() => {
+        const f = window.editingFixture;
+        return f.range(0, f.snapshot().document!.length);
+    });
+    expect(await source()).toBe("basket_total\r\ninvoice_tax");
+    await page.keyboard.press("Control+z");
+    await ready(page);
+    expect(await source()).toBe(text);
+
+    await page.evaluate(head => window.editingFixture.select("primary", { anchor: head, head }), heads[0]!);
+    await page.keyboard.press("Control+ArrowLeft");
+    await ready(page);
+    expect((await snapshot(page)).primary.selection.head).toBe(0);
+});
+
 test("a long word yields, deletes beyond native context and restores through shared history", async ({ page }) => {
     await setup(page, "x".repeat(200_000) + "  tail"); const before = await snapshot(page);
     await page.keyboard.press("Control+Delete"); await ready(page); const after = await snapshot(page);

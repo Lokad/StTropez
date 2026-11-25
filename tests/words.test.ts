@@ -4,7 +4,23 @@ import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
 import { WordCursor } from "../src/kernels/index.ts";
+import { createWordCommandCursor } from "../src/core/words.ts";
 import type { WordOptions } from "../src/index.ts";
+
+test("word movement starting inside an operator stops at its edge", () => {
+    const move = (source: string, at: number, direction: -1 | 1) => {
+        const cursor = createWordCommandCursor(TextBuffer.from(source), at, direction, false, 1);
+        let step = cursor.next();
+        while (step.status === "running") step = cursor.next();
+        cursor.dispose();
+        return step.offset;
+    };
+    assert.equal(move("object?.field", 7, 1), 8);
+    assert.equal(move("object?.field", 7, -1), 6);
+    assert.equal(move("x+\u0301.field", 3, 1), 4);
+    assert.equal(move("e\u0301.field", 2, 1), 8);
+});
+
 const checkedCursor = (buffer: TextBuffer, offset: number, direction: -1 | 1, options: WordOptions = {}) => {
     const beforeConstruction = bufferReads(buffer), cursor = new WordCursor(buffer, offset, direction, options);
     const checkReads = (before: ReturnType<typeof bufferReads>, readUnits: number) => {
