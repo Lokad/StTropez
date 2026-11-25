@@ -1,7 +1,8 @@
 # Unicode
 
-StTropez preserves UTF-16 source text, uses the runtime’s grapheme boundaries and can flag
-unusual characters. The browser shapes and measures the text.
+StTropez stores UTF-16 offsets. For caret movement and deletion, a grapheme such as `é`
+occupies one step. The browser’s `Intl.Segmenter` supplies the boundaries, so browsers with
+different Unicode versions can handle a rare sequence differently.
 
 ## Use
 
@@ -33,8 +34,7 @@ export async function indexGraphemes(
 }
 ```
 
-Enable character warnings on an editor, then query a range for the text to show in a tooltip.
-Pass a permitted character in `allow` when it is intentional in your source.
+Enable `characterWarnings` in the editor settings to query warnings for a tooltip.
 
 ```ts
 import { characterWarningLabel } from "sttropez";
@@ -50,28 +50,22 @@ export function warningLabels(editor: TextEditor, from: number, to: number) {
 
 ### Cooperative cursor lifetime
 
-Use `snapshot()` to read progress between calls to `next(workBudget)`. Grapheme and word cursors start
-in `running`. In `ready`, read the result even if it is an empty index or offset zero. In `failed`,
-the cursor has released unfinished work, recorded a message and thrown the original cause. Call
-`dispose()` to release the result and failure and move to `disposed`. Disposal is safe to repeat, and
-an index you already hold stays usable. Calling `next()` or `dispose()` from inside an active call
-throws. That call can catch the error.
-
-Pass the work budget in the [limits table](#limits). The cursor checks it between operations and can
-overshoot. An invalid budget throws before changing state, even after completion or disposal.
+Call `next(workBudget)` to advance a cursor and `snapshot()` to inspect it between calls.
+Read the result when its status is `ready`. An empty index and offset zero are valid results.
+A failed advance releases unfinished work, records the failure and throws its cause.
+`dispose()` releases the cursor’s result. An index you already hold stays usable.
+Repeated disposal is safe. Reentrant advances and disposal during an advance throw.
+An invalid budget throws before changing state. [Work budgets](#limits)
 
 ### Graphemes and word movement
 
-`createGraphemeCursor(bufferOrString, options)` defers its first read until `next(workBudget)`. Read
-`snapshot().result` once scanning finishes. It stays `null` during the scan. If a limit is reached,
-`next` throws `GraphemeLimitError` and records a failed snapshot. Only a complete `GraphemeIndex` is
-available.
+`createGraphemeCursor(bufferOrString, { from, to })` segments the specified range on its own.
+It starts reading on the first advance. Its result stays `null` until the index is complete.
+Exceeding the work or cluster limit throws `GraphemeLimitError`.
 
-`from` and `to` are absolute UTF-16 offsets. Unpaired surrogates keep their original positions. The
-cursor segments the supplied range on its own. For whole-document boundaries, start where you know the
-segmentation state. For example, starting between two regional indicators can change how flags are
-paired. Rules also cover CRLF, Hangul, combining marks, prepend characters, emoji joiners and Indic
-conjuncts. The runtime supplies `Intl.Segmenter`. Its Unicode version can affect caret movement and deletion.
+The index uses absolute UTF-16 offsets and preserves unpaired surrogates. Include enough context
+for the boundaries you need. Starting halfway through a run of regional indicators can change
+which pairs form flags.
 
 The immutable index records its source, range, cluster count and boundary
 count. `boundaryAt` and `clusterAt` query it without materializing all boundaries. `floor`
@@ -143,8 +137,7 @@ with `--st-character-warning-background` and `--st-character-warning-border`.
 | --- | --- |
 | Grapheme cursor advance | Default 4,096 work units; integer budget at least 256; cooperative checkpoints can overshoot a requested budget |
 | Grapheme limits | Positive safe integers; default operations `max(1_000_000, rangeLength * 16)`, clusters `max(1_000_000, rangeLength)` |
-| Grapheme publication | Frozen blocks of up to 256 boundaries; no partial index publication |
-| Source reads | Grapheme cursors read 256-unit windows with surrogate seam lookahead |
+| Source reads | The cursor reads up to 256 UTF-16 units per slice, then segments the complete range across slice boundaries |
 | Synchronous utilities/materialization | Work and arrays proportional to the supplied range; callers bound inputs |
 | Character scan | Default 4,096 units and 256 warnings; integer `maxUnits >= 2`, `maxWarnings >= 1`; at most `maxUnits + 5` units read |
 | Character marker cache | At most 128 presented fragments |
@@ -163,9 +156,9 @@ desired family. For bundled web fonts, use `@font-face`. For fonts supplied as b
 a `FontFace` and add it to the editor document's `fonts` set. The host owns that registration
 and removes it when its views have finished using it.
 
-Unicode data and development fixtures carry the [Unicode License V3](../licenses/Unicode-3.0.txt).
-The [regeneration workflow](testing.md#unicode-regeneration) uses reviewed local inputs, pins their
-hashes and checks outputs offline. Builds and restores use the generated data directly.
+The library ships Unicode ranges for default-ignorable character warnings. Development fixtures
+exercise grapheme boundaries. Both use reviewed inputs. [Regeneration](testing.md#unicode-regeneration)
+and [Unicode License V3](../licenses/Unicode-3.0.txt)
 
 ## Not covered
 
