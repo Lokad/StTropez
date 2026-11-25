@@ -1,7 +1,8 @@
 import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TextBuffer, Workspace, createFoldRegions, discoverIndentationFolds, reconcileFoldRanges } from "../src/index.ts";
+import { reconcileFoldRanges } from "../src/core/fold-discovery.ts";
+import { TextBuffer, Workspace, createFoldRegions, discoverIndentationFolds } from "../src/index.ts";
 import type { IndentationFoldingCursor } from "../src/index.ts";
 
 function finish(cursor: IndentationFoldingCursor) {

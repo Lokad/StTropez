@@ -1,3 +1,4 @@
+export { validateTextEdits } from "../core/changes.ts";
 export { PositionMap, composePositionMaps } from "../core/positions.ts";
 export { BufferChangeCursor } from "../core/buffer-change.ts";
 export { LiteralSearch } from "../core/search.ts";

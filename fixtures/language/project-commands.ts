@@ -1,4 +1,4 @@
-import { validateTextEdits } from "../../src/index.ts";
+import { validateTextEdits } from "../../src/kernels/index.ts";
 import type { TextEdit } from "../../src/index.ts";
 import { validateNavigationDocuments } from "./navigation.ts";
 import type { NavigationDocument } from "./navigation.ts";

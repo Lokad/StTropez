@@ -62,7 +62,8 @@ fragmentation.
 
 `TextEdit` is `{ from, to, insert }`, with both offsets in the original buffer. A batch must be
 sorted, non-overlapping and in bounds; `insert` must be a string. Same-position insertions retain
-array order. `validateTextEdits(length, edits)` validates the complete batch before application.
+array order. Providers can check a batch before submission with `validateTextEdits(length, edits)`
+from `sttropez/kernels`.
 `applyTextEdits(text, edits)` supplies the corresponding whole-string operation.
 
 `buffer.apply(edits)` returns an immutable `BufferChange` with `buffer`, `mapping` and `changedUnits`.

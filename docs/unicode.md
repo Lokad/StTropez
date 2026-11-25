@@ -33,23 +33,16 @@ export async function indexGraphemes(
 }
 ```
 
-Resume a warning scan at `nextFrom` with the same buffer and original end offset.
+Enable character warnings on an editor, then query a range for the text to show in a tooltip.
+Pass a permitted character in `allow` when it is intentional in your source.
 
 ```ts
-import { CharacterWarnings, characterWarningLabel } from "sttropez";
-import type { TextBuffer } from "sttropez";
+import { characterWarningLabel } from "sttropez";
+import type { TextEditor } from "sttropez/browser";
 
-const warnings = new CharacterWarnings({ allow: ["\u200d"] });
-
-export function inspectCharacters(buffer: TextBuffer, from: number, to: number) {
-    const batch = warnings.scan(buffer, from, to, { maxUnits: 4096, maxWarnings: 64 });
-    return {
-        complete: batch.complete,
-        nextFrom: batch.nextFrom,
-        items: batch.warnings.map(warning => ({
-            from: warning.from, to: warning.to, label: characterWarningLabel(warning)
-        }))
-    };
+export function warningLabels(editor: TextEditor, from: number, to: number) {
+    const batch = editor.characterWarnings.query(from, to);
+    return batch?.warnings.map(characterWarningLabel) ?? [];
 }
 ```
 
@@ -117,10 +110,9 @@ row geometry.
 
 ### Character warnings
 
-`CharacterWarnings` classifies source characters without changing them. All categories in
-`characterWarningKinds` are enabled by default. `categories` can disable individual kinds;
-`allow` copies a list of exact permitted characters into an immutable `configuration`.
-Each allow-list entry must contain exactly one code point. `kind(codePoint, offset)` returns a category or `null`.
+Enable markers with `editor.configure({ characterWarnings: true })` or pass a policy object.
+All categories start enabled. Set individual `categories` to false or add permitted characters
+to `allow`. Each entry must contain exactly one code point.
 
 | Category | Meaning |
 | --- | --- |
@@ -131,14 +123,10 @@ Each allow-list entry must contain exactly one code point. `kind(codePoint, offs
 | `unusual-space` | Other classified whitespace, excluding ordinary space, tab, CR and LF |
 
 Ordinary combining marks and letters from other scripts pass without warnings. Decide which joiners
-and variation selectors to flag for your source. `scan(buffer, from, to, limits)` returns exact
-code-point ranges, even for a surrogate pair that straddles a requested boundary. To continue a
-limited scan, pass `nextFrom` with the same buffer and end. If you already have a bounded fragment of
-complete code points, use `scanText(text, absoluteOffset)`. Show the plain-text description from
-`characterWarningLabel`. A warning identifies the character and leaves its interpretation to the
-reader.
+and variation selectors to flag for your source. Use `characterWarningLabel` for the name and
+Unicode code point. To continue a limited query, pass its `nextFrom` with the same end offset
+while the capture is current.
 
-Enable markers with `editor.configure({ characterWarnings: true })` or supply a policy.
 `editor.settings().characterWarnings` returns the frozen policy or `false` when disabled.
 `editor.characterWarnings.query(from, to, limits)` returns
 a bounded batch with document/revision and an `isCurrent()` guard, or `null` if unavailable.

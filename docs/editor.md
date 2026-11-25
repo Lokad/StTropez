@@ -529,50 +529,19 @@ slot for snippet mirroring.
 
 ### Bracket matching
 
-`BracketMatcher` compiles asymmetric configured pairs. Its `createCursor(buffer, caret, options)`
-captures the immutable source; `next(workBudget)` advances and `dispose()` releases work. The
-matcher prefers the character at the caret, then the preceding character when absent or vetoed.
-Mixed nesting is validated, including openings that share a closing delimiter. A character with
-both eligible roles is `ambiguous`; symmetric quote pairs are insertion/surrounding rules.
-`allowPair` supplies lexical eligibility for each examined delimiter's existing range.
+The editor checks the bracket at the caret first, then the preceding character. It matches nested
+open and close pairs from the language configuration. Use `allowPair` to exclude delimiters in
+strings or comments. Symmetric quotes are pairing and surrounding rules.
 
 `jump-to-bracket` moves to the partner of a bracket touching the caret. From inside a pair,
 it moves to the innermost enclosing closing bracket. Outside a pair, it moves to the next
 eligible bracket. The searches share one work budget.
 The caret stays in place if the scan encounters mismatched brackets or reaches a limit.
 
-```ts
-import { BracketMatcher } from "sttropez";
-import type { TextBuffer } from "sttropez";
-
-export async function matchBracket(
-    buffer: TextBuffer, caret: number,
-    yieldTurn: () => Promise<void>, signal: AbortSignal
-) {
-    const cursor = new BracketMatcher().createCursor(buffer, caret);
-    try {
-        while (!signal.aborted) {
-            const progress = cursor.next(4096);
-            if (progress.status === "ready") return progress.result;
-            await yieldTurn();
-        }
-        return null;
-    } finally {
-        cursor.dispose();
-    }
-}
-```
-
-Set total work and nesting limits with `BracketMatchOptions`. A `BracketMatchCursor` reports status,
-reads, work, callback count and failure in `BracketMatchProgress`. Highlight only `matched` pairs.
-A `limited` result means the scan ran out of budget before it could decide. Other
-`BracketMatchResult` values are `unmatched`, `none`, `vetoed` and `ambiguous`. Discard the result if
-the source or selection has changed.
-
-The browser's `BracketHighlights` handle is `editor.bracketMatching`. Its `getSnapshot()` and `subscribe()` methods expose `BracketHighlightSnapshot` for the primary collapsed caret. Set `bracketMatching` to `true` or explicit limits through `editor.configure`. Setting it to `false` removes the matching listeners.
-Matching does not block input, and its pending work is separate from editor input activity.
-Edits, selection, configuration, composition, focus and disposal invalidate stale work, including
-changes made inside a host callback. Shadow-root inputs use their own focus root.
+Enable highlighting with `editor.configure({ bracketMatching: true })`. Supply `maxWorkUnits` and
+`maxDepth` to limit a scan. Read `editor.bracketMatching.getSnapshot()` for the primary collapsed
+caret, or subscribe to changes. A `limited` result means the scan exhausted its budget. Changing
+the text, selection, configuration or focus invalidates pending work.
 
 Only proven pairs receive decorations, composed with host colors and selections. Style them with
 `--st-bracket-background` and `--st-bracket-border`. Call `bracketMatching.refresh()` outside

@@ -113,11 +113,9 @@ The cursor checks its budget at operation boundaries roughly every 256 units. Wh
 span 4,096 units. A large delimiter, native operation or host callback can run past the budget.
 Measure time to visible folds separately.
 
-`reconcileFoldRanges(buffer, discovered, previous)` keeps one outer range per header, drops crossings
-and reuses IDs for matching mapped headers and groups. Set `initiallyCollapsed: true` on a discovered
-range to start it folded. A matching range keeps its view's current choice on refresh. Combine your sources before calling it. Include
-reconciliation and installation in measurements of time to visible folds. Both run synchronously after
-discovery.
+The controller keeps the outer range when several share a header and drops crossing ranges.
+Set `initiallyCollapsed: true` on a discovered range to fold it on the first visit. Refreshing
+ranges preserves a user's choice when the header and group match.
 
 `createFoldingController` captures the editor view and its optional tab generation. Set `delayMs` to a finite,
 nonnegative delay (default 100). Its `FoldDiscovery` callback takes an immutable document and

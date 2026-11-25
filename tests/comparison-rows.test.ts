@@ -1,7 +1,8 @@
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { TextBuffer, FoldIndex, createFoldRegions } from "../src/index.ts";
+import { FoldIndex } from "../src/core/folding.ts";
+import { TextBuffer, createFoldRegions } from "../src/index.ts";
 import { TextDiff } from "../src/kernels/index.ts";
 import { ComparisonRowsCursor } from "../src/core/comparison-rows.ts";
 import type { ComparisonRows } from "../src/core/comparison-rows.ts";

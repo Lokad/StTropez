@@ -1,7 +1,8 @@
 import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CharacterWarnings, characterWarningKinds, characterWarningLabel, TextBuffer } from "../src/index.ts";
+import { CharacterWarnings, characterWarningKinds } from "../src/core/character-warnings.ts";
+import { characterWarningLabel, TextBuffer } from "../src/index.ts";
 import type { CharacterWarning, CharacterWarningKind } from "../src/index.ts";
 
 test("directional controls and unusual whitespace follow their distinct categories", () => {

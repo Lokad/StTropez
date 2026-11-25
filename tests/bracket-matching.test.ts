@@ -2,9 +2,9 @@ import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
 import { nextSeed } from "../fixtures/workloads.ts";
 import test from "node:test";
-import { BracketMatcher, TextBuffer } from "../src/index.ts";
-import { createBracketNavigationCursor } from "../src/core/bracket-matching.ts";
-import type { BracketMatchCursor, BracketMatchOptions, LanguageConfiguration, PairingContext } from "../src/index.ts";
+import { TextBuffer } from "../src/index.ts";
+import { BracketMatcher, createBracketNavigationCursor, type BracketMatchCursor } from "../src/core/bracket-matching.ts";
+import type { BracketMatchOptions, LanguageConfiguration, PairingContext } from "../src/index.ts";
 
 function checkedCursor(matcher: BracketMatcher, buffer: TextBuffer, caret: number, options?: BracketMatchOptions): BracketMatchCursor {
     const beforeConstruction = bufferReads(buffer), cursor = matcher.createCursor(buffer, caret, options);

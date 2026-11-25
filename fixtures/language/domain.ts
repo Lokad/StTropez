@@ -1,4 +1,4 @@
-import { validateTextEdits } from "../../src/index.ts";
+import { validateTextEdits } from "../../src/kernels/index.ts";
 import type { TextBuffer, TextEdit } from "../../src/index.ts";
 
 export type DomainAnnotation = Readonly<{ id: string; from: number; to: number; label: string }>;

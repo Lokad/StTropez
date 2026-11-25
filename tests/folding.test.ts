@@ -1,7 +1,8 @@
 import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { FoldIndex, TextBuffer, Workspace, createFoldRegions } from "../src/index.ts";
+import { FoldIndex } from "../src/core/folding.ts";
+import { TextBuffer, Workspace, createFoldRegions } from "../src/index.ts";
 import { mapFoldRegions, revealSelectionFolds } from "../src/core/folding.ts";
 
 test("nested collapsed rows keep independent child state and index visible rows without losing raw lines", () => {
