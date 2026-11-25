@@ -30,7 +30,10 @@ Open `http://127.0.0.1:4173/`. Set `STTROPEZ_PORT` to choose another port.
 
 To try regex replacement in Shopping cart, find `quantity:\s*(\d+)`, enable **Use regular expression** and replace all with `quantity: $1 + 1`. One Undo restores both quantities.
 
-To try a save conflict, open the same sample in two tabs. Edit both and save one. In the other, choose **Review saved copy** to compare before saving your version or accepting the saved files. Reloading a tab with an unsaved checkpoint offers recovery for that sample.
+To try a save conflict, open the same sample in two tabs. Edit both and save one. In the other,
+choose **Review saved copy** to compare before saving your version or accepting the saved files.
+If the saved copy was removed, **Save locally** recreates it from your open project.
+Reloading a tab with an unsaved checkpoint offers recovery for that sample.
 
 <a id="provider-ownership-and-adaptations"></a>
 

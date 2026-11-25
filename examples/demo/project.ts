@@ -198,7 +198,8 @@ export class DemoProject {
     }
     private showPeerCopy(stored: StoredDraft | null): void {
         this.conflict = stored ? this.readConflict(stored) : undefined;
-        const text = !stored ? "The saved copy is no longer available. Your files are intact."
+        if (!stored) this.token = null;
+        const text = !stored ? "The saved copy was removed. Save locally to keep your current files."
             : this.review ? "The other page saved again. Review the new saved copy."
             : "Another page saved this sample. Review the saved copy when you're ready.";
         this.notice = { text, keepOnEdit: true };
@@ -217,7 +218,7 @@ export class DemoProject {
                 try {
                     const stored = await this.store.read();
                     if (this.disposed || this.pendingPeerRead) continue;
-                    if (!stored && !this.conflict) continue;
+                    if (!stored && this.token === null && !this.conflict) continue;
                     if (stored && (stored.token === this.token || stored.token === this.conflict?.token)) continue;
                     this.showPeerCopy(stored);
                 } catch (error) {
@@ -310,9 +311,13 @@ export class DemoProject {
             this.notice = this.dirty() ? { text: "Saved in this browser. Later edits remain unsaved." } : {};
         } catch (error) {
             // The store checks the captured token in one read/write transaction across every file.
-            const remote = writing ? await this.store.read().catch(() => null) : null;
-            for (const { ticket } of tickets) { if (remote && remote.token !== expected) ticket.conflict(); else ticket.fail(); }
-            if (remote && remote.token !== expected) {
+            const remote = writing ? await this.store.read().catch(() => undefined) : undefined;
+            const versionChanged = remote !== undefined && (remote?.token ?? null) !== expected;
+            for (const { ticket } of tickets) {
+                if (versionChanged) ticket.conflict();
+                else ticket.fail();
+            }
+            if (versionChanged) {
                 try {
                     this.showPeerCopy(remote);
                 } catch {

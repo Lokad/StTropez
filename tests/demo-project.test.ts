@@ -68,6 +68,61 @@ test("a save supersedes an in-flight peer read and disposal retires its replacem
     }
 });
 
+test("a missing saved copy can be recreated without overwriting a replacement", { timeout: 5000 }, async () => {
+    const store = new MemoryStore(), recovery = new MemoryStore();
+    let notify = () => {};
+    store.watch = changed => { notify = changed; return () => {}; };
+    const noticed = latch<void>();
+    const project = await DemoProject.open("pricing", () => true, unusedProvider, {
+        createStore: name => name === "sttropez-demo-projects-v1" ? store : recovery,
+        peerChanged: () => noticed.resolve()
+    });
+    try {
+        const save = () => project.save(() => {});
+        await save();
+        const first = store.row!;
+        const file = project.files[0]!;
+        project.workspace.replaceText(file.resource.documentId, "// keep my edit", { origin: "human", history: "record" });
+        await store.remove(first.token);
+
+        const read = store.read;
+        store.read = async () => { throw new Error("Cannot read storage"); };
+        await save();
+        assert.match(project.message, /Could not save/);
+        store.read = read;
+        await save();
+        assert.match(project.message, /saved copy was removed/i);
+        assert.equal(project.dirty(), true);
+        assert.equal(await store.read(), null);
+        await save();
+        assert.equal(project.dirty(), false);
+        const recreated = (await store.read())!;
+        assert.equal((recreated.value as { files: Record<string, string> }).files[file.name], "// keep my edit");
+
+        await store.remove(recreated.token);
+        notify();
+        await noticed.promise;
+        assert.match(project.message, /saved copy was removed/i);
+        const peer = { ...first, token: "newer" };
+        store.row = peer;
+        await save();
+        assert.equal(store.row, peer);
+        assert.ok(project.reviewConflict());
+        await store.remove(peer.token);
+        await project.takeReviewedCopy(() => {}, () => true);
+        assert.equal(project.canSaveReviewed(), false);
+        assert.equal(project.hasConflict(), false);
+
+        await save();
+        assert.equal(store.writes, 3);
+        const saved = await store.read();
+        assert.equal((saved!.value as { files: Record<string, string> }).files[file.name], "// keep my edit");
+    } finally {
+        project.dispose();
+        await project.language.dispose();
+    }
+});
+
 test("taking a reviewed copy preserves edits and replacement views during the storage read", async () => {
     const store = new MemoryStore(), recovery = new MemoryStore();
     const project = await DemoProject.open("pricing", () => true, unusedProvider,
