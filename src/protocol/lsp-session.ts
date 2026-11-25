@@ -14,7 +14,7 @@ import { JsonRpcConnection } from "./json-rpc.ts";
 import type { RpcCall, RpcOptions, RpcRequestContext, RpcScheduler, RpcTransport } from "./json-rpc.ts";
 import type { JsonValue } from "./wire.ts";
 import { cooperateDuringScan, LspLineIndex, lspTextChanges } from "./lsp-positions.ts";
-import type { LspChangeHint, LspTextChange } from "./lsp-positions.ts";
+import type { LspChangeHint } from "./lsp-positions.ts";
 import { commandArguments } from "./lsp-command-value.ts";
 import { compileLspSelector } from "./lsp-selector.ts";
 import type { LspSelector, LspSelectorDocument, LspUriPath } from "./lsp-selector.ts";
@@ -62,11 +62,12 @@ type Entry = SelectorEntry & { snapshot: LspDocumentSnapshot; handle: LspDocumen
     failure?: Readonly<{ snapshot: LspDocumentSnapshot; generation: number; error: Error }> };
 type Remote = { entry: Entry; snapshot: LspDocumentSnapshot; index: LspLineIndex; version: number };
 
-// Each separate JSON range needs two line/character pairs before any text is sent.
-// Estimate the changed interval from the hint; the actual replacement is proved from the buffers.
-function denseBatch(hint: LspChangeHint | undefined, length: number): boolean {
+// Prefer one proven replacement when per-range planning is expensive or the gaps cost less than the JSON ranges.
+function preferSingleRange(hint: LspChangeHint | undefined, length: number): boolean {
     if (!hint || hint.edits.length < 64) return false;
-    const edits = hint.edits, span = edits[edits.length - 1]!.to - edits[0]!.from + length - hint.before.length;
+    const edits = hint.edits;
+    if (edits.length >= 512) return true;
+    const span = edits[edits.length - 1]!.to - edits[0]!.from + length - hint.before.length;
     return span >= 0 && span <= 64 * (edits.length - 1);
 }
 type SyncWaiter = { resolve: () => void; reject: (error: Error) => void; ready: (() => boolean) | undefined };
@@ -420,6 +421,7 @@ export class LspSession {
         });
     }
     private async pump(epoch: number): Promise<void> {
+        const replaced = Symbol();
         const checkpoint = cooperateDuringScan(() => { this.ready(epoch); }, () => this.pause(epoch), this.options.now);
         while (this.dirty.size) {
             const uri = this.dirty.values().next().value!; this.dirty.delete(uri);
@@ -433,21 +435,23 @@ export class LspSession {
                 delete entry.failure;
                 if (!this.syncs(entry)) continue; const snapshot = entry.snapshot, old = this.remote.get(uri), hint = entry.change;
                 if (old?.snapshot === snapshot) continue;
-                const expired = {}, retained = () => this.documents.get(uri) === entry;
+                const retained = () => this.documents.get(uri) === entry;
                 const valid = () => entry.snapshot === snapshot && retained() && this.syncGeneration === generation;
-                const cooperate = async () => { await checkpoint(); if (!retained()) throw expired; };
+                const cooperate = async () => {
+                    await checkpoint();
+                    if (!retained()) throw replaced;
+                };
                 const base = entry.index ?? old?.index;
-                const compact = denseBatch(hint, snapshot.buffer.length), planHint = compact ? undefined : hint;
-                let plan;
-                try { plan = base ? await base.change(snapshot.buffer, cooperate, planHint) : { index: await LspLineIndex.create(snapshot.buffer, cooperate), changes: [] }; }
-                catch (error) { if (error !== expired) throw error; this.dirty.add(uri); continue; }
+                const compact = preferSingleRange(hint, snapshot.buffer.length);
+                const planHint = compact ? undefined : hint;
+                const plan = base ? await base.change(snapshot.buffer, cooperate, planHint)
+                    : { index: await LspLineIndex.create(snapshot.buffer, cooperate), changes: [] };
                 // Restart ownership cleanup too: replacing a URI during planning must close/open, never change the old resource.
                 this.ready(epoch); if (!retained()) { this.dirty.add(uri); continue; }
                 // A revision/capability change does not invalidate useful text indexing work.
                 entry.index = plan.index; if (!valid()) { this.dirty.add(uri); continue; }
-                let changes: readonly LspTextChange[];
-                try { changes = old && old.index !== base ? await lspTextChanges(old.index, snapshot.buffer, cooperate, planHint) : plan.changes; }
-                catch (error) { if (error !== expired) throw error; this.dirty.add(uri); continue; }
+                let changes = old && old.index !== base
+                    ? await lspTextChanges(old.index, snapshot.buffer, cooperate, planHint) : plan.changes;
                 this.ready(epoch); if (!valid()) { this.dirty.add(uri); continue; }
                 const version = (old?.version ?? 0) + 1; if (version > 0x7fffffff) throw new RangeError("LSP document version exhausted; reconnect required.");
                 if (old) {
@@ -457,8 +461,7 @@ export class LspSession {
                         // Escaped text or range overhead can make the other encoding smaller.
                         const retryRanges = compact && hint?.before === old.index.buffer;
                         if ((!retryRanges && changes.length < 2) || rpc.snapshot().disposed || !(error instanceof TypeError || error instanceof RangeError)) throw error;
-                        try { changes = await lspTextChanges(old.index, snapshot.buffer, cooperate, retryRanges ? hint : undefined); }
-                        catch (error) { if (error !== expired) throw error; this.dirty.add(uri); continue; }
+                        changes = await lspTextChanges(old.index, snapshot.buffer, cooperate, retryRanges ? hint : undefined);
                         this.ready(epoch); if (!valid()) { this.dirty.add(uri); continue; }
                         send();
                     }
@@ -468,7 +471,10 @@ export class LspSession {
                 // A host transport can edit or close the binding synchronously during send.
                 if (!valid()) this.dirty.add(uri);
                 if (entry.snapshot === snapshot) delete entry.change;
-            } catch (error) { this.failDocument(entry ?? remote!.entry, error, epoch); }
+            } catch (error) {
+                if (error === replaced) this.dirty.add(uri);
+                else this.failDocument(entry ?? remote!.entry, error, epoch);
+            }
             finally {
                 this.settle(undefined, true);
                 if (this.dirty.size && this.current(epoch)) await checkpoint();

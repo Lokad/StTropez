@@ -232,13 +232,12 @@ The client opens a document only when static or matching dynamic capabilities co
 and incremental change. Losing that coverage closes the remote copy. Regaining it sends the current
 full text. Workspace bindings use `DocumentChange.edits`. A direct session binding accepts the
 same previous-revision edits in `document.update(expectedRevision, revision, buffer, edits)`.
-The client sends sparse edits as proven ranges in descending original-offset order. For dense
-batches it can send one replacement covering the changed text to reduce the message size.
-If it skipped a revision, lacks usable edits, cannot prove a gap, or the batch would cost too
-much to encode, it sends one replacement between the known shared edges. A transport failure leaves
-the edit unsent or unacknowledged. The client does not retry it.
+Small, sparse batches use separate ranges in descending offset order. For large or dense batches,
+the client can send one range spanning the edits. It also uses one range when it lacks usable edits
+for the previous wire version. If local encoding exceeds a configured limit, the client tries the
+other representation when available. A transport failure leaves delivery uncertain and stops retries.
 
-`LspLineIndex.create(buffer, cooperate)` builds an immutable UTF-16 position index. `positionAt`
+`LspLineIndex.create(buffer, cooperate)` builds an immutable UTF-16 position index. `at`
 rejects invalid offsets; `offsetAt` rejects malformed positions, clamps oversized characters to
 the line's content end and maps lines beyond the document to EOF. `change` returns a replacement
 index and incremental changes without mutating the original. The caller supplies cooperative

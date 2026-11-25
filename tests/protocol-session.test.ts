@@ -179,10 +179,19 @@ test("batch range overhead falls back before sending when the host message or JS
     }
 });
 
-test("dense updates and their inverses use one range unless escaped gaps exceed the wire limit", async t => {
-    const row = "😀xxx" + "\0".repeat(32) + "\r\n", half = row.repeat(64), text = half + half;
-    const edits = Array.from({ length: 128 }, (_, line) => ({ from: line * row.length + 3, to: line * row.length + 4, insert: "y" }));
-    for (const maxMessageUnits of [64000, 18000]) {
+test("bulk updates and undo use one range unless the escaped text exceeds the wire limit", async t => {
+    for (const [padding, lines, maxMessageUnits, expectedRanges] of [
+        ["\0".repeat(32), 128, 64000, 1],
+        ["\0".repeat(32), 128, 18000, 128],
+        [" ".repeat(240), 1024, 300000, 1],
+        [" ".repeat(240), 64, 300000, 64],
+    ] as const) {
+        const row = "😀xxx" + padding + "\r\n";
+        const half = row.repeat(lines / 2);
+        const text = half + half;
+        const edits = Array.from({ length: lines }, (_, line) => ({
+            from: line * row.length + 3, to: line * row.length + 4, insert: "y",
+        }));
         const host = fixture(t), session = new LspSession({ ...host, rpc: { maxMessageUnits } }); t.after(() => session.dispose());
         const initial = input(half), document = session.bindDocument(initial); await session.connect();
         const before = initial.buffer.replace(half.length, half.length, half), after = before.apply(edits).buffer;
@@ -192,7 +201,7 @@ test("dense updates and their inverses use one range unless escaped gaps exceed 
             document.update(revision - 1, revision, buffer, changes); await session.flush(); await settled();
             const last = peer.wire.messages[0]!.at(-1) as { method: string; params: DidChangeTextDocumentParams };
             assert.equal(last.method, "textDocument/didChange");
-            assert.equal(last.params.contentChanges.length, maxMessageUnits === 64000 ? 1 : edits.length);
+            assert.equal(last.params.contentChanges.length, expectedRanges);
             assert.equal(peer.documents.get(initial.uri)!.getText(), expected);
         }
     }
