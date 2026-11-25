@@ -9,8 +9,11 @@ export function reviewLayout(surface: HTMLElement, review: TextComparison) {
         review.setScrollLinked(false); review.setRowsAligned(false);
         surface.classList.add("demo-working-only");
         working.viewport.flush();
-        return { active, saved, source, baseline: state.comparison.baseline, linked: state.scrollLinked, aligned: state.alignment.enabled,
-            hiddenSource: working.captureView(), revision: working.view.getSnapshot().revision };
+        return {
+            active, saved, source, baseline: state.comparison.baseline,
+            linked: state.scrollLinked, aligned: state.alignment.enabled,
+            hiddenSource: working.captureView(), folds: working.view.folding.getSnapshot(),
+        };
     }
     let hidden: ReturnType<typeof hide> | undefined;
     return (collapse: boolean): TextEditor => {
@@ -18,8 +21,10 @@ export function reviewLayout(surface: HTMLElement, review: TextComparison) {
         if (!hidden) return review.activePane();
         const previous = hidden; hidden = undefined;
         const current = working.captureView(), initial = previous.hiddenSource;
-        const sameSource = working.view.getSnapshot().revision === previous.revision && current.selectionSet === initial.selectionSet
-            && current.scrollTop === initial.scrollTop && current.scrollLeft === initial.scrollLeft;
+        const folds = working.view.folding.getSnapshot();
+        const sameSource = folds.revision === previous.folds.revision && current.selectionSet === initial.selectionSet
+            && current.scrollTop === initial.scrollTop && current.scrollLeft === initial.scrollLeft
+            && folds.index.sameProjection(previous.folds.index);
         const sameReference = review.getSnapshot().comparison.baseline === previous.baseline;
         surface.classList.remove("demo-working-only");
         review.setRowsAligned(previous.aligned); review.setScrollLinked(previous.linked);

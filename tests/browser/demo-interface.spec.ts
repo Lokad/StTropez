@@ -184,6 +184,17 @@ test("hiding Changes keeps the review panes and resumes from edits made while hi
     await expect(status).toHaveText("No changes");
     await page.locator("#compare").click();
     await expect(status).toBeVisible(); await expect(status).toHaveText("No changes"); await expect(next).toBeDisabled();
+
+    await page.locator("#sample").selectOption("outline");
+    await expect(page.getByRole("group", { name: "Changes in workflow.txt" })).toBeVisible();
+    await saved.focus();
+    await toggle.click();
+    await page.getByRole("button", { name: "Collapse lines 16–17", exact: true }).click();
+    await toggle.click();
+    await expect(working).toBeFocused();
+    await page.keyboard.type("X");
+    await expect(panes.last().locator('.st-viewport-row[data-line="0"]')).toHaveText("X#region workflow");
+    await expect(panes.first().locator('.st-viewport-row[data-line="0"]')).toHaveText("#region workflow");
 });
 
 test("narrow layouts keep JavaScript, Problems and review reachable from the keyboard", async ({ page, baseURL }) => {
