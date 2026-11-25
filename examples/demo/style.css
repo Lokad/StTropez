@@ -1,6 +1,6 @@
 @import "../../src/browser/editor.css";
 :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #0e1420; color: #dde5f0;
-    --st-background: #131c2b; --st-foreground: #dbe5f4; --st-font: "Fira Code", ui-monospace, Consolas, monospace; --st-font-size: 14px; --st-line-height: 1.75; }
+    --st-background: #131c2b; --st-foreground: #dbe5f4; --st-font: "Fira Code", ui-monospace, Consolas, monospace; --st-font-size: 14px; --st-line-height: 24px; }
 * { box-sizing: border-box; }
 body { margin: 0; height: 100dvh; display: flex; flex-direction: column; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 24px; border-bottom: 1px solid #293448; }
@@ -96,7 +96,7 @@ main { position: relative; flex: 1; min-height: 0; display: grid; grid-template-
 #panels button { background: transparent; border-color: transparent; color: #a4b4ca; }
 #panels button[aria-pressed="true"] { color: #8ce0ca; background: #1e2d41; }
 #panel-collapse { margin-left: auto; } #panel-content { flex: 1; min-height: 0; overflow: auto; }
-.demo-output { --st-background: #101826; --st-foreground: #bacce1; --st-font-size: 13px; --st-line-height: 1.8; }
+.demo-output { --st-background: #101826; --st-foreground: #bacce1; }
 .panel-note { padding: 24px; max-width: 560px; color: #9caec7; font-size: 13px; line-height: 1.7; }
 main.reviewing { grid-template-columns: minmax(0, 1fr); } main.reviewing #source-column { display: none; }
 main.collapsed { grid-template-columns: minmax(0, 1fr) auto; } main.collapsed #panel-content, main.collapsed [data-panel] { display: none; }

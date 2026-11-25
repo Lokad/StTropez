@@ -924,6 +924,11 @@ test("view controls survive file switches and saved-reference replacement in bot
     await expect(source.locator(".st-column-ruler").first()).toBeVisible();
     await expect(source.locator(".st-minimap-marker")).toBeVisible();
     await expect(page.locator(".demo-output .st-minimap-marker")).toBeVisible();
+    for (const pane of [source, page.locator(".demo-output")]) {
+        const rows = pane.locator(".st-viewport-row");
+        const first = await rows.nth(0).boundingBox(), second = await rows.nth(1).boundingBox();
+        expect(second!.y - first!.y).toBe(24);
+    }
     const outputNumber = page.locator(".demo-output .st-line-numbers [data-current]");
     await expect(outputNumber).toHaveText("1");
     await page.locator("#view-current-line").uncheck();
