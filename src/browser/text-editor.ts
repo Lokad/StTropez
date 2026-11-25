@@ -538,27 +538,39 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function eachRange(capture: CommandCapture, purpose: "word" | "grapheme", resolve: (range: Selection, done: (range: Selection) => void) => void,
         done: (ranges: readonly Selection[]) => void,
         options: Readonly<{ validLayout?: () => boolean; prepare?: (ranges: readonly Selection[]) => () => void; batchSize?: number; navigation?: boolean; inline?: boolean }> = {}): void {
-        let release: (() => void) | undefined, batchEnd = options.prepare ? 0 : capture.selectionSet.ranges.length;
+        const sourceRanges = capture.selectionSet.ranges;
+        let release: (() => void) | undefined;
+        let batchEnd = options.prepare ? 0 : sourceRanges.length;
         const validLayout = options.validLayout ?? (() => true), turn = options.navigation ? navigationTurn : (work: () => void) => work();
         const job = { capture, purpose, release: () => { const previous = release; release = undefined; previous?.(); } }; rangeCommand = job;
         const ranges: Selection[] = []; let index = 0, pumping = false, waiting = false;
         const active = () => rangeCommand === job && validCommand(capture);
         const pump = () => turn(() => commandTurn(() => {
             if (!active() || !validLayout()) { if (rangeCommand === job) cancelWord(); return; }
-            const began = win.performance.now(); let count = 0; pumping = true;
+            const began = win.performance.now();
+            let count = 0;
+            pumping = true;
             try {
-            if (options.prepare && index === batchEnd) { job.release(); batchEnd = Math.min(capture.selectionSet.ranges.length, index + (options.batchSize ?? commandBudget.rangeBatch));
-                release = options.prepare(capture.selectionSet.ranges.slice(index, batchEnd)); }
-            while (index < batchEnd && !waiting && count++ < commandBudget.rangeCalls && (options.inline || win.performance.now() - began < commandBudget.sliceMs)) {
-                waiting = true;
-                resolve(capture.selectionSet.ranges[index]!, range => {
-                    if (!active()) return;
-                    ranges.push(range); index++; waiting = false; if (!pumping) pump();
-                });
-            }
+                if (options.prepare && index === batchEnd) {
+                    job.release();
+                    batchEnd = Math.min(sourceRanges.length, index + (options.batchSize ?? commandBudget.rangeBatch));
+                    release = options.prepare(sourceRanges.slice(index, batchEnd));
+                }
+                // Cheap caret moves share a time slice. The count limit also bounds work on a coarse clock.
+                while (index < batchEnd && !waiting && count++ < commandBudget.rangeCalls
+                    && (options.inline || win.performance.now() - began < commandBudget.sliceMs)) {
+                    waiting = true;
+                    resolve(sourceRanges[index]!, range => {
+                        if (!active()) return;
+                        ranges.push(range);
+                        index++;
+                        waiting = false;
+                        if (!pumping) pump();
+                    });
+                }
             } finally { pumping = false; }
             if (!active()) return;
-            if (index === capture.selectionSet.ranges.length) { job.release(); rangeCommand = undefined; if (validLayout()) done(ranges); }
+            if (index === sourceRanges.length) { job.release(); rangeCommand = undefined; if (validLayout()) done(ranges); }
             else if (!waiting && options.inline) pump();
             else if (!waiting) cancelRangeTask = commandRunner.schedule(() => { if (rangeCommand === job) cancelRangeTask = undefined; pump(); }, 0, turn);
         })); pump();
@@ -1474,7 +1486,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 if (!range) { cancelWord(); return false; }
                 ranges.push(range);
                 return ranges.length < count;
-            }, pending => pending, commandBudget.rangeCalls);
+            }, pending => pending, commandBudget.columnCalls);
             if (rangeCommand !== job) return;
             if (more) { cancelRangeTask = commandRunner.schedule(step); return; }
             cancelRangeTask = undefined; rangeCommand = undefined;
