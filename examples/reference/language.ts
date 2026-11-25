@@ -7,7 +7,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const problems = document.querySelector<HTMLElement>("#diagnostics")!;
     const language = attachEditorLanguage(editor, provider, {
         completion: { autoConnect: false, automatic: false, list: true }, diagnostics: { autoConnect: false },
-        hover: {}, signature: { popup: true }, navigation: {}, occurrences: {}, links: { paint: true },
+        hover: { popup: true }, signature: { popup: true }, navigation: {}, occurrences: {}, links: { paint: true },
         colors: { swatches: true }, rename: {}, codeActions: {}, commands: {},
     });
     const events = new AbortController();
@@ -55,7 +55,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
         });
     });
     command("hover", async request => {
-        display(request, await language.hover.request(), hover => { result.value = hover.text || "No hover information."; });
+        display(request, await language.hover.request(), hover => { if (!hover.text) result.value = "No hover information."; });
     });
     command("signature", async request => {
         display(request, await language.signature.request(), help => { if (!help.signature) result.value = "No signature."; });

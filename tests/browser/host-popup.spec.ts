@@ -26,7 +26,7 @@ for (const feature of ["hover", "signature"] as const) {
         const field = page.getByRole("textbox", { name: "Primary source", exact: true });
         await expect(field).toBeVisible();
         await page.evaluate(() => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: "lookup(value)" }]); });
-        const popup = feature === "hover" ? page.locator(".host-symbol-info") : page.getByRole("tooltip", { name: "Signature help", exact: true });
+        const popup = feature === "hover" ? page.locator(".st-hover").filter({ visible: true }) : page.getByRole("tooltip", { name: "Signature help", exact: true });
         const before = await page.evaluate(() => window.hostFixture.snapshot().history);
         for (let mount = 0; mount < 2; mount++) {
             await field.scrollIntoViewIfNeeded(); await field.focus();

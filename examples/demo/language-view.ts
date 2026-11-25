@@ -1,10 +1,9 @@
 import { attachEditorLanguage } from "../../src/browser/index.ts";
-import type { TextEditor, CompletionController, CompletionSnippet, NavigationOrigin } from "../../src/browser/index.ts";
+import type { TextEditor, CompletionController, CompletionSnippet, HoverController, SignatureController, NavigationOrigin } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
 import { canOpenDemoHelp } from "./diagnostics.ts";
-import { mountDemoInspection } from "./inspect.ts";
 import { mountDemoSymbols } from "./symbols.ts";
 import type { DemoSymbolTarget } from "./symbols.ts";
 import { demoActionPolicy, mountDemoActions } from "./actions.ts";
@@ -25,18 +24,20 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
         snippetPanel.setAttribute("role", "region"); snippetPanel.setAttribute("aria-label", "Snippet controls"); snippetHost.append(snippetPanel);
         let controller: CompletionController | undefined;
         let renderedSnippet: CompletionSnippet | undefined;
-        let inspection: ReturnType<typeof mountDemoInspection> | undefined;
+        let hover: HoverController | undefined;
+        let signature: SignatureController | undefined;
+        const dismissInspection = () => { hover?.cancel(); signature?.cancel(); };
         let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
         let actions: ReturnType<typeof mountDemoActions> | undefined;
         const commands = mountLanguageCommands(scope, editor, feedback, (command, menu) => {
             switch (command) {
                 case "complete":
-                    if (menu) { actions?.dismiss(); symbols?.dismiss(); inspection?.dismiss(); }
+                    if (menu) { actions?.dismiss(); symbols?.dismiss(); dismissInspection(); }
                     editor.commands.run("completion.request"); break;
                 case "signature":
                     if (menu) controller?.cancel();
                     editor.commands.run("signature.request"); break;
-                case "inspect": inspection?.inspect(); break;
+                case "inspect": editor.focus(); editor.commands.run("hover.inspect"); break;
                 case "rename": symbols?.rename(); break;
                 case "definition": symbols?.definition(); break;
                 case "references": symbols?.references(); break;
@@ -78,10 +79,17 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                     codeActions: demoActionPolicy(workspace, file, language, idle), occurrences: {},
                     completion: { autoConnect: false, filterManualCompletions: true, canCapture: valid, list: true },
                     signature: { popup: links, canCapture: valid, beforeRequest: () => {
-                        inspection?.dismissHover();
+                        hover?.cancel();
                         closeProjectPopups();
                     } },
-                    hover: { canCapture: valid, diagnostics: { subscribe: language.state.subscribe, getSnapshot() {
+                    hover: { canCapture: valid, popup: { ...links, beforeInspect(kind) {
+                        if (kind === "pointer") return idle() && !controller?.getSnapshot().anchor
+                            && !signature?.getSnapshot().anchor && !symbols?.isOpen() && !actions?.isOpen();
+                        controller?.cancel();
+                        signature?.cancel();
+                        closeProjectPopups();
+                        return idle();
+                    } }, diagnostics: { subscribe: language.state.subscribe, getSnapshot() {
                         const state = language.state.getSnapshot(), doc = workspace.document(file.resource.documentId);
                         return { diagnosticRevision: doc.revision, diagnosticsPending: state.checking,
                             diagnostics: state.diagnostics.filter(item => item.documentId === doc.id && item.revision === doc.revision) };
@@ -89,14 +97,15 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                 });
                 controller = tools.completion;
                 scope.defer(tools.dispose);
-                inspection = mountDemoInspection(scope, editor, tools, links, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
-                    () => controller?.cancel(), closeProjectPopups,
-                    state => {
-                        if (state.status === "empty" || state.status === "failed") commands.feedback("signature", state.message, true);
-                        else if (state.status === "ready") commands.feedback("signature", "", true);
-                    });
-                symbols = mountDemoSymbols(scope, project, file, editor, provider, valid, () => { controller?.cancel(); inspection?.dismiss(); actions?.dismiss(); }, open, commands.notice);
-                actions = mountDemoActions(scope, workspace, file, editor, tools.codeActions, provider, idle, () => { controller?.cancel(); inspection?.dismiss(); symbols?.dismiss(); });
+                hover = tools.hover;
+                signature = tools.signature;
+                scope.defer(tools.signature.subscribe(() => {
+                    const state = tools.signature.getSnapshot();
+                    if (state.status === "empty" || state.status === "failed") commands.feedback("signature", state.message, true);
+                    else if (state.status === "ready") commands.feedback("signature", "", true);
+                }));
+                symbols = mountDemoSymbols(scope, project, file, editor, provider, valid, () => { controller?.cancel(); dismissInspection(); actions?.dismiss(); }, open, commands.notice);
+                actions = mountDemoActions(scope, workspace, file, editor, tools.codeActions, provider, idle, () => { controller?.cancel(); dismissInspection(); symbols?.dismiss(); });
                 scope.defer(controller.subscribe(render));
                 const ready = () => { if (valid()) { controller!.connect(); render(); commands.ready(); } };
                 if (provider.getSnapshot().phase === "ready") ready();

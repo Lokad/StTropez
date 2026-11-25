@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { isOffset } from "../core/bounds.ts";
 import { emptyList } from "../core/empty-list.ts";
@@ -13,6 +14,7 @@ import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
 import type { LspDiagnostic, LspPrepare } from "../protocol/index.ts";
 import type { OverlayPosition } from "./anchored-overlay.ts";
+import { mountHoverPopup, type HoverPopupOptions } from "./hover-popup.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 type Range = Readonly<{ from: number; to: number }>;
@@ -22,6 +24,7 @@ type MatchedDiagnostic = Range & Pick<Diagnostic, "message">;
 export type HoverDiagnostics = Observable<Readonly<{ diagnosticRevision: number; diagnostics: readonly Diagnostic[]; diagnosticsPending?: boolean }>>;
 export type HoverControllerOptions = Readonly<{
     diagnostics?: HoverDiagnostics; canCapture?: () => boolean; prepareRequest?: LspPrepare; onError?: (error: unknown) => void;
+    popup?: boolean | HoverPopupOptions;
 }>;
 export type HoverSnapshot = Readonly<{
     status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disposed";
@@ -189,7 +192,7 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
             const current: Inspection = { revision: capture.document.revision, selection: capture.selectionSet,
                 folds: capture.folding.index, offset, capture, stops: [] };
             owned = inspection = current;
-            capture.signal.addEventListener("abort", () => { if (current.capture) expire(current); }, { once: true });
+            onAbort(capture.signal, () => { if (current.capture) expire(current); });
             current.stops.push(diagnostics.subscribe(() => queueMicrotask(() => render(current))));
             const result = read(current, capture);
             if (current.capture) {
@@ -222,7 +225,17 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
         status("disposed", "");
         cell.clearSnapshotListeners();
     }
-    return Object.freeze({ request, cancel, dispose, ...controllerObservable(cell, "Hover", () => disposed, notifications), getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.capture, disposed }) });
+    const controller = Object.freeze({ request, cancel, dispose, ...controllerObservable(cell, "Hover", () => disposed, notifications), getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.capture, disposed }) });
+    if (!options.popup) return controller;
+    try {
+        const popup = mountHoverPopup(editor, controller, options.popup === true ? {} : options.popup);
+        return Object.freeze({ ...controller, request: popup.request, cancel: popup.cancel, dispose() {
+            if (disposed) return;
+            notifications.assertWritable();
+            popup.dispose();
+            dispose();
+        } });
+    } catch (error) { dispose(); throw error; }
 }
 
 function providerDiagnostics(owner: LspDocumentOwner): HoverDiagnostics {

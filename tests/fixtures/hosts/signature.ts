@@ -4,7 +4,7 @@ import { attachPanelSession } from "../../../examples/shared/editor-attachment.t
 import { CleanupScope } from "../../../examples/shared/cleanup-scope.ts";
 import type { DocumentId, TabId } from "../../../src/index.ts";
 import { attachEditorLanguage } from "../../../src/browser/index.ts";
-import type { HostHoverTools } from "../../../examples/shared/hover.ts";
+import type { HostHoverTools } from "./hover.ts";
 import type { SignatureController, SignatureSnapshot, TextEditor } from "../../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../../src/protocol/index.ts";
 import type { SignatureInput } from "../language/signature.ts";

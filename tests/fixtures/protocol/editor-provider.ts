@@ -6,7 +6,7 @@ import type { RenameHostOptions } from "../../../examples/shared/rename.ts";
 import type { ActionHostOptions } from "../hosts/code-actions.ts";
 import { createLspProjectClient } from "../language/lsp-project-client.ts";
 import type { LspProjectFactory } from "../language/lsp-project-client.ts";
-import type { HoverHostOptions } from "../../../examples/shared/hover.ts";
+import type { HoverHostOptions } from "../hosts/hover.ts";
 import type { NavigationHostOptions } from "../hosts/navigation.ts";
 import type { Workspace } from "../../../src/index.ts";
 import type { SignatureHostOptions } from "../hosts/signature.ts";

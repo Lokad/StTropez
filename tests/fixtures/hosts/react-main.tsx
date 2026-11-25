@@ -26,7 +26,6 @@ import { documentLinksPanelModel } from "./document-links-panel.ts";
 import { actionsPanelModel } from "./actions-panel.ts";
 import { renamePanelModel } from "./rename-panel.ts";
 import { signatureCommandsModel } from "./signature-panel.ts";
-import { mountHoverPanel } from "../../../examples/shared/hover-panel.ts";
 import { HostDraftRecovery } from "./draft-recovery.ts";
 import { createBrowserDraftStore } from "../../../examples/shared/draft-store.ts";
 import { draftPanelModel } from "./draft-panel.ts";
@@ -53,7 +52,6 @@ const formCommitted = () => { counters.form++; };
 const metadataCommitted = () => { counters.metadata++; };
 // Stable refs lend empty subtrees to the shared presenters. Their returned cleanup also
 // handles Strict Mode replay; documentation and fitting never synchronize through effects.
-const hoverPopupRef = (host: HTMLDivElement | null) => host ? mountHoverPanel(host, bindings.hover) : undefined;
 function useObserved<T>(store: Observable<T>): T { return useSyncExternalStore(store.subscribe, store.getSnapshot); }
 
 function Commands() {
@@ -167,9 +165,6 @@ function LanguageTools() {
         <div>{model.actions.map(action => <button key={action.label} onPointerDown={action.keepEditorFocus ? event => event.preventDefault() : undefined} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
     </section>;
 }
-function SymbolInfo() {
-    return <div ref={hoverPopupRef} />;
-}
 function SignatureTools() {
     const tools = bindings.signature, model = signatureCommandsModel(tools, useObserved(tools.state));
     return <section className="host-language" aria-label={model.label}><h2>{model.title}</h2><output aria-label={model.status.label}>{model.status.text}</output>
@@ -186,7 +181,7 @@ function TablePasteTools() {
 function App() {
     return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview />
         <div ref={locationDockRef} className="host-locations" role="region" aria-label="Locations" /><NavigationTools /><DocumentLinksTools />
-        <ConfigurationSavePanel /><TransferWorkspace /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentColorsTools /><SignatureTools /><SymbolInfo /></>;
+        <ConfigurationSavePanel /><TransferWorkspace /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentColorsTools /><SignatureTools /></>;
 }
 const EditNoteList = memo(function EditNoteList({ label, page, notes }: EditNotes) {
     return <ol aria-label={label} start={page * editPageSize + 1}>{notes?.map((note, i) => <li key={i}><pre>{formatEditNote(note)}</pre></li>)}</ol>;

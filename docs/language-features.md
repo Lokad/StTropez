@@ -204,9 +204,15 @@ stop when the handler returns. Provider replies and visible rendering have separ
 
 ### Hover and documentation
 
-Enable `hover: {}` on the language attachment. Call `hover.request()` to inspect the caret or pass a
-captured `{ revision, offset }` from the [pointer dwell observer](editor.md#pointer-dwell). It shows diagnostics at that offset as soon as
-they are available. Symbol documentation joins them when the hover request completes.
+Enable `hover: { popup: true }` on the language attachment. Hold the pointer over source text
+for 300 ms or press Ctrl+K Ctrl+I (Cmd+K Cmd+I on macOS) to inspect the caret. The card opens
+at the source without moving focus. Escape dismisses it. A toolbar can call `hover.request()`.
+Pass a popup options object to set `closeHint`, control links or decline a pointer or keyboard
+lookup through `beforeInspect`.
+
+For a custom view, enable `hover: {}` and subscribe to the controller. Call `hover.request()`
+at the caret or pass a captured `{ revision, offset }` from the [pointer dwell observer](editor.md#pointer-dwell).
+Diagnostics appear as they become available. Symbol documentation joins them when the request completes.
 `await hover.request()` returns `done` with the combined snapshot, including `empty` when
 neither source has content. A replaced or cancelled lookup returns `stale`. An unavailable
 view or hidden or invalid position returns `refused`. A provider failure or timeout returns
@@ -226,8 +232,8 @@ fold projection, and replacing the tab expire the result. `cancel()` dismisses i
 releases the controller. For a separate analysis service, pass its observable `diagnostics` and
 `diagnosticRevision` snapshot through the `diagnostics` option. The lookup uses the painted revision.
 
-A provider can return Markdown, plaintext or a code block with a language tag. The host
-places the hover card, including when the reply omits a range.
+A provider can return Markdown, plaintext or a code block with a language tag. When it omits
+a range, the built-in card stays at the inspected position.
 
 Use `mountDocumentation` from `sttropez/browser` to append a `DocumentationView`. `setContent` reuses
 an unchanged immutable array. `dispose` removes the view and listeners. The host entries (`sttropez`,

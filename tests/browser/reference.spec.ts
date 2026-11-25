@@ -115,7 +115,14 @@ test("the reference app edits, reviews and saves the document while its language
     await expect(page.locator(".st-comparison-controls output")).toHaveText(/1 change|Change 1 of 1/);
     await expect(page.locator(".st-comparison-added").first()).toContainText("Review this quote");
     await page.getByRole("button", { name: "Hover", exact: true }).click();
-    await expect(page.locator("#result")).toContainText("file:///reference/quote.ts");
+    const hover = page.locator("#pane .st-hover:visible");
+    await expect(hover).toContainText("file:///reference/quote.ts");
+    await expect(working).toBeFocused();
+    await working.press("Escape");
+    await expect(hover).toHaveCount(0);
+    await working.press("Control+k");
+    await working.press("Control+i");
+    await expect(hover).toContainText("file:///reference/quote.ts");
     await working.press("Control+End");
     await page.keyboard.insertText("\nlookup(");
     await page.getByRole("button", { name: "Signature", exact: true }).click();

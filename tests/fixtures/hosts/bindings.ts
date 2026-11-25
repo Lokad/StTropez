@@ -14,7 +14,7 @@ import { hostLspFactories } from "../protocol/editor-provider.ts";
 import type { NavigationFault } from "../language/navigation.ts";
 import { fixtureRequests } from "../language/fixture-requests.ts";
 import type { LspWorkspace } from "../../../src/protocol/index.ts";
-import { HostHoverTools } from "../../../examples/shared/hover.ts";
+import { HostHoverTools } from "./hover.ts";
 import { HostTablePaste } from "../../../examples/shared/table-paste.ts";
 import { HostDomainTools } from "./domain.ts";
 import { HostNavigationTools } from "./navigation.ts";

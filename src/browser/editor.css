@@ -104,7 +104,8 @@
 .st-viewport .st-selection-run > .st-viewport-selected { background-color: transparent; }
 .st-viewport-row .st-selected-line-break { display: inline-block; width: 0; height: 1lh; vertical-align: top; }
 .st-viewport-row .st-selected-line-break[data-ornament="point"]::after { height: 100%; width: 1ch; border: 0; background: var(--st-selection, #24496b); }
-.st-editor { cursor: text; user-select: none; }
+.st-editor { cursor: text; }
+.st-editor > .st-viewport-surface { user-select: none; }
 .st-input-context { position: absolute; width: 1px; min-height: 1px; box-sizing: border-box; padding: 0; margin: 0; border: 0; resize: none; overflow: hidden;
     font: inherit; line-height: inherit; tab-size: inherit; direction: ltr; opacity: 0; }
 .st-composing .st-input-caret:not(:empty) { width: 1ch; overflow: hidden; white-space: pre; text-decoration: underline; background: var(--st-background, #131b27); }
@@ -164,9 +165,11 @@
 .st-editor-overlay { position: fixed; box-sizing: border-box; margin: 0; overflow: auto; }
 .st-editor > .st-editor-overlay[popover] { inset: auto; color: inherit; cursor: auto; user-select: text; overscroll-behavior: contain; }
 .st-editor-overlay[hidden] { display: none; }
-.st-signature { width: min(420px, calc(100vw - 16px)); max-height: 290px; padding: 12px 16px; border: 1px solid #50627f;
+.st-hover, .st-signature { width: min(420px, calc(100vw - 16px)); max-height: 290px; padding: 12px 16px; border: 1px solid #50627f;
     border-radius: 7px; background: var(--st-signature-background, var(--st-background, #1b283c)); box-shadow: 0 8px 28px #0007; font: 13px/1.5 var(--st-font, monospace); }
-.st-signature pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.st-hover pre, .st-signature pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.st-hover { background: var(--st-hover-background, var(--st-background, #1b283c)); }
+.st-hover small { display: block; opacity: .75; }
 .st-signature mark { color: var(--st-signature-parameter-text, #e2fff6); background: var(--st-signature-parameter-background, #365474); border-radius: 2px; }
 .st-signature button { cursor: pointer; }
 

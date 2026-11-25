@@ -71,7 +71,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
             const { resources, documents, tabs, views, leases, subscriptions } = project.workspace.diagnostics();
             return { resources, documents, tabs, views, leases, subscriptions };
         };
-        const panels = [".st-completion", ".st-signature", ".demo-snippet", ".demo-language-popups", ".demo-symbols", ".demo-rename", ".demo-actions"];
+        const panels = [".st-completion", ".st-signature", ".demo-snippet", ".st-hover", ".demo-symbols", ".demo-rename", ".demo-actions"];
         const panelCounts = () => panels.map(selector => ({ selector, count: document.querySelectorAll(selector).length }));
         const results = [], feedback = document.createElement("output");
         try {
@@ -93,7 +93,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
                 };
                 Element.prototype.remove = function () {
                     remove.call(this);
-                    if (point === "cleanup" && !cleaned && this.classList.contains("demo-language-popups")) { cleaned = true; throw cleanupFailure; }
+                    if (point === "cleanup" && !cleaned && this.classList.contains("demo-snippet")) { cleaned = true; throw cleanupFailure; }
                 };
                 try {
                     try { view = mountDemoLanguage(project, file, editor, point === "late" ? delayed : project.language, () => {}, error => errors.push(error), feedback, document.body); }

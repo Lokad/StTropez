@@ -4,7 +4,6 @@ import type { HostController } from "./controller.ts";
 import type { ViewBindings } from "./bindings.ts";
 import { hostSceneModel } from "./scene-model.ts";
 import { mountLanguagePanel } from "./language-panel.ts";
-import { mountHoverPanel } from "../../../examples/shared/hover-panel.ts";
 import { mountVariantPanel } from "./variant-panel.ts";
 import { mountTablePastePanel } from "./table-panel.ts";
 import { mountDomainPanel } from "./domain-panel.ts";
@@ -67,7 +66,6 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const destroyDomain = mountDomainPanel(domain, bindings.domain);
     const destroyTablePaste = mountTablePastePanel(tablePaste, bindings.tablePaste);
     const destroyLanguage = mountLanguagePanel(language, bindings.language);
-    const destroyHover = mountHoverPanel(host, bindings.hover);
     const destroySignature = mountSignaturePanel(host, bindings.signature);
     const updateStatus = () => {
         const text = readStatus().text; if (status.textContent === text) return;
@@ -132,5 +130,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.activity.subscribe(updateStatus), controller.recovery.subscribe(updateRecovery),
         controller.layout.subscribe(renderReview));
     renderScene(); renderReview(); updateStatus(); updateRecovery();
-    return () => { destroyConflict(); destroyTransfer(); destroyConfiguration(); destroyDraft(); destroyColors(); destroyLinks(); destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyHover(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroyConflict(); destroyTransfer(); destroyConfiguration(); destroyDraft(); destroyColors(); destroyLinks(); destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }

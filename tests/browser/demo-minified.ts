@@ -82,7 +82,7 @@ export async function hoverString(page: Page, url: string) {
     const { viewport, box } = await pasteBundle(page, url);
     await expect(page.locator("#language-status")).toHaveText("Language ready");
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
-    const tooltip = page.locator(".demo-language-popups .host-symbol-info");
+    const tooltip = page.locator(".st-hover");
     const counts = () => page.evaluate(() => Reflect.get(window, "bundleHover") as { requests: number; hides: number });
     const x = box.x + box.width / 2, y = box.y + box.height / 2;
     await page.mouse.move(x, y);

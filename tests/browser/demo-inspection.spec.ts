@@ -10,7 +10,7 @@ async function select(page: Page, query: string) {
     await expect(page.locator(".st-find-status")).toHaveText("1 of 1"); await page.locator(".st-find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click(); return source;
 }
-const hover = (page: Page) => page.locator(".demo-language-popups .host-symbol-info");
+const hover = (page: Page) => page.locator(".st-hover");
 
 test("real type inspection works from Code, keyboard and pointer without changing source or pointer focus", async ({ page }) => {
 
