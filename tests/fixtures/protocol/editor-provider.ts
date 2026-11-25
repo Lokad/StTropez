@@ -2,7 +2,6 @@ import { openWebSocketTransport } from "../../../src/browser/index.ts";
 import type { LspWorkspace } from "../../../src/protocol/index.ts";
 import { FixtureLspWorkspace } from "./fixture-workspace.ts";
 import { createLspProviderController, type LspProviderFactory } from "../language/lsp-provider-controller.ts";
-import type { RenameHostOptions } from "../../../examples/shared/rename.ts";
 import type { ActionHostOptions } from "../hosts/code-actions.ts";
 import { createLspProjectClient } from "../language/lsp-project-client.ts";
 import type { LspProjectFactory } from "../language/lsp-project-client.ts";
@@ -12,11 +11,13 @@ import type { Workspace } from "../../../src/index.ts";
 import type { SignatureHostOptions } from "../hosts/signature.ts";
 import type { LinkHostOptions } from "../hosts/document-links.ts";
 import type { ColorHostOptions } from "../hosts/document-colors.ts";
-import type { FixturePolicy } from "../language/fixture-requests.ts";
-import type { NavigationFault } from "../language/navigation.ts";
 
 /** Explicit development-host choice. Generic session/feature code has no fixture endpoint policy. */
-export function hostLspFactories(owner: Workspace, takeRenamePolicy: () => FixturePolicy<NavigationFault>): Readonly<{ owner: LspWorkspace; provider: LspProviderFactory; hover: HoverHostOptions; navigation: NavigationHostOptions; rename: RenameHostOptions; actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureHostOptions; links: LinkHostOptions; colors: ColorHostOptions }> {
+export function hostLspFactories(owner: Workspace): Readonly<{
+    owner: LspWorkspace; provider: LspProviderFactory; hover: HoverHostOptions; navigation: NavigationHostOptions;
+    actions: ActionHostOptions; project: LspProjectFactory; signature: SignatureHostOptions;
+    links: LinkHostOptions; colors: ColorHostOptions;
+}> {
     const url = new URL("/lsp-fixture", location.href); url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const connection = new FixtureLspWorkspace(owner, { connect: signal => openWebSocketTransport(url.href, { signal }),
         initializationOptions: { fixtureDynamicLanguage: new URLSearchParams(location.search).get("lspSubset") === "dynamic" },
@@ -34,10 +35,6 @@ export function hostLspFactories(owner: Workspace, takeRenamePolicy: () => Fixtu
         hover: { beforeRequest: (session, configuration) => connection.prepareRequest(session, "textDocument/hover", configuration) },
         navigation: { provider: connection, prepare: (kind, policy) => session => connection.prepareRequest(session,
             kind === "definition" ? "textDocument/definition" : "textDocument/references", policy) },
-        rename: { provider: connection, prepare: () => {
-            const policy = takeRenamePolicy();
-            return session => connection.prepareRequest(session, "textDocument/rename", policy);
-        } },
         actions: { provider: connection,
             beforeRequest: async (session, configuration) => {
                 await connection.prepareRequest(session, "textDocument/codeAction", configuration);

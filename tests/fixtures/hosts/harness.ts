@@ -86,7 +86,6 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         setLinksDelay: bindings.links.fixture.setDelay, faultLinksNext: bindings.links.fixture.faultNext, requestLinks: bindings.links.discover, setLinkAlias: (module: string, document: DocumentId | null) => bindings.links.setAlias(module, document),
         editLinkTarget: (id: DocumentId, revision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: id, expectedRevision: revision, origin: "host", edits }),
         setActionDelay: bindings.actions.fixture.setDelay, faultActionNext: bindings.actions.fixture.faultNext, faultIdleAction: () => bindings.actions.faultIdle(), requestAction: bindings.actions.request,
-        setRenameDelay: bindings.renameRequests.setDelay, faultRenameNext: bindings.renameRequests.faultNext, faultIdleRename: () => bindings.rename.faultIdle(),
         faultIdleProject: () => bindings.project.faultIdle(),
         setProjectTargetReadOnly: (id: DocumentId, value: boolean) => { const resource = controller.workspace.resourceForDocument(id), metadata = resource.metadata.getSnapshot();
             controller.workspace.setCapabilities(resource.id, { ...metadata.capabilities, edit: value ? ["host"] : ["human", "host", "agent"] }); },
@@ -131,7 +130,6 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     setColorsDelay: (value: number) => void; faultColorsNext: (value: "malformed" | "failure" | "incomplete" | "markup") => void; requestColors: () => void; previewColor: () => void;
     setLinksDelay: (value: number) => void; faultLinksNext: (value: "malformed" | "failure" | "incomplete" | "markup") => void; requestLinks: () => void; setLinkAlias: (module: string, document: DocumentId | null) => void; editLinkTarget: (id: DocumentId, revision: number, edits: readonly TextEdit[]) => unknown;
     setActionDelay: (value: number) => void; faultActionNext: (value: "malformed" | "failure" | "incomplete" | "markup") => void; faultIdleAction: () => boolean; requestAction: () => void;
-    setRenameDelay: (value: number) => void; faultRenameNext: (value: "malformed" | "failure") => void; faultIdleRename: () => boolean;
     faultIdleProject: () => boolean;
     setProjectTargetReadOnly: (id: DocumentId, value: boolean) => void;
     navigationDocument: (id: DocumentId) => Readonly<{ revision: number; length: number; text: string }>;

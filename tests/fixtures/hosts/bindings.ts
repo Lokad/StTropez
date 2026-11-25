@@ -11,8 +11,6 @@ import { linePrompt } from "../../../examples/shared/line-prompt.ts";
 import { HostLanguageTools } from "./language.ts";
 import { createNavigationHost } from "../../../examples/shared/language-host.ts";
 import { hostLspFactories } from "../protocol/editor-provider.ts";
-import type { NavigationFault } from "../language/navigation.ts";
-import { fixtureRequests } from "../language/fixture-requests.ts";
 import type { LspWorkspace, LspWorkspaceScope } from "../../../src/protocol/index.ts";
 import { HostHoverTools } from "./hover.ts";
 import { HostTablePaste } from "../../../examples/shared/table-paste.ts";
@@ -56,7 +54,6 @@ export class ViewBindings {
     readonly project: HostProjectTools;
     readonly signature: HostSignatureTools;
     readonly rename: HostRenameTools;
-    readonly renameRequests = fixtureRequests<NavigationFault>("rename");
     readonly actions: HostActionsTools;
     readonly links: HostDocumentLinks;
     readonly colors: HostDocumentColors;
@@ -221,7 +218,7 @@ export class ViewBindings {
             const busy = (activity: ReturnType<TextEditor["activity"]> | undefined) => activity && (activity.pendingInput || activity.pendingCommand || activity.composing);
             return !this.tablePaste.hasPendingInput(documentId) && !(this.review?.panes.working.view.documentId === documentId && busy(this.review.panes.working.activity())) && ![...this.mounted.values()].some(value => value.documentId === documentId && busy(value.editor.activity()));
         };
-        const lsp = hostLspFactories(controller.workspace, this.renameRequests.take);
+        const lsp = hostLspFactories(controller.workspace);
         this.lspOwner = lsp.owner;
         // Project documents and fixture commands outlive individual panes.
         this.projectScope = lsp.owner.createScope();
@@ -239,7 +236,7 @@ export class ViewBindings {
         this.project = new HostProjectTools(languageHost, lsp.project, lsp.owner);
         this.colors = new HostDocumentColors(languageHost, lsp.colors);
         this.actions = new HostActionsTools(languageHost, lsp.actions, this.project);
-        this.rename = new HostRenameTools(languageHost, lsp.rename);
+        this.rename = new HostRenameTools(languageHost, lsp.owner);
         this.signature = new HostSignatureTools(canCapture, this.hover, lsp.signature, reconnectProvider);
         this.tools = [this.language, this.signature, this.tablePaste, this.domain, this.navigation, this.project,
             this.rename, this.actions, this.links, this.colors];

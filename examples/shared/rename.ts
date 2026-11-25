@@ -7,11 +7,10 @@ import { isMountedEditor, openChangedFile, type LanguageHost } from "./language-
 import type { DocumentId, TabId } from "../../src/index.ts";
 import { attachEditorLanguage } from "../../src/browser/index.ts";
 import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../src/browser/index.ts";
-import type { LspPrepare, LspWorkspace, LspWorkspaceEditNote } from "../../src/protocol/index.ts";
+import type { LspWorkspace, LspWorkspaceEditNote } from "../../src/protocol/index.ts";
 import { identifierAt } from "./language/identifier.ts";
 import { HostCell } from "./observable.ts";
 
-export type RenameHostOptions = Readonly<{ provider: LspWorkspace; open?: (prompt: (name?: string) => void) => boolean; prepare?: () => LspPrepare }>;
 type Session = { id: string; editor: TextEditor; controller: RenameController };
 export type RenameNote = Omit<LspWorkspaceEditNote, "insert" | "insertUnits"> & Readonly<{ ordinal: number; line: number; column: number; after: string }>;
 export type HostRenameSnapshot = Readonly<{ available: boolean; connected: boolean; disconnected: boolean; pending: boolean; status: RenameSnapshot["status"];
@@ -27,20 +26,21 @@ export class HostRenameTools {
     private owner: Session | undefined;
     private readonly host: LanguageHost;
     private readonly reviewKey;
-    private readonly options: RenameHostOptions;
+    private readonly provider: LspWorkspace;
     private disconnected = false;
     private disposed = false;
     private requested = 0;
     private readonly nameField = createPanelKeyBinding<HTMLInputElement>(() => (this.owner ?? this.active)?.editor);
     private readonly cell = new HostCell(initial);
     readonly state = this.cell.observable;
-    constructor(host: LanguageHost, options: RenameHostOptions) {
+    constructor(host: LanguageHost, provider: LspWorkspace) {
         this.reviewKey = createReviewKey(host.workspace);
-        this.host = host; this.options = options;
+        this.host = host;
+        this.provider = provider;
     }
     private publish(patch: Partial<HostRenameSnapshot> = {}) {
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && !this.active.editor.signal.aborted,
-            connected: !this.disconnected && this.options.provider.getSnapshot().phase === "ready", disconnected: this.disconnected });
+            connected: !this.disconnected && this.provider.getSnapshot().phase === "ready", disconnected: this.disconnected });
     }
     private render(state: RenameSnapshot, page = 0) {
         const preview = state.preview;
@@ -52,7 +52,7 @@ export class HostRenameTools {
                 before: at.before + (at.to - at.from > 256 ? ` (${at.to - at.from} UTF-16 units)` : ""),
                 after: insert + (insertUnits > insert.length ? `… (${insertUnits} UTF-16 units)` : "") };
         });
-        if (state.status === "expired" && this.options.provider.getSnapshot().phase === "disconnected") this.disconnected = true;
+        if (state.status === "expired" && this.provider.getSnapshot().phase === "disconnected") this.disconnected = true;
         const reviewKey = this.reviewKey(preview);
         const paging = preview && reviewKey !== null ? editPaging(reviewKey, page, count, next => {
             const current = this.owner?.controller.getSnapshot();
@@ -77,9 +77,9 @@ export class HostRenameTools {
     readonly bindName = this.nameField.bind;
     attach(id: string, _tab: TabId, editor: TextEditor): () => void {
         if (this.disposed) throw new Error("Rename panel is disposed.");
-        const { rename: controller, dispose } = attachEditorLanguage(editor, this.options.provider, { rename: {
+        const { rename: controller, dispose } = attachEditorLanguage(editor, this.provider, { rename: {
             documents: () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null),
-            canCapture: this.host.canCapture, prepareRequest: () => this.options.prepare?.(),
+            canCapture: this.host.canCapture,
         } });
         const session = { id, editor, controller };
         return attachPanelSession(this.sessions, session, (signal, register) => {
@@ -89,9 +89,9 @@ export class HostRenameTools {
             } });
             register({ id: "rename.start", label: "Rename symbol", enabled: () => !this.disconnected && this.host.canCapture(editor.view.documentId),
                 run: () => {
-                    const prompt = (name?: string) => { if (this.sessions.has(session)) { this.active = session; this.prompt(session, name); } };
-                    if (this.options.open) return this.options.open(prompt);
-                    prompt(); return true;
+                    this.active = session;
+                    this.prompt(session);
+                    return true;
                 } }, { keys: ["F2"] });
             const ownsField = () => (this.owner ?? this.active) === session && this.nameField.focused;
             register({ id: "rename.submit", label: "Preview or apply rename", enabled: ownsField,
@@ -148,10 +148,6 @@ export class HostRenameTools {
         const s = this.cell.get();
         if (s.pending || s.preview || this.disposed || !s.changes.some(c => c.document === document)) return;
         this.publish({ message: openChangedFile(this.host, document, this.sessions.keys()) });
-    }
-    faultIdle() {
-        if (!this.owner || this.cell.get().pending || !this.cell.get().connected) return false;
-        this.options.provider.disconnect(); return true;
     }
     debug() { return { state: this.cell.get(), requested: this.requested, capture: this.owner ? { view: this.owner.id } : null,
         sessions: this.sessions.size, subscriptions: this.cell.count(), disposed: this.disposed }; }

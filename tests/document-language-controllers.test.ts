@@ -182,6 +182,10 @@ test("a rename request returns its preview, refusal or provider error", async t 
     assert.equal(rename.getSnapshot().status, "failed");
     f.peer.onRequest("textDocument/rename", () => { throw new ResponseError(-32801, "Content changed"); });
     assert.deepEqual(await rename.request("next"), { status: "stale" });
+    f.peer.onRequest("textDocument/rename", () => null);
+    const empty = await rename.request("next", { review: true });
+    assert.equal(empty.status, "done");
+    assert.deepEqual(empty.value.apply(), { status: "refused", reason: "no-changes" });
     const held = holdReply(f, "textDocument/rename", null);
     const previous = rename.request("earlier");
     await held.received;
@@ -196,6 +200,30 @@ test("a rename request returns its preview, refusal or provider error", async t 
     assert.equal(f.document(), before);
     assert.deepEqual(done.value.apply(), { status: "done", value: [{ document: before.id, title: before.title }] });
     assert.equal(f.document().buffer.slice(0, 4), "next");
+});
+
+test("a rename preview expires when its attachment closes or the provider disconnects", async t => {
+    const f = await fixture(t);
+    const source = f.document();
+    f.peer.onRequest("textDocument/rename", () => ({ changes: { "generic:source": [{ range, newText: "next" }] } }));
+    const attach = () => attachEditorLanguage(f.editor, f.provider, { rename: {} });
+    const original = attach();
+    const first = await original.rename.request("next", { review: true });
+    assert.equal(first.status, "done");
+    assert.equal(first.value.canApply, true);
+    original.dispose();
+
+    const replacement = attach();
+    const second = await replacement.rename.request("next", { review: true });
+    assert.equal(second.status, "done");
+    assert.deepEqual(first.value.apply(), { status: "stale" });
+    assert.equal(first.value.readEdits(0, 1), undefined);
+    assert.equal(second.value.readEdits(0, 1)?.total, 1);
+
+    f.provider.disconnect();
+    assert.deepEqual(second.value.apply(), { status: "stale" });
+    assert.equal(second.value.readEdits(0, 1), undefined);
+    assert.equal(f.document(), source);
 });
 
 test("direct rename applies its whole project in one undo step or refuses it", async t => {

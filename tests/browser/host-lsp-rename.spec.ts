@@ -94,46 +94,6 @@ test.describe(`plain LSP rename host`, () => {
         expect(after.bindings.views.map(view => [view.viewId, view.documentId])).toEqual(before.bindings.views.map(view => [view.viewId, view.documentId]));
         expect(after.history).toEqual(before.history);
     });
-    test("malformed targets, authority changes, cancelled captures and reconnect leave editing available", async ({ page }) => {
-        const replies = await holdLspReplies(page, "textDocument/rename"); await page.reload();
-        let requests = 0, lastPosition: unknown; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/rename") { requests++; lastPosition = value.params.position; } }));
-        await seed(page); await button(page, "Add navigation companion").click(); const before = await snapshot(page), companion = before.bindings.navigation.companion!;
-        await page.evaluate(() => window.hostFixture.faultRenameNext("malformed")); await preview(page); expect((await snapshot(page)).bindings.rename.state).toMatchObject({ status: "failed", count: 0, canApply: false }); await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
-        await preview(page); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion); await waitForRename(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
-        await preview(page, "catalogue"); await expect(button(page, "Apply captured rename")).toBeDisabled();
-        await expect(targets(page)).toHaveCount(1); await expect(targets(page)).toContainText(["// fixture rename"]);
-        await expect(page.getByLabel("Rename status", { exact: true })).toContainText("read-only or locked");
-        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.rename.state.preview!.apply())).toEqual({ status: "refused", reason: "not-writable" });
-        // A programmatic click must not bypass the captured permission policy either.
-        await button(page, "Apply captured rename").dispatchEvent("click"); await name(page).press("Enter"); await waitForRename(page); await exact(page, raw);
-        expect((await snapshot(page)).bindings.rename.state.status).toBe("ready"); expect((await snapshot(page)).history).toEqual(before.history);
-        expect(await targets(page).count()).toBeGreaterThan(0);
-        expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe("const catalogue = 1;\r\ncatalogue;\r\n"); await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
-        await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
-        const retired = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.rename.state.preview!);
-        await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
-        await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
-        expect(await retired.evaluate(p => [p.apply(), p.readEdits(0, 1) === undefined])).toEqual([{ status: "stale" }, true]); await retired.dispose();
-        await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
-        await name(page).fill("inventory");
-        replies.hold();
-        await button(page, "Prepare rename preview").click();
-        await expect.poll(replies.waiting).toBe(true);
-        const pendingRequests = requests;
-        await name(page).press("Enter");
-        await replies.release();
-        await waitForRename(page);
-        expect(requests).toBe(pendingRequests);
-        await expect(button(page, "Apply captured rename")).toBeEnabled();
-        await select(page, raw.indexOf("catalogue") + 2); await preview(page); await page.evaluate(() => window.hostFixture.faultIdleRename()); await waitForRename(page); await expect(button(page, "Apply captured rename")).toBeDisabled();
-        await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await button(page, "Disconnect rename provider").click(); await input(page).press("Control+End"); await input(page).pressSequentially("local"); await waitForRename(page); await exact(page, raw + "local"); await button(page, "Reconnect rename provider").click(); await select(page, raw.indexOf("catalogue") + 2); await preview(page); await expect(button(page, "Apply captured rename")).toBeEnabled();
-        const count = requests; await select(page, raw.indexOf(";") + 1); await preview(page); expect(requests).toBe(count + 1); expect(lastPosition).toEqual({ line: 1, character: "const catalogue = 1;".length }); expect((await snapshot(page)).bindings.rename.state.count).toBe(0);
-        expect(await page.evaluate(() => window.hostFixture.snapshot().bindings.rename.state.preview!.apply())).toEqual({ status: "refused", reason: "no-changes" });
-        await select(page, raw.indexOf("catalogue") + 2); await preview(page, "catalogue");
-        await expect(targets(page)).toHaveCount(1); await button(page, "Apply captured rename").press("Space");
-        await exact(page, marker + raw + "local"); await page.keyboard.press("Control+z");
-        await exact(page, raw + "local");
-    });
     test("comparison rename keeps its baseline and returns focus to the edited working copy", async ({ page }) => {
         await seed(page); await button(page, "Open source review").click(); await button(page, "Add navigation companion").click(); await waitForRename(page); const working = input(page, "Comparison working source"), before = await snapshot(page), baseline = before.bindings.comparison!.baseline;
         await working.focus(); await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, raw.indexOf("catalogue") + 2); await working.press("F2"); await name(page).fill("inventory"); await name(page).press("Enter"); await waitForRename(page);
@@ -176,4 +136,40 @@ test.describe(`plain LSP rename host`, () => {
         const expected = marker + text.replaceAll("catalogue", "inventoryX"); await exact(page, expected); await input(page).press("Control+z"); await waitForRename(page); await exact(page, text); await input(page).press("Control+Shift+z"); await waitForRename(page); await exact(page, expected);
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
     });
+});
+
+test("the rename field keeps a pending preview and explains a read-only target", async ({ page }) => {
+    const replies = await holdLspReplies(page, "textDocument/rename");
+    await page.goto("/hosts/plain/?language=lsp");
+    await expect(input(page)).toBeVisible();
+    await seed(page);
+    await button(page, "Add navigation companion").click();
+    const companion = (await snapshot(page)).bindings.navigation.companion!;
+    const apply = button(page, "Apply captured rename");
+    const prepare = button(page, "Prepare rename preview");
+
+    await preview(page);
+    await expect(apply).toBeEnabled();
+    await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion);
+    await expect(apply).toBeDisabled();
+    await preview(page, "catalogue");
+    await expect(targets(page)).toHaveText([/fixture rename/]);
+    await expect(page.getByLabel("Rename status", { exact: true })).toContainText("read-only or locked");
+    await name(page).press("Enter");
+    await expect(apply).toBeDisabled();
+    await exact(page, raw);
+
+    await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
+    replies.hold();
+    await prepare.click();
+    await expect.poll(replies.waiting).toBe(true);
+    await name(page).press("Enter");
+    await expect(prepare).toBeDisabled();
+    await expect(name(page)).toBeFocused();
+    await replies.release();
+    await expect(apply).toBeEnabled();
+    expect(replies.cancelled()).toBe(false);
+    await exact(page, raw);
+    await apply.press("Space");
+    await exact(page, marker + raw);
 });
