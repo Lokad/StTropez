@@ -1,5 +1,5 @@
 import { onSourceFocus } from "../../../examples/shared/source-focus.ts";
-import { bindFindCommands } from "../../../examples/shared/find-commands.ts";
+import { bindFindCommands } from "../../../src/browser/find-controls.ts";
 import { captureEditorCommand, scopedCommands } from "../../../examples/shared/editor-attachment.ts";
 import { createFindController, createRegexFindBackend } from "../../../src/browser/index.ts";
 import type { TextEditor, FindController, FindSnapshot } from "../../../src/browser/index.ts";

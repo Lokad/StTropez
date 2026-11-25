@@ -6,7 +6,28 @@ planning.
 
 ## Use
 
-To enable both modes, attach one controller per editor.
+Mount the optional bar in a toolbar container. Attach each searchable pane, including the read-only side
+of a comparison. Ctrl/Cmd+F opens Find, Ctrl/Cmd+H opens Replace, and F3 repeats the last search.
+
+```ts
+import { mountFindBar, type TextEditor } from "sttropez/browser";
+
+export function mountSearch(toolbar: HTMLElement, pane: TextEditor, workerUrl: URL) {
+    const bar = mountFindBar(toolbar, {
+        createWorker: () => new Worker(workerUrl, { type: "module" }),
+    });
+    bar.attach(pane);
+    return bar;
+}
+```
+
+The bar follows editor focus. `setTarget(editor)` selects an attached pane for a host action.
+Read-only panes support navigation. Replace All in a writable pane creates one undo step.
+Editor disposal detaches that pane. Call `bar.dispose()` to remove the controls and shortcuts.
+Omit `createWorker` for literal-only search. Use `text` for control labels and tooltips,
+`status` for result messages, and `targetLabel` for pane names.
+
+For custom controls, attach one Find controller per editor.
 
 ```ts
 import { createFindController, createRegexFindBackend } from "sttropez/browser";
@@ -268,9 +289,10 @@ A malformed reply, exceeded limit or worker failure discards the entire plan.
 
 ## Host responsibilities
 
-Build the controls and supply the worker URL. Label partial counts and enable Replace All at `ready`.
-Preserve focus if the user switches to another form. Dispose subscriptions and the controller on
-detach. Custom backends must respect cancellation, source identity, match order and size limits.
+Supply a worker URL to enable regex. Dispose the bar when its toolbar unmounts. For custom controls,
+label partial counts, enable Replace All at `ready` and preserve focus when the user moves to another
+form. Dispose the controller and its subscriptions on detach. Custom backends must respect
+cancellation, source identity, match order and size limits.
 
 ## Not covered
 

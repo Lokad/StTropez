@@ -7,7 +7,7 @@ test("documentation and diagnostic details preserve metadata and open permitted 
 async function select(page: Page, query: string) {
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill(query);
-    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click();
+    await expect(page.locator(".st-find-status")).toHaveText("1 of 1"); await page.locator(".st-find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click(); return source;
 }
 const hover = (page: Page) => page.locator(".demo-language-popups .host-symbol-info:not(.host-signature)");
@@ -55,7 +55,7 @@ test("real signature help follows typed arguments and respects completion Escape
 
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true }), popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
-    await source.press("Control+f"); const find = page.locator("#find-bar"); await expect(find).toBeVisible();
+    await source.press("Control+f"); const find = page.locator(".st-find-bar"); await expect(find).toBeVisible();
     await source.press("Control+End"); await source.pressSequentially("\ncalculateTotal(");
     await expect(popup).toContainText("calculateTotal"); await expect(popup.getByLabel("Active signature parameter")).toContainText("items");
     await source.pressSequentially("cart, "); await expect(popup.getByLabel("Active signature parameter")).toContainText("discount");

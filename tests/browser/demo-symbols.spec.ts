@@ -6,7 +6,7 @@ import { runDemoRenameTargets } from "./demo-walkthrough.ts";
 async function symbol(page: Page) {
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill("calculateTotal(cart");
-    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click();
+    await expect(page.locator(".st-find-status")).toHaveText("1 of 1"); await page.locator(".st-find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click(); await source.press("ArrowLeft"); await source.press("ArrowRight"); return source;
 }
 async function openDemo(page: Page) {
@@ -126,10 +126,10 @@ test("symbol commands keep an already visible declaration on the same screen row
     await source.press("Control+a");
     await page.keyboard.insertText(text);
     await source.press("Control+f");
-    await page.locator("#find-query").fill("symbol80");
-    await expect(page.locator("#find-status")).toHaveText("1 of 1");
-    await page.locator("#find-next").click();
-    await page.locator("#find-close").click();
+    await page.locator(".st-find-query").fill("symbol80");
+    await expect(page.locator(".st-find-status")).toHaveText("1 of 1");
+    await page.locator(".st-find-next").click();
+    await page.locator(".st-find-close").click();
     await source.press("ArrowLeft");
     await source.press("ArrowRight");
     const row = page.locator('#editor .st-viewport-row[data-line="80"]');

@@ -164,3 +164,16 @@
 .st-editor-overlay { position: fixed; box-sizing: border-box; margin: 0; overflow: auto; }
 .st-editor > .st-editor-overlay[popover] { inset: auto; color: inherit; cursor: auto; user-select: text; overscroll-behavior: contain; }
 .st-editor-overlay[hidden] { display: none; }
+
+.st-find-bar:where(:not([hidden])) { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 12px; border-top: 1px solid var(--st-find-border, #36435a); background: var(--st-find-background, #192438); color: var(--st-foreground, #e1e7ef); }
+.st-find-bar button { padding: 4px 8px; }
+.st-find-bar textarea { min-width: 0; width: 13rem; max-width: 100%; resize: none; border: 1px solid var(--st-find-border, #36435a); border-radius: 4px; padding: 3px 6px; font: 13px/1.45 var(--st-font, ui-monospace, monospace); color: inherit; background: var(--st-background, #101826); }
+.st-find-bar textarea:focus-visible { outline: 2px solid var(--st-focus-ring, #88dcca); outline-offset: -1px; }
+.st-find-target { color: #a2b4cd; font-size: 12px; }
+.st-find-target:empty { display: none; }
+.st-find-options { display: inline-flex; gap: 3px; }
+.st-find-options button { padding-inline: 7px; font-family: var(--st-font, ui-monospace, monospace); }
+.st-find-options [aria-pressed="true"] { color: #8ce0ca; background: #203c39; border-color: #8ce0ca; }
+.st-find-status { color: #a2b4cd; font-size: 12px; } .st-replace-controls:not([hidden]) { display: inline-flex; align-items: center; gap: 4px; }
+.st-find-status.no-matches { color: #efd3ac; }
+.st-find-status.search-failed { color: #ffa9a9; overflow-wrap: anywhere; }

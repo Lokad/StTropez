@@ -1,17 +1,27 @@
 import { test, expect } from "./fixtures.ts";
 
-test("the reference Find shows the selected match and where navigation wraps", async ({ page }) => {
+test("the reference Find replaces the selected word, reports wrapping and returns focus for Undo", async ({ page }) => {
     await page.goto("/reference/");
-    const query = page.getByRole("searchbox", { name: "Find" });
-    const status = page.locator("#match-count");
+    const source = page.getByRole("textbox", { name: "quote.ts" });
+    await source.press("Control+Home");
+    await source.press("Control+Shift+ArrowRight");
+    await source.press("Control+h");
+    const query = page.getByRole("textbox", { name: "Find text" });
+    const replacement = page.getByRole("textbox", { name: "Replacement text" });
+    await expect(query).toHaveValue(/^export\s*$/);
+    await expect(replacement).toBeFocused();
     await query.fill("quote");
-    await expect(status).toHaveText("2 matches");
-    await query.press("Enter");
+    const status = page.locator(".st-find-status");
     await expect(status).toHaveText("1 of 2");
-    await page.getByRole("button", { name: "Previous" }).click();
+    await page.getByRole("button", { name: "Previous match" }).click();
     await expect(status).toHaveText("2 of 2 · Wrapped to end");
-    await query.fill("TODO");
-    await expect(status).toHaveText("1 match");
+    await replacement.fill("estimate");
+    await page.getByRole("button", { name: "Replace all" }).click();
+    await expect(page.locator(".st-viewport-row").filter({ hasText: "estimate" })).toHaveCount(2);
+    await query.press("Escape");
+    await expect(source).toBeFocused();
+    await source.press("Control+z");
+    await expect(page.locator(".st-viewport-row").filter({ hasText: "quote" })).toHaveCount(2);
 });
 
 test("the reference host highlights the completion that Enter inserts", async ({ page }) => {

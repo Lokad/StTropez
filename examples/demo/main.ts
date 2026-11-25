@@ -1,11 +1,9 @@
 import { isSaveKey, isUnmodifiedShortcut, usesAppleShortcuts } from "../shared/host-shortcuts.ts";
-import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController, diagnosticDecoration, editRefusedEvent } from "../../src/browser/index.ts";
-import type { EditorCommands, EditRefusedDetail, TextEditor, FindController, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
+import { mountTextEditor, mountTextComparison, mountFindBar, createFoldingController, diagnosticDecoration, editRefusedEvent } from "../../src/browser/index.ts";
+import type { EditorCommands, EditRefusedDetail, TextEditor, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
-import { bindFindCommands } from "../shared/find-commands.ts";
-import { findNotice, findStatus } from "../shared/find-status.ts";
 import type { DemoProviderFactory } from "./provider-contract.ts";
 import type { DemoFile } from "./project.ts";
 import { DemoPresentation } from "./presentation.ts";
@@ -27,9 +25,7 @@ import "./style.css";
 
 const element = (id: string) => document.getElementById(id)!;
 const field = (id: string) => element(id) as HTMLInputElement;
-const findBar = element("find-bar");
 const replaceResult = element("replace-result");
-const findQuery = element("find-query") as HTMLTextAreaElement, replacement = element("replacement") as HTMLTextAreaElement;
 const button = (id: string) => element(id) as HTMLButtonElement;
 const codeMenu = element("code-menu") as HTMLDetailsElement;
 const languageButtons = codeMenu.querySelectorAll<HTMLButtonElement>('[data-command^="demo.language."]');
@@ -39,8 +35,7 @@ const listeners = new AbortController(), sample = element("sample") as HTMLSelec
 const pageOptions = new URL(location.href).searchParams;
 for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: TextEditor | undefined;
-let comparison: TextComparison | undefined, find: FindController | undefined, activePane: TextEditor | undefined;
-let closedFind: ReturnType<FindController["getSnapshot"]> | undefined;
+let comparison: TextComparison | undefined, activePane: TextEditor | undefined;
 const foldMenu = mountDemoFoldMenu(codeMenu, () => comparison?.activePane() ?? editor);
 const renderCodeMenu = mountCodeMenuCommands(codeMenu, () => activePane, () => editor, listeners.signal);
 let output: ReturnType<typeof mountDemoOutput> | undefined;
@@ -48,8 +43,44 @@ let setReviewCollapsed: ReturnType<typeof reviewLayout> | undefined;
 type DemoPanel = "javascript" | "problems" | "changes";
 let panel: DemoPanel = "javascript", disposed = false, opening = 0;
 let pendingPanel: DemoPanel | undefined;
+function findLabel(pane: TextEditor) {
+    return pane === output?.editor ? "JavaScript output" : pane === comparison?.panes.reference ? "Saved copy"
+        : pane.workspace.document(pane.view.documentId).title;
+}
+const find = mountFindBar(element("search"), {
+    createWorker: () => new Worker(new URL("regex-worker.js", document.baseURI), { type: "module" }),
+    targetLabel: findLabel,
+});
+let replacingPane: TextEditor | undefined;
+let replacementLabel = "";
+let previousFind = find.getSnapshot();
+find.element.addEventListener("input", () => { replaceResult.hidden = true; });
+find.subscribe(() => {
+    const state = find.getSnapshot();
+    const previous = previousFind;
+    previousFind = state;
+    if (state?.status === "replacing" && activePane) {
+        replacingPane = activePane;
+        replacementLabel = findLabel(activePane);
+        replaceResult.hidden = true;
+    } else if (replacingPane && state?.reason) {
+        const { replacedCount, reason, message } = state;
+        const notice = reason === "replaced" ? "Replaced " + replacedCount + (replacedCount === 1 ? " match." : " matches.") : message;
+        replaceResult.textContent = replacementLabel + " · " + notice;
+        replaceResult.hidden = false;
+        const requested = pendingPanel;
+        const target = replacingPane;
+        replacingPane = undefined;
+        if (reason !== "replaced") pendingPanel = undefined;
+        else if (requested) queueMicrotask(() => {
+            if (activePane === target && pendingPanel === requested) setPanel(requested);
+        });
+    }
+    if (!state) replacingPane = undefined;
+    if ((state?.status === "replacing") !== (previous?.status === "replacing")) scheduleMetadata();
+});
 let metadataFrame: number | undefined;
-let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined, stopFind: (() => void) | undefined;
+let stopWorkspace: (() => void) | undefined, stopRecovery: (() => void) | undefined;
 let stopLanguage: (() => void) | undefined, languageView: ReturnType<typeof mountDemoLanguage> | undefined;
 let languageViewFailure: Readonly<{ error: unknown }> | undefined;
 let stopReference: (() => void) | undefined;
@@ -239,7 +270,7 @@ function paintMetadata(): void {
     button("save").disabled = project.saving;
     button("navigate-back").disabled = !activePane?.commands.get("demo.back", "menu")?.enabled;
     element("save-conflict").hidden = !project.hasConflict();
-    button("conflict-save").disabled = button("conflict-take").disabled = !project.canSaveReviewed() || find?.getSnapshot().status === "replacing";
+    button("conflict-save").disabled = button("conflict-take").disabled = !project.canSaveReviewed() || find.getSnapshot()?.status === "replacing";
     button("conflict-review").disabled = project.saving;
     if (reviewLabel) reviewLabel.textContent = project.referenceLabel();
     paintRecovery(project);
@@ -258,7 +289,7 @@ function detachView(keepProblems = false): void {
     stopReferenceFolding?.(); stopReferenceFolding = undefined; referenceFolding?.dispose(); referenceFolding = undefined;
     stopReference?.(); stopReference = undefined;
     referencePresentation?.dispose(); referencePresentation = undefined;
-    releaseFind(); activePane = undefined;
+    pendingPanel = undefined; activePane = undefined;
     output?.dispose(); output = undefined;
     detachLanguage();
     viewListeners?.abort(); viewListeners = undefined;
@@ -303,7 +334,7 @@ function editorBusy(): boolean {
     return !!activity && (activity.composing || activity.pendingInput || activity.pendingCommand);
 }
 function projectBusy(): boolean {
-    return editorBusy() || find?.getSnapshot().status === "replacing";
+    return editorBusy() || find.getSnapshot()?.status === "replacing";
 }
 function refusePendingEdit(pending = editorBusy()): boolean {
     if (!pending) return false;
@@ -483,7 +514,7 @@ function setPanel(next: DemoPanel): void {
     pendingPanel = undefined;
     if (!active || refusePendingEdit()) return;
     // Remounting this file would dispose Find before its replacement commits.
-    if (find?.getSnapshot().status === "replacing") { pendingPanel = next; return; }
+    if (find.getSnapshot()?.status === "replacing") { pendingPanel = next; return; }
     panel = next;
     const wasCollapsed = element("workspace").classList.contains("collapsed");
     element("workspace").classList.remove("collapsed"); element("panel-collapse").textContent = "Hide";
@@ -509,6 +540,7 @@ function setPanel(next: DemoPanel): void {
     mountFile(active, true);
 }
 function observePane(target: TextEditor): void {
+    find.attach(target);
     target.element.addEventListener(editRefusedEvent, event => {
         if (!project || !active || target !== activePane) return;
         const { reason } = (event as CustomEvent<EditRefusedDetail>).detail;
@@ -531,204 +563,26 @@ function bindCommands(commands: EditorCommands): void {
     commands.register({ id: "demo.back", label: "Back to previous location",
         enabled: from => from !== "menu" || !!project?.navigation.getSnapshot(), run: goBack },
         { keys: usesAppleShortcuts() ? [] : ["Alt+ArrowLeft"], repeat: false });
-    const ownsFind = (target: TextEditor) => activePane === target && !findBar.hidden;
-    bindFindCommands(commands.register, (replace, target) => {
-        setActivePane(target); openFind(replace);
-    }, (direction, target) => {
-        if (!findQuery.value) return false;
-        setActivePane(target, true);
-        if (findBar.hidden) closedFind = find?.getSnapshot();
-        find?.next(direction, { whenReady: true });
-        return true;
-    }, target => ownsFind(target) && document.activeElement === findQuery);
-    commands.register({ id: "find.replaceCurrent", label: "Replace current match",
-        enabled: (from, target) => ownsFind(target) && (from === "button" ? !button("replace-current").disabled : document.activeElement === replacement),
-        run: () => { if (!button("replace-current").disabled) find?.replaceCurrent(replacementText()); } },
-        { keys: ["Enter"], shared: true, priority: 41, repeat: false });
-    commands.register({ id: "find.insertLineBreak", label: "Insert a line break in Find or Replace",
-        enabled: (_, target) => ownsFind(target) && (document.activeElement === findQuery || document.activeElement === replacement),
-        run: () => {
-            const input = document.activeElement === findQuery ? findQuery : replacement;
-            input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-        } }, { keys: ["Mod+Enter"], shared: true, priority: 40, repeat: false });
-    commands.register({ id: "find.close", label: "Close Find", category: "Find", enabled: (_, pane) => ownsFind(pane), run: closeFind },
-        { keys: ["Escape"], shared: true, repeat: false });
 }
-function releaseFind(): void {
-    closedFind = undefined;
-    pendingPanel = undefined;
-    find?.dispose();
-    stopFind?.();
-    stopFind = undefined;
-    find = undefined;
-}
-function setActivePane(target: TextEditor, repeat = false): void {
-    if (activePane === target && find) return;
+
+function setActivePane(target: TextEditor): void {
     if (activePane !== target) {
         project?.setEditRefusal();
         activePane = target;
         scheduleMetadata();
     }
-    releaseFind();
-    const visible = !findBar.hidden;
-    if (!visible && !repeat) return;
-    const current = createFindController(target, { highlightMatches: visible, regularExpressionBackend: createRegexFindBackend({
-        clock: window, createWorker: () => new Worker(new URL("regex-worker.js", document.baseURI), { type: "module" }),
-    }) });
-    find = current; current.setFlags(findFlags());
-    const label = target === output?.editor ? "JavaScript output" : target === comparison?.panes.reference ? "Saved copy" : active?.name;
-    const readOnly = target !== editor || active?.readOnly;
-    element("find-target").textContent = readOnly ? `${label} · read-only` : "";
-    const status = element("find-status"), previous = button("find-previous"), next = button("find-next");
-    const replace = button("replace-current"), all = button("replace-all");
-    let awaitingOutcome = false;
-    let replacing = false;
-    const render = () => {
-        const snapshot = current.getSnapshot();
-        const cached = closedFind;
-        if (cached && snapshot.revision !== cached.revision) {
-            // A hidden bar reuses an unchanged index. Resume searching edited text on the next F3.
-            queueMicrotask(() => { if (closedFind === cached) releaseFind(); });
-        }
-        const wasReplacing = replacing;
-        replacing = snapshot.status === "replacing";
-        if (replacing) {
-            awaitingOutcome = true;
-            replaceResult.hidden = true;
-        } else if (awaitingOutcome && snapshot.reason) {
-            awaitingOutcome = false;
-            replaceResult.textContent = label + " · " + findNotice(snapshot);
-            replaceResult.hidden = false;
-            const requested = pendingPanel;
-            if (snapshot.reason !== "replaced") pendingPanel = undefined;
-            else if (requested) queueMicrotask(() => {
-                if (current === find && pendingPanel === requested) setPanel(requested);
-            });
-        }
-        if (replacing !== wasReplacing) scheduleMetadata();
-        const searching = snapshot.status === "searching", ready = snapshot.status === "ready", matches = snapshot.count > 0;
-        const message = findStatus(snapshot);
-        status.textContent = message;
-        status.classList.toggle("no-matches", ready && !matches && !!snapshot.query);
-        status.classList.toggle("search-failed", snapshot.status === "failed");
-        previous.disabled = next.disabled = !(searching || ready && matches);
-        replace.disabled = readOnly || !matches || !(ready || searching && snapshot.retained);
-        all.disabled = readOnly || !matches || !ready;
-        const reason = readOnly ? `${label} is read-only.` : searching ? "Waiting for search results."
-            : replacing ? "Replacement in progress." : message || "Enter text to find.";
-        replace.title = replace.disabled ? reason : "Replace the current match";
-        all.title = all.disabled ? reason : "Replace all matches";
-    };
-    stopFind = current.subscribe(render); render();
-    current.setQuery(findQuery.value);
-}
-function findFlags() {
-    const pressed = (id: string) => button(id).getAttribute("aria-pressed") === "true";
-    return { matchCase: pressed("find-case"), wholeWord: pressed("find-word"), regularExpression: pressed("find-regex") };
-}
-function selectedFindQuery(source: TextEditor, regex: boolean): string | undefined {
-    const { anchor, head } = source.view.getSnapshot().selection, length = Math.abs(head - anchor);
-    const limit = 4096;
-    if (length > limit) return;
-    const buffer = source.workspace.document(source.view.documentId).buffer;
-    let text: string | undefined;
-    if (length) text = buffer.slice(Math.min(anchor, head), Math.max(anchor, head));
-    else {
-        // One extra code point on either side distinguishes long identifiers from complete words.
-        const from = Math.max(0, head - limit - 2);
-        const window = buffer.slice(from, Math.min(buffer.length, head + limit + 2));
-        for (const word of window.matchAll(/[$\p{ID_Continue}\u200c\u200d]+/gu)) {
-            const start = from + word.index;
-            if (start > head) break;
-            if (head <= start + word[0].length) { text = word[0]; break; }
-        }
-    }
-    if (!text || text.length > limit) return;
-    const query = regex ? text.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&").replace(/\r/g, "\\r") : text.replaceAll("\r\n", "\n");
-    // A textarea would turn a remaining literal CR into a different query.
-    if (query.includes("\r")) return;
-    return query.length <= limit ? query : undefined;
-}
-function openFind(replace = false): void {
-    if (!activePane) return;
-    replaceResult.hidden = true;
-    const { anchor, head } = activePane.view.getSnapshot().selection;
-    const focusReplacement = replace && (!!findQuery.value || anchor !== head);
-    if (findBar.hidden || activePane.getSnapshot().focused) {
-        const selected = selectedFindQuery(activePane, findFlags().regularExpression);
-        if (selected !== undefined && selected !== findQuery.value) {
-            findQuery.value = selected; sizeFindField(findQuery);
-            find?.setQuery(selected);
-        }
-    }
-    closedFind = undefined;
-    find?.setHighlightMatches(true);
-    findBar.hidden = false; showReplacement(replace);
-    setActivePane(activePane);
-    const target = focusReplacement && findQuery.value && activePane === editor && !active?.readOnly ? replacement : findQuery;
-    target.focus(); target.select();
-}
-function revealFindCaret(): void {
-    if (!activePane) return;
-    const { head } = activePane.view.getSnapshot().selection;
-    activePane.viewport.revealRange(head, head);
-}
-function closeFind(): void {
-    if (!find?.acceptPreview()) revealFindCaret();
-    findBar.hidden = true;
-    if (find?.getSnapshot().status === "ready") {
-        find.setHighlightMatches(false);
-        closedFind = find.getSnapshot();
-    } else releaseFind();
-    activePane?.focus();
-}
-function showReplacement(show: boolean): void {
-    element("replace-controls").hidden = !show;
-    button("replace-toggle").setAttribute("aria-expanded", String(show));
-}
-function sizeFindField(input: HTMLTextAreaElement): void {
-    input.rows = input.value.includes("\n") ? 2 : 1;
-}
-function replacementText(): string {
-    if (!findFlags().regularExpression) return replacement.value;
-    return replacement.value.replace(/\\([\\n])/g, (_, char: string) => char === "n" ? "\n" : "\\");
+    find.setTarget(target);
 }
 const on = (id: string, action: () => void) => element(id).addEventListener("click", action, { signal: listeners.signal });
-for (const panel of [findBar, element("save-conflict")]) {
+{
     // A disabled button can blur the active text field even though it never fires a click.
-    panel.addEventListener("pointerdown", event => {
+    element("save-conflict").addEventListener("pointerdown", event => {
         if (event.button === 0 && event.target instanceof Element && event.target.closest("button:disabled")) {
             event.preventDefault();
         }
     }, { capture: true, signal: listeners.signal });
 }
 on("find-toggle", () => { activePane?.commands.run("find.open"); });
-on("find-close", () => { activePane?.commands.run("find.close"); });
-for (const toggle of element("find-options").querySelectorAll("button")) {
-    on(toggle.id, () => {
-        toggle.setAttribute("aria-pressed", String(toggle.getAttribute("aria-pressed") !== "true"));
-        findQuery.focus();
-        find?.setFlags(findFlags());
-    });
-}
-on("replace-toggle", () => {
-    const show = Boolean(element("replace-controls").hidden); showReplacement(show);
-    (show ? replacement : findQuery).focus({ preventScroll: true });
-});
-for (const [id, command] of [["find-next", "find.next"], ["find-previous", "find.previous"]] as const) {
-    button(id).addEventListener("pointerdown", event => {
-        if (event.defaultPrevented || event.button !== 0) return;
-        event.preventDefault();
-        if (document.activeElement !== replacement) findQuery.focus({ preventScroll: true });
-    }, { signal: listeners.signal });
-    on(id, () => { activePane?.commands.run(command); });
-}
-on("replace-current", () => {
-    replacement.focus({ preventScroll: true });
-    activePane?.commands.run("find.replaceCurrent", "button");
-});
-on("replace-all", () => { find?.replaceAll(replacementText(), { focusEditor: true }); });
 on("compare", () => setPanel("changes")); on("analysis-retry", () => { presentation.retry(); referencePresentation?.retry(); referenceFolding?.refresh(); });
 on("inspect-characters", () => { if (editor && project) inspectCharacters(editor, project.workspace, element("character-warning-details")); });
 field("character-warnings").addEventListener("change", () => {
@@ -890,15 +744,6 @@ for (const strip of [element("files"), element("panels")]) {
         event.preventDefault(); tabs[next]!.focus();
     }, { signal: listeners.signal });
 }
-findQuery.addEventListener("input", () => {
-    replaceResult.hidden = true;
-    sizeFindField(findQuery); find?.setQuery(findQuery.value, { preview: true });
-    if (!findQuery.value) revealFindCaret();
-}, { signal: listeners.signal });
-replacement.addEventListener("input", () => sizeFindField(replacement), { signal: listeners.signal });
-findBar.addEventListener("keydown", event => {
-    activePane?.keymap.handle(event);
-}, { signal: listeners.signal });
 for (const controls of document.querySelectorAll<HTMLElement>("header, #files, #panels")) {
     controls.addEventListener("keydown", event => { activePane?.keymap.handle(event); }, { signal: listeners.signal });
 }
@@ -920,7 +765,7 @@ window.addEventListener("beforeunload", event => {
 }, { signal: listeners.signal });
 window.addEventListener("pagehide", event => {
     if (event.persisted) return;
-    disposed = true; opening++; listeners.abort(); stopWorkspace?.(); stopRecovery?.(); stopLanguage?.(); detachView(); foldMenu.dispose(); presentation.dispose();
+    disposed = true; opening++; listeners.abort(); stopWorkspace?.(); stopRecovery?.(); stopLanguage?.(); detachView(); find.dispose(); foldMenu.dispose(); presentation.dispose();
     for (const project of projects.values()) project.dispose(); projects.clear(); savedViews.clear();
 }, { signal: listeners.signal });
 export function startPlayground(openProvider: DemoProviderFactory): Promise<void> {

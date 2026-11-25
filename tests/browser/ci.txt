@@ -20,7 +20,7 @@ viewport-row-retention.spec.ts
 viewport-presentation.spec.ts
 
 # Review, save and host lifecycle
-reference.spec.ts > the reference Find shows the selected match and where navigation wraps
+reference.spec.ts > the reference Find replaces the selected word, reports wrapping and returns focus for Undo
 comparison.spec.ts
 comparison-ownership.spec.ts
 save-conflicts.spec.ts

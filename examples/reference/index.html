@@ -16,14 +16,9 @@
         <nav aria-label="Document view">
             <button id="source" aria-pressed="true">Source</button>
             <button id="changes" aria-pressed="false">Changes</button>
+            <button id="find" type="button">Find</button>
         </nav>
-        <form id="find" role="search">
-            <label>Find <input id="query" type="search" autocomplete="off" spellcheck="false"></label>
-            <label><input id="regex" type="checkbox"> Regex</label>
-            <button id="back" type="button">Previous</button>
-            <button type="submit">Next</button>
-            <output id="match-count"></output>
-        </form>
+        <div id="search"></div>
         <div id="pane"></div>
         <section aria-label="Language tools">
             <div class="bar">

@@ -20,7 +20,6 @@ async function smoke() {
     await cp("tests/fixtures/consumer", consumer, { recursive: true });
     const reference = join(consumer, "reference");
     await cp("examples/reference", reference, { recursive: true });
-    await cp("examples/shared/find-status.ts", join(consumer, "shared", "find-status.ts"));
     await mkdir(join(consumer, "feed"));
     await cp(join("artifacts/nuget/feed", archive), join(consumer, "feed", archive));
     await writeFile(join(consumer, "NuGet.Config"),
@@ -94,9 +93,10 @@ async function smoke() {
             }, Array.from(fontFixture()));
             await expect(page.locator(".st-viewport")).toHaveCSS("font-family", "ConsumerFixture");
             await expect(page.locator(".st-viewport")).toHaveCSS("background-color", "rgb(19, 27, 39)");
-            await page.getByRole("checkbox", { name: "Regex" }).check();
-            await page.getByRole("searchbox", { name: "Find" }).fill("qu.te");
-            await expect(page.locator("#match-count")).toHaveText("2 matches");
+            await page.getByRole("button", { name: "Find", exact: true }).click();
+            await page.getByRole("button", { name: "Use regular expression" }).click();
+            await page.getByRole("textbox", { name: "Find text" }).fill("qu.te");
+            await expect(page.locator(".st-find-status")).toHaveText("1 of 2");
             await page.getByRole("textbox", { name: "quote.ts" }).press("Control+Home");
             await page.keyboard.type("// ");
             await expect(page.locator(".st-viewport-row").first()).toHaveText(/^(\/\/ )export const accent/);

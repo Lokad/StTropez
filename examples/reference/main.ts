@@ -1,11 +1,10 @@
 import { discoverIndentationFolds, Workspace } from "sttropez";
 import type { TextComparison } from "sttropez/browser";
 import {
-    BrowserLspWorkspace, createFindController, createFoldingController, createRegexFindBackend,
+    BrowserLspWorkspace, mountFindBar, createFoldingController,
     mountTextComparison, mountTextEditor, openWebSocketTransport,
 } from "sttropez/browser";
 import { bindLanguage } from "./language.js";
-import { findStatus } from "../shared/find-status.js";
 
 const name = "quote.ts";
 const initial = `export const accent = "#5fae99";
@@ -20,8 +19,10 @@ export const total = quote(24, 3);
 `;
 const key = "sttropez.reference.quote";
 const pane = document.querySelector<HTMLElement>("#pane")!;
-const query = document.querySelector<HTMLInputElement>("#query")!;
-const regex = document.querySelector<HTMLInputElement>("#regex")!;
+const find = mountFindBar(document.querySelector<HTMLElement>("#search")!, {
+    createWorker: () => new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" }),
+});
+document.querySelector("#find")!.addEventListener("click", () => find.open());
 const saved = document.querySelector<HTMLOutputElement>("#saved")!;
 let opened = initial;
 try {
@@ -54,29 +55,15 @@ function mount(review: boolean) {
     const folds = createFoldingController(editor, doc => discoverIndentationFolds(doc.buffer));
     const referenceFolds = comparison && createFoldingController(comparison.panes.reference,
         doc => discoverIndentationFolds(doc.buffer));
-    const find = createFindController(editor, {
-        regularExpressionBackend: createRegexFindBackend({
-            clock: window,
-            createWorker: () => new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" }),
-        }),
-    });
-    const result = document.querySelector<HTMLOutputElement>("#match-count")!;
-    function renderFind() {
-        result.value = findStatus(find.getSnapshot());
-    }
-    const stopFind = find.subscribe(renderFind);
-    find.setFlags({ regularExpression: regex.checked });
-    find.setQuery(query.value);
-    renderFind();
+    find.attach(editor);
+    if (comparison) find.attach(comparison.panes.reference);
     let stopLanguage: (() => void) | undefined;
     function enableLanguage() {
         stopLanguage ??= bindLanguage(editor, provider);
     }
     if (languageEnabled) enableLanguage();
-    return { editor, comparison, find, enableLanguage, dispose() {
+    return { editor, comparison, enableLanguage, dispose() {
         stopLanguage?.();
-        stopFind();
-        find.dispose();
         referenceFolds?.dispose();
         folds.dispose();
         if (comparison) comparison.dispose();
@@ -106,7 +93,7 @@ function showSaveState() {
 }
 function readyForHostAction() {
     const { composing, pendingInput, pendingCommand } = current.editor.activity();
-    if (composing || pendingInput || pendingCommand) {
+    if (composing || pendingInput || pendingCommand || find.getSnapshot()?.status === "replacing") {
         saved.value = pendingNotice;
         return false;
     }
@@ -151,18 +138,12 @@ function save() {
 document.querySelector("#source")!.addEventListener("click", () => switchView(false));
 document.querySelector("#changes")!.addEventListener("click", () => switchView(true));
 document.querySelector("#save")!.addEventListener("click", save);
-query.addEventListener("input", () => current.find.setQuery(query.value));
-regex.addEventListener("change", () => current.find.setFlags({ regularExpression: regex.checked }));
-document.querySelector("#back")!.addEventListener("click", () => current.find.next(-1, { whenReady: true }));
-document.querySelector("#find")!.addEventListener("submit", event => {
-    event.preventDefault();
-    current.find.next(1, { whenReady: true });
-});
 window.addEventListener("pagehide", event => {
     if (event.persisted) return;
     stopConnection();
     stopDirty();
     current.dispose();
+    find.dispose();
     provider.dispose();
     view.dispose();
     workspace.releaseResourceWhenUnowned(file.id, true);

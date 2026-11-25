@@ -1,7 +1,7 @@
 import { createFindController, createRegexFindBackend } from "../../../src/browser/index.ts";
 import type { TextEditor } from "../../../src/browser/index.ts";
-import { bindFindCommands } from "../../../examples/shared/find-commands.ts";
-import { findStatus } from "../../../examples/shared/find-status.ts";
+import { bindFindCommands } from "../../../src/browser/find-controls.ts";
+import { findStatus } from "../../../src/browser/find-status.ts";
 import { scopedCommands } from "../../../examples/shared/editor-attachment.ts";
 
 export function mountFindUI(editor: TextEditor) {

@@ -323,16 +323,16 @@ export async function runDemoHighlights(page: Page, url = "/", distinctWrites = 
     await source.press("ArrowRight");
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     expect(await continuity.evaluate(stop => stop())).toBe(3); await continuity.dispose();
-    await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("value");
-    await expect(page.locator("#find-status")).toHaveText(/^[1-3] of 3$/);
-    await page.locator("#find-next").click(); await source.focus();
+    await page.locator("#find-toggle").click(); await page.locator(".st-find-query").fill("value");
+    await expect(page.locator(".st-find-status")).toHaveText(/^[1-3] of 3$/);
+    await page.locator(".st-find-next").click(); await source.focus();
     await expect(occurrences).toHaveCount(3);
     const matches = page.locator("#editor .st-search-match");
     await expect(matches).toHaveCount(3);
     const outlines = await matches.evaluateAll(nodes => nodes.map(node => getComputedStyle(node).outlineColor));
     expect(outlines.filter(color => color === "rgb(255, 228, 148)")).toHaveLength(1);
     expect(new Set(outlines).size).toBe(2);
-    await page.locator("#find-close").click();
+    await page.locator(".st-find-close").click();
     await source.press("Control+Home"); await source.press("Control+ArrowRight"); await source.press("ArrowRight");
     await expect(occurrences).toHaveCount(3);
     await source.dispatchEvent("compositionstart", { data: "" }); await expect(occurrences).toHaveCount(0);
@@ -382,10 +382,10 @@ export async function runDemoFolding(page: Page, url = "/") {
     await expect(page.locator('#editor .st-fold-button[aria-expanded="false"]')).toHaveCount(1);
     await expect(page.locator('#editor .st-viewport-row[data-line="8"]')).toHaveCount(0);
     await expectAlignedEditorRows(page.locator("#editor"));
-    await page.locator("#find-toggle").click(); await page.locator("#find-query").fill("validate");
-    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click();
+    await page.locator("#find-toggle").click(); await page.locator(".st-find-query").fill("validate");
+    await expect(page.locator(".st-find-status")).toHaveText("1 of 1"); await page.locator(".st-find-next").click();
     await expect(page.locator('#editor .st-viewport-row[data-line="8"]')).toContainText("validate");
-    await typeAfterClick(page.locator("#find-close"), outline, "checked");
+    await typeAfterClick(page.locator(".st-find-close"), outline, "checked");
     await expect.poll(() => outline.inputValue()).toContain("checked");
     await outline.press("Control+z"); await expect.poll(() => outline.inputValue()).toContain("validate");
     await menu("fold-group-collapse");
@@ -807,7 +807,7 @@ export async function runDemoCompletionCatalogue(page: Page, url = "/") {
 
 async function select(page: Page, source: Locator, text: string) {
     await source.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill(text);
-    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click();
+    await expect(page.locator(".st-find-status")).toHaveText("1 of 1"); await page.locator(".st-find-next").click();
     await page.getByRole("button", { name: "Close", exact: true }).click();
 }
 

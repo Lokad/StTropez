@@ -38,7 +38,7 @@ test("demo edits real files, preserves selection/history, finds text and reviews
     await expect(page.locator("#files")).toContainText("●");
     await source.press("Control+h");
     await page.getByRole("textbox", { name: "Find text", exact: true }).fill("Notebook");
-    await expect(page.locator("#find-status")).toHaveText("1 of 1");
+    await expect(page.locator(".st-find-status")).toHaveText("1 of 1");
     await page.getByRole("textbox", { name: "Replacement text", exact: true }).fill("Sketchbook");
     await page.getByRole("button", { name: "Replace all", exact: true }).click();
     await page.getByRole("button", { name: "Close", exact: true }).click();

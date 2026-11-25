@@ -314,7 +314,7 @@ test("off-screen Undo and Redo reveal surrounding code and retain the typing tar
 test("Find toggles regex on the existing query and replaces captured groups in one undo", async ({ page, baseURL }) => {
     await page.goto(browserDemo(baseURL!));
     const query = page.getByRole("textbox", { name: "Find text" }), mode = page.getByRole("button", { name: "Use regular expression" });
-    const status = page.locator("#find-status"), replaceAll = page.getByRole("button", { name: "Replace all" });
+    const status = page.locator(".st-find-status"), replaceAll = page.getByRole("button", { name: "Replace all" });
     const previous = page.getByRole("button", { name: "Previous match", exact: true }), next = page.getByRole("button", { name: "Next match", exact: true });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true }), pattern = String.raw`quantity:\s*(\d+)`;
     await source.press("Control+f"); await query.fill(pattern);
@@ -332,9 +332,9 @@ test("Find toggles regex on the existing query and replaces captured groups in o
     await page.keyboard.press("Shift+Enter"); await expect.poll(selected).toBe("quantity: 4"); await expect(query).toBeFocused();
     await expect(status).toHaveText("2 of 2 · Wrapped to end");
     await query.press("Enter"); await expect(status).toHaveText("1 of 2 · Wrapped to start");
-    await page.locator("#replace-toggle").click(); await query.fill("(");
+    await page.locator(".st-replace-toggle").click(); await query.fill("(");
     await expect(status).toHaveText(/^Invalid regular expression: .*(group|parenthe|missing \))/i);
-    await expect(page.locator("#replace-current")).toBeDisabled(); await expect(replaceAll).toBeDisabled();
+    await expect(page.locator(".st-replace-current")).toBeDisabled(); await expect(replaceAll).toBeDisabled();
     await expect(replaceAll).toHaveAttribute("title", /Invalid regular expression/);
     await expect(next).toBeDisabled(); await expect(previous).toBeDisabled();
     await query.press("Enter"); expect(await selected()).toBe("quantity: 2"); await expect(query).toBeFocused();
@@ -365,8 +365,8 @@ test("typing with Find open keeps unaffected highlights and the count on screen"
     for (const [sample, query, rowText, count] of [["shipping", "number", "weightKg", 10], ["results", "sharedValue", "const use5 =", 1201]] as const) {
         const url = new URL(browserDemo(baseURL!)); url.searchParams.set("sample", sample); await page.goto(url.href);
         await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
-        await page.locator("#find-toggle").click(); await page.locator("#find-query").fill(query);
-        await expect(page.locator("#find-status")).toHaveText(new RegExp(`^(1 of ${count}|${count} matches)$`));
+        await page.locator("#find-toggle").click(); await page.locator(".st-find-query").fill(query);
+        await expect(page.locator(".st-find-status")).toHaveText(new RegExp(`^(1 of ${count}|${count} matches)$`));
         const editor = page.locator("#editor"), row = editor.locator(".st-viewport-row").filter({ hasText: rowText }).first();
         await row.click({ position: { x: 30, y: 8 } });
         await page.keyboard.press("Home");
@@ -375,7 +375,7 @@ test("typing with Find open keeps unaffected highlights and the count on screen"
             const paint = await page.evaluateHandle(() => ({ result: new Promise<{ marks: number; status: string }[]>(resolve => {
                 document.addEventListener("beforeinput", () => {
                     const snapshot = () => ({ marks: document.querySelectorAll("#editor .st-search-match").length,
-                        status: document.querySelector("#find-status")!.textContent! });
+                        status: document.querySelector(".st-find-status")!.textContent! });
                     requestAnimationFrame(() => { const first = snapshot(); requestAnimationFrame(() => resolve([first, snapshot()])); });
                 }, { once: true, capture: true });
             }) }));
@@ -389,16 +389,16 @@ test("typing with Find open keeps unaffected highlights and the count on screen"
 
 test("clicking Replace keeps the next keystroke in the Find bar", async ({ page, baseURL }) => {
     await page.goto(browserDemo(baseURL!));
-    const source = page.locator("#editor textarea"), query = page.locator("#find-query"), replacement = page.locator("#replacement");
-    const status = page.locator("#find-status");
-    await source.press("Control+Home"); await source.press("Control+f"); await page.locator("#find-regex").click();
+    const source = page.locator("#editor textarea"), query = page.locator(".st-find-query"), replacement = page.locator(".st-replacement");
+    const status = page.locator(".st-find-status");
+    await source.press("Control+Home"); await source.press("Control+f"); await page.locator(".st-find-regex").click();
     await query.fill(String.raw`quant\w+`); await expect(status).toHaveText("1 of 4");
-    await page.locator("#find-next").click(); await expect(query).toBeFocused();
-    await page.locator("#replace-toggle").click(); await expect(replacement).toBeFocused();
-    await page.keyboard.type("qty"); await page.locator("#replace-current").click();
+    await page.locator(".st-find-next").click(); await expect(query).toBeFocused();
+    await page.locator(".st-replace-toggle").click(); await expect(replacement).toBeFocused();
+    await page.keyboard.type("qty"); await page.locator(".st-replace-current").click();
     await expect(status).toContainText("2 of 3"); await expect(replacement).toBeFocused();
     await page.keyboard.press("F3"); await expect(status).toHaveText("3 of 3");
-    await page.locator("#find-previous").click(); await expect(replacement).toBeFocused();
+    await page.locator(".st-find-previous").click(); await expect(replacement).toBeFocused();
     await page.keyboard.type("X"); await expect(replacement).toHaveValue("qtyX");
     await page.keyboard.press("Escape"); await expect(query).toBeHidden(); await expect(source).toBeFocused();
 });
@@ -408,7 +408,7 @@ test("Find previews a folded match when its header is on screen", async ({ page,
     await page.locator("#sample").selectOption("shipping");
     const source = page.getByRole("textbox", { name: "shipping.ts", exact: true });
     const viewport = page.locator("#editor .st-viewport").first();
-    const query = page.locator("#find-query"), status = page.locator("#find-status");
+    const query = page.locator(".st-find-query"), status = page.locator(".st-find-status");
     const collapse = viewport.getByRole("button", { name: "Collapse lines 11–15" });
     await expect(collapse).toBeVisible({ timeout: 30000 });
     await collapse.click();
@@ -440,7 +440,7 @@ test("clearing Find returns to the caret and Escape keeps typing at the previewe
     await page.goto(browserDemo(baseURL!));
     await page.locator("#sample").selectOption("shipping");
     const source = page.getByRole("textbox", { name: "shipping.ts", exact: true });
-    const query = page.locator("#find-query"), rows = page.locator("#editor .st-viewport-row");
+    const query = page.locator(".st-find-query"), rows = page.locator("#editor .st-viewport-row");
     const first = rows.filter({ hasText: "type Zone" }), match = rows.filter({ hasText: "console.log" });
     await source.press("Control+Home"); await source.press("Control+f"); await query.fill("console");
     await expect(match).toBeInViewport(); await expect(first).not.toBeInViewport();
@@ -459,7 +459,7 @@ test("clearing Find returns to the caret and Escape keeps typing at the previewe
 
 test("opening Find and Replace keeps the same code under the pointer", async ({ page, baseURL }) => {
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
-    const row = page.locator('#editor .st-viewport-row[data-line="0"]'), query = page.locator("#find-query");
+    const row = page.locator('#editor .st-viewport-row[data-line="0"]'), query = page.locator(".st-find-query");
     for (const [width, height] of [[1280, 700], [375, 700], [375, 360]] as const) {
         await page.setViewportSize({ width, height }); await page.goto(browserDemo(baseURL!));
         await source.press("Control+Home");
@@ -469,10 +469,10 @@ test("opening Find and Replace keeps the same code under the pointer", async ({ 
         await expect.poll(lineAtPoint).toBe("0");
         await source.press("Control+h");
         await expect(query).toBeFocused(); await page.keyboard.type("import");
-        await expect(query).toHaveValue("import"); await expect(page.locator("#replacement")).toHaveValue("");
+        await expect(query).toHaveValue("import"); await expect(page.locator(".st-replacement")).toHaveValue("");
         await expect.poll(() => paintedCharacter(row, "import", 2)).toEqual(point);
         await expect.poll(lineAtPoint).toBe("0");
-        await page.locator("#find-close").click(); await expect(query).toBeHidden();
+        await page.locator(".st-find-close").click(); await expect(query).toBeHidden();
         await page.mouse.click(point.x, point.y); await expect(source).toBeFocused();
         await page.keyboard.insertText("X"); await expect(row).toContainText(/imXp|impX/);
     }
@@ -493,7 +493,7 @@ test("multiline Find and Replace preserves line breaks, regex captures and one-s
     await expect(source).toHaveValue(original);
     await source.press("Control+a"); expect(await copyOutput(source)).toBe(raw); await source.press("Control+Home");
     await source.press("Shift+ArrowDown"); await source.press("Shift+End"); await source.press("Control+f");
-    const query = page.locator("#find-query"), status = page.locator("#find-status"), replacement = page.locator("#replacement");
+    const query = page.locator(".st-find-query"), status = page.locator(".st-find-status"), replacement = page.locator(".st-replacement");
     await expect(query).toHaveValue("start\nitem 2");
     await source.press("Control+Home"); await source.press("Shift+End"); await source.press("Control+f");
     await expect(query).toBeFocused(); await expect(query).toHaveValue("start");
@@ -512,16 +512,16 @@ test("multiline Find and Replace preserves line breaks, regex captures and one-s
     await replacement.dispatchEvent("keydown", { key: "Enter", repeat: true });
     await expect(source).toHaveValue(original); await expect(replacement).toHaveValue("last\nline");
     await replacement.press("Enter"); await expect(source).toHaveValue("start\nitem 2\nend\nstart\nlast\nline");
-    const replace = page.locator("#replace-current");
+    const replace = page.locator(".st-replace-current");
     await expect(replace).toBeDisabled();
     await replace.click({ force: true });
     await expect(replacement).toBeFocused();
     await page.keyboard.type("!");
     await expect(replacement).toHaveValue("last\nline!");
     await page.keyboard.press("Escape"); await source.press("Control+z"); await expect(source).toHaveValue(original);
-    await source.press("Control+h"); await page.locator("#find-regex").click();
+    await source.press("Control+h"); await page.locator(".st-find-regex").click();
     await query.fill("start\\r?\nitem (\\d)\\r?\nend"); await expect(status).toHaveText(/2 matches|of 2/);
-    await replacement.fill("$1\\nnext\\\\n"); await page.locator("#replace-all").click();
+    await replacement.fill("$1\\nnext\\\\n"); await page.locator(".st-replace-all").click();
     await expect(source).toHaveValue("2\nnext\\n\n4\nnext\\n");
     await source.press("Control+z"); await expect(source).toHaveValue(original);
     await source.press("Control+a"); expect(await copyOutput(source)).toBe(raw);
@@ -529,7 +529,7 @@ test("multiline Find and Replace preserves line breaks, regex captures and one-s
 
 test("Find combines case and word boundaries and keeps the options across files", async ({ page, baseURL }) => {
     await page.goto(browserDemo(baseURL!));
-    const query = page.getByRole("textbox", { name: "Find text" }), status = page.locator("#find-status");
+    const query = page.getByRole("textbox", { name: "Find text" }), status = page.locator(".st-find-status");
     const caseButton = page.getByRole("button", { name: "Match case", exact: true });
     const word = page.getByRole("button", { name: "Match whole word" }), regex = page.getByRole("button", { name: "Use regular expression" });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
@@ -557,8 +557,8 @@ test("Find combines case and word boundaries and keeps the options across files"
 
 test("the Find toolbar follows generated output and both Changes panes", async ({ page, baseURL }) => {
     await page.goto(browserDemo(baseURL!));
-    const open = page.locator("#find-toggle"), query = page.locator("#find-query"), status = page.locator("#find-status");
-    const label = page.locator("#find-target"), replace = page.locator("#replace-current"), replaceAll = page.locator("#replace-all");
+    const open = page.locator("#find-toggle"), query = page.locator(".st-find-query"), status = page.locator(".st-find-status");
+    const label = page.locator(".st-find-target"), replace = page.locator(".st-replace-current"), replaceAll = page.locator(".st-replace-all");
     const output = page.getByRole("region", { name: "JavaScript output", exact: true });
     const reader = output.getByRole("textbox"), source = page.locator("#editor");
     await reader.focus(); await page.locator(".intro p").first().click();
@@ -602,16 +602,16 @@ test("the Find toolbar follows generated output and both Changes panes", async (
     await expect(label).toHaveText("Saved copy · read-only");
     await expect(query).toHaveValue('import { calculateTotal } from "./pricing";\nimport type { CartItem } from "./pricing";');
     await expect(saved.locator(".st-search-match").first()).toBeVisible(); await expect(working.locator(".st-search-match")).toHaveCount(0);
-    await page.locator("#replace-toggle").click(); await expect(replaceAll).toBeDisabled();
-    const readOnlyReplacement = page.locator("#replacement");
+    await page.locator(".st-replace-toggle").click(); await expect(replaceAll).toBeDisabled();
+    const readOnlyReplacement = page.locator(".st-replacement");
     await readOnlyReplacement.fill("keep the saved copy"); await readOnlyReplacement.press("Enter");
     await expect(readOnlyReplacement).toHaveValue("keep the saved copy");
     await expect(working.getByRole("textbox")).not.toHaveValue(/keep the saved copy/);
     await query.press("F3"); await expect(query).toBeFocused(); await expect(status).toHaveText("1 of 1 · Wrapped to start");
     await working.getByRole("textbox").focus(); await expect(label).toBeEmpty(); await expect(replaceAll).toBeEnabled();
     await expect(saved.locator(".st-search-match")).toHaveCount(0); await expect(working.locator(".st-search-match").first()).toBeVisible();
-    await open.press("Control+h"); await expect(page.locator("#replacement")).toBeFocused();
-    await page.locator("#replacement").press("Control+f"); await expect(query).toBeFocused();
+    await open.press("Control+h"); await expect(page.locator(".st-replacement")).toBeFocused();
+    await page.locator(".st-replacement").press("Control+f"); await expect(query).toBeFocused();
     await query.fill("quantity"); await expect(status).toHaveText(/of 4$/); await query.press("Enter"); await query.press("Escape");
     const workingInput = working.getByRole("textbox"), offset = () => workingInput.evaluate(node => (node as HTMLTextAreaElement).selectionStart);
     const first = await offset();
@@ -655,19 +655,19 @@ test("closed Find repeats a finished regex and repaints it on reopen without ano
     await page.goto(browserDemo(baseURL!));
     await gate.setHolding(false);
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
-    const query = page.locator("#find-query"), marks = page.locator("#editor .st-search-match");
+    const query = page.locator(".st-find-query"), marks = page.locator("#editor .st-search-match");
     await source.press("Control+a");
     await page.keyboard.insertText("// start red one red");
     await source.press("Control+Home");
     await source.press("Control+f");
-    await page.locator("#find-regex").click();
+    await page.locator(".st-find-regex").click();
     await query.fill("red");
     await expect(marks).toHaveCount(2);
-    await expect(page.locator("#find-status")).toHaveText("1 of 2");
+    await expect(page.locator(".st-find-status")).toHaveText("1 of 2");
     await query.press("Escape");
     await gate.setHolding(true);
     await source.press("F3");
-    await expect(page.locator("#find-status")).toHaveText("2 of 2");
+    await expect(page.locator(".st-find-status")).toHaveText("2 of 2");
     await expect(query).toBeHidden();
     await expect(marks).toHaveCount(0);
     await source.press("Control+f");
@@ -679,7 +679,7 @@ test("closed Find repeats a finished regex and repaints it on reopen without ano
     await source.press("F3");
     await expect.poll(gate.waiting).toBe(1);
     await gate.release();
-    await expect(page.locator("#find-status")).toContainText("of 3");
+    await expect(page.locator(".st-find-status")).toContainText("of 3");
     await expect(marks).toHaveCount(0);
 });
 
@@ -691,8 +691,8 @@ test("Save during Replace all keeps the saved copy until the edit is ready and S
     await expect(page.locator("#status")).toHaveText("Saved in this browser.");
     await source.press("Control+a"); await page.keyboard.insertText("// old\n// old");
     await source.press("Control+Home"); await source.press("Control+h");
-    await page.locator("#find-regex").click(); await page.locator("#find-query").fill("old");
-    await page.locator("#replacement").fill("new"); await page.locator("#replace-all").click();
+    await page.locator(".st-find-regex").click(); await page.locator(".st-find-query").fill("old");
+    await page.locator(".st-replacement").fill("new"); await page.locator(".st-replace-all").click();
     await expect.poll(gate.waiting).toBe(1);
     await page.getByRole("button", { name: "Save locally", exact: true }).click();
     await expect(page.locator("#status")).toHaveText("Save skipped while an edit was pending. Save again to keep your changes.");
@@ -713,12 +713,12 @@ test("opening Changes during Replace all reviews the committed edit and a file s
     const gate = await holdRegexReply(page, "regex-edits");
     await page.goto(browserDemo(baseURL!));
     const source = page.locator("#editor").getByRole("textbox");
-    await source.press("Control+h"); await page.locator("#find-regex").click();
-    await page.locator("#find-query").fill("calculateTotal");
-    await page.locator("#replacement").fill("reviewTotal");
-    const replace = page.locator("#replace-all"), compare = page.locator("#compare"), review = page.locator(".st-comparison");
+    await source.press("Control+h"); await page.locator(".st-find-regex").click();
+    await page.locator(".st-find-query").fill("calculateTotal");
+    await page.locator(".st-replacement").fill("reviewTotal");
+    const replace = page.locator(".st-replace-all"), compare = page.locator("#compare"), review = page.locator(".st-comparison");
     await replace.click(); await expect.poll(gate.waiting).toBe(1);
-    await expect(page.locator("#find-status")).toHaveText("Replacing…");
+    await expect(page.locator(".st-find-status")).toHaveText("Replacing…");
     await page.locator('[data-panel="problems"]').click(); await compare.click(); await gate.release();
     const panes = review.locator(".st-comparison-panes > section");
     await expect(panes.last().locator('.st-viewport-row[data-line="0"]')).toContainText("reviewTotal");
@@ -804,13 +804,13 @@ test("cancelling a replacement makes a reviewed save conflict actionable again",
     } finally { await peer.close(); }
     await source.press("Control+s");
     await source.press("Control+h");
-    await page.locator("#find-regex").click();
-    await page.locator("#find-query").fill("Local");
-    await page.locator("#replacement").fill("Cancelled");
-    await page.locator("#replace-all").click();
+    await page.locator(".st-find-regex").click();
+    await page.locator(".st-find-query").fill("Local");
+    await page.locator(".st-replacement").fill("Cancelled");
+    await page.locator(".st-replace-all").click();
     await expect.poll(gate.waiting).toBe(1);
     await page.locator("#conflict-review").click();
-    await page.locator("#replacement").press("Escape");
+    await page.locator(".st-replacement").press("Escape");
     await gate.release();
     await expect(page.getByRole("textbox", { name: "main.ts", exact: true })).toBeVisible();
     await expect(page.locator("#conflict-take")).toBeDisabled();
@@ -819,10 +819,10 @@ test("cancelling a replacement makes a reviewed save conflict actionable again",
     const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
     await expect(take).toBeEnabled(); await working.press("Control+h");
     await gate.setHolding(true);
-    await page.locator("#find-query").fill("Local");
-    await page.locator("#replacement").fill("Cancelled"); await page.locator("#replace-all").click();
+    await page.locator(".st-find-query").fill("Local");
+    await page.locator(".st-replacement").fill("Cancelled"); await page.locator(".st-replace-all").click();
     await expect.poll(gate.waiting).toBe(1); await expect(take).toBeDisabled(); await expect(save).toBeDisabled();
-    await page.locator("#replacement").press("Escape"); await gate.release();
+    await page.locator(".st-replacement").press("Escape"); await gate.release();
     await expect(page.locator("#replace-result")).toHaveText("main.ts · Replacement cancelled.");
     await expect(page.locator("#replace-result")).toBeVisible();
     await expect(save).toBeEnabled(); await expect(working).toHaveValue(/^\/\/ Local edit/);
@@ -833,14 +833,14 @@ test("moving or typing during Replace all cancels it and leaves the source ready
     const gate = await holdRegexReply(page, "regex-edits");
     await page.goto(browserDemo(baseURL!));
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
-    const outcome = page.locator("#replace-result"), replace = page.locator("#replace-all");
+    const outcome = page.locator("#replace-result"), replace = page.locator(".st-replace-all");
     await source.press("Control+a");
     await page.keyboard.insertText("old old");
     await source.press("Control+Home");
     await source.press("Control+h");
-    await page.locator("#find-regex").click();
-    await page.locator("#find-query").fill("old");
-    await page.locator("#replacement").fill("new");
+    await page.locator(".st-find-regex").click();
+    await page.locator(".st-find-query").fill("old");
+    await page.locator(".st-replacement").fill("new");
     for (const interruption of ["selection", "typing"]) {
         await replace.click();
         await expect.poll(gate.waiting).toBe(1);
@@ -877,15 +877,15 @@ for (const interrupt of ["folding", "a focus round trip in a shadow root"] as co
                 button.textContent = "Host control"; (node.getRootNode() as ShadowRoot).append(button);
             });
         }
-        await source.press("Control+Home"); await source.press("Control+f"); await page.locator("#find-regex").click();
-        await page.locator("#find-query").fill("name: string"); await expect.poll(gate.waiting).toBe(1);
+        await source.press("Control+Home"); await source.press("Control+f"); await page.locator(".st-find-regex").click();
+        await page.locator(".st-find-query").fill("name: string"); await expect.poll(gate.waiting).toBe(1);
         await source.press("F3");
         if (interrupt === "folding") {
             await source.press("Control+Shift+BracketLeft"); await expect(fold).toHaveAttribute("aria-expanded", "false");
         } else {
             await page.getByRole("button", { name: "Host control", exact: true }).focus(); await source.focus();
         }
-        await gate.release(); await expect(page.locator("#find-status")).toHaveText("1 match");
+        await gate.release(); await expect(page.locator(".st-find-status")).toHaveText("1 match");
         await page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
         await expect(fold).toHaveAttribute("aria-expanded", interrupt === "folding" ? "false" : "true");
         await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
@@ -898,14 +898,14 @@ for (const interrupt of ["folding", "a focus round trip in a shadow root"] as co
 test("a pending regex search allows large-file scrolling and typing and expires on file change", async ({ page, baseURL }) => {
     const gate = await holdRegexReply(page);
     const source = await openRows(page, browserDemo(baseURL!)), viewport = page.locator("#editor .st-viewport");
-    await source.press("Control+f"); await page.locator("#find-regex").click();
-    const query = page.locator("#find-query");
+    await source.press("Control+f"); await page.locator(".st-find-regex").click();
+    const query = page.locator(".st-find-query");
     await query.fill("Row 7500:");
     await expect.poll(gate.waiting, { timeout: 15000 }).toBe(1);
     await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 3; });
     const chosenScroll = await viewport.evaluate(root => root.scrollTop);
     await gate.release();
-    await expect(page.locator("#find-status")).toHaveText("1 match");
+    await expect(page.locator(".st-find-status")).toHaveText("1 match");
     await expect(query).toBeFocused(); expect(await viewport.evaluate(root => root.scrollTop)).toBe(chosenScroll);
     await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 2; });
     await expect(viewport.locator('.st-viewport-row[data-line="5003"]')).toContainText("Row 5004:");
@@ -927,10 +927,10 @@ test("a pending regex search allows large-file scrolling and typing and expires 
     await gate.setHolding(false);
     await page.locator("#sample").selectOption("host");
     await expect(page.getByRole("textbox", { name: "workflow.rules", exact: true })).toBeVisible();
-    await expect(page.locator("#find-status")).toHaveText("2 matches");
+    await expect(page.locator(".st-find-status")).toHaveText("2 matches");
     await gate.release();
     await page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
-    await expect(page.locator("#find-status")).toHaveText("2 matches");
+    await expect(page.locator(".st-find-status")).toHaveText("2 matches");
     await expect(page.locator("#editor .st-search-match")).toHaveText(["row", "row"]);
     await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
 });
@@ -1351,8 +1351,8 @@ test("browser global completion filters its catalogue after a typed prefix", asy
     await source.press("Control+Space"); await expect(list).toBeVisible();
     await page.locator("#panel-content .st-viewport-row").first().click(); await expect(source).not.toBeFocused(); await expect(list).toBeHidden();
     await source.press("Control+Space"); await expect(list).toBeVisible();
-    await source.press("Control+f"); await expect(page.locator("#find-query")).toBeFocused(); await expect(list).toBeHidden();
-    await page.locator("#find-query").press("Escape"); await expect(source).toBeFocused();
+    await source.press("Control+f"); await expect(page.locator(".st-find-query")).toBeFocused(); await expect(list).toBeHidden();
+    await page.locator(".st-find-query").press("Escape"); await expect(source).toBeFocused();
     await source.press("Control+Space"); await expect(list).toBeVisible();
     await source.pressSequentially("Mat"); await expect(page.getByRole("option", { name: "Math", exact: true })).toBeVisible();
     await page.getByRole("option", { name: "Math", exact: true }).click(); await expect(list).toBeHidden();

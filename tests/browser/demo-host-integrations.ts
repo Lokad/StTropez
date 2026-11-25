@@ -91,8 +91,8 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
     await expect(source).toBeFocused(); await expect(page.getByRole("textbox", { name: "inventory.csv", exact: true })).toHaveCount(0);
     await foldsReady(); await inventoryFold(page.locator("#editor")).click(); await expect(inventory).not.toContainText("folded");
 
-    await source.press("Control+f"); await page.locator("#find-query").fill("quantity < 10");
-    await expect(page.locator("#find-status")).toHaveText("1 of 1"); await page.locator("#find-next").click(); await page.locator("#find-close").click();
+    await source.press("Control+f"); await page.locator(".st-find-query").fill("quantity < 10");
+    await expect(page.locator(".st-find-status")).toHaveText("1 of 1"); await page.locator(".st-find-next").click(); await page.locator(".st-find-close").click();
     const mode = page.locator("#host-paste-mode");
     const prevented = await source.evaluate(node => ["m", "v"].map(key => {
         const event = new KeyboardEvent("keydown", { key, ctrlKey: true, altKey: true, modifierAltGraph: true, bubbles: true, cancelable: true });
