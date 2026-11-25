@@ -9,7 +9,8 @@ import type { LspLocation } from "../protocol/lsp-features.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspPrepare } from "../protocol/lsp-workspace.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import { captureViewRequest, editorReadyForRequest, sameEditAuthority } from "./captured-view.ts";
+import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
+import { observeProjectDocument } from "./retained-documents.ts";
 import { bindDefinitionPointer } from "./definition-pointer.ts";
 import type { DefinitionHit } from "./definition-pointer.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -60,7 +61,7 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
     const available = () => !events.signal.aborted && editorReadyForRequest(editor) && (options.canCapture?.() ?? true);
     const capture = () => captureViewRequest(workspace, tab, view, { available });
     type Source = NonNullable<ReturnType<typeof capture>>;
-    type Hover = { hit: DefinitionHit; client: LspNavigationClient; source: Source; reply: Promise<LspDefinitionPreview>; result?: LspDefinitionPreview };
+    type Hover = { hit: DefinitionHit; client: LspNavigationClient; source: Source; reply?: Promise<LspDefinitionPreview>; result?: LspDefinitionPreview };
     type Request = { client: LspNavigationClient; source?: Source; stops: (() => void)[]; expired: boolean; reply?: LspNavigationResult };
     let hover: Hover | undefined, activation: Hover | undefined, explicit: Request | undefined;
     let markedLink: { hit: DefinitionHit; source: Source } | undefined;
@@ -106,17 +107,25 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
         leave(client);
         try {
             client ??= navigationClient(owner);
-            const reply = client.prepareDefinition({ document: source.document, project: project(source), offset: hit.offset, prepare: options.prepareRequest?.("definition") }).result;
-            const job: Hover = { hit, client, source, reply }; hover = job;
+            const job: Hover = { hit, client, source };
+            hover = job;
             onAbort(source.signal, () => { if (hover === job) leave(); });
-            void reply.then(result => {
+            const documents = project(source);
+            if (hover !== job) return;
+            const prepare = options.prepareRequest?.("definition");
+            if (hover !== job || !source.isCurrent()) return;
+            job.reply = client.prepareDefinition({ document: source.document, project: documents, offset: hit.offset, prepare }).result;
+            void job.reply.then(result => {
                 if (hover !== job || !source.isCurrent() || !result.isCurrent()) return;
                 job.result = result;
                 if (!result.hasTargets) return;
                 const { from, to } = result.originRange ?? hit;
                 if (from < to) layer.set(hit.revision, [{ from, to, className: "st-definition-link" }]);
             }).catch(() => { if (hover === job) leave(); });
-        } catch { source.cancel(); client?.dispose(); }
+        } catch {
+            if (hover?.source === source) leave();
+            else source.cancel();
+        }
     }
     async function request(kind: Kind = "definition", offset = view.getSnapshot().selection.head, includeDeclaration = true): Promise<Outcome<NavigationResult>> {
         if (events.signal.aborted) return stale;
@@ -154,20 +163,14 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
             if (explicit !== job) return stale;
             if (tab) job.stops.push(workspace.tabs.subscribe(() => { if (!workspace.ownsDocumentView(view, tab)) expire(job); }));
             for (const doc of documents) {
-                const handle = workspace.observeDocument(doc.id), metadata = workspace.resourceForDocument(doc.id).metadata;
-                const permission = metadata.getSnapshot();
-                const changed = () => {
-                    const current = handle.getSnapshot(), access = metadata.getSnapshot();
-                    if (current?.revision !== doc.revision || current.buffer !== doc.buffer || !sameEditAuthority(permission, access)) expire(job);
-                };
-                job.stops.push(handle.subscribe(changed), metadata.subscribe(changed)); changed();
+                observeProjectDocument(workspace, () => doc, () => expire(job), job.stops);
             }
             if (job.expired) return stale;
             publish("pending");
             const query = () => client.run({ document: source.document, project: documents, offset, kind, includeDeclaration,
                 prepare: options.prepareRequest?.(kind) }).result;
             let reply: LspNavigationResult;
-            if (prepared) {
+            if (prepared?.reply) {
                 const preview = await prepared.reply;
                 if (!source.isCurrent() || !preview.isCurrent()) { expire(job); return stale; }
                 reply = preview.originRange && !inside(offset, preview.originRange) && offset !== prepared.hit.offset

@@ -129,17 +129,19 @@ test("definition lookup uses its attached scope and recovers from a refused moun
         } catch (error) { refusal = String(error); }
         const after = ownership();
         occupied.dispose();
-        let cancelFirstLookup = true;
+        let cancelLookup = true;
+        let prepared = 0;
         const language = attachEditorLanguage(editor, provider, {
             navigation: {
                 linkAt() { pointerHits++; return undefined; },
                 documents() {
-                    if (cancelFirstLookup) {
-                        cancelFirstLookup = false;
+                    if (cancelLookup) {
+                        cancelLookup = false;
                         navigation.cancel();
                     }
                     return [workspace.document(source.documentId)];
                 },
+                prepareRequest() { prepared++; return undefined; },
             },
         });
         const sibling = attachEditorLanguage(editor, provider, { rename: {} });
@@ -147,6 +149,7 @@ test("definition lookup uses its attached scope and recovers from a refused moun
         sibling.dispose();
         const { navigation } = language;
         return { ownership, pointerHits: () => pointerHits, before, after, refusal, retiredHits: () => retiredHits,
+            cancelNext() { cancelLookup = true; }, cancelled: () => !cancelLookup, prepared: () => prepared,
             lookup: async () => {
                 const result = await navigation.request("definition", 23);
                 if (result.status === "done") return result.value.locationAt(0)?.from;
@@ -157,11 +160,14 @@ test("definition lookup uses its attached scope and recovers from a refused moun
     expect(await fixture.evaluate(f => f.refusal)).toContain("scope limit");
     expect(await fixture.evaluate(f => f.after)).toEqual(await fixture.evaluate(f => f.before));
     expect(await fixture.evaluate(f => f.lookup())).toBe("stale");
+    await fixture.evaluate(f => f.cancelNext());
     const row = page.locator(".st-viewport-row").filter({ hasText: "const catalogue" });
     await expect(row).toBeVisible();
     const point = await paintedCharacter(row, "catalogue", 2);
     await page.keyboard.down("Control"); await page.mouse.move(point.x, point.y);
     await expect.poll(() => fixture.evaluate(f => f.pointerHits())).toBeGreaterThan(0);
+    await expect.poll(() => fixture.evaluate(f => f.cancelled())).toBe(true);
+    expect(await fixture.evaluate(f => f.prepared())).toBe(0);
     await page.keyboard.up("Control");
     expect(await fixture.evaluate(f => f.retiredHits())).toBe(0);
     expect(await fixture.evaluate(f => f.lookup())).toBe(6);
