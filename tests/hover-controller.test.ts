@@ -3,11 +3,11 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { attachEditorLanguage } from "../src/browser/index.ts";
-import type { TextEditor } from "../src/browser/index.ts";
+import type { HoverDiagnostics, TextEditor } from "../src/browser/index.ts";
 import { latch } from "./helpers/latch.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";
 
-async function fixture(t: TestContext, text: string) {
+async function fixture(t: TestContext, text: string, diagnostics?: HoverDiagnostics) {
     const f = clientFixture(t), { workspace, provider } = f, documentId = f.source.documentId;
     workspace.edit({ documentId, expectedRevision: f.document().revision, origin: "human", edits: [{ from: 0, to: f.document().buffer.length, insert: text }] });
     const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId);
@@ -16,7 +16,7 @@ async function fixture(t: TestContext, text: string) {
     const editor = { workspace, tab: workspace.tabs.capture(tab), view, signal: new AbortController().signal,
         element: { ownerDocument: owner, isConnected: true }, ...editorState(),
         activity: () => ({ composing: false, disposed: false }), focus: () => { throw new Error("Hover moved focus."); } } as unknown as TextEditor;
-    const language = attachEditorLanguage(editor, provider, { hover: {} });
+    const language = attachEditorLanguage(editor, provider, { hover: diagnostics ? { diagnostics } : {} });
     await provider.connect();
     await settled();
     const hover = language.hover, leases = workspace.diagnostics().leases;
@@ -52,11 +52,25 @@ test("hover releases the read lease after a reply with no range and expires on d
     } finally { await f.finish(); }
 });
 test("deferred hover invalidation preserves a newer request after editing and releases obsolete leases", async t => {
-    const f = await fixture(t, "const café");
+    let revision = -1;
+    const word = { from: 0, to: 3, message: "Word" };
+    const point = { from: 1, to: 1, message: "Point" };
+    const ending = { from: 0, to: 1, message: "Previous" };
+    const f = await fixture(t, "const café", {
+        getSnapshot: () => ({ diagnosticRevision: revision, diagnosticsPending: true, diagnostics: [ending, word, point] }),
+        subscribe: () => () => {}
+    });
+    revision = f.document().revision;
     try {
         const first = f.hold();
         const obsolete = f.request(1);
         await first.entered;
+        const shown = f.hover.getSnapshot();
+        assert.deepEqual(shown.diagnostics, [word, point]);
+        assert.equal(shown.text, "Word\n\nPoint\n\nAwaiting recheck.");
+        assert.ok(Object.isFrozen(shown.diagnostics) && shown.diagnostics.every(Object.isFrozen));
+        point.message = "Rechecked";
+        assert.equal(shown.diagnostics[1]!.message, "Point");
         f.edit();
         const second = f.hold();
         const current = f.request(2);
@@ -65,9 +79,11 @@ test("deferred hover invalidation preserves a newer request after editing and re
         assert.equal(f.hover.getDiagnostics().pending, true); assert.equal(f.workspace.diagnostics().leases, f.leases + 1);
         assert.equal(f.sent("$/cancelRequest").length, 1); first.reply({ contents: "obsolete" }); await settled();
         assert.equal(f.hover.getSnapshot().status, "pending");
+        assert.deepEqual(f.hover.getSnapshot().diagnostics, []);
         second.reply({ contents: "current" });
         assert.deepEqual(await current, { status: "done", value: f.hover.getSnapshot() });
         assert.equal(f.hover.getSnapshot().text, "current");
+        assert.deepEqual(f.hover.getSnapshot().diagnostics, []);
         const selection = f.hold(); f.request(2); await selection.entered;
         f.view.setSelection(f.document().revision, { anchor: 8, head: 8 }); await settled();
         assert.equal(f.hover.getSnapshot().status, "expired"); assert.equal(f.workspace.diagnostics().leases, f.leases);

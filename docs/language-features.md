@@ -248,9 +248,11 @@ view or hidden or invalid position returns `refused`. A provider failure or time
 `failed`. Overlapping diagnostics stay visible. A mapped diagnostic reads “Awaiting recheck”
 until fresh analysis arrives.
 
-Subscribe to the controller and render the ready snapshot’s `content` with `mountDocumentation`.
-The snapshot’s `range` identifies where the same information applies. A point diagnostic matches
-its exact offset. For pointer dwell, call `request(point, "reuse")` to track the new position.
+Render the ready snapshot’s `content` with `mountDocumentation`. Its `diagnostics` array contains
+the `from`, `to` and `message` of each diagnostic at the inspected offset, in the order supplied.
+Use it to offer Code actions. A point diagnostic matches its exact offset.
+The snapshot’s `range` identifies where the same information applies.
+For pointer dwell, call `request(point, "reuse")` to track the new position.
 Requests for the same pending position in reuse mode share the lookup.
 Inside a current provider range, the controller reuses the symbol reply and shows diagnostics
 for the latest offset as they arrive. The default `request(point)` refreshes the lookup.

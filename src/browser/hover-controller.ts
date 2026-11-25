@@ -1,5 +1,6 @@
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { isOffset } from "../core/bounds.ts";
+import { emptyList } from "../core/empty-list.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import { canInspectView, captureViewRequest, observeViewSource, type CapturedViewRequest } from "./captured-view.ts";
@@ -16,6 +17,7 @@ import type { TextEditor } from "./text-editor.ts";
 
 type Range = Readonly<{ from: number; to: number }>;
 type Diagnostic = Pick<LspDiagnostic, "from" | "to" | "message">;
+type MatchedDiagnostic = Range & Pick<Diagnostic, "message">;
 /** Hosts with project-wide analysis can supply the diagnostics they actually paint. */
 export type HoverDiagnostics = Observable<Readonly<{ diagnosticRevision: number; diagnostics: readonly Diagnostic[]; diagnosticsPending?: boolean }>>;
 export type HoverControllerOptions = Readonly<{
@@ -24,6 +26,7 @@ export type HoverControllerOptions = Readonly<{
 export type HoverSnapshot = Readonly<{
     status: "idle" | "pending" | "ready" | "empty" | "failed" | "expired" | "disposed";
     message: string; revision: number | null; range: Range | null; text: string; content?: DocumentationContent;
+    diagnostics: readonly MatchedDiagnostic[];
 }>;
 export type HoverController = Observable<HoverSnapshot> & Readonly<{
     request: (anchor?: OverlayPosition, mode?: "refresh" | "reuse") => Promise<Outcome<HoverSnapshot>>;
@@ -32,7 +35,7 @@ export type HoverController = Observable<HoverSnapshot> & Readonly<{
         stale: number; invalid: number; failed: number; cancelled: number }>;
 }>;
 
-const idle: HoverSnapshot = Object.freeze({ status: "idle", message: "", revision: null, range: null, text: "" });
+const idle: HoverSnapshot = Object.freeze({ status: "idle", message: "", revision: null, range: null, text: "", diagnostics: emptyList });
 type Inspection = { revision: number; selection: SelectionSet; folds: FoldIndex; offset: number;
     stops: (() => void)[]; timer?: number; capture?: CapturedViewRequest<TextEditor["tab"]>; symbol?: LspHoverResult; failure?: ReturnType<typeof failed> };
 
@@ -42,22 +45,12 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
     const notifications = workspace.createNotificationScope(options.onError), cell = new Store(idle, notifications);
     const client = hoverClient(owner);
     let inspection: Inspection | undefined, disposed = false;
-    let diagnostics = options.diagnostics;
+    const diagnostics = options.diagnostics ?? providerDiagnostics(owner);
     let pending: Promise<Outcome<HoverSnapshot>> | undefined;
     const counts = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
     const publish = (next: HoverSnapshot) => notifications.publish(cell, Object.freeze(next));
     const status = (status: HoverSnapshot["status"], message: string, revision: number | null = null) =>
         publish({ ...idle, status, message, revision });
-    function diagnosticSource(): HoverDiagnostics {
-        if (diagnostics) return diagnostics;
-        const source = owner.scope.observeDiagnostics(owner.binding);
-        diagnostics = { subscribe: source.subscribe, getSnapshot() {
-            const state = source.getSnapshot();
-            const result = state.isPlacementCurrent() ? state.result : null;
-            return { diagnosticRevision: result?.snapshotRevision ?? -1, diagnostics: result?.items ?? [], diagnosticsPending: state.status === "pending" };
-        } };
-        return diagnostics;
-    }
     function finish(current: Inspection): void {
         const capture = current.capture;
         if (!capture) return;
@@ -96,29 +89,35 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
     function render(current: Inspection): void {
         if (inspection !== current) return;
         if (!valid(current)) { expire(current); return; }
-        const revision = current.revision, diagnostics = diagnosticSource().getSnapshot(), at = current.offset;
-        const messages: string[] = [];
-        let range = current.symbol?.range ?? null;
+        const { revision, offset: at, symbol } = current;
+        const source = diagnostics.getSnapshot();
+        const matches: MatchedDiagnostic[] = [];
+        let range = symbol?.range ?? null;
         let left = 0, right = Infinity;
-        if (diagnostics.diagnosticRevision === revision) for (const item of diagnostics.diagnostics) {
-            if (item.from === null || item.to === null) continue;
-            if (at < item.from) { right = Math.min(right, item.from); continue; }
-            if (item.from === item.to ? at !== item.from : at >= item.to) {
-                left = Math.max(left, item.from === item.to ? item.to + 1 : item.to); continue;
+        if (source.diagnosticRevision === revision) for (const { from, to, message } of source.diagnostics) {
+            if (from === null || to === null) continue;
+            if (at < from) {
+                right = Math.min(right, from);
+            } else if (from === to ? at > to : at >= to) {
+                left = Math.max(left, from === to ? to + 1 : to);
+            } else {
+                const match = Object.freeze({ from, to, message });
+                matches.push(match);
+                left = Math.max(left, from);
+                right = Math.min(right, to);
+                range ??= match;
             }
-            messages.push(item.message);
-            left = Math.max(left, item.from); right = Math.min(right, item.to);
-            range ??= { from: item.from, to: item.to };
         }
         // An unbounded symbol reply only describes the requested offset.
-        if (current.capture || current.symbol && !current.symbol.range) range = null;
+        if (current.capture || symbol && !symbol.range) range = null;
         else if (range) range = Object.freeze({ from: Math.max(left, range.from), to: Math.min(right, range.to) });
-        if (messages.length && diagnostics.diagnosticsPending) messages.push("Awaiting recheck.");
-        const symbol = current.symbol;
-        if (messages.length || symbol) {
+        if (matches.length || symbol) {
+            const messages = matches.map(match => match.message);
+            if (matches.length && source.diagnosticsPending) messages.push("Awaiting recheck.");
             const content: DocumentationContent = Object.freeze([...messages.map(value => Object.freeze({ kind: "plaintext" as const, value })), ...(symbol?.content ?? [])]);
             if (symbol) messages.push(symbol.text);
-            publish({ status: "ready", message: "", revision, range, text: messages.join("\n\n"), content });
+            publish({ status: "ready", message: "", revision, range, text: messages.join("\n\n"), content,
+                diagnostics: Object.freeze(matches) });
             return;
         }
         if (current.capture) status("pending", "Reading symbol information.", revision);
@@ -191,7 +190,7 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
                 folds: capture.folding.index, offset, capture, stops: [] };
             owned = inspection = current;
             capture.signal.addEventListener("abort", () => { if (current.capture) expire(current); }, { once: true });
-            current.stops.push(diagnosticSource().subscribe(() => queueMicrotask(() => render(current))));
+            current.stops.push(diagnostics.subscribe(() => queueMicrotask(() => render(current))));
             const result = read(current, capture);
             if (current.capture) {
                 pending = result;
@@ -224,4 +223,14 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
         cell.clearSnapshotListeners();
     }
     return Object.freeze({ request, cancel, dispose, ...controllerObservable(cell, "Hover", () => disposed, notifications), getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.capture, disposed }) });
+}
+
+function providerDiagnostics(owner: LspDocumentOwner): HoverDiagnostics {
+    const source = owner.scope.observeDiagnostics(owner.binding);
+    return { subscribe: source.subscribe, getSnapshot() {
+        const state = source.getSnapshot();
+        const result = state.isPlacementCurrent() ? state.result : null;
+        return { diagnosticRevision: result?.snapshotRevision ?? -1, diagnostics: result?.items ?? emptyList,
+            diagnosticsPending: state.status === "pending" };
+    } };
 }
