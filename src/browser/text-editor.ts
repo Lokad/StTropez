@@ -579,15 +579,23 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (!validCommand(capture)) { cancelPendingCommand(); return false; }
         return inputQueue.complete(capture, work);
     }
+    function setSelectionSet(revision: number, { ranges, primary }: SelectionSet): boolean {
+        return view.setSelections(revision, ranges, primary);
+    }
     function finishRanges(capture: CommandCapture, ranges: readonly Selection[], type?: string, primary = capture.selectionSet.primary): SelectionSet | undefined {
         if (!validCommand(capture)) return;
         const selections = createSelectionSet(capture.buffer.length, ranges, primary);
         completeCaptured(capture, () => {
-        if (capture.deleting) { const plan = planSelectionEdits(capture.buffer.length, selections, "");
-            return apply(plan.edits, plan.selectionSet, "delete", { type, expectedRevision: capture.revision }); }
-        else { cancelPendingCommand(); group = undefined; view.setSelections(capture.revision, selections.ranges, selections.primary);
-            revealCaret(); refresh(); }
-        return true;
+            if (capture.deleting) {
+                const plan = planSelectionEdits(capture.buffer.length, selections, "");
+                return apply(plan.edits, plan.selectionSet, "delete", { type, expectedRevision: capture.revision });
+            }
+            cancelPendingCommand();
+            group = undefined;
+            setSelectionSet(capture.revision, selections);
+            revealCaret();
+            refresh();
+            return true;
         });
         return view.getSnapshot().selectionSet;
     }
@@ -719,19 +727,33 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             });
         });
     }
-    let inferredOccurrence: SelectionSet | undefined;
+    function prepareSelectionCommand(): void {
+        cancelPendingCommand();
+        syncSelection();
+        group = undefined;
+        preferred = undefined;
+    }
+    const wholeWordSelections = new WeakMap<DocumentViewSnapshot, boolean>();
+    function selectAndReveal(revision: number, selections: SelectionSet, wholeWord: boolean): boolean {
+        if (!setSelectionSet(revision, selections)) return false;
+        wholeWordSelections.set(view.getSnapshot(), wholeWord);
+        revealCaret();
+        return true;
+    }
     function selectOccurrences(all: boolean): void {
-        cancelPendingCommand(); syncSelection(); group = undefined; preferred = undefined;
-        const capture = commandCapture(false), { selection, selectionSet } = capture;
-        const empty = selection.head === selection.anchor, wholeWord = empty || inferredOccurrence === selectionSet;
+        prepareSelectionCommand();
+        const capture = commandCapture(false);
+        const { selection, selectionSet } = capture;
+        const empty = selection.head === selection.anchor;
+        const wholeWord = empty || wholeWordSelections.get(view.getSnapshot()) === true;
         let search: ReturnType<typeof selectionOccurrences> | undefined;
         rangeCommand = { capture, purpose: "word", release: () => { search?.return(selectionSet); } };
         const finish = (result: SelectionSet) => {
             rangeCommand = undefined;
             completeCaptured(capture, () => {
-                if (!view.setSelections(capture.revision, result.ranges, result.primary)) return false;
-                inferredOccurrence = wholeWord ? view.getSnapshot().selectionSet : undefined;
-                revealCaret(); refresh(); return true;
+                if (!selectAndReveal(capture.revision, result, wholeWord)) return false;
+                refresh();
+                return true;
             });
         };
         const begin = (seed?: Selection) => {
@@ -988,7 +1010,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                         : typeof command === "object" ? acceptPairs : undefined });
                 if (overtyped.length) acceptPairs(plan.edits);
                 group = undefined;
-                if (!view.setSelections(capture.revision, plan.selectionSet.ranges, plan.selectionSet.primary)) return false;
+                if (!setSelectionSet(capture.revision, plan.selectionSet)) return false;
                 revealCaret(); refresh();
                 if (overtyped.length && typeof command === "object") dispatchTypedText(root, view.getSnapshot(), command.character);
                 return true;
@@ -1032,8 +1054,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             case "go-to-line": {
                 const prompt = options.requestLine;
                 if (!prompt) return false;
-                cancelLineRequest(); cancelPendingCommand(); syncSelection(); group = undefined; preferred = undefined;
-                const capture = commandCapture(false), { buffer } = capture;
+                cancelLineRequest();
+                prepareSelectionCommand();
+                const capture = commandCapture(false);
+                const { buffer } = capture;
                 const request = lineRequest = { capture, abort: new AbortController() };
                 const finish = async () => {
                     try {
@@ -1053,17 +1077,19 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             case "add-caret-above": case "add-caret-below":
                 return vertical(command === "add-caret-above" ? -1 : 1, false, false, true);
             case "undo-caret": {
-                cancelPendingCommand(); syncSelection(); group = undefined; preferred = undefined;
+                prepareSelectionCommand();
                 const previous = caretHistory.pop();
                 if (previous) {
                     skipCaretHistory = true;
-                    try { view.setSelections(revision, previous.ranges, previous.primary); revealCaret(); }
-                    finally { skipCaretHistory = false; }
+                    try {
+                        const wholeWord = wholeWordSelections.get(previous) === true;
+                        selectAndReveal(previous.revision, previous.selectionSet, wholeWord);
+                    } finally { skipCaretHistory = false; }
                 }
                 return true;
             }
             case "jump-to-bracket": {
-                cancelPendingCommand(); syncSelection(); group = undefined; preferred = undefined;
+                prepareSelectionCommand();
                 const capture = commandCapture(false);
                 eachRange(capture, "grapheme", (range, done) => {
                     const cursor = brackets!.navigationCursor(capture.buffer, range.head);
@@ -1086,8 +1112,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 return true;
             }
             case "select-line": {
-                cancelPendingCommand(); syncSelection(); group = undefined; preferred = undefined;
-                const capture = commandCapture(false), buffer = capture.buffer, folds = view.folding.getSnapshot().index;
+                prepareSelectionCommand();
+                const capture = commandCapture(false);
+                const buffer = capture.buffer, folds = view.folding.getSnapshot().index;
                 eachRange(capture, "grapheme", (range, done) => {
                     const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
                     const { anchor } = wholeLine(buffer, from, folds);
@@ -1662,19 +1689,19 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }
     }, { signal: listeners.signal });
     let observedFoldRevision = view.folding.getSnapshot().revision;
-    const caretHistory: SelectionSet[] = [];
+    const caretHistory: DocumentViewSnapshot[] = [];
     let lastCaret = view.getSnapshot(), skipCaretHistory = false;
     const observeCaret = () => {
         const next = view.getSnapshot();
         pointerOrigin = undefined;
-        inferredOccurrence = undefined;
         if (next.revision !== lastCaret.revision) caretHistory.length = 0;
         else if (!skipCaretHistory && (!drag || !dragCaretRecorded) && next.selectionSet !== lastCaret.selectionSet) {
             if (caretHistory.length === 50) caretHistory.shift();
-            caretHistory.push(lastCaret.selectionSet);
+            caretHistory.push(lastCaret);
             if (drag) dragCaretRecorded = true;
         }
-        lastCaret = next; refresh();
+        lastCaret = next;
+        refresh();
     };
     const subscriptions = [viewport.onRender(scheduleCaret), source.subscribe(refresh), view.subscribe(observeCaret),
         view.folding.subscribe(() => { const revision = view.folding.getSnapshot().revision;
