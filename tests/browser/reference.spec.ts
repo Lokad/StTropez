@@ -1,5 +1,38 @@
 import { test, expect } from "./fixtures.ts";
 
+test("Save and Changes preserve a pending edit in the reference host", async ({ page }) => {
+    await page.clock.install();
+    await page.goto("/reference/");
+    const source = page.getByRole("textbox", { name: "quote.ts" });
+    const save = page.getByRole("button", { name: "Save for this tab" });
+    const changes = page.getByRole("button", { name: "Changes", exact: true });
+    const lines = 40_000;
+    const text = "0\n".repeat(lines);
+    await source.press("Control+a");
+    await page.keyboard.insertText(text);
+    await source.press("Control+a");
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
+    await page.keyboard.press("Control+/");
+    // Skip the animation-frame wait for click stability while the command's timer is held.
+    await save.click({ force: true });
+    expect(await page.locator("#saved").innerText()).toBe("An edit is pending. Try again when it finishes.");
+    expect(await page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"))).toBeNull();
+    await changes.click({ force: true });
+    expect(await changes.getAttribute("aria-pressed")).toBe("false");
+    await page.clock.resume();
+    await expect(page.locator("#pane .st-viewport-row").first()).toHaveText("// 0");
+    await expect(page.locator("#saved")).toHaveText("Unsaved changes");
+    await save.click();
+    const commented = "// 0\n".repeat(lines);
+    expect(await page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"))).toBe(commented);
+    await changes.click();
+    const working = page.getByRole("textbox", { name: "Comparison working source" });
+    await expect(working).toBeFocused();
+    await working.press("Control+z");
+    await save.click();
+    expect(await page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"))).toBe(text);
+});
+
 test("the reference app edits, reviews and saves the document while its language tools follow the working view", async ({ page }) => {
     await page.goto("/reference/");
     const source = page.getByRole("textbox", { name: "quote.ts" });

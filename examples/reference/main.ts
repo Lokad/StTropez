@@ -100,8 +100,22 @@ connect.onclick = () => {
     current.enableLanguage();
     void provider.connect().catch(error => { connection.value = String(error); });
 };
+const pendingNotice = "An edit is pending. Try again when it finishes.";
+function showSaveState() {
+    saved.value = file.metadata.getSnapshot().dirty ? "Unsaved changes" : "No unsaved changes";
+}
+function readyForHostAction() {
+    const { composing, pendingInput, pendingCommand } = current.editor.activity();
+    if (composing || pendingInput || pendingCommand) {
+        saved.value = pendingNotice;
+        return false;
+    }
+    if (saved.value === pendingNotice) showSaveState();
+    return true;
+}
 function switchView(review: boolean) {
     if (Boolean(current.comparison) !== review) {
+        if (!readyForHostAction()) return;
         const position = current.editor.captureView();
         current.dispose();
         current = mount(review);
@@ -111,10 +125,9 @@ function switchView(review: boolean) {
     document.querySelector("#changes")!.setAttribute("aria-pressed", String(review));
     current.editor.focus();
 }
-const stopDirty = file.metadata.subscribe(() => {
-    saved.value = file.metadata.getSnapshot().dirty ? "Unsaved changes" : "Saved";
-});
+const stopDirty = workspace.onDocumentChange(file.documentId, showSaveState);
 function save() {
+    if (!readyForHostAction()) return;
     const ticket = workspace.captureSave(file);
     const buffer = workspace.document(file.documentId).buffer;
     const version = String(ticket.revision);
