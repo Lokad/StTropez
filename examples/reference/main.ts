@@ -19,6 +19,7 @@ export const total = quote(24, 3);
 `;
 const key = "sttropez.reference.quote";
 const pane = document.querySelector<HTMLElement>("#pane")!;
+const workingTools = document.querySelector<HTMLFieldSetElement>("#working-tools")!;
 const find = mountFindBar(document.querySelector<HTMLElement>("#search")!, {
     createWorker: () => new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" }),
 });
@@ -74,6 +75,10 @@ function mount(review: boolean) {
 }
 
 let current = mount(false);
+pane.addEventListener("focusin", () => {
+    const review = current.comparison;
+    workingTools.disabled = !!review && review.activePane() !== current.editor;
+});
 const connect = document.querySelector<HTMLButtonElement>("#connect")!;
 const connection = document.querySelector<HTMLOutputElement>("#connection")!;
 function renderConnection() {

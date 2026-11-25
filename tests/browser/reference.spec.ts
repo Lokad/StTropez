@@ -268,6 +268,15 @@ test("the reference app edits, reviews and saves the document while its language
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
     await expect(page.locator(".st-comparison-controls output")).toHaveText(/1 change|Change 1 of 1/);
     await expect(page.locator(".st-comparison-added").first()).toContainText("Review this quote");
+    const baseline = page.getByRole("textbox", { name: "Comparison baseline source" });
+    const quickFix = page.getByRole("button", { name: "Code actions", exact: true });
+    await baseline.press("Control+End");
+    await expect(quickFix).toBeDisabled();
+    await quickFix.click({ force: true });
+    await expect(page.getByRole("region", { name: "Quick fixes" })).toBeHidden();
+    await expect(baseline).toBeFocused();
+    await working.focus();
+    await expect(quickFix).toBeEnabled();
     await page.getByRole("button", { name: "Hover", exact: true }).click();
     const hover = page.locator("#pane .st-hover:visible");
     await expect(hover).toContainText("file:///reference/quote.ts");

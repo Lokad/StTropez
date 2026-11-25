@@ -26,18 +26,21 @@
                 <output id="connection"></output>
             </div>
             <div id="tools" hidden>
-                <div class="bar">
-                    <button id="complete">Complete</button>
-                    <button id="hover">Hover</button>
-                    <button id="signature">Signature</button>
-                    <button id="definition">Definition</button>
-                    <button id="rename">Rename</button>
-                    <button id="actions">Code actions</button>
-                    <button id="links">Document links</button>
-                    <button id="command">Run server command</button>
-                </div>
-                <output id="result"></output>
-                <div id="choices"></div>
+                <fieldset id="working-tools">
+                    <legend>Working copy commands</legend>
+                    <div class="bar">
+                        <button id="complete">Complete</button>
+                        <button id="hover">Hover</button>
+                        <button id="signature">Signature</button>
+                        <button id="definition">Definition</button>
+                        <button id="rename">Rename</button>
+                        <button id="actions">Code actions</button>
+                        <button id="links">Document links</button>
+                        <button id="command">Run server command</button>
+                    </div>
+                    <output id="result"></output>
+                    <div id="choices"></div>
+                </fieldset>
                 <div id="diagnostics" aria-label="Diagnostics"></div>
             </div>
         </section>

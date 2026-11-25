@@ -30,7 +30,8 @@ Save and Run execute. [Regex worker](search.md#regular-expressions-and-worker-li
 Run `npm run demo` and open `http://127.0.0.1:4173/reference/` for a complete host.
 Edit `quote.ts` and choose **Changes** to review it. Use **Save for this tab** or press
 Ctrl+S (Cmd+S on macOS) in either pane. Reload the tab to reopen the saved text.
-**Connect language server** enables the local example provider.
+**Connect language server** enables the local example provider. In Changes, focus the working
+copy to use its language commands. You can search either pane.
 
 Before saving or switching views, the host checks `editor.activity()` and the Find bar. If input,
 a command or a replacement is pending, finish the edit and retry. This keeps the working view alive until the edit commits.
