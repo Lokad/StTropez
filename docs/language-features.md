@@ -433,6 +433,8 @@ whole batch. Equal-position inserts preserve provider order and inserted text ke
 
 A preview page contains edits with ordinals in `[first, end)` and the total across all files.
 An empty range returns the total alone. Notes include bounded excerpts and the full insertion length.
+The display cutoff keeps surrogate pairs and CRLF together. The edit retains its original UTF-16
+offsets and text.
 Rename omits text-identical replacements. Reading an expired preview returns `undefined`.
 [Preview limits](#limits)
 

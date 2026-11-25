@@ -1,5 +1,6 @@
 import { emptyList } from "../core/empty-list.ts";
 import { isOffsetRange } from "../core/bounds.ts";
+import { splitsTextPair, textExcerpt } from "../core/utf16.ts";
 import { wireLimits, staleRequest } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, EditOrigin, EditRequest, Workspace } from "../core/workspace.ts";
 import type { EditKind } from "../core/history.ts";
@@ -64,12 +65,16 @@ export type LspEditNotes = Readonly<{ total: number; notes: readonly LspWorkspac
 
 export function describeLspEdit(source: Pick<LspDocumentSnapshot, "buffer" | "resourceId" | "revision">, document: string, title: string, edit: TextEdit): LspWorkspaceEditNote {
     const { from, to, insert } = edit, { buffer } = source;
+    let start = Math.max(0, from - 32);
+    if (splitsTextPair(buffer, start)) start++;
     return Object.freeze({
-        document, resource: source.resourceId, title: title.slice(0, wireLimits.previewLabelUnits), revision: source.revision, from, to,
-        before: buffer.slice(from, Math.min(to, from + 256)) + (to - from > 256 ? "…" : ""),
-        insert: insert.slice(0, 256), insertUnits: insert.length,
-        context: buffer.slice(Math.max(0, from - 32), Math.min(to, from + wireLimits.previewContextUnits)) + (to - from > wireLimits.previewContextUnits ? "…" : "")
-            + buffer.slice(to, Math.min(buffer.length, to + 32)),
+        document, resource: source.resourceId, revision: source.revision, from, to,
+        title: textExcerpt(title, wireLimits.previewLabelUnits),
+        before: textExcerpt(buffer, 256, "…", from, to),
+        insert: textExcerpt(insert, 256),
+        insertUnits: insert.length,
+        context: buffer.slice(start, from) + textExcerpt(buffer, wireLimits.previewContextUnits, "…", from, to)
+            + textExcerpt(buffer, 32, "", to),
     });
 }
 

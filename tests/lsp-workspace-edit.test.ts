@@ -93,10 +93,14 @@ test("workspace-edit preflight and core validation refuse a bad last target with
 });
 
 test("workspace edit notes read only the requested ordinals and bound wide replacement excerpts", async t => {
-    const f = fixture(t, "abcdefghij\n".repeat(1_000));
+    const left = "prefix🙂" + "p".repeat(31);
+    const body = "a".repeat(127) + "\r\n" + "b".repeat(126) + "🙂" + "c".repeat(1_000);
+    const right = "q".repeat(31) + "🙂end";
+    const f = fixture(t, left + body + right);
     const edits = Array.from({ length: 66 }, (_, i) => ({ from: i * 11, to: i * 11 + 1, insert: "X" }));
-    const plan = await capture(f.documents, [edits, [{ from: 0, to: f.documents[1]!.buffer.length, insert: "Y".repeat(16_000) }]]);
-    const titles: string[] = [], title = (id: string) => { titles.push(id); return "T".repeat(200); };
+    const replacement = { from: left.length, to: left.length + body.length, insert: "Y".repeat(255) + "🙂".repeat(8_000) };
+    const plan = await capture(f.documents, [edits, [replacement]]);
+    const titles: string[] = [], title = (id: string) => { titles.push(id); return "T".repeat(127) + "🙂"; };
     const first = readLspEditNotes(plan, title, 2, 11);
     assert.equal(first.total, 67); assert.equal(first.notes.length, 9); assert.deepEqual(titles, [f.documents[0]!.id]);
     titles.length = 0;
@@ -104,8 +108,13 @@ test("workspace edit notes read only the requested ordinals and bound wide repla
     assert.equal(second.total, 67); assert.equal(second.notes.length, 3); assert.deepEqual(titles, f.documents.map(doc => doc.id));
     assert.equal(second.notes[0]!.from, 64 * 11);
     const wide = second.notes[2]!;
-    assert.equal(wide.title.length, 128); assert.equal(wide.before.length, 257); assert.equal(wide.insert.length, 256);
-    assert.equal(wide.insertUnits, 16_000); assert.ok(wide.context.length <= 193); assert.equal(wide.to, f.documents[1]!.buffer.length);
+    assert.equal(wide.title, "T".repeat(127));
+    assert.equal(wide.before, body.slice(0, 255) + "…");
+    assert.equal(wide.insert, "Y".repeat(255));
+    assert.equal(wide.context, "p".repeat(31) + "a".repeat(127) + "…" + "q".repeat(31));
+    assert.equal(wide.insertUnits, replacement.insert.length);
+    assert.equal(wide.from, replacement.from);
+    assert.equal(wide.to, replacement.to);
     assert.ok(Object.isFrozen(second) && Object.isFrozen(second.notes) && second.notes.every(Object.isFrozen));
     titles.length = 0;
     assert.deepEqual(readLspEditNotes(plan, title, 12, 12), { total: 67, notes: [] });

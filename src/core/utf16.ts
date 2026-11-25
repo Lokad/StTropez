@@ -15,6 +15,20 @@ export function splitsTextPairAt(text: string, offset: number): boolean {
     return left === 13 && right === 10 || highSurrogate(left) && lowSurrogate(right);
 }
 
+/** Clip only the display boundary. The caller's original range can contain arbitrary UTF-16. */
+export function textExcerpt(
+    source: { length: number; slice(from: number, to: number): string },
+    limit: number,
+    marker = "",
+    from = 0,
+    to = source.length,
+): string {
+    const sample = source.slice(from, Math.min(to, from + limit + 1));
+    if (sample.length <= limit) return sample;
+    const end = splitsTextPairAt(sample, limit) ? limit - 1 : limit;
+    return sample.slice(0, end) + marker;
+}
+
 /** Read at most 256 units toward a validated bound, plus one in-range surrogate peek.
  * Raw range edges stay clipped. readUnits includes an unsuccessful peek as well. */
 export function readUtf16Window(source: { slice(from: number, to: number): string }, start: number, bound: number, direction: -1 | 1 = 1): Readonly<{ from: number; to: number; text: string; readUnits: number }> {

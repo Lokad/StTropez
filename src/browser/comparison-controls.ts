@@ -1,5 +1,5 @@
 import type { TextComparison, TextComparisonSnapshot } from "./comparison.ts";
-import { previewText } from "./preview-text.ts";
+import { textExcerpt } from "../core/utf16.ts";
 
 /** Optional presentation. Pane ownership and command validation stay with the comparison. */
 export function mountComparisonControls(
@@ -111,7 +111,7 @@ export function mountComparisonControls(
                 if (from === to) return side === "baseline" ? "Baseline: no text removed" : "Working: no text added";
                 const first = lineFrom + 1;
                 const lines = first === lineTo ? `line ${first}` : `lines ${first}–${lineTo}`;
-                const excerpt = previewText(state[side]!.buffer, from, to);
+                const excerpt = textExcerpt(state[side]!.buffer, 160, "…", from, to);
                 return `${side === "baseline" ? "Baseline" : "Working"} ${lines}: ${visible(excerpt)}`;
             };
             setText(referencePreview, text("baseline")); setText(workingPreview, text("working"));
