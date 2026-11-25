@@ -1,4 +1,5 @@
 import { ready, test, expect } from "./fixtures.ts";
+import { holdLspReplies } from "../helpers/lsp-replies.ts";
 import { expectAlignedEditorRows } from "../helpers/editor-assertions.ts";
 import type { Page } from "@playwright/test";
 import { hostTextEquals } from "../../scripts/host-scene.mjs";
@@ -59,14 +60,14 @@ test(`plain aligned rows preserve painted correspondence, complete sets, navigat
     await dispose(p);
 });
 test(`plain aligned folds, padding pointers, shared pitch and stale preparation retain source ownership`, async ({ page: p }) => {
+    const replies = await holdLspReplies(p, "textDocument/hover");
     test.setTimeout(120000); const raw = Array.from({ length: 900 }, (_, i) => `row ${i.toString().padStart(6, "0")}: café😀;ok;\r\n`).join(""); await setup(p, "plain", raw);
     await align(p).check(); await waitForReview(p); const from = raw.indexOf("row 000100"), to = raw.indexOf("row 000130"); await sourceSet(p, [{ anchor: from, head: to }]); await input(p).press("Control+Shift+["); await waitForReview(p); await scroll(p, 110);
     let c = (await snapshot(p)).bindings.comparison!; expect(c.workingViewport.collapsedFolds).toBe(1); expect(c.referenceViewport!.collapsedFolds).toBe(0); expect(c.workingViewport.paddingRows).toBeGreaterThan(0);
     const point = await paddingPoint(p);
-    const hovers = () => snapshot(p).then(state => state.bindings.hover.sessions.find(session => session.id === "comparison")!.counters.posted);
-    const posted = await hovers(); await p.mouse.move(point.x, point.y);
+    const posted = replies.requestCount(); await p.mouse.move(point.x, point.y);
     await p.waitForTimeout(400); // Cross the host's pointer dwell before checking provider traffic.
-    expect(await hovers()).toBe(posted);
+    expect(replies.requestCount()).toBe(posted);
     await p.mouse.click(point.x, point.y); await waitForReview(p); c = (await snapshot(p)).bindings.comparison!; expect(c.selection.head).toBe(from); expect(c.workingViewport.collapsedFolds).toBe(1); await input(p).pressSequentially("H"); await waitForReview(p); await exact(p, raw.slice(0, from) + "H" + raw.slice(from));
     await input(p).press("Control+z"); await waitForReview(p); await exact(p, raw);
     // Existing native DOM geometry supplies a common pitch; no new font/shaping path.

@@ -48,6 +48,7 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
                 // Detached listeners must not reactivate a retired language/hover session.
                 retiredInput?.dispatchEvent(new FocusEvent("focus"));
                 const failed = bindings.debug(), afterFailure = ownership(), children = host.childElementCount;
+                const hoverAvailable = bindings.hover.inspectCaret(id);
                 // A retry must exercise the real editor and all original feature attachments.
                 let retryError: string[] = [], detachFailure: string[] = [], edited = false;
                 try {
@@ -71,7 +72,7 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
                 finally { bindings.colors.attach = colors; }
                 result.push({ id, failure, before, afterFailure, afterRetry: ownership(), children, retired: retiredInput?.isConnected === false,
                     active: failed.activeViews, comparison: failed.comparison !== null, language: failed.language.sessions.length,
-                    reference: failed.language.referenceFind.length, languageActive: failed.language.active, hover: failed.hover.sessions.length, paste: failed.tablePaste.sessions,
+                    reference: failed.language.referenceFind.length, languageActive: failed.language.active, hoverAvailable, paste: failed.tablePaste.sessions,
                     instruction: failed.instruction !== null, retryError, detachFailure, edited });
             }
         } finally { bindings.dispose(); await controller.dispose(); }
@@ -83,7 +84,7 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
         expect(result.detachFailure, result.id).toEqual(result.id === "secondary" ? ["Cleanup reported failure"] : []);
         expect(result.afterFailure, result.id).toEqual(result.before);
         expect(result.afterRetry, result.id).toEqual(result.before);
-        expect(result, result.id).toMatchObject({ children: 0, retired: true, active: 0, comparison: false, language: 0, reference: 0, hover: 0, paste: 0,
+        expect(result, result.id).toMatchObject({ children: 0, retired: true, active: 0, comparison: false, language: 0, reference: 0, hoverAvailable: false, paste: 0,
             languageActive: null, instruction: false, retryError: [], edited: true });
     }
 });

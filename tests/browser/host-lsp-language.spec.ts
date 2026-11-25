@@ -749,6 +749,8 @@ test.describe("plain selected LSP features", () => {
     });
 
     test("read-only manual signature help keeps complete selections and yields only to explicit hover", async ({ page }) => {
+        const replies = await holdLspReplies(page, "textDocument/hover");
+        await page.reload();
         const raw = "lookup('a', )\r\nformat(1, )"; await seed(page, raw);
         const popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
         await page.evaluate(at => { const f = window.hostFixture; f.setSourceReadOnly(true); f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }, { anchor: at, head: at }], 1); }, raw.indexOf(")"));
@@ -761,9 +763,9 @@ test.describe("plain selected LSP features", () => {
             const node = document.createTreeWalker(row, NodeFilter.SHOW_TEXT).nextNode()!, range = document.createRange(); range.setStart(node, 1); range.setEnd(node, 2);
             const box = range.getBoundingClientRect(); return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
         });
-        const posted = (await snapshot(page)).bindings.hover.sessions.find(session => session.id === "primary")!.counters.posted;
+        const posted = replies.requestCount();
         await page.mouse.move(at.x, at.y); await page.waitForTimeout(350); await expect(popup).toBeVisible();
-        expect((await snapshot(page)).bindings.hover.sessions.find(session => session.id === "primary")!.counters.posted).toBe(posted);
+        expect(replies.requestCount()).toBe(posted);
         await page.evaluate(set => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, set.ranges, 0); }, complete);
         const hoverSelection = (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selectionSet;
         await field(page).press("Control+k"); await field(page).press("Control+i"); await expect(popup).toBeHidden(); await expect(page.getByRole("tooltip")).toContainText("Symbol");

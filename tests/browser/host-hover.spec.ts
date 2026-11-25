@@ -23,22 +23,30 @@ async function point(page: Page, column = 1): Promise<{ x: number; y: number }> 
 }
 
 test("pointer hover uses the latest position when diagnostics divide a symbol", async ({ page }) => {
+    const replies = await holdLspReplies(page, "textDocument/hover");
     await page.goto("/hosts/plain/?language=lsp"); await ready(page);
     await page.evaluate(() => { const f = window.hostFixture, doc = f.snapshot().source; f.editSource(doc.revision, [{ from: 0, to: doc.length, insert: "TODOvalue = other;" }]); });
     const field = primary(page), warning = page.getByRole("button", { name: /Resolve this placeholder/ }).first();
     await field.focus(); await field.press("Control+Home"); await field.press("Control+Space"); await expect(warning).toBeVisible(); await field.press("Escape");
     const uri = await sourceDiagnosticUri(page);
-    await publishFixtureDiagnostics(page, uri, "clear"); await expect(warning).toBeHidden();
     const move = async (column: number) => { const at = await point(page, column); await page.mouse.move(at.x, at.y); };
-    await move(2); await expect(tooltip(page)).toContainText("TODOvalue Symbol in this source.");
-    const requests = () => page.evaluate(() => window.hostFixture.snapshot().bindings.hover.sessions.find(s => s.id === "primary")!.counters.posted);
-    const initial = await requests();
+    replies.hold();
+    await move(2);
+    await expect.poll(replies.waiting).toBe(true);
+    await expect(tooltip(page)).toContainText("Resolve this placeholder.");
+    await expect(tooltip(page)).not.toContainText("Symbol in this source.");
+    await replies.release();
+    await expect(tooltip(page)).toContainText("TODOvalue Symbol in this source.");
+    await expect(tooltip(page)).toContainText("Resolve this placeholder.");
+    await publishFixtureDiagnostics(page, uri, "clear"); await expect(warning).toBeHidden();
+    const initial = replies.requestCount();
     await page.clock.install(); await move(7); await page.clock.runFor(400);
     await publishFixtureDiagnostics(page, uri, "normal"); await expect(warning).toBeVisible();
     await expect(tooltip(page)).not.toContainText("Resolve this placeholder.");
     await move(2); await expect(tooltip(page)).toContainText("Resolve this placeholder.");
-    expect(await requests()).toBe(initial);
-    await move(13); await expect(tooltip(page)).toContainText("other Symbol in this source."); expect(await requests()).toBe(initial + 1);
+    expect(replies.requestCount()).toBe(initial);
+    await move(13); await expect(tooltip(page)).toContainText("other Symbol in this source.");
+    expect(replies.requestCount()).toBe(initial + 1);
 });
 test(`plain keyboard hover keeps complete selections, safe text, input focus and shared history`, async ({ page }) => {
     const replies = await holdLspReplies(page, "textDocument/hover");
@@ -71,15 +79,13 @@ test(`plain keyboard hover keeps complete selections, safe text, input focus and
     await page.keyboard.type("X"); await ready(page); await expect(tooltip(page)).toBeHidden(); await expect(primary(page)).toBeFocused();
     expect(await page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length))).toBe(original.slice(0, 2) + "X" + original.slice(2, 7) + "X" + original.slice(7));
     expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);
-    const counters = (await snapshot(page)).bindings.hover.sessions.find(s => s.id === "primary")!.counters;
-    expect(counters).toMatchObject({ posted: 2, received: 2, transport: "lsp3.17" }); expect(page.workers().some(worker => worker.url().endsWith("/provider-worker.js"))).toBe(false);
     await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: "const working = 1;\r\nconst second = 2;" }]); });
     await page.getByRole("button", { name: "Open source review", exact: true }).click();
     await expect.poll(async () => (await snapshot(page)).bindings.comparison?.status).toBe("ready");
     await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: 2, head: 2 }]); });
     const working = page.getByRole("textbox", { name: "Comparison working source", exact: true });
     await working.focus(); await ready(page); await working.press("Control+k"); await working.press("Control+i"); await expect(tooltip(page)).toContainText("Declares a constant binding.");
-    expect((await snapshot(page)).bindings.hover.presentation.view).toBe("comparison");
+    await expect(working.locator("..").getByRole("tooltip")).toBeVisible();
     await tooltip(page).dispatchEvent("scroll"); await expect(tooltip(page)).toBeVisible();
     expect(await working.evaluate(node => node.ownerDocument.activeElement === node)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`hover-plain.png`) }); await expect(tooltip(page)).toBeVisible();
@@ -88,14 +94,14 @@ test(`plain keyboard hover keeps complete selections, safe text, input focus and
     await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 2, head: 2 }]); });
     await primary(page).focus(); await ready(page); await primary(page).press("Control+k"); await primary(page).press("Control+i"); await expect(tooltip(page)).toContainText("Declares a constant binding.");
     await expect.poll(replies.cancelled).toBe(true); await replies.release();
-    expect((await snapshot(page)).bindings.hover.sessions.find(s => s.id === "comparison")!.counters).toMatchObject({ received: 1, pending: false });
-    const after = await snapshot(page); expect(after.bindings.hover.presentation.view).toBe("primary");
+    await expect(working.locator("..").getByRole("tooltip")).toBeHidden();
+    await expect(primary(page).locator("..").getByRole("tooltip")).toContainText("Declares a constant binding.");
+    const after = await snapshot(page);
     expect(after.bindings.comparison!.selectionSet).toEqual(captured.bindings.comparison!.selectionSet); expect(after.history).toEqual(captured.history);
     expect(after.source.revision).toBe(captured.source.revision);
     await tooltip(page).focus();
     await page.getByRole("heading", { level: 1 }).click();
-    await expect.poll(async () => (await snapshot(page)).bindings.hover.presentation.visible).toBe(false);
-    expect((await snapshot(page)).bindings.hover.presentation).not.toHaveProperty("content");
+    await expect(tooltip(page)).toBeHidden();
     await page.evaluate(() => window.hostFixture.dispose()); const final = await snapshot(page);
     expect(final.bindings.lsp).toMatchObject({ scopes: 0, documents: 0, created: 1, terminated: 1 });
 });
@@ -105,8 +111,6 @@ test(`plain pointer hover preserves host focus and refuses stale replies across 
     await primary(page).press("Control+Home"); await ready(page); const form = page.getByRole("textbox", { name: "Configuration path", exact: true }); await form.fill("keep-focus.csv");
     const at = await point(page); await page.mouse.move(at.x, at.y); await expect(tooltip(page)).toContainText("Declares a constant binding.");
     expect(await form.evaluate(node => node.ownerDocument.activeElement === node)).toBe(true);
-    const posted = (await snapshot(page)).bindings.hover.sessions.find(s => s.id === "primary")!.counters;
-    expect(posted).toMatchObject({ received: 1, transport: "lsp3.17" });
     await tooltip(page).evaluate(node => node.focus({ preventScroll: true }));
     await primary(page).evaluate(node => node.focus({ preventScroll: true })); await expect(tooltip(page)).toBeVisible();
     await tooltip(page).evaluate(node => node.focus({ preventScroll: true }));
@@ -114,14 +118,12 @@ test(`plain pointer hover preserves host focus and refuses stale replies across 
     replies.hold(); await page.evaluate(() => { const f = window.hostFixture; f.setSourceReadOnly(false); f.inspectSymbol("primary"); }); await expect.poll(replies.waiting).toBe(true);
     await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "human" }]); });
     await expect(tooltip(page)).toBeHidden(); await expect.poll(replies.cancelled).toBe(true); await replies.release(); await expect(tooltip(page)).toBeHidden();
-    expect((await snapshot(page)).bindings.hover.sessions.find(s => s.id === "primary")!.counters).toMatchObject({ received: 1, pending: false });
     expect(await form.evaluate(node => node.ownerDocument.activeElement === node)).toBe(true); expect(await page.evaluate(() => window.hostFixture.range(0, 5))).toBe("human");
     await page.mouse.move(1, 1);
     replies.hold(); await page.evaluate(() => window.hostFixture.inspectSymbol("primary")); await expect.poll(replies.waiting).toBe(true);
     const history = (await snapshot(page)).history;
     await page.evaluate(() => { const f = window.hostFixture; f.unmount(); f.mount(); }); await ready(page); await expect(tooltip(page)).toBeHidden();
     await expect.poll(replies.cancelled).toBe(true); await primary(page).focus(); await replies.release(); await expect(tooltip(page)).toBeHidden();
-    expect((await snapshot(page)).bindings.hover.sessions.find(s => s.id === "primary")!.counters).toMatchObject({ posted: 0, received: 0 });
     expect((await snapshot(page)).history).toEqual(history);
     await page.evaluate(() => { const f = window.hostFixture, at = f.range(0, 100).indexOf("\r\n") + 4; f.selectSource("primary", f.snapshot().source.revision, { anchor: at, head: at }); });
     await primary(page).press("Control+k"); await primary(page).press("Control+i"); await expect(tooltip(page)).toContainText("Declares a constant binding.");

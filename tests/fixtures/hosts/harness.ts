@@ -91,7 +91,6 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
             controller.workspace.setCapabilities(resource.id, { ...metadata.capabilities, edit: value ? ["host"] : ["human", "host", "agent"] }); },
         navigationDocument: (id: DocumentId) => { const doc = controller.workspace.document(id); return { revision: doc.revision, length: doc.buffer.length, text: doc.buffer.slice(0, Math.min(4096, doc.buffer.length)) }; },
         inspectSymbol: (id: "primary" | "secondary" | "comparison") => bindings.hover.inspectCaret(id),
-        setHoverDelay: (id: string, value: number) => bindings.hover.setDelay(id, value),
         faultHoverNext: (id: string, value: "malformed" | "failure" | "markup") => bindings.hover.faultNext(id, value),
         seedInactiveDocuments, inactiveDocuments, unmount: lifecycle.unmount, mount: lifecycle.mount, dispose: lifecycle.dispose });
     window.hostFixture = fixture;
@@ -134,6 +133,5 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     setProjectTargetReadOnly: (id: DocumentId, value: boolean) => void;
     navigationDocument: (id: DocumentId) => Readonly<{ revision: number; length: number; text: string }>;
     inspectSymbol: (id: "primary" | "secondary" | "comparison") => boolean;
-    setHoverDelay: (id: string, value: number) => void;
     faultHoverNext: (id: string, value: "malformed" | "failure" | "markup") => void;
     unmount: () => void; mount: () => void; dispose: () => Promise<void> }> } }

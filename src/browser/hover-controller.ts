@@ -34,8 +34,6 @@ export type HoverSnapshot = Readonly<{
 export type HoverController = Observable<HoverSnapshot> & Readonly<{
     request: (anchor?: OverlayPosition, mode?: "refresh" | "reuse") => Promise<Outcome<HoverSnapshot>>;
     cancel: () => void; dispose: () => void;
-    getDiagnostics: () => Readonly<{ connected: boolean; pending: boolean; disposed: boolean; posted: number; received: number;
-        stale: number; invalid: number; failed: number; cancelled: number }>;
 }>;
 
 const idle: HoverSnapshot = Object.freeze({ status: "idle", message: "", revision: null, range: null, text: "", diagnostics: emptyList });
@@ -50,7 +48,6 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
     let inspection: Inspection | undefined, disposed = false;
     const diagnostics = options.diagnostics ?? providerDiagnostics(owner);
     let pending: Promise<Outcome<HoverSnapshot>> | undefined;
-    const counts = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
     const publish = (next: HoverSnapshot) => notifications.publish(cell, Object.freeze(next));
     const status = (status: HoverSnapshot["status"], message: string, revision: number | null = null) =>
         publish({ ...idle, status, message, revision });
@@ -85,7 +82,6 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
     }
     function expire(current: Inspection): void {
         if (inspection !== current) return;
-        counts.stale++;
         release();
         status("expired", "The inspected source changed.");
     }
@@ -136,7 +132,6 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
         let timedOut = false;
         let symbol: LspHoverResult | null = null;
         try {
-            counts.posted++;
             const result = client.run({ document: capture.document, offset: current.offset, prepare: options.prepareRequest }).result;
             current.timer = win.setTimeout(() => {
                 timedOut = true;
@@ -152,13 +147,7 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
             expire(current);
             return stale;
         }
-        if (failure) {
-            if (failure.error instanceof TypeError || failure.error instanceof RangeError) counts.invalid++;
-            else counts.failed++;
-        } else {
-            counts.received++;
-            if (symbol) current.symbol = symbol;
-        }
+        if (symbol) current.symbol = symbol;
         finish(current);
         render(current);
         return failure ?? done(cell.get());
@@ -209,7 +198,6 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
     }
     const cancel = () => {
         notifications.assertWritable(); if (disposed) return;
-        if (inspection?.capture) counts.cancelled++;
         release(); publish(idle);
     };
     const stopClient = client.subscribe(changed);
@@ -225,7 +213,8 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
         status("disposed", "");
         cell.clearSnapshotListeners();
     }
-    const controller = Object.freeze({ request, cancel, dispose, ...controllerObservable(cell, "Hover", () => disposed, notifications), getDiagnostics: () => Object.freeze({ ...counts, connected: client.getSnapshot().phase === "ready", pending: !!inspection?.capture, disposed }) });
+    const controller = Object.freeze({ request, cancel, dispose,
+        ...controllerObservable(cell, "Hover", () => disposed, notifications) });
     if (!options.popup) return controller;
     try {
         const popup = mountHoverPopup(editor, controller, options.popup === true ? {} : options.popup);

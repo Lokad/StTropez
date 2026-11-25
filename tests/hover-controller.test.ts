@@ -76,7 +76,7 @@ test("deferred hover invalidation preserves a newer request after editing and re
         const current = f.request(2);
         await second.entered;
         assert.deepEqual(await obsolete, { status: "stale" });
-        assert.equal(f.hover.getDiagnostics().pending, true); assert.equal(f.workspace.diagnostics().leases, f.leases + 1);
+        assert.equal(f.workspace.diagnostics().leases, f.leases + 1);
         assert.equal(f.sent("$/cancelRequest").length, 1); first.reply({ contents: "obsolete" }); await settled();
         assert.equal(f.hover.getSnapshot().status, "pending");
         assert.deepEqual(f.hover.getSnapshot().diagnostics, []);
@@ -109,7 +109,6 @@ test("a hover deadline releases its capture and cancels the held provider reques
         assert.match(String(result.error), /timed out/);
         assert.equal(f.hover.getSnapshot().status, "failed");
         assert.equal(f.workspace.diagnostics().leases, f.leases);
-        assert.equal(f.hover.getDiagnostics().pending, false);
         assert.equal(f.sent("$/cancelRequest").length, 1);
         held.reply({ contents: "Too late" });
         await settled();

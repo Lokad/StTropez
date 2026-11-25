@@ -8,11 +8,10 @@ export type HoverHostOptions = Readonly<{
     canCapture?: (document: TextEditor["view"]["documentId"]) => boolean;
 }>;
 
-/** Routes fixture requests to a named pane and reports its observable result. */
+/** Routes fixture requests to a named pane. */
 export class HostHoverTools {
     private readonly sessions = new Map<string, Session>();
     private current?: Session;
-    private readonly retired = { posted: 0, received: 0, stale: 0, invalid: 0, failed: 0, cancelled: 0 };
     private readonly allowInspect: (kind: "pointer" | "keyboard") => boolean;
     private readonly options: HoverHostOptions;
     constructor(allowInspect: (kind: "pointer" | "keyboard") => boolean, options: HoverHostOptions) {
@@ -53,27 +52,10 @@ export class HostHoverTools {
             if (this.sessions.get(id) !== session) return;
             this.sessions.delete(id);
             if (this.current === session) delete this.current;
-            const counts = controller.getDiagnostics();
-            for (const name of Object.keys(this.retired) as (keyof typeof this.retired)[]) this.retired[name] += counts[name];
         };
-    }
-    setDelay(id: string, value: number): void {
-        if (!Number.isFinite(value) || value < 0 || value > 1000) throw new RangeError("Invalid hover delay.");
-        const session = this.sessions.get(id);
-        if (session) session.settings.delay = value;
     }
     faultNext(id: string, value: NonNullable<Settings["fault"]>): void {
         const session = this.sessions.get(id);
         if (session) session.settings.fault = value;
-    }
-    debug() {
-        const active = [...this.sessions].find(([, session]) => session === this.current);
-        const state = this.current?.controller.getSnapshot();
-        return {
-            presentation: { status: state?.status ?? "idle", visible: !!this.current?.editor.element.querySelector(".st-hover:not([hidden])"),
-                view: active?.[0] ?? null, text: state?.text ?? "", message: state?.message ?? "", ...(state?.content && { content: state.content }) },
-            sessions: [...this.sessions].map(([id, session]) => ({ id, viewId: session.editor.view.id,
-                counters: { ...session.controller.getDiagnostics(), transport: "lsp3.17" } })), retired: { ...this.retired },
-        };
     }
 }
