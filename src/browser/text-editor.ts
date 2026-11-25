@@ -65,7 +65,7 @@ export type TextEditorDiagnostics = TextEditorActivity & Readonly<{
     inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number;
     maxQueuedInputTurnMs: number; keydownEvents: number; lastKeydownMs: number; navigationTurns: number;
     navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number;
-    commits: number; conflicts: number; queuedInputUnits: number;
+    conflicts: number; queuedInputUnits: number;
 }>;
 export type TextEditorSnapshot = Readonly<{ focused: boolean; disabled: boolean; composing: boolean;
     readOnlyReason: EditRefusedDetail["reason"] | null }>;
@@ -187,7 +187,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         escapeSelection = value ? currentSelections() : undefined;
         root.toggleAttribute("data-st-tab-escape", value);
     };
-    let commits = 0, conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
+    let conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
     let beforeInputEvents = 0, lastBeforeInputMs = 0, maxQueuedInputTurnMs = 0;
     let keydownEvents = 0, lastKeydownMs = 0;
     let navigationTurns = 0, navigationPreparationMs = 0, maxNavigationTurnMs = 0, navigationWorkMs = 0, navigationDepth = 0;
@@ -335,7 +335,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             { bubbles: true, detail: Object.freeze({ documentId, reason: readOnlyReason }) }));
     }
     const conflict = (reason: string, edit?: TextEdit, expectedRevision = revision, contextFrom = context.from, attemptedText = input.value, cause?: unknown) => {
-        conflicts++; group = undefined;
+        conflicts++;
+        group = undefined;
         input.dispatchEvent(new CustomEvent<InputConflictDetail>(inputConflictEvent, { bubbles: true, detail: Object.freeze({ documentId, expectedRevision, reason,
             attemptedText, contextFrom, ...(edit ? { attemptedEdit: Object.freeze({ ...edit }) } : {}), ...(cause === undefined ? {} : { cause }) }) }));
     };
@@ -444,7 +445,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (result.applied) { // A later presentation/completion failure must not recover this text twice.
                 inputQueue.consumeRunning();
                 if (accepted && currentDocument().revision === result.revision) accepted(edits);
-                commits++; const after = currentView(); revealCaret(after.selection);
+                const after = currentView();
+                revealCaret(after.selection);
                 if (typedText && after.revision === result.revision && (!transformed || edits.some(edit => edit.insert.length > 0))) typedAt = after;
                 if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, tail, key }; }
             else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
@@ -1421,7 +1423,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const textDrag = mountTextDragDrop({ workspace, tab: target, view, viewport, input,
         available: () => !disposed && !composing && !input.disabled,
         beforeStart: () => { stopDrag(); cancelPendingCommand(); commandRunner.cancel(); preferred = undefined; group = undefined; },
-        afterDrop: () => { commits++; revealCaret(); focus(); refresh(); },
+        afterDrop: () => { revealCaret(); focus(); refresh(); },
         rejected: reason => { conflict(reason); refresh(); } });
     let mousePress: { event: PointerEvent; armed: boolean; revision: number; selectionSet: SelectionSet } | undefined;
     listen(root, "pointerdown", () => { mousePress = undefined; draggedWord = false; registry.reset(); escapeState(false); }, { capture: true });
@@ -1825,7 +1827,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state, options) => { const result = viewport.restoreView(state, options); if (result) refresh(); return result; },
         getDiagnostics: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, maxQueuedInputTurnMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs,
-            commits, conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0 }),
+            conflicts, queuedInputUnits: inputQueue.pending?.units ?? 0 }),
         dispose: () => {
             if (disposed) return;
             notifications.assertWritable(); disposed = true; activitySnapshot = undefined; editTransform = undefined;

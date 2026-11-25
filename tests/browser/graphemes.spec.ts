@@ -123,8 +123,11 @@ test("a pending whole-line deletion expires when its captured input changes", as
         }, changed);
         expect(pending).toBe(true);
         await expect.poll(async () => (await state(page)).primary.pendingGrapheme).toBe(false);
-        const after = await state(page); expect(after.primary.commits).toBe(before.primary.commits);
-        if (changed !== "dispose") { expect(after.document!.length).toBe(100_001 + (changed === "revision" || changed === "secondary" ? 1 : 0)); }
-        else expect(after.diagnostics.resources).toBe(0);
+        const after = await state(page);
+        if (changed === "dispose") expect(after.diagnostics.resources).toBe(0);
+        else {
+            const inserted = changed === "revision" || changed === "secondary" ? 1 : 0;
+            expect(after.document).toMatchObject({ revision: before.document!.revision + inserted, length: 100_001 + inserted });
+        }
     }
 });

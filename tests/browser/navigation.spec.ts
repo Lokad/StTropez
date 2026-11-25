@@ -242,8 +242,10 @@ test("pending word deletion expires after revision, selection or tab-generation 
         }, changed);
         expect(pending).toBe(true);
         await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.pendingWord)).toBe(false);
-        const after = await snapshot(page); expect(after.document!.length).toBe(200_000 + (changed === "revision" ? 1 : 0));
-        expect(after.primary.commits).toBe(before.primary.commits);
+        const inserted = changed === "revision" ? 1 : 0;
+        expect((await snapshot(page)).document).toMatchObject({
+            length: 200_000 + inserted, revision: before.document!.revision + inserted,
+        });
     }
 });
 
@@ -284,14 +286,17 @@ test("non-cancellable word input uses its captured revision and preserves reject
     expect(await page.evaluate(() => { const f = window.editingFixture; return f.range(0, f.snapshot().document!.length); })).toBe("alpha beta");
     expect((await snapshot(page)).history).toEqual(beforeMismatch.history);
     expect((await snapshot(page)).conflicts.at(-1)).toMatchObject({ reason: "stale-delete-input", attemptedUnits: 9 });
-    await setup(page, "alpha beta", 10); const before = (await snapshot(page)).primary.commits;
+    await setup(page, "alpha beta", 10);
+    const before = (await snapshot(page)).document!.revision;
     await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
         const input = node as HTMLTextAreaElement;
         input.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteWordBackward", bubbles: true, cancelable: false }));
         window.editingFixture.edit([{ from: 0, to: 0, insert: "!" }]);
         input.value = "alpha "; input.dispatchEvent(new InputEvent("input", { inputType: "deleteWordBackward", bubbles: true }));
     }); await ready(page);
-    expect((await snapshot(page)).primary.commits).toBe(before); expect((await snapshot(page)).conflicts.at(-1)!.reason).toBe("stale-word-input");
+    const rejected = await snapshot(page);
+    expect(rejected.document!.revision).toBe(before + 1);
+    expect(rejected.conflicts.at(-1)!.reason).toBe("stale-word-input");
     expect(await page.evaluate(() => window.editingFixture.range(0, 11))).toBe("!alpha beta");
     await setup(page, "alpha beta", 10); const conflictCount = (await snapshot(page)).conflicts.length;
     await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
@@ -326,7 +331,8 @@ test("page movement preserves raw CRLF offsets and measured columns in horizonta
 
 test("pending word deletion orders native deletion and typing and respects permission changes", async ({ page }) => {
     const text = "x".repeat(200_000) + " tail";
-    await setup(page, text); const before = (await snapshot(page)).primary.commits;
+    await setup(page, text);
+    const before = (await snapshot(page)).document!.revision;
     await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
         const input = node as HTMLTextAreaElement;
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", ctrlKey: true, bubbles: true, cancelable: true }));
@@ -339,7 +345,7 @@ test("pending word deletion orders native deletion and typing and respects permi
         input.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteWordForward", bubbles: true, cancelable: true }));
         input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", bubbles: true }));
     }); await ready(page);
-    expect((await snapshot(page)).document).toMatchObject({ length: 1 }); expect((await snapshot(page)).primary.commits).toBe(before + 3);
+    expect((await snapshot(page)).document).toMatchObject({ length: 1, revision: before + 3 });
     expect(await page.evaluate(() => window.editingFixture.range(0, 1))).toBe("!");
     await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document!.length).toBe(0);
     await page.keyboard.press("Control+z"); await ready(page); expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe(" tail");

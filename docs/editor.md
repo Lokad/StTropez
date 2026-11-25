@@ -547,10 +547,10 @@ reports composition, disposal, `pendingInput`, `pendingCommand`, `pendingCaret`,
 finished. Check the painted revision, full selection set, folds and alignment on the viewport.
 Provider replies, bracket highlights and syntax colors can arrive later.
 
-`getDiagnostics()` returns `TextEditorDiagnostics` with input sizes, event and transaction counts,
-conflicts, queue size and command timings. Check event counts before using `lastInputMs`: cancelling `beforeinput` can suppress the
-next `input`. See [clock definitions](README.md#glossary) and
-[visible readiness checks](testing.md#readiness-and-visible-continuity).
+`getDiagnostics()` reports input sizes, event counts, conflicts, queue size and command timings.
+Use the document revision to detect a committed change from any pane. Check the input event count
+before using `lastInputMs`. Cancelling `beforeinput` can suppress the next `input`.
+[Clock definitions](README.md#glossary) · [Visible readiness checks](testing.md#readiness-and-visible-continuity)
 
 | Area | Limit or scheduling policy |
 | --- | --- |

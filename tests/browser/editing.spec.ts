@@ -322,7 +322,12 @@ test("typing in the middle of a document groups undo and redo", async ({ page })
     await page.evaluate(() => { window.editingFixture.select("primary", { anchor: 120_000, head: 120_000 }); window.editingFixture.focus("primary"); }); await ready(page);
     await page.keyboard.type("xyz"); await ready(page);
     expect(await page.evaluate(() => window.editingFixture.range(120_000, 120_003))).toBe("xyz");
-    expect((await state(page))).toMatchObject({ document: { revision: 3, length: 240_003 }, primary: { commits: 3, selection: { anchor: 120_003, head: 120_003 } }, secondary: { selection: { anchor: 0, head: 0 } }, history: { undoDepth: 1 } });
+    expect(await state(page)).toMatchObject({
+        document: { revision: 3, length: 240_003 },
+        primary: { selection: { anchor: 120_003, head: 120_003 } },
+        secondary: { selection: { anchor: 0, head: 0 } },
+        history: { undoDepth: 1 },
+    });
     const nativeInput = page.getByRole("textbox", { name: "Primary source", exact: true });
     expect((await nativeInput.inputValue()).length).toBeLessThan(2600);
     await page.keyboard.press("ControlOrMeta+z"); await ready(page);
@@ -461,10 +466,14 @@ test("synthetic composition commits once and rejects stale, readonly and expired
         input.setRangeText("ê", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", isComposing: true }));
     });
     const end = (data = "ê") => input.evaluate((node, data) => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data })), data);
-    await start(); expect((await state(page)).primary.commits).toBe(0); expect(await events.jsonValue()).toHaveLength(0);
+    const before = (await state(page)).document!.revision;
+    await start();
+    expect((await state(page)).document!.revision).toBe(before);
+    expect(await events.jsonValue()).toHaveLength(0);
     await expect(page.locator("#primary .st-input-caret")).toHaveText("ê");
     await end(""); await ready(page);
-    expect(await page.evaluate(() => window.editingFixture.range(0, 7))).toBe("alpha ê"); expect((await state(page)).primary.commits).toBe(1);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 7))).toBe("alpha ê");
+    expect((await state(page)).document!.revision).toBe(before + 1);
     for (const reason of ["stale-revision", "read-only", "expired-view"]) {
         await start();
         await page.evaluate(reason => {
@@ -472,12 +481,14 @@ test("synthetic composition commits once and rejects stale, readonly and expired
             if (reason === "read-only") window.editingFixture.readOnly(true);
             if (reason === "expired-view") window.editingFixture.replacePrimary();
         }, reason);
+        const revision = (await state(page)).document!.revision;
         await end();
-        expect((await state(page)).conflicts.at(-1)).toMatchObject({ reason });
+        const rejected = await state(page);
+        expect(rejected.document!.revision).toBe(revision);
+        expect(rejected.conflicts.at(-1)).toMatchObject({ reason });
         expect(await page.evaluate(() => window.editingFixture.conflictText())).toContain("ê");
         if (reason === "read-only") await page.evaluate(() => window.editingFixture.readOnly(false));
     }
-    expect((await state(page)).primary.commits).toBe(1);
     expect(await events.evaluate(list => list.map(event => event.text))).toEqual(["ê"]);
     expect((await state(page)).secondary.viewport.revision).toBe((await state(page)).document!.revision);
 });
@@ -861,8 +872,9 @@ test("a staged dead key occupies one cell and cancellation preserves the selecte
     await page.evaluate(() => { window.editingFixture.setText("alpha omega"); window.editingFixture.select("primary", { anchor: 6, head: 11 }); window.editingFixture.focus("primary"); }); await ready(page);
     const cdp = await page.context().newCDPSession(page);
     const stage = () => cdp.send("Input.imeSetComposition", { text: "^", selectionStart: 1, selectionEnd: 1 });
+    const revision = (await state(page)).document!.revision;
     await stage();
-    expect((await state(page)).primary).toMatchObject({ composing: true, commits: 0 });
+    expect(await state(page)).toMatchObject({ document: { revision }, primary: { composing: true } });
     const accent = page.locator("#primary .st-input-caret");
     await expect(accent).toBeVisible(); await expect(accent).toHaveText("^");
     expect(await accent.evaluate(el => {
@@ -873,10 +885,14 @@ test("a staged dead key occupies one cell and cancellation preserves the selecte
     await expect(page.locator("#primary textarea")).toHaveCSS("opacity", "0");
     await cdp.send("Input.imeSetComposition", { text: "", selectionStart: 0, selectionEnd: 0 }); await ready(page);
     expect(await page.evaluate(() => window.editingFixture.range(0, 11))).toBe("alpha omega");
-    expect((await state(page)).primary).toMatchObject({ composing: false, commits: 0, selection: { anchor: 6, head: 11 } });
+    expect(await state(page)).toMatchObject({
+        document: { revision }, primary: { composing: false, selection: { anchor: 6, head: 11 } },
+    });
     await stage(); await cdp.send("Input.insertText", { text: "ê" }); await ready(page);
     expect(await page.evaluate(() => window.editingFixture.range(0, 7))).toBe("alpha ê");
-    expect((await state(page)).primary).toMatchObject({ composing: false, commits: 1, selection: { head: 7 } });
+    expect(await state(page)).toMatchObject({
+        document: { revision: revision + 1 }, primary: { composing: false, selection: { head: 7 } },
+    });
     await page.keyboard.press("ControlOrMeta+z"); expect(await page.evaluate(() => window.editingFixture.range(0, 11))).toBe("alpha omega");
     await cdp.detach();
 });

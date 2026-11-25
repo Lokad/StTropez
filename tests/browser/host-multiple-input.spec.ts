@@ -46,7 +46,6 @@ test(`plain actual multiple-range typing shares history, saved captures and remo
     await exact(page, expected.text); expect(after.source.revision).toBe(before.source.revision + 2);
     expect(after.history.undoDepth).toBe(before.history.undoDepth + 1);
     expect(coords(after.bindings.views.find(v => v.id === "primary")!.selectionSet.ranges)).toEqual(expected.ranges);
-    expect(after.bindings.views.find(v => v.id === "primary")!.metrics!.commits).toBe(before.bindings.views.find(v => v.id === "primary")!.metrics!.commits + 2);
     await input(page, "Secondary source").press("Control+z"); await ready(page); await exact(page, original);
     expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selectionSet).toEqual(beforeSet);
     await input(page, "Comparison working source").press("Control+Shift+z"); await ready(page); await exact(page, expected.text);
