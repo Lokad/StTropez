@@ -72,7 +72,9 @@ text snapshot or `undefined`. `document` requires a ready document. Read ranges 
 shares one lazy whole-string export per revision. Typed resources return their immutable value.
 
 `createTextResource` and `createTextResourceFromBuffer` accept an optional `language` pair.
-Each ready document snapshot carries the URI and language ID.
+Use `workspace.documentForUri(uri)` to get the one ready, workspace-visible document with that exact
+URI. Missing and ambiguous URIs return `undefined`. Each lookup reads current bindings.
+Keep the returned document identity and revision when starting delayed work.
 Leave the pair unset for saved copies or generated output. If a server assigns URIs after startup,
 call `setDocumentLanguage(documentId, pair)`. Pass `null` to withdraw the binding. Changing the
 pair preserves the buffer, revision, history and selection. The snapshot retains the change
@@ -232,8 +234,9 @@ keeps the revision of a typed resource. Typed panels have no text undo stack.
 Pass a `source` string to identify writes from a host feature or peer. Edit permissions use
 `origin`. In a change listener, request a follow-up with its second argument. Follow-ups run
 in request order in a microtask after listeners and the initiating command finish. Unsubscribing
-from `onDocumentChange` skips any changes awaiting that listener and drops its queued
-follow-ups. Use the change’s revision when a follow-up depends on the exact text.
+from `onDocumentChange` drops pending notifications and follow-ups. Its optional third
+argument runs once when the document is released, even if it never finished loading.
+It receives the same follow-up scheduler. Use the change’s revision when a follow-up depends on the exact text.
 
 A listener that writes back to the same document should ignore changes bearing its own
 `source`. Each initial follow-up can schedule up to 255 further callbacks through the changes
@@ -241,14 +244,16 @@ it causes. On overflow the workspace reports one `RangeError` to `onListenerErro
 drops excess callbacks from that chain. Other initial follow-ups and later edits run normally.
 
 ```ts
-import type { DocumentId, TextEdit, Workspace } from "sttropez";
+import type { TextEdit, Workspace } from "sttropez";
 
-export function forwardEdits(workspace: Workspace, id: DocumentId,
-    send: (revision: number, edits: readonly TextEdit[]) => void) {
-    return workspace.onDocumentChange(id, (change, afterDelivery) => {
+export function forwardEdits(workspace: Workspace, uri: string,
+    send: (revision: number, edits: readonly TextEdit[]) => void, close: () => void) {
+    const document = workspace.documentForUri(uri);
+    if (!document) return;
+    return workspace.onDocumentChange(document.id, (change, afterDelivery) => {
         if (change.source === "peer") return;
         afterDelivery(() => send(change.previousRevision, change.edits));
-    });
+    }, afterDelivery => afterDelivery(close));
 }
 ```
 

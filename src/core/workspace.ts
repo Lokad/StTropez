@@ -16,7 +16,7 @@ import type { EditKind, HistoryChange, HistoryOptions, HistorySnapshot, Selectio
 import { createSelectionSet, mapSelectionSet, mapWholeTextSelections, sameSelectionSet } from "./selections.ts";
 import type { SelectionSet } from "./selections.ts";
 import { NotificationScope, Store } from "./observable.ts";
-import type { Observable } from "./observable.ts";
+import type { AfterDelivery, Observable } from "./observable.ts";
 import { collapseFoldRegions, createFoldRegions, foldingSnapshot, mapFoldIndex, revealIndexRange, revealIndexSelection, snapshotFromIndex } from "./folding.ts";
 import { lineContentEnd } from "./newlines.ts";
 import type { DocumentFolding, FoldIndex, FoldingSnapshot, FoldVersion } from "./folding.ts";
@@ -140,7 +140,7 @@ function replaceDocumentBuffer(before: TextBuffer, text: string | TextBuffer) {
     return { buffer: changedUnits ? text : before, mapping: replacementMap(before.length, span), changedUnits };
 }
 
-type ViewRecord = { handle: DocumentView; state: Store<DocumentViewSnapshot>; folds: Store<FoldingSnapshot>; lease: ResourceLease };
+type ViewRecord = { handle: DocumentView; state: Store<DocumentViewSnapshot>; folds: Store<FoldingSnapshot> };
 type PreparedView = Readonly<{ view: ViewRecord; state: DocumentViewSnapshot; folds: FoldingSnapshot }>;
 type PreparedText = Readonly<{ record: ResourceRecord; buffer: TextBuffer; mapping: PositionMapping;
     state: ResourceSnapshot<SnapshotValue>; views: readonly PreparedView[] }>;
@@ -301,12 +301,25 @@ export class Workspace {
         history: Readonly<{ groups: number; changes: number; changedUnits: number }> }> {
         return Object.freeze({ resources: this.records.size, documents: this.documents.size, tabs: this.layout?.count() ?? 0,
             views: [...this.documents.values()].reduce((total, record) => total + record.views.size, 0), history: this.history.diagnostics(),
-            leases: [...this.records.values()].reduce((total, record) => total + record.leases.size, 0), subscriptions: this.scope.subscriptionCount() });
+            leases: [...this.records.values()].reduce((total, record) => total + record.leases.size + record.views.size, 0), subscriptions: this.scope.subscriptionCount() });
+    }
+    private requireDocument(id: DocumentId): ResourceRecord {
+        const record = this.documents.get(id);
+        if (!record) throw new Error("Unknown document.");
+        return record;
     }
     resourceForDocument(id: DocumentId): TextResourceHandle {
-        const record = this.documents.get(id);
-        if (!record || record.state.get().state === "released") throw new Error("Unknown document.");
-        return record.handle as TextResourceHandle;
+        return this.requireDocument(id).handle as TextResourceHandle;
+    }
+    documentForUri(uri: string): DocumentSnapshot | undefined {
+        let found: DocumentSnapshot | undefined;
+        for (const record of this.documents.values()) {
+            const document = record.document.get();
+            if (!document?.language || document.language.uri !== uri || record.metadata.get().visibility !== "workspace") continue;
+            if (found) return undefined;
+            found = document;
+        }
+        return found;
     }
     document(id: DocumentId): DocumentSnapshot {
         const document = this.documents.get(id)?.document.get();
@@ -314,21 +327,27 @@ export class Workspace {
         return document;
     }
     observeDocument(id: DocumentId): Observable<DocumentSnapshot | undefined> {
-        const record = this.documents.get(id);
-        if (!record) throw new Error("Unknown document.");
-        return record.document.observable;
+        return this.requireDocument(id).document.observable;
     }
-    onDocumentChange(id: DocumentId, listener: (change: DocumentChange, afterDelivery: (work: () => void) => void) => void): () => void {
-        const record = this.documents.get(id);
-        if (!record) throw new Error("Unknown document.");
+    onDocumentChange(id: DocumentId, listener: (change: DocumentChange, afterDelivery: AfterDelivery) => void,
+        onRelease?: (afterDelivery: AfterDelivery) => void): () => void {
+        const record = this.requireDocument(id);
         let revision = record.document.get()?.revision;
-        return record.document.subscribeChanges((document, afterDelivery) => {
+        const stop = record.document.subscribeChanges((document, afterDelivery) => {
             if (!document || document.revision === revision) return;
             revision = document.revision;
             if (document.change) listener(document.change, afterDelivery);
         });
+        if (!onRelease) return stop;
+        const stopRelease = record.metadata.subscribeChanges((metadata, afterDelivery) => {
+            if (metadata.state === "released") onRelease(afterDelivery);
+        });
+        return () => {
+            stop();
+            stopRelease();
+        };
     }
-    observeHistory(id: DocumentId): Observable<HistorySnapshot> { return this.requireResource(this.resourceForDocument(id).id).history.observable; }
+    observeHistory(id: DocumentId): Observable<HistorySnapshot> { return this.requireDocument(id).history.observable; }
     ownsDocumentView(view: DocumentView, target?: TabTarget): boolean {
         if (this.documents.get(view.documentId)?.views.get(view.id)?.handle !== view) return false;
         if (target === undefined) return true;
@@ -341,8 +360,7 @@ export class Workspace {
         const selections = "ranges" in initial ? createSelectionSet(document.buffer.length, initial.ranges, initial.primary) : createSelectionSet(document.buffer.length, [initial]);
         const state = new Store<DocumentViewSnapshot>(viewSnapshot(id, document.revision, selections), this.scope);
         const folds = new Store<FoldingSnapshot>(foldingSnapshot(document.buffer, document.revision, 0, Object.freeze([])), this.scope);
-        const viewId = `view-${++this.nextId}` as ViewId, retention = Symbol("view"); record.leases.add(retention);
-        const lease = Object.freeze({ resourceId: record.handle.id, active: () => record.leases.has(retention), release: () => { record.leases.delete(retention); this.scheduleRelease(record.handle.id); } });
+        const viewId = `view-${++this.nextId}` as ViewId;
         const foldTarget = (expected: FoldVersion) => record.views.has(viewId) && record.state.get().state === "ready" && expected !== null && typeof expected === "object"
             && record.state.get().revision === expected.revision && folds.get().generation === expected.generation;
         const setFoldRegions = (regions: FoldingSnapshot["regions"], moveHiddenCarets = false): boolean => {
@@ -399,8 +417,11 @@ export class Workspace {
         };
         const handle: DocumentView = Object.freeze({ ...state.observable, id: viewId, documentId: id, folding,
             setSelection: (expectedRevision: number, value: Selection) => setSelections(expectedRevision, [value]), setSelections,
-            dispose: () => { record.views.delete(viewId); lease.release(); } });
-        record.views.set(viewId, { handle, state, folds, lease }); return handle;
+            dispose: () => {
+                if (record.views.delete(viewId)) this.scheduleRelease(record.handle.id);
+            } });
+        record.views.set(viewId, { handle, state, folds });
+        return handle;
     }
     captureResource(id: ResourceId): ResourceTarget {
         this.requireResource(id); return Object.freeze({ workspace: this.lifetime, id });
@@ -456,7 +477,7 @@ export class Workspace {
             if (request.origin !== first.origin || (policy?.kind ?? "replace") !== kind || policy?.group !== group
                 || (policy?.reset ?? false) !== reset) throw new Error("A text transaction has one origin and history policy.");
             const record = this.documents.get(request.documentId);
-            if (!record || record.state.get().state === "released") return { applied: false, reason: "missing-document" };
+            if (!record) return { applied: false, reason: "missing-document" };
             const refusal = this.validateEdit(record, request.expectedRevision, request.origin, request.lease); if (refusal) return refusal;
             const view = request.view === undefined ? undefined : record.views.get(request.view.id);
             if ((request.view && view?.handle !== request.view) || ((request.selection || request.selectionSet) && !view)) throw new Error("Selection target must be a live view of this document.");
@@ -596,8 +617,7 @@ export class Workspace {
     }
     setDocumentLanguage(id: DocumentId, language: DocumentLanguage | null): void {
         this.scope.assertWritable();
-        const record = this.documents.get(id);
-        if (!record) throw new Error("Unknown document.");
+        const record = this.requireDocument(id);
         const current = record.language, next = documentLanguage(language);
         if (next?.uri === current?.uri && next?.languageId === current?.languageId) return;
         record.language = next;
@@ -644,7 +664,7 @@ export class Workspace {
     }
     ownership(id: ResourceId): Readonly<{ leases: number; tabs: number; saves: number }> {
         const record = this.requireResource(id);
-        return Object.freeze({ leases: record.leases.size, saves: record.saveReservations, tabs: this.layout?.count(id) ?? 0 });
+        return Object.freeze({ leases: record.leases.size + record.views.size, saves: record.saveReservations, tabs: this.layout?.count(id) ?? 0 });
     }
     private load<T extends SnapshotValue>(handle: ResourceHandle<T>): LoadOperation<T> {
         this.scope.assertWritable();
