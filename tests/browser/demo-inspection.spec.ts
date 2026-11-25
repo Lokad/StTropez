@@ -59,9 +59,9 @@ test("real signature help follows typed arguments and respects completion Escape
     await source.press("Control+End"); await source.pressSequentially("\ncalculateTotal(");
     await expect(popup).toContainText("calculateTotal"); await expect(popup.getByLabel("Active signature parameter")).toContainText("items");
     await source.pressSequentially("cart, "); await expect(popup.getByLabel("Active signature parameter")).toContainText("discount");
-    await source.press("Control+Space"); await expect(page.locator(".demo-completion")).toBeVisible();
+    await source.press("Control+Space"); await expect(page.locator(".st-completion")).toBeVisible();
     await source.pressSequentially("Mat"); await expect(page.getByRole("option", { name: "Math", exact: true })).toBeVisible();
-    await source.press("Escape"); await expect(page.locator(".demo-completion")).toBeHidden(); await expect(popup).toBeVisible();
+    await source.press("Escape"); await expect(page.locator(".st-completion")).toBeHidden(); await expect(popup).toBeVisible();
     await source.press("Escape"); await expect(popup).toBeHidden(); await expect(find).toBeVisible();
     await source.press("Escape"); await expect(find).toBeHidden(); await expect(source).toBeFocused();
     const cursor = page.locator("#cursor"), at = await cursor.innerText();

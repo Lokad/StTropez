@@ -136,6 +136,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
     const source = workspace.observeDocument(documentId);
+    const currentView = view.getSnapshot;
+    const currentFolding = view.folding.getSnapshot;
+    const currentDocument = () => workspace.document(documentId);
+    const currentSelections = () => currentView().selectionSet;
+    const currentFolds = () => currentFolding().index;
     const live = () => workspace.ownsDocumentView(view, target);
     let setComparisonRows: MountedTextEditor["setComparisonRows"], viewport: TextViewport, navigation: MountedViewport["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
     try { const mounted = mountViewport(host, workspace, surface, { ...options, view }, comparison);
@@ -149,11 +154,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     input.className = "st-input-context"; input.wrap = "off"; input.spellcheck = false; input.autocomplete = "off";
     // The native projection belongs to the editor, independently of enclosing host forms.
     input.setAttribute("form", "");
-    const initialDocument = workspace.document(documentId);
+    const initialDocument = currentDocument();
     input.setAttribute("aria-label", options.ariaLabel ?? initialDocument.title);
     input.setAttribute("autocapitalize", "off");
     root.append(input);
-    let contextBuffer: TextBuffer | undefined = initialDocument.buffer, contextSelection = view.getSnapshot().selection;
+    let contextBuffer: TextBuffer | undefined = initialDocument.buffer, contextSelection = currentView().selection;
     let revision = initialDocument.revision, context: InputContext = inputContext(contextBuffer, contextSelection);
     let disposed = false, composing = false, selecting = false, committing = false;
     const notifications = workspace.createNotificationScope();
@@ -171,7 +176,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let pasteOwner: PasteOwner | undefined;
     const escapeState = (value: boolean) => {
         if (!!escapeSelection === value) return;
-        escapeSelection = value ? view.getSnapshot().selectionSet : undefined;
+        escapeSelection = value ? currentSelections() : undefined;
         root.toggleAttribute("data-st-tab-escape", value);
     };
     let commits = 0, conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
@@ -203,7 +208,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     type InputCapture = Readonly<{ revision: number; selectionSet: SelectionSet; context: InputContext; target?: NativeInsertionTarget; wholeLines?: boolean }>;
     let pendingDeletion: Readonly<{ revision: number; selectionSet: SelectionSet; command: DeletionCommand }> | undefined;
     let insertion: InputCapture | undefined, composition: InputCapture | undefined;
-    let projectedSet = view.getSnapshot().selectionSet;
+    let projectedSet = currentSelections();
     let rangeCommand: Readonly<{ capture: CommandCapture; purpose: OrderedInput<CommandCapture>["purpose"]; release: () => void }> | undefined, cancelRangeTask: (() => void) | undefined;
     let nativeOrder: { order: OrderedInput<CommandCapture>; capture: InputCapture; type: string; data: string | null; action?: InputKey; invalid: boolean; reported: boolean } | undefined;
     const inputQueue = createOrderedInputQueue<CommandCapture>(win.performance, commandRunner, {
@@ -223,8 +228,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const apple = /Mac|iPhone|iPad|iPod/.test(win.navigator.platform);
     const registry = createCommandRegistry(apple,
         () => !disposed && !composing && !input.disabled && live() && (!comparison || comparison.epoch() !== undefined), () => {
-            const version = revision, selection = view.getSnapshot().selectionSet, epoch = comparison?.epoch();
-            return () => version === revision && selection === view.getSnapshot().selectionSet && epoch === comparison?.epoch();
+            const version = revision, selection = currentSelections(), epoch = comparison?.epoch();
+            return () => version === revision && selection === currentSelections() && epoch === comparison?.epoch();
         }, () => editor, comparison?.commands);
     for (const [id, label] of editorCommandLabels) {
         registry.commands.register({ id, label, owner: "editor", category: "Editing", run: () => runCommand(id), enabled: () => {
@@ -259,7 +264,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         source.getSnapshot, () => composing);
     const scheduleCaret = caretLayer.schedule;
     function refresh(): void {
-        if (escapeSelection && escapeSelection !== view.getSnapshot().selectionSet) escapeState(false);
+        if (escapeSelection && escapeSelection !== currentSelections()) escapeState(false);
         if (disposed || selecting || committing) return;
         const state = resource.getSnapshot(), disabled = !live() || state.state !== "ready";
         if (disabled) contextBuffer = undefined;
@@ -277,7 +282,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (inputQueue.pending && (!inputQueue.current(inputQueue.pending) || inputQueue.pending.edit && input.readOnly)) cancelPendingCommand();
 
         if (!input.disabled && !composing) {
-            const document = workspace.document(documentId), { selection: selected, selectionSet } = view.getSnapshot();
+            const document = currentDocument(), { selection: selected, selectionSet } = currentView();
             paired.sync(document); automaticIndent.sync(document);
             if (graphemeCache?.buffer !== document.buffer) graphemeCache = undefined;
             const capture = rangeCommand?.capture ?? graphemeJob?.capture;
@@ -305,12 +310,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const backward = input.selectionDirection === "backward";
         // LF projection cannot distinguish both sides of a removed CR. An unchanged native
         // range still represents the exact captured model selection, including a raw CRLF interior.
-        if (view.getSnapshot().selectionSet === projectedSet && input.selectionStart === Math.min(context.nativeAnchor, context.nativeHead)
+        if (currentSelections() === projectedSet && input.selectionStart === Math.min(context.nativeAnchor, context.nativeHead)
             && input.selectionEnd === Math.max(context.nativeAnchor, context.nativeHead) && backward === (context.nativeAnchor > context.nativeHead)) return;
         const anchor = context.toModel(backward ? input.selectionEnd : input.selectionStart), head = context.toModel(backward ? input.selectionStart : input.selectionEnd);
-        const current = view.getSnapshot(); if (current.revision === revision && current.selection.anchor === anchor && current.selection.head === head) return;
+        const current = currentView(); if (current.revision === revision && current.selection.anchor === anchor && current.selection.head === head) return;
         selecting = true;
-        try { if (view.setSelection(revision, { anchor, head })) projectedSet = view.getSnapshot().selectionSet; }
+        try { if (view.setSelection(revision, { anchor, head })) projectedSet = currentSelections(); }
         finally { selecting = false; }
         scheduleCaret();
     }
@@ -351,7 +356,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (disposed || input.disabled || !live() || resource.getSnapshot().state !== "ready") return null;
         const state = activity();
         if (state.composing || state.pendingInput || state.pendingCommand) return null;
-        const { revision, buffer } = workspace.document(documentId);
+        const { revision, buffer } = currentDocument();
         if (expectedRevision !== undefined && revision !== expectedRevision) return null;
         function offset(position: BufferPosition): number {
             if (!Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.column)) {
@@ -379,16 +384,16 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             viewport.revealRange(from, to, align);
             return true;
         });
-        if (!applied || disposed || !live() || workspace.document(documentId).revision !== revision) return null;
+        if (!applied || disposed || !live() || currentDocument().revision !== revision) return null;
         if (takeFocus) focus();
         return Object.freeze({ from, to });
     }
-    function revealCaret(selected = view.getSnapshot().selection, vertical: NonNullable<RevealOptions["vertical"]> = "nearest"): void {
+    function revealCaret(selected = currentView().selection, vertical: NonNullable<RevealOptions["vertical"]> = "nearest"): void {
         let offset = selected.head;
         if (selected.head !== selected.anchor) {
-            const buffer = workspace.document(documentId).buffer;
+            const buffer = currentDocument().buffer;
             if (offset === buffer.length) {
-                const block = view.folding.getSnapshot().index.hiddenBy(buffer.lineCount - 1);
+                const block = currentFolds().hiddenBy(buffer.lineCount - 1);
                 if (block) offset = lineContentEnd(buffer, block.lineFrom);
             }
         }
@@ -404,9 +409,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         cancelPendingCommand(); preferred = undefined;
         if (!live()) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
         let key: string | undefined;
-        const before = view.getSnapshot().selectionSet, typed = type === "insertText" ? edits[0]?.insert : undefined;
+        const before = currentSelections(), typed = type === "insertText" ? edits[0]?.insert : undefined;
         let tail: NonNullable<typeof group>["tail"] = typed === undefined ? undefined : typingRun(typed);
-        const document = workspace.document(documentId);
+        const document = currentDocument();
         const trimmed = document.revision === expectedRevision && automaticIndent.trim(document.buffer, edits, selection);
         if (trimmed) { edits = trimmed.edits; selection = trimmed.selectionSet; }
         const transformed = editTransform?.(Object.freeze({ expectedRevision, edits,
@@ -428,8 +433,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             applied = result.applied;
             if (result.applied) { // A later presentation/completion failure must not recover this text twice.
                 inputQueue.consumeRunning();
-                if (accepted && workspace.document(documentId).revision === result.revision) accepted(edits);
-                commits++; const after = view.getSnapshot(); revealCaret(after.selection);
+                if (accepted && currentDocument().revision === result.revision) accepted(edits);
+                commits++; const after = currentView(); revealCaret(after.selection);
                 if (typedText && after.revision === result.revision && (!transformed || edits.some(edit => edit.insert.length > 0))) typedAt = after;
                 if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, tail, key }; }
             else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
@@ -444,7 +449,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }
     function captureInput(type: string, data: string | null, wholeLines = false): InputCapture {
         const target = captureNativeInsertion(input, type, data);
-        return { revision, selectionSet: view.getSnapshot().selectionSet, context, ...(target ? { target } : {}), wholeLines };
+        return { revision, selectionSet: currentSelections(), context, ...(target ? { target } : {}), wholeLines };
     }
     function commit(type: string, captured = insertion ?? { revision, selectionSet: projectedSet, context }): void {
         insertion = undefined;
@@ -453,7 +458,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const projection = captured.context;
         if (input.value === projection.text && input.selectionStart === (captured.target?.from ?? Math.min(projection.nativeAnchor, projection.nativeHead))
             && input.selectionEnd === (captured.target?.to ?? Math.max(projection.nativeAnchor, projection.nativeHead))) { refresh(); return; }
-        if ((captured.target && captured.target.before !== projection.text) || captured.revision !== source.getSnapshot()?.revision || captured.selectionSet !== view.getSnapshot().selectionSet) {
+        if ((captured.target && captured.target.before !== projection.text) || captured.revision !== source.getSnapshot()?.revision || captured.selectionSet !== currentSelections()) {
             conflict(type === "insertCompositionText" && captured.revision !== source.getSnapshot()?.revision ? "stale-revision" : "stale-text-input", undefined, captured.revision, projection.from); refresh(); return;
         }
         const native = captured.target && resolveNativeInsertion(captured.target, input, type);
@@ -473,10 +478,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (from !== Math.min(selected.anchor, selected.head) || to !== Math.max(selected.anchor, selected.head)) {
                 conflict("unsupported-multiple-input-target", { from, to, insert: edit.insert }, captured.revision, projection.from); refresh(); return;
             }
-            const plan = planInput(workspace.document(documentId).buffer, captured.selectionSet, edit.insert, kind, captured.wholeLines);
+            const plan = planInput(currentDocument().buffer, captured.selectionSet, edit.insert, kind, captured.wholeLines);
             apply(plan.edits, plan.selectionSet, kind, options); return;
         }
-        const buffer = workspace.document(documentId).buffer;
+        const buffer = currentDocument().buffer;
         const converted = kind === "paste" && pasteLineEndings !== "preserve" && /[\r\n]/.test(edit.insert)
             ? exportText(edit.insert, lineEnding(buffer, buffer.lineAt(from)) === "\n" ? "lf" : "crlf") : undefined;
         const insert = converted?.text ?? edit.insert, delta = insert.length - (to - from);
@@ -493,7 +498,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (!live()) { conflict("expired-view"); refresh(); return false; }
         const result = workspace[direction]({ documentId, expectedRevision: revision });
         if (!result.applied && result.reason !== "history-empty") conflict(result.reason);
-        else if (result.applied) revealCaret(view.getSnapshot().selection, "center-if-outside");
+        else if (result.applied) revealCaret(currentView().selection, "center-if-outside");
         refresh(); return result.applied;
     }
     const focus = () => { if (!disposed) { input.focus({ preventScroll: true }); scheduleCaret(); } };
@@ -503,7 +508,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             : planSelectionEdits(buffer.length, selections, text);
     }
     function replaceSelection(insert: string, kind: EditKind, type?: string, recoveryText?: string, wholeLines = false): boolean {
-        const document = workspace.document(documentId), plan = planInput(document.buffer, view.getSnapshot().selectionSet, insert, kind, wholeLines);
+        const document = currentDocument(), plan = planInput(document.buffer, currentSelections(), insert, kind, wholeLines);
         return apply(plan.edits, plan.selectionSet, kind, { type: kind === "typing" ? type : undefined, expectedRevision: document.revision,
             recoveryText, typedText: type === "insertText" ? insert : undefined });
     }
@@ -512,7 +517,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const validCommand = (capture: CommandCapture) => !disposed && !composing && !input.disabled
         && !(capture.deleting && input.readOnly) && live()
         && source.getSnapshot()?.revision === capture.revision
-        && view.getSnapshot().selectionSet === capture.selectionSet;
+        && currentSelections() === capture.selectionSet;
     function withGraphemes(capture: CommandCapture, offset: number, side: -1 | 1, purpose: "word" | "grapheme", done: (point: GraphemePoint) => void,
         turn: (work: () => void) => void = work => work()): void {
         cancelScans(); if (!validCommand(capture)) return;
@@ -531,7 +536,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         })); step();
     }
     function commandCapture(deleting: boolean): CommandCapture {
-        const document = workspace.document(documentId), { selection, selectionSet } = view.getSnapshot();
+        const document = currentDocument(), { selection, selectionSet } = currentView();
         return { buffer: document.buffer, revision: document.revision, selection, selectionSet, deleting };
     }
     function eachRange(capture: CommandCapture, purpose: "word" | "grapheme", resolve: (range: Selection, done: (range: Selection) => void) => void,
@@ -596,14 +601,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             refresh();
             return true;
         });
-        return view.getSnapshot().selectionSet;
+        return currentSelections();
     }
     function moved(range: Selection, offset: number, extend: boolean, affinity: Affinity = "after"): Selection {
         return { anchor: extend ? range.anchor : offset, head: offset, anchorAffinity: extend ? range.anchorAffinity ?? "after" : affinity, headAffinity: affinity };
     }
     function revealSelectionForMovement(): void {
         hostInsertion?.cancel();
-        view.folding.revealSelection(view.folding.getSnapshot());
+        view.folding.revealSelection(currentFolding());
     }
     function captureTextMovement(deleting: boolean): CommandCapture | undefined {
         if (deleting && input.readOnly) return;
@@ -735,7 +740,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const wholeWordSelections = new WeakMap<DocumentViewSnapshot, boolean>();
     function selectAndReveal(revision: number, selections: SelectionSet, wholeWord: boolean): boolean {
         if (!setSelectionSet(revision, selections)) return false;
-        wholeWordSelections.set(view.getSnapshot(), wholeWord);
+        wholeWordSelections.set(currentView(), wholeWord);
         revealCaret();
         return true;
     }
@@ -744,7 +749,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const capture = commandCapture(false);
         const { selection, selectionSet } = capture;
         const empty = selection.head === selection.anchor;
-        const wholeWord = empty || wholeWordSelections.get(view.getSnapshot()) === true;
+        const wholeWord = empty || wholeWordSelections.get(currentView()) === true;
         let search: ReturnType<typeof selectionOccurrences> | undefined;
         rangeCommand = { capture, purpose: "word", release: () => { search?.return(selectionSet); } };
         const finish = (result: SelectionSet) => {
@@ -786,7 +791,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }
     function navigationLayout(style = navigationStyle()): string {
         const state = viewport.getSnapshot();
-        return [style, root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, viewport.activity().rowGeneration, view.folding.getSnapshot().generation].join("|");
+        return [style, root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, viewport.activity().rowGeneration, currentFolding().generation].join("|");
     }
     function beginNavigation(prepare: (capture: CommandCapture, style: string, inline: boolean) => void, canInline?: (capture: CommandCapture) => boolean): void {
         cancelPendingCommand(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
@@ -809,7 +814,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function shortHorizontal(capture: CommandCapture): boolean {
         // Small selection sets on short rows can complete in the key handler.
         if (capture.selectionSet.ranges.length > commandBudget.inlineRanges) return false;
-        const buffer = capture.buffer, folds = view.folding.getSnapshot().index, lines = new Set<number>();
+        const buffer = capture.buffer, folds = currentFolds(), lines = new Set<number>();
         for (const range of capture.selectionSet.ranges) {
             const line = buffer.lineAt(range.head), row = folds.rowAt(line);
             lines.add(line); lines.add(buffer.lineAt(range.anchor));
@@ -836,7 +841,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         // Page destinations use current viewport dimensions, including a pending resize.
         viewport.flush();
         if (viewport.activity().aligned) return false;
-        const buffer = capture.buffer, folds = view.folding.getSnapshot().index, count = verticalCount(page);
+        const buffer = capture.buffer, folds = currentFolds(), count = verticalCount(page);
         return shortRows(buffer, verticalRows(buffer, capture.selectionSet.ranges, add, line =>
             folds.lineAt(Math.max(0, Math.min(folds.visibleLineCount - 1, folds.rowAt(line) + direction * count)))));
     }
@@ -960,7 +965,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         cancelPendingCommand(); syncSelection();
         const capture = commandCapture(true), overtyped: number[] = [];
         const folds = typeof command === "string" && command !== "newline" && command !== "block-comment"
-            ? view.folding.getSnapshot().index : undefined;
+            ? currentFolds() : undefined;
         const opening = typeof command === "object" ? language.pairs.find(pair => pair.open === command.character) : undefined;
         const planner = planLanguageEdit(capture.buffer, capture.selectionSet, typeof command === "string" ? command : {
             character: command.character, canOvertype: at => {
@@ -968,7 +973,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 overtyped.push(at); return true;
             },
         }, language, folds);
-        const acceptPairs = (edits: readonly TextEdit[]) => paired.accept(workspace.document(documentId), capture.revision, edits, capture.selectionSet, opening, overtyped);
+        const acceptPairs = (edits: readonly TextEdit[]) => paired.accept(currentDocument(), capture.revision, edits, capture.selectionSet, opening, overtyped);
         let planning = false;
         let cancelNextSlice: (() => void) | undefined;
         const job = {
@@ -982,7 +987,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         rangeCommand = job;
         const step = () => commandTurn(() => {
             if (rangeCommand !== job) return;
-            if (!validCommand(capture) || folds && !folds.sameProjection(view.folding.getSnapshot().index)) { cancelPendingCommand(); return; }
+            if (!validCommand(capture) || folds && !folds.sameProjection(currentFolds())) { cancelPendingCommand(); return; }
             // Keep the key handler short. On later slices the next timer can elapse while the planner works.
             const calls = cancelNextSlice ? commandBudget.maxCalls : commandBudget.initialLanguageCalls;
             if (cancelNextSlice) cancelNextSlice = commandRunner.schedule(step);
@@ -1005,13 +1010,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 const autoIndent = language.enter !== undefined && (command === "newline" || command === "insert-line-above" || command === "insert-line-below");
                 if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", {
                     expectedRevision: capture.revision, adjustNewlines: autoIndent, typedText: typeof command === "object" ? command.character : undefined,
-                    accepted: autoIndent ? edits => automaticIndent.remember(workspace.document(documentId), edits, plan.edits)
+                    accepted: autoIndent ? edits => automaticIndent.remember(currentDocument(), edits, plan.edits)
                         : typeof command === "object" ? acceptPairs : undefined });
                 if (overtyped.length) acceptPairs(plan.edits);
                 group = undefined;
                 if (!setSelectionSet(capture.revision, plan.selectionSet)) return false;
                 revealCaret(); refresh();
-                if (overtyped.length && typeof command === "object") dispatchTypedText(root, view.getSnapshot(), command.character);
+                if (overtyped.length && typeof command === "object") dispatchTypedText(root, currentView(), command.character);
                 return true;
             });
         }, typeof command === "object" ? command.character : "");
@@ -1047,8 +1052,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             case "select-to-document-end": return moveToBoundary("End", true, true);
             case "select-all":
                 hostInsertion?.cancel(); cancelPendingCommand(); group = undefined; preferred = undefined;
-                view.folding.revealSelection(view.folding.getSnapshot());
-                view.setSelection(revision, { anchor: 0, head: workspace.document(documentId).buffer.length });
+                view.folding.revealSelection(currentFolding());
+                view.setSelection(revision, { anchor: 0, head: currentDocument().buffer.length });
                 refresh(); return true;
             case "go-to-line": {
                 const prompt = options.requestLine;
@@ -1113,14 +1118,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             case "select-line": {
                 prepareSelectionCommand();
                 const capture = commandCapture(false);
-                const buffer = capture.buffer, folds = view.folding.getSnapshot().index;
+                const buffer = capture.buffer, folds = currentFolds();
                 eachRange(capture, "grapheme", (range, done) => {
                     const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
                     const { anchor } = wholeLine(buffer, from, folds);
                     const endsAtStart = from < to && to === buffer.offsetAt(buffer.lineAt(to));
                     const head = endsAtStart && from !== anchor ? to : wholeLine(buffer, to, folds).head;
                     done({ anchor, head });
-                }, ranges => finishRanges(capture, ranges), { navigation: true, validLayout: () => folds.sameProjection(view.folding.getSnapshot().index) });
+                }, ranges => finishRanges(capture, ranges), { navigation: true, validLayout: () => folds.sameProjection(currentFolds()) });
                 return true;
             }
             case "scroll-line-up": case "scroll-line-down": case "scroll-page-up": case "scroll-page-down": {
@@ -1228,10 +1233,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (captureOrderedInput(event)) return;
         const deletion = nativeDeletion(event.inputType);
         if (!composing && deletion && event.cancelable) { event.preventDefault(); runCommand(deletion); return; }
-        if (!composing) view.folding.revealSelection(view.folding.getSnapshot());
+        if (!composing) view.folding.revealSelection(currentFolding());
         if (!composing && deletion) {
             syncSelection();
-            pendingDeletion = { revision, selectionSet: view.getSnapshot().selectionSet, command: deletion };
+            pendingDeletion = { revision, selectionSet: currentSelections(), command: deletion };
             return;
         }
         if (!composing && event.cancelable && (event.inputType === "historyUndo" || event.inputType === "historyRedo")) { event.preventDefault(); history(event.inputType === "historyUndo" ? "undo" : "redo"); }
@@ -1265,7 +1270,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const deletion = nativeDeletion(type);
         if (!composing && deletion) {
             if (!captured || captured.command !== deletion || input.disabled || input.readOnly || !live()
-                || captured.revision !== revision || captured.selectionSet !== view.getSnapshot().selectionSet) {
+                || captured.revision !== revision || captured.selectionSet !== currentSelections()) {
                 conflict(type.startsWith("deleteWord") ? "stale-word-input" : "stale-delete-input", undefined, captured?.revision);
                 refresh();
             }
@@ -1283,7 +1288,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         pendingDeletion = undefined;
         insertion = undefined;
         syncSelection();
-        view.folding.revealSelection(view.folding.getSnapshot());
+        view.folding.revealSelection(currentFolding());
         composition = captureInput("insertCompositionText", null);
         composing = true;
         group = undefined;
@@ -1353,12 +1358,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }
         const command = typeof binding === "object" ? binding.command : undefined;
         if (command?.kind === "command") { if (runCommand(command.command)) event.preventDefault(); return; }
-        view.folding.revealSelection(view.folding.getSnapshot());
+        view.folding.revealSelection(currentFolding());
         if (command || binding === "escape") group = undefined;
         if (command?.kind === "history") { event.preventDefault(); history(command.direction); return; }
         if (binding === "escape") {
             cancelPendingCommand(); commandRunner.cancel(); preferred = undefined;
-            const state = view.getSnapshot();
+            const state = currentView();
             if (state.selectionSet.ranges.length > 1) { event.preventDefault(); view.setSelection(revision, state.selection); refresh(); }
             else if (!event.repeat) escapeState(true);
             return;
@@ -1383,7 +1388,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 || event.clientY < bounds.top || event.clientY >= bounds.bottom) return undefined;
         }
         const painted = viewport.activity();
-        if (painted.revision !== revision || painted.foldGeneration !== view.folding.getSnapshot().generation) viewport.flush();
+        if (painted.revision !== revision || painted.foldGeneration !== currentFolding().generation) viewport.flush();
         return viewport.hitTest(event.clientX, event.clientY);
     }
     let draggedWord = false, foldSummaryClick = false;
@@ -1415,7 +1420,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         // All engines supply the native multi-click count on mousedown. Pointerdown also
         // supplies the pointer id used for capture and arms native drag before default handling.
         if (event.pointerType === "mouse" && event.button === 0) {
-            mousePress = { event, armed, revision, selectionSet: view.getSnapshot().selectionSet };
+            mousePress = { event, armed, revision, selectionSet: currentSelections() };
             return;
         }
         if (!armed) beginPointer(event, 1, event);
@@ -1424,12 +1429,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const press = mousePress; mousePress = undefined;
         if (!press || event.button !== 0 || event.defaultPrevented) return;
         if (foldSummaryClick && event.detail > 1) { textDrag.disarm(); event.preventDefault(); return; }
-        if (press.revision !== revision || press.selectionSet !== view.getSnapshot().selectionSet) { textDrag.disarm(); return; }
+        if (press.revision !== revision || press.selectionSet !== currentSelections()) { textDrag.disarm(); return; }
         if (press.armed && event.detail < 2) return;
         if (press.armed) textDrag.disarm();
         beginPointer(press.event, event.detail, event);
     }, { signal: listeners.signal });
-    function wholeLine(buffer: TextBuffer, offset: number, folds = view.folding.getSnapshot().index): Selection {
+    function wholeLine(buffer: TextBuffer, offset: number, folds = currentFolds()): Selection {
         const line = buffer.lineAt(offset), block = collapsedLineBlock(folds, line);
         const next = block?.lineTo ?? line + 1;
         return { anchor: buffer.offsetAt(block?.lineFrom ?? line), head: lineBoundary(buffer, next) };
@@ -1443,7 +1448,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         // The transparent native context can overlap source text; its default hit test uses context coordinates.
         const point = pointerHit(event); if (!point) return;
         native.preventDefault(); stopDrag(); cancelPendingCommand(); preferred = undefined; focus(); group = undefined;
-        const state = view.getSnapshot();
+        const state = currentView();
         const columns = !gutter && event.pointerType === "mouse"
             && (event.button === 1 && !point.padding || event.button === 0 && event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey);
         // A modified click needs the original caret until release distinguishes it from a drag.
@@ -1483,13 +1488,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const baseRanges = additive ? state.selectionSet.ranges : extending ? state.selectionSet.ranges.filter((_, index) => index !== state.selectionSet.primary) : [];
         let unit: DragUnit | undefined;
         if (columns) {
-            const line = workspace.document(documentId).buffer.lineAt(point.offset);
-            unit = { kind: "column", middle: event.button === 1, originRow: view.folding.getSnapshot().index.rowAt(line),
+            const line = currentDocument().buffer.lineAt(point.offset);
+            unit = { kind: "column", middle: event.button === 1, originRow: currentFolds().rowAt(line),
                 anchorColumn: dragColumn(event.clientX, dragBounds()) };
         } else if (clicks >= 4) {
-            view.setSelection(revision, { anchor: 0, head: workspace.document(documentId).buffer.length }); refresh(); return;
+            view.setSelection(revision, { anchor: 0, head: currentDocument().buffer.length }); refresh(); return;
         } else if (gutter || clicks === 3) {
-            const buffer = workspace.document(documentId).buffer, target = wholeLine(buffer, point.offset);
+            const buffer = currentDocument().buffer, target = wholeLine(buffer, point.offset);
             origin = gutter && extending ? origin ?? { anchor, head: anchor } : target;
             const lineStart = origin === target ? target.anchor : wholeLine(buffer, origin.anchor).anchor;
             unit = { kind: "line", range: origin, lineStart };
@@ -1498,11 +1503,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (!keepSelection) view.setSelections(revision, [...baseRanges, { anchor, head, anchorAffinity, headAffinity: point.affinity }], baseRanges.length);
         refresh();
         pointerOrigin = origin;
-        dragCaretRecorded = state.selectionSet !== view.getSnapshot().selectionSet;
+        dragCaretRecorded = state.selectionSet !== currentSelections();
         const padding = point.padding === true && !columns;
         if (padding) viewport.revealOffset(point.offset, { horizontal: "nearest", vertical: "nearest", affinity: point.affinity });
         drag = { pointer: event.pointerId, anchor, anchorAffinity, revision, x: event.clientX, y: event.clientY,
-            selectionSet: view.getSnapshot().selectionSet, baseRanges, padding, ...(unit ? { unit } : {}) };
+            selectionSet: currentSelections(), baseRanges, padding, ...(unit ? { unit } : {}) };
         root.setPointerCapture(event.pointerId);
     }
     root.addEventListener("pointermove", event => {
@@ -1513,7 +1518,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }, { signal: listeners.signal });
     function validDrag(): boolean {
         return !!drag && !disposed && !composing && !input.disabled && root.isConnected && root.clientWidth > 0 && root.clientHeight > 0
-            && drag.revision === revision && drag.selectionSet === view.getSnapshot().selectionSet && live() && root.hasPointerCapture(drag.pointer);
+            && drag.revision === revision && drag.selectionSet === currentSelections() && live() && root.hasPointerCapture(drag.pointer);
     }
     function dragBounds() {
         return clientBox(root, viewport.settings().minimap, viewport.getSnapshot().gutterWidth);
@@ -1523,7 +1528,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }
     function updateColumnDrag(unit: ColumnDrag, localY: number, column: number, released: boolean): void {
         if (inputQueue.pending) return;
-        const capture = commandCapture(false), folds = view.folding.getSnapshot().index;
+        const capture = commandCapture(false), folds = currentFolds();
         const targetRow = () => folds.rowAt(navigation.columnDragLine(localY, folds.lineAt(unit.originRow)));
         let row = targetRow();
         if (!unit.projection && row === unit.originRow && Math.abs(unit.anchorColumn - column) < 2) {
@@ -1567,7 +1572,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 const selected = reached.length ? reached : crossed;
                 try { view.setSelections(capture.revision, selected, selected.length - 1); }
                 finally { skipCaretHistory = false; }
-                if (drag?.unit === unit) drag = { ...drag, selectionSet: view.getSnapshot().selectionSet };
+                if (drag?.unit === unit) drag = { ...drag, selectionSet: currentSelections() };
                 refresh(); return true;
             });
         });
@@ -1588,11 +1593,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             const applyUnits = (origin: Selection, target: Selection) => {
                 const range = extendPointerUnit(origin, target, unit.kind === "line" ? unit.lineStart : undefined);
                 view.setSelections(current.revision, [...current.baseRanges, range], current.baseRanges.length);
-                if (drag?.unit === unit) drag = { ...drag, selectionSet: view.getSnapshot().selectionSet, padding: point.padding === true };
+                if (drag?.unit === unit) drag = { ...drag, selectionSet: currentSelections(), padding: point.padding === true };
                 pointerOrigin = origin;
                 refresh();
             };
-            if (unit.kind === "line") { applyUnits(unit.range, wholeLine(workspace.document(documentId).buffer, point.offset)); return; }
+            if (unit.kind === "line") { applyUnits(unit.range, wholeLine(currentDocument().buffer, point.offset)); return; }
             draggedWord = true; cancelPendingCommand();
             const capture = commandCapture(false);
             rangeCommand = { capture, purpose: "word", release: () => {} };
@@ -1609,7 +1614,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             return;
         }
         view.setSelections(current.revision, [...current.baseRanges, { anchor: current.anchor, head: point.offset, anchorAffinity: current.anchorAffinity, headAffinity: point.affinity }], current.baseRanges.length);
-        if (drag === current) drag = { ...current, selectionSet: view.getSnapshot().selectionSet, padding: point.padding === true }; refresh();
+        if (drag === current) drag = { ...current, selectionSet: currentSelections(), padding: point.padding === true }; refresh();
     }
     const dragScrolling = createEdgeAutoscroll(win, viewport, {
         capture: () => drag, valid: () => validDrag(),
@@ -1632,7 +1637,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const pointer = drag?.pointer, padding = drag?.padding; drag = undefined;
         if (pointer !== undefined && root.hasPointerCapture(pointer)) root.releasePointerCapture(pointer);
         if (event?.type === "pointerup" && padding && !disposed && live()) {
-            const selected = view.getSnapshot().selection;
+            const selected = currentView().selection;
             viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
         }
     };
@@ -1654,8 +1659,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             return;
         }
         event.preventDefault(); cancelPendingCommand(); syncSelection(); group = undefined;
-        if (type !== "copy") view.folding.revealSelection(view.folding.getSnapshot());
-        const selections = view.getSnapshot().selectionSet;
+        if (type !== "copy") view.folding.revealSelection(currentFolding());
+        const selections = currentSelections();
         if (type === "paste") {
             hostInsertion?.cancel();
             const owner = pasteOwner, data = event.clipboardData;
@@ -1673,9 +1678,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (text.length) replaceSelection(text, "paste", undefined, text, copiedLines(data));
         } else {
             if (type === "cut") hostInsertion?.cancel();
-            const buffer = workspace.document(documentId).buffer;
+            const buffer = currentDocument().buffer;
             if (selections.ranges.every(range => range.anchor === range.head)) {
-                const lines = copyCaretLines(buffer, selections, type === "cut", view.folding.getSnapshot().index);
+                const lines = copyCaretLines(buffer, selections, type === "cut", currentFolds());
                 event.clipboardData.setData("text/plain", lines.text);
                 event.clipboardData.setData(lineCopyFormat, "1");
                 if (lines.edits.length) apply(lines.edits, lines.selectionSet, "delete");
@@ -1687,11 +1692,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (type === "cut") replaceSelection("", "delete");
         }
     }, { signal: listeners.signal });
-    let observedFoldRevision = view.folding.getSnapshot().revision;
+    let observedFoldRevision = currentFolding().revision;
     const caretHistory: DocumentViewSnapshot[] = [];
-    let lastCaret = view.getSnapshot(), skipCaretHistory = false;
+    let lastCaret = currentView(), skipCaretHistory = false;
     const observeCaret = () => {
-        const next = view.getSnapshot();
+        const next = currentView();
         pointerOrigin = undefined;
         if (next.revision !== lastCaret.revision) caretHistory.length = 0;
         else if (!skipCaretHistory && (!drag || !dragCaretRecorded) && next.selectionSet !== lastCaret.selectionSet) {
@@ -1703,7 +1708,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         refresh();
     };
     const subscriptions = [viewport.onRender(scheduleCaret), source.subscribe(refresh), view.subscribe(observeCaret),
-        view.folding.subscribe(() => { const revision = view.folding.getSnapshot().revision;
+        view.folding.subscribe(() => { const revision = currentFolding().revision;
             if (revision === observedFoldRevision) { cancelPendingCommand(); stopDrag(); preferred = undefined; }
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh)];
     if (target) subscriptions.push(workspace.tabs.subscribe(refresh));
@@ -1743,7 +1748,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         captureInsertion: (kind = "paste") => {
             hostInsertion?.cancel();
             if (!canCaptureInsertion()) return;
-            syncSelection(); view.folding.revealSelection(view.folding.getSnapshot());
+            syncSelection(); view.folding.revealSelection(currentFolding());
             let captured: CapturedInsertion | undefined;
             captured = captureInsertion(workspace, target, view, canCaptureInsertion, (plan, expected) => apply(plan.edits, plan.selectionSet, kind, { expectedRevision: expected }),
                 () => { if (hostInsertion === captured) hostInsertion = undefined;

@@ -35,6 +35,7 @@ export { mountDocumentation } from "./documentation.ts";
 export type { DocumentationOptions, DocumentationView } from "./documentation.ts";
 export type { DocumentationContent, DocumentationPart } from "../core/documentation.ts";
 export type { LspHighlightSnapshot, LspHighlightController } from "./lsp-highlights.ts";
+export type { CompletionListStrings } from "./completion-list.ts";
 export type { CompletionController, CompletionControllerOptions, CompletionSnapshot, CompletionSnippet, CompletionChoice } from "./completion-controller.ts";
 export type { EditorEditIntent, EditorPasteHandler, EditorRevealOptions, EditorRevealRange, EditorSettings, ResolvedEditorSettings, LinePrompt, TextEditor, TextEditorSnapshot, TextEditorDiagnostics, TextEditorActivity, TextEditorCommand, TextEditorEdit, TextEditorEditTransform, TextEditorOptions } from "./text-editor.ts";
 export type { CapturedInsertion } from "./captured-insertion.ts";

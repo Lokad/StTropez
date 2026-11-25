@@ -94,7 +94,7 @@ test("real member completion preserves provider punctuation, resolves, applies o
     await source.press("Control+End"); await page.keyboard.insertText("\nconst basket = cart;\n");
     await source.pressSequentially("bask");
     await expect(page.getByRole("option", { name: "basket", exact: true })).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(".demo-completion pre")).toContainText("basket");
+    await expect(page.locator(".st-completion pre")).toContainText("basket");
     await page.keyboard.type(".");
     await expect(page.locator("#editor .st-viewport-row").last()).toHaveText("basket.");
     await expect(page.getByRole("listbox", { name: "Completions", exact: true })).toBeVisible();
@@ -105,14 +105,14 @@ test("real member completion preserves provider punctuation, resolves, applies o
     await expect(page.getByRole("option", { name: "at", exact: true })).toHaveCount(0);
     await source.pressSequentially("a");
     await page.getByRole("option", { name: "map", exact: true }).click();
-    await expect(page.locator(".demo-completion")).toBeHidden();
+    await expect(page.locator(".st-completion")).toBeHidden();
     expect(requests).toBe(beforePrefix);
     await expect(page.locator("#editor")).toContainText("basket.map");
     await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("basket.ma");
     await expect(page.locator("#editor")).not.toContainText("basket.map");
     await source.press("Control+Space"); await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
     await expect(page.getByRole("option", { name: "at", exact: true })).toHaveCount(0);
-    await expect(page.locator(".demo-completion pre")).toContainText("map");
+    await expect(page.locator(".st-completion pre")).toContainText("map");
     const manualRequests = requests;
     await source.press("Backspace");
     await expect.poll(() => requests).toBe(manualRequests + 1);
@@ -122,7 +122,7 @@ test("real member completion preserves provider punctuation, resolves, applies o
     await source.press("Enter"); await expect(page.locator("#editor")).toContainText("basket.map");
     await source.press("Control+z"); await expect(page.locator("#editor .st-viewport-row").last()).toHaveText("basket.m");
     await source.press("Control+Space"); await expect(page.getByRole("option", { name: "map", exact: true })).toBeVisible();
-    await source.press("Escape"); await expect(page.locator(".demo-completion")).toBeHidden();
+    await source.press("Escape"); await expect(page.locator(".st-completion")).toBeHidden();
     await expect(source).toBeFocused();
 });
 
@@ -190,7 +190,7 @@ test("connection and partial mount failures preserve editing and retry their own
     await page.getByRole("button", { name: "Retry language service", exact: true }).click();
     await expect(page.locator("#language-status")).toHaveText("Language controls unavailable");
     expect(await page.evaluate(() => (window as unknown as { demoMountFailure: { reported: number } }).demoMountFailure.reported)).toBe(1);
-    await expect(page.locator(".demo-completion, .demo-snippet, .demo-language-popups, .demo-symbols, .demo-rename, .demo-actions")).toHaveCount(0);
+    await expect(page.locator(".st-completion, .demo-snippet, .demo-language-popups, .demo-symbols, .demo-rename, .demo-actions")).toHaveCount(0);
     await source.press("Control+Home"); await source.pressSequentially("// Mount recovery\n"); await source.press("Control+s");
     await expect(page.locator("#status")).toContainText("Saved in this browser");
     const connectedStarts = starts.length;
@@ -199,5 +199,5 @@ test("connection and partial mount failures preserve editing and retry their own
     expect(starts.length).toBe(connectedStarts);
     await expect(page.locator("#editor")).toContainText("// Offline edit");
     await source.press("Control+End"); await source.pressSequentially("\ncart.");
-    await expect(page.locator(".demo-completion")).toBeVisible();
+    await expect(page.locator(".st-completion")).toBeVisible();
 });

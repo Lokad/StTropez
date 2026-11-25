@@ -4,11 +4,10 @@ import type { LspWorkspace } from "sttropez/protocol";
 export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const result = document.querySelector<HTMLOutputElement>("#result")!;
     const choices = document.querySelector<HTMLElement>("#choices")!;
-    const completions = document.querySelector<HTMLElement>("#completions")!;
     const hint = document.querySelector<HTMLOutputElement>("#hint")!;
     const problems = document.querySelector<HTMLElement>("#diagnostics")!;
     const language = attachEditorLanguage(editor, provider, {
-        completion: { autoConnect: false, automatic: false }, diagnostics: { autoConnect: false },
+        completion: { autoConnect: false, automatic: false, list: true }, diagnostics: { autoConnect: false },
         hover: {}, signature: {}, navigation: {}, occurrences: {}, links: { paint: true },
         colors: { swatches: true }, rename: {}, codeActions: {}, commands: {},
     });
@@ -40,28 +39,10 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
         else if (outcome.status === "failed") result.value = String(outcome.error);
         else result.value = outcome.status === "stale" ? "The source changed. Try again." : outcome.reason;
     }
-    let displayed: readonly string[] | undefined;
-    let selected: Element | null = null;
-    function renderCompletions() {
-        const state = language.completion.getSnapshot();
-        if (displayed !== state.choices) {
-            displayed = state.choices;
-            completions.replaceChildren(...displayed.map((label, index) => {
-                const item = state.completionAt(index)!;
-                return button(label, () => { item.accept("replace"); });
-            }));
-        }
-        const current = completions.children.item(state.choiceIndex);
-        if (current === selected) return;
-        selected?.removeAttribute("aria-current");
-        current?.setAttribute("aria-current", "true");
-        selected = current;
-    }
     function renderDiagnostics() {
         problems.replaceChildren(...language.diagnostics.getSnapshot().diagnostics.map(item =>
             button(item.message, () => { item.select(); })));
     }
-    const stopCompletion = language.completion.subscribe(renderCompletions);
     const stopDiagnostics = language.diagnostics.subscribe(renderDiagnostics);
     const stopSignature = language.signature.subscribe(() => {
         hint.value = language.signature.getSnapshot().signature?.label ?? "";
@@ -134,13 +115,11 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     });
     return () => {
         events.abort();
-        stopCompletion();
         stopDiagnostics();
         stopSignature();
         stopEdits();
         language.dispose();
         clear();
-        completions.replaceChildren();
         hint.value = "";
         problems.replaceChildren();
     };

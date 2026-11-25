@@ -17,7 +17,7 @@ import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
 import type { LspWorkspace } from "sttropez/protocol";
 
 export function attachLanguage(editor: TextEditor, provider: LspWorkspace) {
-    const language = attachEditorLanguage(editor, provider, { completion: {}, diagnostics: {}, hover: {} });
+    const language = attachEditorLanguage(editor, provider, { completion: { list: true }, diagnostics: {}, hover: {} });
     return { requestCompletion: language.completion.request, dispose: language.dispose };
 }
 ```
@@ -49,7 +49,12 @@ The [provider scope](language-server.md#workspace-ownership-and-synchronization)
 documents. When the host sends custom messages that return diagnostics in LSP format, use
 `decodeLspDiagnostics` from `sttropez/kernels` to validate the reply.
 
-Keep each completion choice with the row that displays it. Its actions expire when another list replaces it.
+Set `completion.list` to `true` for a caret-anchored list with keyboard and pointer selection.
+Pass `{ label, status, omitted, loadingDetail }` to translate its text. Style it with
+`--st-completion-background` and `--st-completion-selected`. Disposing the attachment removes the list.
+
+For custom controls, omit `list`. Keep each completion choice with the row that displays it.
+Its actions expire when another list replaces it.
 
 ```ts
 import type { CompletionController } from "sttropez/browser";
@@ -147,7 +152,7 @@ export function completionButton(list: CompletionSnapshot, index: number) {
 Keep the buttons while the `choices` array is the same. Move the highlight to `choiceIndex`
 when the user presses an arrow key. Rebuild rows when the list changes. A button bound to
 an expired item returns `false` from `accept`. When an incomplete list refreshes, its visible
-choices remain usable until the replacement arrives. [Scrollable list example](../examples/demo/completion-list.ts)
+choices remain usable until the replacement arrives.
 
 **Requesting suggestions.** Ctrl/Cmd+Space or `await completion.request()` requests a list.
 A `done` outcome carries the snapshot, including an empty result. Superseded requests return
@@ -169,8 +174,8 @@ and items requiring a follow-up command are listed in `omittedCompletions`.
 
 **Accepting a choice.** Enter replaces the provider's replacement range. Tab inserts using
 its narrower insert range, preserving any suffix. Without an explicit range, completion uses
-the selected text or the word at the caret. Up/Down selects a row. PageUp/PageDown uses
-`getPageSize` (default ten rows). Escape dismisses the list. Home and End return to the source.
+the selected text or the word at the caret. Up/Down selects a row. PageUp/PageDown moves by the
+visible row count. For custom controls, `getPageSize` supplies the count and defaults to ten. Escape dismisses the list. Home and End return to the source.
 
 Acceptance can wait for item resolution. A `true` return means the controller took the request.
 Typing, a selection change or a loss of edit permission cancels queued acceptance. A commit

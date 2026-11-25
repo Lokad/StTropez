@@ -656,7 +656,7 @@ export async function runDemoSnippets(page: Page, url = "/") {
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     const request = async (input = source) => { await input.press("Control+End"); await input.press("Control+Space");
         await expect(page.getByRole("option", { name: "Template · linked placeholders", exact: true })).toBeVisible(); };
-    await request(); await expect(page.locator(".demo-completion-count")).toContainText("1 unsupported");
+    await request(); await expect(page.locator(".st-completion-count")).toContainText("1 unsupported");
     await source.press("Tab"); await expect(controls).toContainText("Field 1 of 3");
     await expectFieldsUncovered(editor);
     await expect(markers).toHaveText(["draft", "0"]); await expect(markers.first()).toHaveCSS("outline-style", "dotted");
@@ -733,7 +733,7 @@ export async function runDemoCompletionCatalogue(page: Page, url = "/") {
     await expect(page.getByRole("option", { name: "item0000", exact: true })).toBeVisible();
     const popup = page.getByRole("listbox", { name: "Completions", exact: true });
     expect(await popup.getByRole("option").count()).toBeLessThanOrEqual(16);
-    await expect(popup.locator(".demo-completion-count")).toHaveText("1 of 1200 · type to filter");
+    await expect(popup.locator(".st-completion-count")).toHaveText("1 of 1200 · type to filter");
     const caret = page.locator("#editor .st-input-caret");
     await expect.poll(async () => {
         const line = await caret.boundingBox(), list = await popup.boundingBox();
@@ -761,13 +761,13 @@ export async function runDemoCompletionCatalogue(page: Page, url = "/") {
     await expect(cursor).toHaveText(originalCursor); await expect(source).toBeFocused();
     await source.press("PageUp"); await source.press("PageUp");
     await expect(popup.getByRole("option", { name: "item0000", exact: true })).toHaveAttribute("aria-selected", "true");
-    const list = popup.locator(".demo-completion-choices"), hovered = popup.getByRole("option", { name: "item0002", exact: true });
+    const list = popup.locator(".st-completion-choices"), hovered = popup.getByRole("option", { name: "item0002", exact: true });
     await page.mouse.move(0, 0);
     const background = () => hovered.evaluate(row => getComputedStyle(row).backgroundColor), normal = await background();
     await hovered.hover(); await expect.poll(background).not.toBe(normal);
     await page.mouse.wheel(0, 1600);
     await expect.poll(async () => Number((await popup.getByRole("option").last().textContent())!.slice(4))).toBeGreaterThan(15);
-    await expect(popup.locator(".demo-completion-count")).toContainText("1 of 1200");
+    await expect(popup.locator(".st-completion-count")).toContainText("1 of 1200");
     await source.press("ArrowDown");
     const second = popup.getByRole("option", { name: "item0001", exact: true });
     await expect(second).toHaveAttribute("aria-selected", "true"); await expect(popup.locator("pre")).toContainText("item0001:");
@@ -787,8 +787,8 @@ export async function runDemoCompletionCatalogue(page: Page, url = "/") {
     await expect(page.getByRole("option", { name: "item1199", exact: true })).toHaveAttribute("aria-selected", "true");
     await source.press("PageDown");
     expect(await popup.getByRole("option").count()).toBeLessThanOrEqual(16);
-    await expect(popup.locator(".demo-completion-count")).toHaveText("1200 of 1200 · type to filter");
-    await expect(page.locator(".demo-completion pre")).toContainText("item1199:");
+    await expect(popup.locator(".st-completion-count")).toHaveText("1200 of 1200 · type to filter");
+    await expect(page.locator(".st-completion pre")).toContainText("item1199:");
     await source.press("Tab"); await expect(page.locator("#editor")).toContainText("catalogue.item1199");
     await source.press("Control+z"); await expect(page.locator("#editor")).not.toContainText("catalogue.item1199");
     await source.press("Control+Space"); await expect(popup).toBeVisible();
@@ -800,7 +800,7 @@ export async function runDemoCompletionCatalogue(page: Page, url = "/") {
     await source.pressSequentially("item119");
     await expect(popup.getByRole("option")).toHaveCount(10);
     await source.press("ArrowUp");
-    await expect(page.locator(".demo-completion pre")).toContainText("item1199:");
+    await expect(page.locator(".st-completion pre")).toContainText("item1199:");
     await source.press("Enter"); await expect(page.locator("#editor")).toContainText("catalogue.item1199");
     return Object.freeze({ candidates: 1200, renderedRowLimit: 16, lastCandidateReachable: true, prefixFiltering: true, keyboardAcceptance: true, undo: true });
 }

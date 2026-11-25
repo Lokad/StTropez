@@ -177,3 +177,12 @@
 .st-find-status { color: #a2b4cd; font-size: 12px; } .st-replace-controls:not([hidden]) { display: inline-flex; align-items: center; gap: 4px; }
 .st-find-status.no-matches { color: #efd3ac; }
 .st-find-status.search-failed { color: #ffa9a9; overflow-wrap: anywhere; }
+
+.st-completion { position: fixed; z-index: 20; display: flex; flex-direction: column; width: 340px; max-height: 310px; overflow: hidden; border: 1px solid #50627f; border-radius: 7px; background: var(--st-completion-background, #1b283c); padding: 0; box-shadow: 0 8px 28px #0007; }
+.st-completion-count { flex: none; padding: 6px 12px; color: #abc5d9; font-size: 12px; }
+.st-completion-choices { position: relative; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; }
+.st-completion-choices::before { display: block; content: ""; height: var(--st-completion-extent); }
+.st-completion button { position: absolute; left: 0; width: 100%; height: var(--st-completion-row); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border: 0; border-radius: 0; text-align: left; padding: 5px 12px; background: transparent; font: 13px/1.5 var(--st-font, monospace); color: inherit; box-sizing: border-box; }
+.st-completion button:hover { background: #25354e; }
+.st-completion button[aria-selected="true"] { background: var(--st-completion-selected, #365474); color: #e2fff6; }
+.st-completion pre { flex: none; margin: 0; padding: 10px 12px; border-top: 1px solid #40536e; font: 12px/1.5 var(--st-font, monospace); color: #abc5d9; white-space: pre-wrap; max-height: 100px; overflow: auto; }

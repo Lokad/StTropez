@@ -1304,7 +1304,7 @@ test("reset names its sample and recovery follows the stored draft across sample
 
 test("completion holds its prefix and side while filtering and makes room for signature help", async ({ page, baseURL }) => {
     await page.setViewportSize({ width: 1280, height: 800 }); await page.goto(browserDemo(baseURL!));
-    const source = page.locator("#editor textarea"), list = page.locator(".demo-completion");
+    const source = page.locator("#editor textarea"), list = page.locator(".st-completion");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await source.press("Control+End"); await source.pressSequentially("c");
     const placement = () => list.evaluate(el => {
@@ -1313,9 +1313,9 @@ test("completion holds its prefix and side while filtering and makes room for si
     });
     await expect(list).toBeVisible(); await expect.poll(placement).toMatchObject({ above: true });
     const opening = await placement();
-    await source.pressSequentially("al"); await expect(list.locator(".demo-completion-count")).toContainText("1 of 1 ·");
+    await source.pressSequentially("al"); await expect(list.locator(".st-completion-count")).toContainText("1 of 1 ·");
     await expect.poll(placement).toEqual(opening);
-    await source.press("Backspace"); await expect(list.locator(".demo-completion-count")).not.toContainText("1 of 1 ·");
+    await source.press("Backspace"); await expect(list.locator(".st-completion-count")).not.toContainText("1 of 1 ·");
     await expect.poll(placement).toEqual(opening);
     await page.setViewportSize({ width: 1280, height: 1400 });
     await expect.poll(placement).toMatchObject({ above: false });
@@ -1329,10 +1329,10 @@ test("completion holds its prefix and side while filtering and makes room for si
     const signature = page.getByRole("tooltip", { name: "Signature help", exact: true });
     await expect(signature).toContainText("applyDiscount"); await source.pressSequentially("5, di");
     await expect(list).toBeVisible(); await expect(signature).toBeVisible();
-    await expect(list.locator(".demo-completion-count")).toContainText("of 2 ·");
+    await expect(list.locator(".st-completion-count")).toContainText("of 2 ·");
     await expect(signature).toContainText("applyDiscount");
     await expect.poll(() => signature.evaluate(el => {
-        const box = el.getBoundingClientRect(), other = document.querySelector(".demo-completion")!.getBoundingClientRect();
+        const box = el.getBoundingClientRect(), other = document.querySelector(".st-completion")!.getBoundingClientRect();
         const preferred = el.cloneNode(true) as HTMLElement;
         preferred.style.visibility = "hidden"; preferred.style.maxHeight = ""; el.after(preferred);
         const height = preferred.getBoundingClientRect().height; preferred.remove();

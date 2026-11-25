@@ -1,3 +1,4 @@
+import { editorElement } from "./editor-element.ts";
 import { isIndex, isNonNegativeInteger, isOffset, isPositiveInteger } from "../core/bounds.ts";
 import { clientBox, cssZoom, minimapWidth } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
@@ -217,20 +218,28 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     const win = browserWindow;
     const source = workspace.observeDocument(documentId);
     const currentDocument = source.getSnapshot;
+    const viewState = view.getSnapshot;
     const currentFolds = view.folding.getSnapshot;
     const live = () => workspace.ownsDocumentView(view, tab);
-    const root = owner.createElement("div"), spacer = owner.createElement("div"), layer = owner.createElement("div"), probeHost = owner.createElement("div"), probe = owner.createElement("span"), foldLayer = owner.createElement("div");
-    const surface = owner.createElement("div");
-    surface.className = "st-viewport-surface";
-    root.className = "st-viewport"; root.tabIndex = 0; root.setAttribute("role", "region"); root.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
+    const root = editorElement(owner, "div", "viewport");
+    const surface = editorElement(owner, "div", "viewport-surface");
+    const spacer = editorElement(owner, "div", "viewport-spacer");
+    const layer = editorElement(owner, "div", "viewport-layer");
+    const probeHost = editorElement(owner, "div", "viewport-measure-host");
+    const probe = editorElement(owner, "span", "viewport-measure");
+    const gutter = editorElement(owner, "div", "viewport-gutter");
+    const numbers = editorElement(owner, "div", "line-numbers");
+    const foldLayer = editorElement(owner, "div", "fold-controls");
+    const lineNumbers = new Map<number, HTMLSpanElement>();
+    const foldButtons = new Map<string, HTMLButtonElement>();
+    root.tabIndex = 0;
+    root.setAttribute("role", "region");
+    root.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     root.style.fontVariantLigatures = settings.fontLigatures ? "normal" : "none";
-    spacer.className = "st-viewport-spacer"; spacer.setAttribute("aria-hidden", "true");
-    layer.className = "st-viewport-layer"; probe.className = "st-viewport-measure"; probe.textContent = "M".repeat(64); probe.setAttribute("aria-hidden", "true");
-    probeHost.className = "st-viewport-measure-host"; probeHost.setAttribute("aria-hidden", "true"); probeHost.append(probe);
-    const gutter = owner.createElement("div"), numbers = owner.createElement("div"), lineNumbers = new Map<number, HTMLSpanElement>();
-    gutter.className = "st-viewport-gutter"; numbers.className = "st-line-numbers"; numbers.setAttribute("aria-hidden", "true");
+    for (const element of [spacer, probe, probeHost, numbers]) element.setAttribute("aria-hidden", "true");
+    probe.textContent = "M".repeat(64);
+    probeHost.append(probe);
     gutter.append(numbers, foldLayer);
-    foldLayer.className = "st-fold-controls"; const foldButtons = new Map<string, HTMLButtonElement>();
     surface.append(layer, gutter);
     root.append(surface, spacer, probeHost);
     host.append(root);
@@ -291,8 +300,14 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     let renderedSelection: Selection | null = null;
     let renderedSelectionSet: SelectionSet | null = null;
     let renders = 0, firstLine = 0, lastLine = 0, partialRows = 0, textUnits = 0, readUnits = 0, lastRenderMs = 0;
-    const commandMeasure = owner.createElement("div"), commandRow = owner.createElement("div");
-    commandMeasure.className = "st-viewport-command-measure"; commandMeasure.setAttribute("aria-hidden", "true"); commandMeasure.append(commandRow);
+    function measurementLayer() {
+        const layer = editorElement(owner, "div", "viewport-command-measure");
+        layer.setAttribute("aria-hidden", "true");
+        return layer;
+    }
+    const commandMeasure = measurementLayer();
+    const commandRow = owner.createElement("div");
+    commandMeasure.append(commandRow);
     let commandGeometry: ReturnType<typeof rowGeometry> | undefined;
     type CommandRow = { item: Row; element: HTMLDivElement; geometry?: ReturnType<typeof rowGeometry> };
     let preparedRows: Readonly<{ revision: number; selectionSet: SelectionSet; element: HTMLDivElement; rows: Map<number, CommandRow> }> | undefined;
@@ -571,8 +586,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         clearPreparedRows(); const document = currentDocument();
         if (disposed || !live() || document?.revision !== renderedRevision) return () => {};
         if (lines.length > 64 || lines.some(line => !isIndex(line, document.buffer.lineCount))) throw new RangeError("Invalid navigation row batch.");
-        const element = owner.createElement("div"), batchRows = new Map<number, CommandRow>(), selectionSet = view.getSnapshot().selectionSet;
-        element.className = "st-viewport-command-measure"; element.setAttribute("aria-hidden", "true");
+        const element = measurementLayer(), batchRows = new Map<number, CommandRow>(), selectionSet = viewState().selectionSet;
         const highlightedLine = currentLine(document, selectionSet, renderedIndex);
         for (const line of lines) {
             if (batchRows.has(line) || rows.get(line)?.dataset.complete === "true") continue;
@@ -605,10 +619,10 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             return work({ complete: existing.dataset.complete === "true", point: value.point,
                 nearest: column => value.nearest(rectangle.left + (column - left) * rectangle.zoom) });
         }
-        if (preparedRows && (preparedRows.revision !== document.revision || preparedRows.selectionSet !== view.getSnapshot().selectionSet)) clearPreparedRows();
+        if (preparedRows && (preparedRows.revision !== document.revision || preparedRows.selectionSet !== viewState().selectionSet)) clearPreparedRows();
         const prepared = preparedRows?.rows.get(line); if (prepared) return work(measuredRow(prepared, document.revision, rectangle));
         const item = row(document.buffer, line, scrollLeft, true);
-        const selectionSet = view.getSnapshot().selectionSet;
+        const selectionSet = viewState().selectionSet;
         const changed = paintRow(commandRow, item, document, selectionSet, currentLine(document, selectionSet, renderedIndex));
         commandRow.style.height = `${lineHeight}px`;
         commandRow.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
@@ -728,7 +742,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             Math.max(1, parseFloat(style.tabSize) || 4), Math.max(2, Math.min(3, win.devicePixelRatio * zoom)), paintEpoch + overviewEpoch);
         // Presentation-only configuration can repaint guides without reading or rebuilding rows.
         rulers.paint(settings.columnRulers, columnWidth, left, width);
-        const { selection: selected, selectionSet } = view.getSnapshot();
+        const { selection: selected, selectionSet } = viewState();
         if ((selected.anchor !== selected.head || selectionSet.ranges.length > 1)
             && (selectionMetrics?.font !== font || selectionMetrics.height !== lineHeight || selectionMetrics.zoom !== zoom)) {
             // Inline padding extends the painted background without changing shaping, advances or row height.
@@ -801,14 +815,14 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const highlightedTop = highlightedLine === undefined ? undefined : padding + index.rowAt(highlightedLine) * lineHeight - top;
         if (highlightedTop === undefined || highlightedTop + lineHeight <= 0 || highlightedTop >= height) clearCurrentLine();
         else {
-            if (!currentLineBackground) { currentLineBackground = owner.createElement("div"); currentLineBackground.className = "st-current-line-background";
+            if (!currentLineBackground) { currentLineBackground = editorElement(owner, "div", "current-line-background");
                 currentLineBackground.setAttribute("aria-hidden", "true"); surface.append(currentLineBackground); }
             currentLineBackground.style.top = `${highlightedTop}px`; currentLineBackground.style.height = `${lineHeight}px`;
         }
         textUnits = 0;
         for (const item of next) {
             let element = rows.get(item.line);
-            if (!element) { element = owner.createElement("div"); element.className = "st-viewport-row"; rows.set(item.line, element); layer.append(element); }
+            if (!element) { element = editorElement(owner, "div", "viewport-row"); rows.set(item.line, element); layer.append(element); }
             const placement = fragmentPlacement, shift = placement?.revision === document.revision && placement.line === item.line
                 && placement.from === item.from && placement.to === item.to && placement.left === left ? placement.shift : 0;
             element.style.setProperty("--st-fragment-left", `${item.left + shift}px`);
@@ -825,7 +839,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const visiblePadding = new Set(blanks);
         for (const [at, element] of paddingRows) if (!visiblePadding.has(at)) { element.remove(); paddingRows.delete(at); }
         for (const at of blanks) {
-            let element = paddingRows.get(at); if (!element) { element = owner.createElement("div"); element.className = "st-comparison-padding"; element.setAttribute("aria-hidden", "true"); paddingRows.set(at, element); layer.append(element); }
+            let element = paddingRows.get(at); if (!element) { element = editorElement(owner, "div", "comparison-padding"); element.setAttribute("aria-hidden", "true"); paddingRows.set(at, element); layer.append(element); }
             element.style.transform = `translate(0px, ${padding + at * lineHeight - top}px)`; element.style.height = `${lineHeight}px`; element.style.width = `${width}px`;
         }
         root.removeAttribute("aria-disabled"); root.dataset.revision = String(document.revision);
@@ -852,7 +866,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             const region = index.headerAt(item.line); if (!region) continue; visibleFolds.add(region.id);
             let button = foldButtons.get(region.id);
             if (!button) {
-                button = owner.createElement("button"); button.type = "button"; button.className = "st-fold-button";
+                button = editorElement(owner, "button", "fold-button"); button.type = "button";
                 foldButtons.set(region.id, button); foldLayer.append(button);
             }
             orderedButtons.push(button);
@@ -1090,7 +1104,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         },
         flush,
         scrollTo: setScroll,
-        captureView: () => { const { selection, selectionSet } = view.getSnapshot();
+        captureView: () => { const { selection, selectionSet } = viewState();
             // Ref replay may recapture an intermediate unaligned paint. Always retain source
             // coordinates, and prefer an anchor that has not yet reached its first paint.
             const folds = currentFolds(), vertical = anchor && anchor.revision === currentDocument()?.revision
@@ -1130,7 +1144,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                     ? { ...vertical, revision: document.revision, offset: document.change.mapping.map(vertical.offset, "before").offset } : undefined;
             }
             notifications.batch(() => {
-                if (!sameSelectionSet(selected.set, view.getSnapshot().selectionSet)) view.setSelections(document.revision, selected.set.ranges, selected.set.primary);
+                if (!sameSelectionSet(selected.set, viewState().selectionSet)) view.setSelections(document.revision, selected.set.ranges, selected.set.primary);
                 if (regions) view.folding.setRanges(currentFolds(), regions);
                 if (currentFolds() !== folds) restoredFolds = currentFolds();
                 reveal = undefined;

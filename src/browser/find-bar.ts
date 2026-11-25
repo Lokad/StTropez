@@ -1,3 +1,4 @@
+import { editorElement } from "./editor-element.ts";
 import { NotificationScope, Store, type Observable } from "../core/observable.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { EditorCommands } from "./command-registry.ts";
@@ -50,8 +51,7 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
     const doc = host.ownerDocument;
     const text = options.text ?? (label => label);
     function node<K extends keyof HTMLElementTagNameMap>(tag: K, part: string, parent: HTMLElement) {
-        const child = doc.createElement(tag);
-        child.className = "st-" + part;
+        const child = editorElement(doc, tag, part);
         parent.append(child);
         return child;
     }
