@@ -2,3 +2,7 @@
 export function isFocused(element: Element): boolean {
     return (element.getRootNode() as Document | ShadowRoot).activeElement === element;
 }
+
+export function revealInPage(element: Element): void {
+    element.scrollIntoView({ block: "nearest", inline: "nearest" });
+}

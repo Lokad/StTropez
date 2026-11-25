@@ -1,5 +1,5 @@
 import { clientBox } from "./dom-coordinates.ts";
-import { isFocused } from "./dom-focus.ts";
+import { isFocused, revealInPage } from "./dom-focus.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { DocumentSnapshot, DocumentView } from "../core/workspace.ts";
@@ -127,8 +127,7 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         if (frame !== undefined) win.cancelAnimationFrame(frame);
         positionCaret();
         // When a toolbar has focus, the source input still marks the selection head.
-        const anchor = caret.hidden ? input : caret;
-        anchor.scrollIntoView({ block: "nearest", inline: "nearest" });
+        revealInPage(caret.hidden ? input : caret);
     });
     return Object.freeze({ schedule, pending: () => frame !== undefined,
         showComposingText(text: string) { caret.textContent = text; schedule(); },

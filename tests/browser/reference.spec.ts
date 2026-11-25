@@ -149,6 +149,7 @@ test("the reference swatch reviews provider formats and preserves the source sel
 });
 
 test("a rename reports success after changing the reference document and Undo clears the result", async ({ page }) => {
+    await page.setViewportSize({ width: 760, height: 350 });
     await page.goto("/reference/");
     await page.getByRole("button", { name: "Connect language server" }).click();
     await expect(page.getByRole("button", { name: "Resolve this placeholder." })).toBeVisible();
@@ -157,10 +158,15 @@ test("a rename reports success after changing the reference document and Undo cl
     await source.press("Control+ArrowRight");
     await source.press("Control+ArrowRight");
     await source.press("ArrowRight");
-    await source.press("F2");
+    const pane = page.locator("#pane .st-editor");
+    await pane.evaluate(element => window.scrollBy(0, element.getBoundingClientRect().top + 85));
+    expect(await pane.evaluate(element => element.getBoundingClientRect().top)).toBeLessThan(-80);
+    await page.keyboard.press("F2");
     const rename = page.getByRole("dialog", { name: "Rename symbol" });
     const field = rename.getByRole("textbox", { name: "New name" });
     await expect(field).toHaveValue("accent");
+    await expect(field).toBeFocused();
+    await expect(field).toBeInViewport({ ratio: .99 });
     await field.press("Escape");
     await expect(source).toBeFocused();
     await page.getByRole("button", { name: "Rename", exact: true }).click();
@@ -168,7 +174,6 @@ test("a rename reports success after changing the reference document and Undo cl
     await field.fill("highlight");
     await field.press("Enter");
     await expect(rename.getByLabel("Rename edits")).toContainText("highlight");
-    const pane = page.locator("#pane .st-editor");
     const height = await pane.evaluate(element => {
         const original = element.style.height;
         element.style.height = "145px";

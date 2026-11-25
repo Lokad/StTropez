@@ -396,7 +396,7 @@ Dispose the history with its host.
 ### Rename and workspace edits
 
 Enable `rename: { popup: true }` on the editor attachment for a rename field in the working pane.
-F2 opens it at the current symbol and selects the name. Type a new name and press Enter to
+F2 brings the field into view and selects the current symbol’s name. Type a new name and press Enter to
 preview the edits. Click Apply rename or press Enter again to apply and return to the editor.
 Escape returns to the editor without applying. A toolbar can run
 `editor.commands.run("rename.start")`. The preview shows up to 64 edits per page and stays

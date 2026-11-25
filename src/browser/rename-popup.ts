@@ -1,5 +1,6 @@
 import { identifierAt } from "../core/identifier.ts";
 import { reviewPanel } from "./review-controls.ts";
+import { isFocused, revealInPage } from "./dom-focus.ts";
 import { lspRangeOffsets } from "../protocol/lsp-features.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { renameMethod } from "../protocol/lsp-methods.ts";
@@ -125,7 +126,8 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         checking = owner.provider.queryFeatureOptions(renameMethod, target.document).some(o => o.prepareProvider === true);
         panel.hidden = false;
         render();
-        name.focus({ preventScroll: true });
+        revealInPage(panel);
+        name.focus();
         name.select();
         onAbort(target.signal, () => queueMicrotask(() => {
             if (source === target) close(panel.matches(":focus-within"));
@@ -149,7 +151,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
                 checking = false;
                 if (!edited) {
                     name.value = value;
-                    if (name.matches(":focus")) name.select();
+                    if (isFocused(name)) name.select();
                 }
                 render();
                 if (submitted) prepare();
@@ -179,7 +181,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     }
     bind("rename.start", "Rename symbol", "F2", () => editor.getSnapshot().readOnlyReason === null, open, 9);
     bind("rename.dismiss", "Dismiss rename", "Escape", () => !!source, arg => close(arg !== false), 39);
-    bind("rename.submit", "Preview or apply rename", "Enter", () => name.matches(":focus"), () => {
+    bind("rename.submit", "Preview or apply rename", "Enter", () => isFocused(name), () => {
         if (shown) accept(shown);
         else if (review.getSnapshot().status !== "pending") prepare();
     }, 33);
