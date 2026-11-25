@@ -58,14 +58,18 @@ export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext)
     features?: readonly LspFeature[]; diagnostics?: boolean; workspaceEdits?: boolean; applyEdit?: boolean; pathForUri?: LspUriPath; maxDocuments?: number; maxDocumentUnits?: number; maxTotalUnits?: number;
     rpc?: Pick<RpcOptions, "timeoutMs" | "maxPending" | "maxMessageUnits" | "maxJsonNodes">; onError?: (error: Error) => void }>;
 type SelectorEntry = { snapshot: LspSelectorDocument; selectors?: { generation: number; values: Map<LspSelector, boolean> } };
-type Entry = SelectorEntry & { snapshot: LspDocumentSnapshot; handle: LspDocument; index?: LspLineIndex; change?: LspChangeHint;
+type ChangeHint = LspChangeHint & { ranges?: readonly Pick<TextEdit, "from" | "to">[] | undefined };
+/** Workspace bindings can defer normalized edits until the wire format needs them. */
+export const updateBinding = Symbol();
+type Entry = SelectorEntry & { snapshot: LspDocumentSnapshot; index?: LspLineIndex; change?: ChangeHint | undefined;
     failure?: Readonly<{ snapshot: LspDocumentSnapshot; generation: number; error: Error }> };
 type Remote = { entry: Entry; snapshot: LspDocumentSnapshot; index: LspLineIndex; version: number };
 
 // Prefer one proven replacement when per-range planning is expensive or the gaps cost less than the JSON ranges.
-function preferSingleRange(hint: LspChangeHint | undefined, length: number): boolean {
-    if (!hint || hint.edits.length < 64) return false;
-    const edits = hint.edits;
+function preferSingleRange(hint: ChangeHint | undefined, length: number): boolean {
+    if (!hint) return false;
+    const edits = hint.ranges ?? hint.edits;
+    if (edits.length < 64) return false;
     if (edits.length >= 512) return true;
     const span = edits[edits.length - 1]!.to - edits[0]!.from + length - hint.before.length;
     return span >= 0 && span <= 64 * (edits.length - 1);
@@ -400,18 +404,32 @@ export class LspSession {
         this.#writable(); const { uri, languageId, resourceId, documentId, revision, buffer } = snapshot;
         if (!isLspUri(uri) || ![languageId, resourceId, documentId].every(isLspIdentityPart) || !isNonNegativeInteger(revision)) throw new TypeError("Invalid LSP document identity.");
         if (this.#documents.has(uri) || this.#documents.size >= this.#maxDocuments) throw new Error("LSP URI is already bound or document limit exceeded."); this.#size(buffer.length, 0);
-        const entry: Entry = { snapshot: Object.freeze({ uri, languageId, resourceId, documentId, revision, buffer }), handle: undefined! };
+        const entry: Entry = { snapshot: Object.freeze({ uri, languageId, resourceId, documentId, revision, buffer }) };
         const handle: LspDocument = Object.freeze({ getSnapshot: () => entry.snapshot,
-            update: (expectedRevision, nextRevision, nextBuffer, edits) => {
-                this.#writable(); this.#entry(handle); if (entry.snapshot.revision !== expectedRevision || !isNonNegativeInteger(nextRevision) || nextRevision <= expectedRevision) throw staleRequest(); this.#size(nextBuffer.length, entry.snapshot.buffer.length);
-                if (edits) entry.change = { before: entry.snapshot.buffer, edits: edits.map(({ from, to, insert }) => ({ from, to, insert })) };
-                else delete entry.change;
-                this.#totalUnits += nextBuffer.length - entry.snapshot.buffer.length; entry.snapshot = Object.freeze({ ...entry.snapshot, revision: nextRevision, buffer: nextBuffer }); delete entry.failure; this.#kick(uri);
-            }, dispose: () => {
+            update: (previous, revision, buffer, edits) => this[updateBinding](handle, previous, revision, buffer,
+                before => edits && { before, edits: edits.map(({ from, to, insert }) => ({ from, to, insert })) }),
+            dispose: () => {
                 if (this.#phase === "disposed") return; this.#writable(); if (this.#documents.get(uri) !== entry) return;
                 this.#documents.delete(uri); delete entry.change; delete entry.selectors; this.#totalUnits -= entry.snapshot.buffer.length; this.#publish(); this.#kick(uri);
             } });
-        entry.handle = handle; this.#handles.set(handle, entry); this.#documents.set(uri, entry); this.#totalUnits += buffer.length; this.#publish(); this.#kick(uri); return handle;
+        this.#handles.set(handle, entry);
+        this.#documents.set(uri, entry);
+        this.#totalUnits += buffer.length;
+        this.#publish();
+        this.#kick(uri);
+        return handle;
+    }
+    [updateBinding](handle: LspDocument, expected: number, revision: number, buffer: TextBuffer,
+        getHint: (before: TextBuffer) => ChangeHint | undefined): void {
+        this.#writable();
+        const entry = this.#entry(handle), before = entry.snapshot;
+        if (before.revision !== expected || !isNonNegativeInteger(revision) || revision <= expected) throw staleRequest();
+        this.#size(buffer.length, before.buffer.length);
+        entry.change = this.#phase === "ready" ? getHint(before.buffer) : undefined;
+        this.#totalUnits += buffer.length - before.buffer.length;
+        entry.snapshot = Object.freeze({ ...before, revision, buffer });
+        delete entry.failure;
+        this.#kick(before.uri);
     }
     /** Capability/connection changes reconcile every binding, including pending closes. */
     #reconcile(): void {

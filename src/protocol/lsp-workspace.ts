@@ -4,11 +4,11 @@ import { applyEditMethod, didChangeMethod, executeCommandMethod } from "./lsp-me
 import { wireLimits, isLspUri, isLspIdentityPart, ProtocolDecodeError, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
 import type { DocumentId, DocumentLanguage, DocumentSnapshot, ResourceLease, Workspace } from "../core/workspace.ts";
 import { NotificationScope, Store } from "../core/observable.ts";
-import { anchoredRange } from "../core/positions.ts";
+import { anchoredRange, positionChanges } from "../core/positions.ts";
 import type { Observable } from "../core/observable.ts";
 import { TextBuffer } from "../core/text-buffer.ts";
 import { cooperateDuringScan, LspLineIndex } from "./lsp-positions.ts";
-import { defaultDocumentUnits, LspSession } from "./lsp-session.ts";
+import { defaultDocumentUnits, LspSession, updateBinding } from "./lsp-session.ts";
 import type { LspDocument, LspDocumentCapture, LspDocumentFeature, LspFeature, LspDocumentSnapshot, LspRequestContext, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
 import type { RpcCall } from "./json-rpc.ts";
 import type { JsonValue } from "./wire.ts";
@@ -289,19 +289,19 @@ export class LspWorkspace {
         const next = this.#workspace.observeDocument(entry.id).getSnapshot();
         if (next?.language !== entry.language) return this.#closeDocument(entry);
         try {
-            const before = entry.binding.getSnapshot();
-            if (before.revision !== next.revision || before.buffer !== next.buffer) {
-                this.#updateBinding(entry.binding, before.revision, next);
-            }
+            this.#updateBinding(entry.binding, entry.binding.getSnapshot().revision, next);
         } catch (error) {
             this.#closeDocument(entry);
             this.#report(error);
         }
     }
     #updateBinding(binding: LspDocument, previous: number, next: DocumentSnapshot): void {
-        const edits = this.#session.getSnapshot().phase === "ready" && next.change?.previousRevision === previous
-            ? next.change.edits : undefined;
-        binding.update(previous, next.revision, next.buffer, edits);
+        const current = binding.getSnapshot();
+        if (current.revision === next.revision && current.buffer === next.buffer) return;
+        const change = next.change;
+        this.#session[updateBinding](binding, previous, next.revision, next.buffer, before =>
+            change?.previousRevision === previous
+                ? { before, ranges: positionChanges(change.mapping), get edits() { return change.edits; } } : undefined);
     }
     #closeDocument(entry: DocumentEntry): void {
         if (!entry.active) return; entry.active = false; this.#expireDiagnostics(entry); this.#documents.delete(entry.id); this.#uris.delete(entry.binding.getSnapshot().uri);
@@ -419,9 +419,6 @@ export class LspWorkspace {
                 if (!active || !entry.active) throw staleRequest();
                 const latest = this.#workspace.document(id);
                 if (latest.language !== entry.language || latest.revision !== revision || latest.buffer !== buffer) throw staleRequest();
-                const before = entry.binding.getSnapshot();
-                if (before.revision === revision && before.buffer === buffer) return;
-                if (before.revision !== expected) throw staleRequest();
                 this.#updateBinding(entry.binding, expected, latest);
             } });
             documents.set(id, document); handles.set(document, entry); entry.users.add(close); return document;

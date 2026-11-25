@@ -7,7 +7,7 @@ import { colorClient, linkClient, signatureClient } from "../src/protocol/lsp-la
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams } from "vscode-languageserver-protocol/node.js";
 import { referencePeer } from "./fixtures/protocol/reference-peer.ts";
-import type { LspFeature, LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
+import type { LspWorkspaceOptions, LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
 import { Workspace } from "../src/index.ts";
 import { LspWorkspace, createLspCommandRunner, createLspFoldingClient, RpcError } from "../src/protocol/index.ts";
 import { latch } from "./helpers/latch.ts";
@@ -228,7 +228,8 @@ async function languageFixture(t: test.TestContext) {
     return { f, peer, signature, links, colors, rgba, doc: f.workspace.document(f.source.documentId) };
 }
 
-function fixture(t: test.TestContext, extra: Readonly<{ maxDocumentUnits?: number; features?: readonly LspFeature[]; schedule?: RpcScheduler }> = {}) {
+function fixture(t: test.TestContext, extra: Partial<Pick<LspWorkspaceOptions,
+    "maxDocumentUnits" | "features" | "schedule" | "rpc">> = {}) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "generic", resource: "source", variant: "working" }, "Source", { value: "a😀\r\nsource" }, undefined,
         { language: { uri: "host+opaque:workspace/source", languageId: "generic-language" } }),
         companion = workspace.createTextResource({ scope: "generic", resource: "companion", variant: "working" }, "Companion", { value: "companion" }, undefined,
@@ -291,6 +292,40 @@ test("workspace batches and grouped history retain bounded wire edits; skipped r
     f.provider.disconnect(); f.edit(id, "offline"); await f.provider.connect(); await scope.request("test/barrier").result;
     const reopened = f.peers[1]!, doc = f.workspace.document(id);
     assert.equal(reopened.changes.length, 0); assert.equal(reopened.documents.get(uri)!.getText(), doc.buffer.slice(0, doc.buffer.length)); assert.deepEqual(f.errors, []);
+});
+
+test("a connected workspace reads individual edits only when the compact change exceeds the message limit", async t => {
+    const row = "😀xxx" + "\0".repeat(32) + "\r\n";
+    const rows = 512, half = row.repeat(rows / 2);
+    const edits = Array.from({ length: rows }, (_, i) => ({
+        from: i * row.length + 3, to: i * row.length + 4, insert: "y",
+    }));
+    for (const [maxMessageUnits, expectedRanges] of [[160_000, 1], [60_000, rows]] as const) {
+        const f = fixture(t, { rpc: { maxMessageUnits } });
+        const id = f.source.documentId, initial = f.workspace.document(id);
+        f.workspace.edit({ documentId: id, expectedRevision: initial.revision, origin: "human",
+            edits: [{ from: 0, to: initial.buffer.length, insert: half }] });
+        const scope = f.provider.createScope(), binding = scope.attachDocument(id);
+        await scope.ensureConnected();
+        f.edit(id, half);
+        await scope.flush();
+        const before = f.workspace.document(id);
+        assert.ok(f.workspace.edit({ documentId: id, expectedRevision: before.revision, origin: "human", edits }).applied);
+        const after = f.workspace.document(id), reads = bufferReads(before.buffer);
+        await Promise.resolve();
+        assert.equal(binding.getSnapshot().buffer, after.buffer);
+        assert.deepEqual(bufferReads(before.buffer), reads);
+        await scope.flush();
+        await scope.request("test/barrier").result;
+        if (expectedRanges === 1) {
+            assert.ok(bufferReads(before.buffer).sliceUnits - reads.sliceUnits < row.length * 4,
+                "Sending a single range must not scan the old text at every edit boundary.");
+        }
+        const peer = f.peers[0]!;
+        assert.equal(peer.changes.at(-1)!.contentChanges.length, expectedRanges);
+        assert.ok(peer.documents.get(binding.getSnapshot().uri)!.getText() === (half + half).replaceAll("xxx", "xyx"));
+        assert.deepEqual(f.errors, []);
+    }
 });
 
 test("feature scopes wait for their captured project without flushing unrelated bindings", async t => {
