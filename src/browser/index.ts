@@ -1,5 +1,6 @@
 export { observePointerDwell } from "./pointer-dwell.ts";
 export type { PointerDwell, PointerDwellOptions, PointerDwellPosition } from "./pointer-dwell.ts";
+export { defaultEditorShortcuts } from "./editor-commands.ts";
 export type { EditorCommand, EditorCommands, EditorKeymap } from "./command-registry.ts";
 export type { ViewRestoreOptions, ViewRestoreResult, ViewState } from "./view-state.ts";
 export { editRefusedEvent, inputConflictEvent, typedTextEvent } from "./input-events.ts";

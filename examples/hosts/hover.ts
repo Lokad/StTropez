@@ -106,7 +106,7 @@ export class HostHoverTools {
             const register = scopedCommands(editor, listeners.signal);
             register({ id: "hover.inspect", label: "Inspect type",
                 enabled: () => this.canCapture(editor.view.documentId), run: () => this.inspectCaret(id) },
-                { keys: ["Ctrl+k Ctrl+i", "Meta+k Meta+i"] });
+                { keys: ["Mod+k Mod+i"] });
             register({ id: "hover.dismiss", label: "Dismiss hover",
                 enabled: () => (editor.getSnapshot().focused || !!this.popup?.matches(":focus-within"))
                     && (this.current === session || dwell.isPending()), run: () => {

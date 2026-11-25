@@ -2,6 +2,42 @@ import { ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 
+for (const apple of [false, true]) {
+    test(`editor, folding and host shortcuts use the ${apple ? "Apple" : "standard"} modifier`, async ({ page }) => {
+        await page.addInitScript(apple => {
+            Object.defineProperty(navigator, "platform", { value: apple ? "MacIntel" : "Win32" });
+        }, apple);
+        await page.goto("/editing/");
+        await page.evaluate(() => {
+            const f = window.editingFixture;
+            f.setText("outer\n  child\nend");
+            f.select("primary", { anchor: 0, head: 0 });
+            f.discoverFolds(doc => [{ from: 0, to: doc.buffer.offsetAt(2) }]);
+            f.commands.register({ id: "host.action", label: "Action", run() { document.title = "Host action"; } },
+                { keys: ["Mod+j"] });
+        });
+        const source = input(page);
+        await source.press("End");
+        await page.keyboard.type("!");
+        const press = (key: string, code: string, metaKey: boolean, shiftKey = false) =>
+            source.evaluate((node, stroke) => !node.dispatchEvent(new KeyboardEvent("keydown", {
+                ...stroke, cancelable: true, bubbles: true, ctrlKey: !stroke.metaKey,
+            })), { key, code, metaKey, shiftKey });
+        const header = page.locator('#primary .st-viewport-row[data-line="0"]');
+        expect(await press("z", "KeyZ", !apple)).toBe(false);
+        await expect(header).toHaveText("outer!");
+        expect(await press("z", "KeyZ", apple)).toBe(true);
+        await expect(header).toHaveText("outer");
+        await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
+        expect(await press("{", "BracketLeft", !apple, true)).toBe(false);
+        expect(await press("{", "BracketLeft", apple, true)).toBe(true);
+        await expect(page.locator("#primary .st-fold-button")).toHaveAttribute("aria-expanded", "false");
+        expect(await press("j", "KeyJ", !apple)).toBe(false);
+        expect(await press("j", "KeyJ", apple)).toBe(true);
+        await expect(page).toHaveTitle("Host action");
+    });
+}
+
 test("moving adjacent collapsed blocks carries nested folds, the caret and each pane's fold choices through Undo", async ({ page }) => {
     await page.goto("/editing/");
     const top = "one\r\n  inner\n    x\r\n", bottom = "two\n  y\r\n", tail = "tail";

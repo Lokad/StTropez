@@ -141,7 +141,7 @@ export class ViewBindings {
         scope.defer(registerCommandPalette(editor));
         scope.defer(editor.commands.register({ id: "source.save", label: "Save source",
             enabled: () => this.ownsSaveTarget(target), run: () => this.controller.save() },
-            { keys: ["Ctrl+s", "Meta+s"], shared: true, repeat: false }).dispose);
+            { keys: ["Mod+s"], shared: true, repeat: false }).dispose);
     }
     private beginReference(kind: "refresh" | "accept"): void {
         if (!this.review) return;

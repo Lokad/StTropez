@@ -238,7 +238,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     });
     events.signal.addEventListener("abort", stopProvider, { once: true });
     try {
-        bind("signature.request", "Show signature help", ["Ctrl+Shift+Space", "Meta+Shift+Space"], available, () => { void request(); });
+        bind("signature.request", "Show signature help", ["Mod+Shift+Space"], available, () => { void request(); });
         bind("signature.previous", "Previous signature", ["ArrowUp"], canCycle, () => cycle(-1));
         bind("signature.next", "Next signature", ["ArrowDown"], canCycle, () => cycle(1));
         bind("signature.dismiss", "Dismiss signature help", ["Escape"], () => armed, () => { const visible = !!cell.get().anchor; cancel(); return visible; });

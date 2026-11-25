@@ -115,7 +115,7 @@ export class HostActionsTools {
                     && this.host.workspace.document(editor.view.documentId).key.variant === "working") this.cancel();
             }, signal);
             register({ id: "actions.request", label: "Preview module action", enabled: () => this.available(s),
-                run: from => { this.active = s; this.start(from !== "panel"); } }, { keys: ["Ctrl+.", "Meta+."] });
+                run: from => { this.active = s; this.start(from !== "panel"); } }, { keys: ["Mod+."] });
             register({ id: "actions.submitModule", label: "Preview the entered module", enabled: ownsModule,
                 run: () => editor.commands.run("actions.request", "panel") }, { keys: ["Enter"], shared: true, priority: 35, repeat: false });
             register({ id: "actions.dismiss", label: "Dismiss action preview", enabled: ownsModule,

@@ -517,7 +517,7 @@ function bindPaneCommands(target: TextEditor): void {
             const input = document.activeElement === findQuery ? findQuery : replacement;
             input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
             input.dispatchEvent(new Event("input", { bubbles: true }));
-        } }, { keys: ["Ctrl+Enter", "Meta+Enter"], shared: true, priority: 40, repeat: false });
+        } }, { keys: ["Mod+Enter"], shared: true, priority: 40, repeat: false });
     target.commands.register({ id: "find.close", label: "Close Find", enabled: ownsFind, run: closeFind });
     target.keymap.bind("Escape", "find.close", { shared: true, repeat: false });
 }

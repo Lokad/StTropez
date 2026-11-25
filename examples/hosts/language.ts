@@ -123,7 +123,7 @@ export class HostLanguageTools {
             ] as const) {
                 register({ id, label,
                     enabled: () => this.ownsSession(session) && editor.element.isConnected,
-                    run: () => { this.activate(session); apply(); } }, { keys: ["Ctrl+Shift+Code:" + code, "Meta+Shift+Code:" + code] });
+                    run: () => { this.activate(session); apply(); } }, { keys: ["Mod+Shift+Code:" + code] });
             }
         } catch (error) { listeners.abort(); throw error; }
     }

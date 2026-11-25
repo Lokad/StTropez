@@ -6,8 +6,8 @@ export function bindFindCommands(editor: TextEditor, signal: AbortSignal, open: 
     navigate: (direction: 1 | -1) => void | boolean, queryFocused: () => boolean) {
     const register = scopedCommands(editor, signal);
     const entries = [
-        { id: "find.open", label: "Find", keys: ["Ctrl+f", "Meta+f"], run: () => open(false) },
-        { id: "find.replace", label: "Find and replace", keys: ["Ctrl+h", "Meta+h"], run: () => open(true) },
+        { id: "find.open", label: "Find", keys: ["Mod+f"], run: () => open(false) },
+        { id: "find.replace", label: "Find and replace", keys: ["Mod+h"], run: () => open(true) },
         { id: "find.next", label: "Next match", keys: ["F3"], run: () => navigate(1) },
         { id: "find.previous", label: "Previous match", keys: ["Shift+F3"], run: () => navigate(-1) },
     ];

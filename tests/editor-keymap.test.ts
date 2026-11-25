@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createCommandRegistry } from "../src/browser/command-registry.ts";
-import { bindEditorDefaults, editorCommandLabels } from "../src/browser/editor-commands.ts";
+import { defaultEditorShortcuts, editorCommandLabels } from "../src/browser/editor-commands.ts";
 
 type Key = readonly [key: string, code: string, keyCode: number];
 const named: Record<string, number> = {
@@ -42,7 +42,7 @@ for (const layout of ["US International", "French AZERTY"]) {
         for (const [id, label] of Object.entries(editorCommandLabels)) {
             registry.commands.register({ id, label, run: () => { dispatched.push(id); } });
         }
-        bindEditorDefaults(registry.keymap, false);
+        for (const [keys, id] of defaultEditorShortcuts.standard) registry.keymap.bind(keys, id);
         const hostBindings = [
             ["quick-fix", "Ctrl+."], ["fold", "Ctrl+Shift+["], ["unfold", "Ctrl+Shift+]"], ["host", "Ctrl+Alt+]"],
         ] as const;
@@ -109,7 +109,7 @@ for (const layout of ["US International", "French AZERTY"]) {
         }
         // The editing browser test dispatches both strokes and checks which lines they change.
         for (const [id, suffix] of [["add-line-comment", "c"], ["remove-line-comment", "u"]] as const) {
-            assert.ok(registry.keymap.getShortcuts(id).includes("Ctrl+k Ctrl+" + suffix));
+            assert.ok(registry.keymap.getShortcuts(id).includes("Mod+k Mod+" + suffix));
         }
     });
 }

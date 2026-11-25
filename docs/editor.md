@@ -189,8 +189,20 @@ forget the current visit and `dispose()` to detach. Disposing the editor also de
 
 ### Shortcuts
 
-Ctrl/Cmd means either Control or Meta, without Alt. The word modifier is Control, or Option
-on Apple platforms. Shift extends movement from each selection's anchor.
+Ctrl/Cmd means Command on Apple platforms and Control elsewhere. The word modifier is Control
+on all platforms. Apple keyboards also accept Option. Shift extends movement from each selection's anchor.
+
+The browser entry exports `defaultEditorShortcuts.standard` and `.apple`. Each is a frozen
+list of `[keys, command]` pairs for a newly mounted editor. To show shortcuts after attaching
+features or rebinding commands, read `editor.keymap.getShortcuts(id)`.
+
+```ts
+import { defaultEditorShortcuts, type TextEditorCommand } from "sttropez/browser";
+
+export function defaultKeys(command: TextEditorCommand, platform: keyof typeof defaultEditorShortcuts) {
+    return defaultEditorShortcuts[platform].filter(([, id]) => id === command).map(([keys]) => keys);
+}
+```
 
 | Input | Command |
 | --- | --- |

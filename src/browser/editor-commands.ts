@@ -1,5 +1,4 @@
 import type { EditingCommand } from "../core/language-edits.ts";
-import type { EditorKeymap } from "./command-registry.ts";
 import { commandKey, historyKey, type CaretDirection, type DeletionCommand, type KeyBinding, type ViewCommand } from "./editing-keys.ts";
 
 const paneCommands = {
@@ -39,7 +38,10 @@ export function editorKeyCommand(id: string, key: string): KeyBinding | undefine
     return;
 }
 
-const defaults: readonly (readonly [string, keyof typeof editorCommandLabels])[] = [
+type Shortcut = readonly [keys: string, command: keyof typeof editorCommandLabels];
+const common: readonly Shortcut[] = [
+    ["Backspace", "delete-backward"], ["Shift+Backspace", "delete-backward"], ["Delete", "delete-forward"],
+    ["Ctrl+ArrowUp", "scroll-line-up"], ["Ctrl+ArrowDown", "scroll-line-down"],
     ["Tab", "indent"], ["Shift+Tab", "outdent"], ["Enter", "newline"], ["Shift+Enter", "newline"],
     ["Mod+z", "undo"], ["Mod+Shift+z", "redo"], ["Ctrl+y", "redo"], ["Mod+a", "select-all"],
     ["Mod+k Mod+c", "add-line-comment"], ["Mod+k Mod+u", "remove-line-comment"], ["Mod+u", "undo-caret"],
@@ -50,39 +52,37 @@ const defaults: readonly (readonly [string, keyof typeof editorCommandLabels])[]
     ["Mod+Shift+\\", "jump-to-bracket"], ["Alt+PageUp", "scroll-page-up"], ["Alt+PageDown", "scroll-page-down"],
     ["Mod+/", "line-comment"], ["Alt+Shift+a", "block-comment"],
 ];
-export function bindEditorDefaults(keymap: EditorKeymap, apple: boolean): void {
-    const caretKeys = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", PageUp: "page-up", PageDown: "page-down" } satisfies Record<string, CaretDirection>;
-    for (const [key, direction] of Object.entries(caretKeys)) {
-        keymap.bind(key, `move-${direction}`); keymap.bind("Shift+" + key, `select-${direction}`);
+type Movement = CaretDirection | `word-${"backward" | "forward"}` | `to-${"line" | "document"}-${"start" | "end"}`;
+
+function shortcuts(apple: boolean): readonly Shortcut[] {
+    const rows = [...common];
+    function movement(modifier: string, key: string, direction: Movement) {
+        rows.push([modifier + key, `move-${direction}`], [modifier + "Shift+" + key, `select-${direction}`]);
     }
-    keymap.bind("Backspace", "delete-backward"); keymap.bind("Shift+Backspace", "delete-backward");
-    keymap.bind("Delete", "delete-forward");
-    function boundary(modifiers: string, key: string, to: "line-start" | "line-end" | "document-start" | "document-end") {
-        keymap.bind(modifiers + key, `move-to-${to}`);
-        keymap.bind(modifiers + "Shift+" + key, `select-to-${to}`);
-    }
-    boundary("", "Home", "line-start"); boundary("", "End", "line-end");
-    for (const modifiers of ["Ctrl+", "Meta+", "Ctrl+Meta+"]) {
-        boundary(modifiers, "Home", "document-start"); boundary(modifiers, "End", "document-end");
+    for (const [key, direction] of [
+        ["ArrowLeft", "left"], ["ArrowRight", "right"], ["ArrowUp", "up"], ["ArrowDown", "down"],
+        ["PageUp", "page-up"], ["PageDown", "page-down"],
+    ] as const) movement("", key, direction);
+    for (const [key, end] of [["Home", "start"], ["End", "end"]] as const) {
+        movement("", key, `to-line-${end}`);
+        movement("Mod+", key, `to-document-${end}`);
     }
     if (apple) {
-        keymap.bind("Alt+Shift+Code:KeyA", "block-comment");
-        boundary("Meta+", "ArrowLeft", "line-start"); boundary("Meta+", "ArrowRight", "line-end");
-        boundary("Meta+", "ArrowUp", "document-start"); boundary("Meta+", "ArrowDown", "document-end");
+        rows.push(["Alt+Shift+Code:KeyA", "block-comment"]);
+        movement("Meta+", "ArrowLeft", "to-line-start");
+        movement("Meta+", "ArrowRight", "to-line-end");
+        movement("Meta+", "ArrowUp", "to-document-start");
+        movement("Meta+", "ArrowDown", "to-document-end");
     }
     for (const modifier of apple ? ["Ctrl+", "Alt+"] : ["Ctrl+"]) {
-        keymap.bind(modifier + "ArrowLeft", "move-word-backward"); keymap.bind(modifier + "ArrowRight", "move-word-forward");
-        keymap.bind(modifier + "Shift+ArrowLeft", "select-word-backward"); keymap.bind(modifier + "Shift+ArrowRight", "select-word-forward");
+        movement(modifier, "ArrowLeft", "word-backward");
+        movement(modifier, "ArrowRight", "word-forward");
         for (const prefix of [modifier, modifier + "Shift+"]) {
-            keymap.bind(prefix + "Backspace", "delete-word-backward"); keymap.bind(prefix + "Delete", "delete-word-forward");
+            rows.push([prefix + "Backspace", "delete-word-backward"], [prefix + "Delete", "delete-word-forward"]);
         }
     }
-    for (const [keys, command] of defaults) {
-        if (keys.includes("Mod+")) {
-            for (const modifier of ["Ctrl+", "Meta+"]) keymap.bind(keys.replaceAll("Mod+", modifier), command);
-        } else keymap.bind(keys, command);
-    }
-    for (const modifier of apple ? ["Ctrl"] : ["Ctrl", "Meta"]) {
-        keymap.bind(modifier + "+ArrowUp", "scroll-line-up"); keymap.bind(modifier + "+ArrowDown", "scroll-line-down");
-    }
+    return Object.freeze(rows.map(row => Object.freeze(row)));
 }
+
+/** Complete base-editor bindings. Feature controllers register their own shortcuts on attachment. */
+export const defaultEditorShortcuts = Object.freeze({ standard: shortcuts(false), apple: shortcuts(true) });

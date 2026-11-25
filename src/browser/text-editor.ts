@@ -46,7 +46,7 @@ import type { CharacterWarningConfiguration, CharacterWarningOptions } from "../
 import { mountCharacterWarnings } from "./character-warnings.ts";
 import type { CharacterWarningHighlights } from "./character-warnings.ts";
 import { createCommandRegistry, type EditorCommands, type EditorKeymap } from "./command-registry.ts";
-import { bindEditorDefaults, editCommand, editorCommandLabels, editorKeyCommand } from "./editor-commands.ts";
+import { defaultEditorShortcuts, editCommand, editorCommandLabels, editorKeyCommand } from "./editor-commands.ts";
 import { classifyEditingKey, commandKey, historyKey, isDeletionCommand, nativeDeletion } from "./editing-keys.ts";
 import type { DeletionCommand, KeyBinding, KeyStroke, ViewCommand } from "./editing-keys.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
@@ -231,7 +231,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             return !["line-comment", "add-line-comment", "remove-line-comment"].includes(id) || !!language.lineComment;
         } });
     }
-    bindEditorDefaults(registry.keymap, apple);
+    for (const [keys, command] of apple ? defaultEditorShortcuts.apple : defaultEditorShortcuts.standard) {
+        registry.keymap.bind(keys, command);
+    }
     function cancelScans(): void {
         wordJob?.cursor.dispose(); wordJob = undefined;
         cancelWordTask?.(); cancelWordTask = undefined;

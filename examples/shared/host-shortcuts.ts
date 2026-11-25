@@ -7,8 +7,10 @@ export function isUnmodifiedShortcut(event: KeyboardEvent): boolean {
     return available(event) && !event.ctrlKey && !event.metaKey && !event.shiftKey;
 }
 
+export const usesAppleShortcuts = () => /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+
 export function isPrimaryShortcut(event: KeyboardEvent): boolean {
-    return available(event) && event.ctrlKey !== event.metaKey;
+    return available(event) && event.ctrlKey !== event.metaKey && event.metaKey === usesAppleShortcuts();
 }
 
 export function isSaveKey(event: KeyboardEvent): boolean {

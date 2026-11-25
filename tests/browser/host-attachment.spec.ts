@@ -101,8 +101,8 @@ test("language shortcuts follow their panel and editor through attachment failur
             for (const [feature, discover, shortcut, priority] of [
                 ["links", "links.discover", "F4", 7], ["colors", "colors.discover", "F6", 8],
                 ["navigation", "navigation.definition", "F12", 5], ["rename", "rename.start", "F2", 9],
-                ["actions", "actions.request", "Ctrl+.", 6], ["hover", "hover.inspect", "Ctrl+k Ctrl+i", 20],
-                ["signature", "signature.request", "Ctrl+Shift+Space", 10],
+                ["actions", "actions.request", "Mod+.", 6], ["hover", "hover.inspect", "Mod+k Mod+i", 20],
+                ["signature", "signature.request", "Mod+Shift+Space", 10],
             ] as const) {
                 const panel = feature === "hover" ? bindings.signature : bindings[feature];
                 const first = mountTextEditor(host, controller.workspace, tab);
@@ -142,10 +142,8 @@ test("language shortcuts follow their panel and editor through attachment failur
         return results;
     });
     for (const result of results) {
-        const shortcuts: string[] = [result.shortcut];
-        if (result.shortcut.startsWith("Ctrl")) shortcuts.push(result.shortcut.replaceAll("Ctrl", "Meta"));
         expect.soft(result, result.feature).toMatchObject({ rollback: { refused: true, commands: [], sessions: 0, escape: true },
-            afterEditor: 0, remounted: shortcuts,
+            afterEditor: 0, remounted: [result.shortcut],
             reattached: false, afterPanel: [], sessions: 0 });
     }
 });

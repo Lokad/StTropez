@@ -2,13 +2,13 @@ import { captureViewRequest, type CapturedViewRequest, type TextEditor } from ".
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 
 const shortcuts = {
-    complete: ["Show completions", "Ctrl+Code:Space", "Meta+Code:Space"],
-    signature: ["Show signature help", "Ctrl+Shift+Space", "Meta+Shift+Space"],
+    complete: ["Show completions", "Mod+Code:Space"],
+    signature: ["Show signature help", "Mod+Shift+Space"],
     rename: ["Rename symbol", "F2"],
-    inspect: ["Inspect type", "Ctrl+k Ctrl+i", "Meta+k Meta+i"],
+    inspect: ["Inspect type", "Mod+k Mod+i"],
     definition: ["Go to definition", "F12"],
     references: ["Find references", "Shift+F12"],
-    quickfix: ["Show quick fixes", "Ctrl+.", "Meta+."],
+    quickfix: ["Show quick fixes", "Mod+."],
 } as const;
 type Command = keyof typeof shortcuts;
 

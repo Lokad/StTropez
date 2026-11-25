@@ -558,7 +558,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         cell.clearSnapshotListeners();
     };
     try {
-        register("completion.request", "Show completions", ["Ctrl+Code:Space", "Meta+Code:Space"], available, () => { void request(); });
+        register("completion.request", "Show completions", ["Mod+Code:Space"], available, () => { void request(); });
         register("completion.dismiss", "Dismiss completion", ["Escape"], () => !!(snippet || job || inputIntent || autoFrame !== undefined), () => {
             if (snippet && (job || inputIntent)) {
                 cancelAuto(); if (job) counters.cancelled++; release(); publish("Completion dismissed."); return true;
