@@ -164,6 +164,11 @@
 .st-editor-overlay { position: fixed; box-sizing: border-box; margin: 0; overflow: auto; }
 .st-editor > .st-editor-overlay[popover] { inset: auto; color: inherit; cursor: auto; user-select: text; overscroll-behavior: contain; }
 .st-editor-overlay[hidden] { display: none; }
+.st-signature { width: min(420px, calc(100vw - 16px)); max-height: 290px; padding: 12px 16px; border: 1px solid #50627f;
+    border-radius: 7px; background: var(--st-signature-background, var(--st-background, #1b283c)); box-shadow: 0 8px 28px #0007; font: 13px/1.5 var(--st-font, monospace); }
+.st-signature pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.st-signature mark { color: var(--st-signature-parameter-text, #e2fff6); background: var(--st-signature-parameter-background, #365474); border-radius: 2px; }
+.st-signature button { cursor: pointer; }
 
 .st-find-bar:where(:not([hidden])) { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 12px; border-top: 1px solid var(--st-find-border, #36435a); background: var(--st-find-background, #192438); color: var(--st-foreground, #e1e7ef); }
 .st-find-bar button { padding: 4px 8px; }

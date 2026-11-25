@@ -4,11 +4,10 @@ import type { LspWorkspace } from "sttropez/protocol";
 export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const result = document.querySelector<HTMLOutputElement>("#result")!;
     const choices = document.querySelector<HTMLElement>("#choices")!;
-    const hint = document.querySelector<HTMLOutputElement>("#hint")!;
     const problems = document.querySelector<HTMLElement>("#diagnostics")!;
     const language = attachEditorLanguage(editor, provider, {
         completion: { autoConnect: false, automatic: false, list: true }, diagnostics: { autoConnect: false },
-        hover: {}, signature: {}, navigation: {}, occurrences: {}, links: { paint: true },
+        hover: {}, signature: { popup: true }, navigation: {}, occurrences: {}, links: { paint: true },
         colors: { swatches: true }, rename: {}, codeActions: {}, commands: {},
     });
     const events = new AbortController();
@@ -44,9 +43,6 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
             button(item.message, () => { item.select(); })));
     }
     const stopDiagnostics = language.diagnostics.subscribe(renderDiagnostics);
-    const stopSignature = language.signature.subscribe(() => {
-        hint.value = language.signature.getSnapshot().signature?.label ?? "";
-    });
     const stopEdits = editor.workspace.onDocumentChange(editor.view.documentId, change => {
         // The language command reports its outcome after its refactor reaches this listener.
         if (change.origin !== "host" || change.kind !== "refactor") intent++;
@@ -116,11 +112,9 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     return () => {
         events.abort();
         stopDiagnostics();
-        stopSignature();
         stopEdits();
         language.dispose();
         clear();
-        hint.value = "";
         problems.replaceChildren();
     };
 }

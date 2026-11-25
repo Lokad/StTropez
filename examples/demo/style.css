@@ -59,7 +59,6 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .demo-language-popups pre { margin: 0; font: 13px/1.6 var(--st-font); white-space: pre-wrap; overflow-wrap: anywhere; }
 .st-documentation code { font-family: var(--st-font); }
 .demo-language-popups p, .demo-language-popups span { font-size: 12px; color: #abc5d9; }
-.demo-language-popups mark { color: #c5f4e6; background: #365474; border-radius: 2px; }
 button, select, input { font: inherit; font-size: 13px; color: inherit; border: 1px solid #36435a; border-radius: 5px; background: #1b273a; padding: 7px 11px; }
 button { cursor: pointer; } button:hover { background: #25354e; } button:disabled { opacity: .5; cursor: default; }
 button.primary { color: #0d201d; background: #8ce0ca; border-color: #8ce0ca; font-weight: 600; }

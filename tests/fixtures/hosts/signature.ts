@@ -47,7 +47,6 @@ export class HostSignatureTools {
         this.cell.set({ ...state, message: message ?? state.message, visible: !!state.anchor, pending: state.status === "pending",
             connected: this.connected(), disconnected: this.disconnected });
     }
-    readonly activeEditor = () => this.active?.editor;
     command(id: Command) {
         const session = this.active, state = session?.controller.getSnapshot(), entry = session?.editor.commands.get(id);
         return { label: entry?.label ?? labels[id], disabled: !entry?.enabled,
@@ -63,6 +62,7 @@ export class HostSignatureTools {
         const language = attachEditorLanguage(editor, this.options.provider, {
             hover: this.hover.controllerOptions(editor, settings),
             signature: {
+                popup: { overloadControls: false },
                 canCapture: () => !this.disconnected && this.canCapture(editor.view.documentId),
                 beforeRequest: () => { this.active = session; this.hover.dismiss(); },
                 ...(this.options.prepare ? { prepareRequest: access => this.options.prepare!(this.fixture.take())(access) } : {}),

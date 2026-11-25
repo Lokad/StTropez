@@ -272,7 +272,10 @@ HTML tags. Otherwise the client requests plaintext. Completion documentation alw
 
 ### Signature help
 
-Enable `signature: {}` on the language attachment. Its `signature` controller follows the primary caret.
+Set `signature: { popup: true }` on the language attachment to show help at the primary caret.
+The popup highlights the active parameter and shows its documentation. For translated labels, link
+handling or a host-owned overload toolbar, pass `SignaturePopupOptions` in `popup`. Set
+`overloadControls: false` to hide the popup's overload buttons.
 Await `signature.request()` for a `done` result with the displayed signature or an `empty`
 snapshot. A dismissed or superseded request returns `stale`, an unavailable view returns
 `refused`, and a provider error or timeout returns `failed`.
@@ -284,8 +287,8 @@ An intercepted key leaves help closed. Up and Down
 cycle through overloads. Escape closes the topmost popup. A higher-priority completion list gets
 these keys first.
 
-Subscribe to the controller and render `getSnapshot().signature`. Its label and parameter offsets
-describe the highlighted text. Use the snapshot's `anchor` to position the popup. While you type
+For a custom view, use `signature: {}`, subscribe to the controller and render `getSnapshot().signature`.
+Its label and parameter offsets describe the highlighted text. Use the snapshot's `anchor` to position the popup. While you type
 an argument expression such as `item.price` at the same caret, a `pending` snapshot keeps the last
 signature at the new position. A comma clears the previous parameter highlight until the provider
 identifies the next one. Left, Right, Backspace and Delete also preserve the label within an

@@ -2,6 +2,7 @@ import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
 import { signatureHelpMethod } from "../protocol/lsp-methods.ts";
 import { controllerObservable } from "./controller-observable.ts";
+import { mountSignaturePopup, type SignaturePopupOptions } from "./signature-popup.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentViewSnapshot } from "../core/workspace.ts";
@@ -16,7 +17,12 @@ import type { TextEditor } from "./text-editor.ts";
 import { revealCaretInPage } from "./input-caret.ts";
 import { acceptedTypedText, typedTextEvent } from "./input-events.ts";
 
-export type SignatureControllerOptions = Readonly<{ canCapture?: () => boolean; beforeRequest?: () => void; prepareRequest?: LspPrepare }>;
+export type SignatureControllerOptions = Readonly<{
+    canCapture?: () => boolean;
+    beforeRequest?: () => void;
+    prepareRequest?: LspPrepare;
+    popup?: boolean | SignaturePopupOptions;
+}>;
 export type SignatureSnapshot = Readonly<{
     status: "idle" | "pending" | "ready" | "empty" | "expired" | "failed" | "disposed"; message: string;
     anchor: Readonly<{ revision: number; offset: number }> | null;
@@ -35,17 +41,23 @@ const changed = Object.freeze({ triggerKind: 3, isRetrigger: true } as const);
 
 /** Manual and advertised signature triggers on a single mounted editing surface. */
 export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, options: SignatureControllerOptions): SignatureController {
-    const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
+    const { workspace, view, tab, element } = editor;
+    const win = element.ownerDocument.defaultView!;
     const { provider } = owner;
     const client = signatureClient(owner);
     const events = new AbortController(), notifications = workspace.createNotificationScope(), cell = new Store(idle, notifications);
+    const { signal } = events;
+    const onDispose = (release: () => void) => signal.addEventListener("abort", release, { once: true });
+    const currentView = view.getSnapshot;
+    const focused = () => editor.getSnapshot().focused;
+    const liveHelp = (current: Request) => current.capture.isCurrent() && (!current.help || current.help.isCurrent());
     let job: Request | undefined, armed = false, requested = 0, applied = 0;
     let queued: { timer: number; context: LspSignatureContext } | undefined;
     function publish(next: SignatureSnapshot) {
         notifications.publish(cell, Object.freeze(next));
         return next;
     }
-    const available = () => !events.signal.aborted && canInspectView(editor, options.canCapture);
+    const available = () => !signal.aborted && canInspectView(editor, options.canCapture);
     function stopTimer() { win.clearTimeout(queued?.timer); queued = undefined; }
     function releaseRequest(previous: Request | undefined) {
         if (previous) { win.clearTimeout(previous.timer); previous.call?.cancel(); previous.capture.cancel(); }
@@ -65,17 +77,17 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     }
     function dismiss(afterBlur = false) {
         end(afterBlur);
-        if (!events.signal.aborted && cell.get() !== idle) publish(idle);
+        if (!signal.aborted && cell.get() !== idle) publish(idle);
     }
     function cancel() { notifications.assertWritable(); dismiss(); }
     function schedule(context: LspSignatureContext, afterTyping?: DocumentViewSnapshot) {
         stopTimer();
         const deadline = win.performance.now() + 5000;
         const poll = () => {
-            if (!queued || !armed || !editor.getSnapshot().focused || win.performance.now() >= deadline) { cancel(); return; }
+            if (!queued || !armed || !focused() || win.performance.now() >= deadline) { cancel(); return; }
             if (!available()) { queued.timer = win.setTimeout(poll, 50); return; }
             queued = undefined;
-            if (afterTyping && view.getSnapshot() !== afterTyping) {
+            if (afterTyping && currentView() !== afterTyping) {
                 if (context.isRetrigger) request(changed); else cancel();
                 return;
             }
@@ -85,12 +97,12 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     }
     function expire(current: Request, followCaret = true) {
         if (current !== job) return;
-        if (followCaret && current.argumentKey && editor.getSnapshot().focused && available()) {
-            const after = view.getSnapshot(), text = crossedArgument(current, after);
+        if (followCaret && current.argumentKey && focused() && available()) {
+            const after = currentView(), text = crossedArgument(current, after);
             if (text && transferLabel(after, text)) { schedule(changed, after); return; }
         }
         release(); publish({ ...idle, status: "expired", message: "Signature context changed." });
-        if (followCaret && armed && provider.getSnapshot().phase === "ready" && editor.getSnapshot().focused) {
+        if (followCaret && armed && provider.getSnapshot().phase === "ready" && focused()) {
             if (!queued) schedule(changed);
         } else end();
     }
@@ -116,9 +128,9 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
             const retained = context.isRetrigger && job && !job.call && job.capture.isCurrent() ? job : undefined;
             if (!retained) release();
             if (context === manual) {
-                const caret = view.getSnapshot().selection;
+                const caret = currentView().selection;
                 editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
-                if (editor.getSnapshot().focused) revealCaretInPage(editor.element);
+                if (focused()) revealCaretInPage(element);
             }
             current = retained ?? captureRequest();
             if (!current) {
@@ -203,8 +215,8 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         return true;
     }
     function typed(event: Event) {
-        const after = view.getSnapshot();
-        const text = acceptedTypedText(event, editor.element, after);
+        const after = currentView();
+        const text = acceptedTypedText(event, element, after);
         if (text === undefined || !workspace.ownsDocumentView(view, tab)) return;
         const doc = workspace.document(view.documentId);
         let trigger = "";
@@ -225,44 +237,46 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     }
     function bind(id: string, label: string, keys: string[], enabled: () => boolean, run: () => void | boolean) {
         const registration = editor.commands.register({ id, label, owner: "editor", category: "Signature help", enabled, run }, { keys, priority: 10 });
-        events.signal.addEventListener("abort", registration.dispose, { once: true });
+        onDispose(registration.dispose);
     }
     let providerState = provider.getSnapshot();
-    const stopProvider = provider.subscribe(() => {
+    onDispose(provider.subscribe(() => {
         const current = job, next = provider.getSnapshot();
         const changedProvider = next.phase !== "ready" || next.epoch !== providerState.epoch
                 || next.registrationVersion(signatureHelpMethod) !== providerState.registrationVersion(signatureHelpMethod);
         providerState = next;
         if (current && changedProvider) delete current.argumentKey;
         if (current && (current.help && !current.help.isCurrent() || cell.get().signature && changedProvider)) queueMicrotask(() => expire(current));
-    });
-    events.signal.addEventListener("abort", stopProvider, { once: true });
+    }));
     try {
         bind("signature.request", "Show signature help", ["Mod+Shift+Space"], available, () => { void request(); });
         bind("signature.previous", "Previous signature", ["ArrowUp"], canCycle, () => cycle(-1));
         bind("signature.next", "Next signature", ["ArrowDown"], canCycle, () => cycle(1));
         bind("signature.dismiss", "Dismiss signature help", ["Escape"], () => armed, () => { const visible = !!cell.get().anchor; cancel(); return visible; });
+        if (options.popup) {
+            onDispose(mountSignaturePopup(editor, cell.observable, options.popup === true ? {} : options.popup));
+        }
     } catch (error) {
         events.abort();
         client.dispose();
         throw error;
     }
-    editor.element.addEventListener(typedTextEvent, typed, { signal: events.signal });
-    editor.element.addEventListener("keydown", event => {
+    element.addEventListener(typedTextEvent, typed, { signal });
+    element.addEventListener("keydown", event => {
         if (!job) return;
         delete job.argumentKey;
         if (!event.isComposing && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
             && ["Backspace", "Delete", "ArrowLeft", "ArrowRight"].includes(event.key) && cell.get().signature
-            && job.capture.isCurrent() && (!job.help || job.help.isCurrent())) job.argumentKey = event.key;
-    }, { capture: true, signal: events.signal });
-    editor.element.addEventListener("keyup", () => { if (job) delete job.argumentKey; }, { signal: events.signal });
-    editor.element.addEventListener("focusout", () => dismiss(true), { signal: events.signal });
+            && liveHelp(job)) job.argumentKey = event.key;
+    }, { capture: true, signal });
+    element.addEventListener("keyup", () => { if (job) delete job.argumentKey; }, { signal });
+    element.addEventListener("focusout", () => dismiss(true), { signal });
     editor.onEditIntent(kind => {
         if (kind !== "beforeinput") cancel();
-        else if (job) job.typing = job.capture.isCurrent() && (!job.help || job.help.isCurrent());
-    }, events.signal);
+        else if (job) job.typing = liveHelp(job);
+    }, signal);
     function dispose() {
-        if (events.signal.aborted) return;
+        if (signal.aborted) return;
         notifications.assertWritable();
         events.abort();
         dismiss();
@@ -270,5 +284,5 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         publish({ ...idle, status: "disposed" });
         cell.clearSnapshotListeners();
     }
-    return Object.freeze({ request: () => request(), cancel, dispose, ...controllerObservable(cell, "Signature", () => events.signal.aborted), getDiagnostics: () => Object.freeze({ requested, applied, scheduled: !!queued }) });
+    return Object.freeze({ request: () => request(), cancel, dispose, ...controllerObservable(cell, "Signature", () => signal.aborted), getDiagnostics: () => Object.freeze({ requested, applied, scheduled: !!queued }) });
 }

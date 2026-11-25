@@ -202,7 +202,7 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await select(page, source, "const discounted = applyDiscount"); await source.press("ArrowRight"); await source.press("ArrowLeft");
     await source.press("Control+k"); await source.press("Control+i");
-    const hover = page.locator(".demo-language-popups .host-symbol-info:not(.host-signature)");
+    const hover = page.locator(".demo-language-popups .host-symbol-info");
     const caret = page.locator("#editor .st-input-caret");
     const clearsLine = async (popup: Locator) => {
         const line = await caret.boundingBox(), box = await popup.boundingBox();
@@ -841,7 +841,7 @@ export async function runDemoWalkthrough(page: Page, url = "/") {
     await expect(page.getByRole("region", { name: "JavaScript output", exact: true })).toContainText("calculateTotal(cart, 0.2)", { timeout: 30000 });
     await select(page, main, "calculateTotal(cart"); await main.press("ArrowLeft"); await main.press("ArrowRight");
     await main.press("Control+k"); await main.press("Control+i");
-    await expect(page.locator(".demo-language-popups .host-symbol-info:not(.host-signature)")).toContainText("calculateTotal(items: readonly CartItem[]");
+    await expect(page.locator(".demo-language-popups .host-symbol-info")).toContainText("calculateTotal(items: readonly CartItem[]");
     await main.press("Escape");
     await select(page, main, "calculateTotal(cart, "); await main.press("ArrowRight"); await main.press("Control+Shift+Space");
     await expect(page.getByRole("tooltip", { name: "Signature help", exact: true }).getByLabel("Active signature parameter")).toContainText("discount");
@@ -1164,7 +1164,7 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     await source.press("Control+Home"); await expect(page.locator("#editor")).toContainText("const renamedValueFromTheSharedModule = 1;");
     await source.press("Control+ArrowRight"); await source.press("ArrowRight");
     await source.press("Control+k"); await source.press("Control+i");
-    const info = page.locator(".demo-language-popups .host-symbol-info:not(.host-signature)");
+    const info = page.locator(".demo-language-popups .host-symbol-info");
     await expect(info).toContainText("renamedValueFromTheSharedModule"); await source.press("Escape");
     await source.press("Control+z"); await expect(page.locator("#files")).not.toContainText("●");
     await expect(page.locator("#editor")).toContainText("sharedValue");

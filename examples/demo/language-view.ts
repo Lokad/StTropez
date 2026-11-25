@@ -3,6 +3,7 @@ import type { TextEditor, CompletionController, CompletionSnippet, NavigationOri
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
+import { canOpenDemoHelp } from "./diagnostics.ts";
 import { mountDemoInspection } from "./inspect.ts";
 import { mountDemoSymbols } from "./symbols.ts";
 import type { DemoSymbolTarget } from "./symbols.ts";
@@ -43,6 +44,10 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
             }
         }, reportError);
         const valid = () => !disposed && editor.element.isConnected && !editor.activity().disposed && workspace.tabs.resolve(target)?.surface.kind === "text";
+        const canOpenLink = (target: string) => valid() && canOpenDemoHelp(target);
+        const links = { canOpenLink, openLink(target: string) {
+            if (canOpenLink(target)) window.open(target, "_blank", "noopener,noreferrer");
+        } };
         const render = () => {
             const state = controller?.getSnapshot();
             if (state) commands.feedback("complete", state.choices.length ? "" : state.pending ? "Getting completions…" : state.message, !state.pending || !!state.choices.length);
@@ -72,7 +77,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                 const tools = attachEditorLanguage(editor, provider, {
                     codeActions: demoActionPolicy(workspace, file, language, idle), occurrences: {},
                     completion: { autoConnect: false, filterManualCompletions: true, canCapture: valid, list: true },
-                    signature: { canCapture: valid, beforeRequest: () => {
+                    signature: { popup: links, canCapture: valid, beforeRequest: () => {
                         inspection?.dismissHover();
                         closeProjectPopups();
                     } },
@@ -84,7 +89,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                 });
                 controller = tools.completion;
                 scope.defer(tools.dispose);
-                inspection = mountDemoInspection(scope, editor, tools, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
+                inspection = mountDemoInspection(scope, editor, tools, links, valid, () => !!controller?.getSnapshot().choices.length || !!symbols?.isOpen() || !!actions?.isOpen(),
                     () => controller?.cancel(), closeProjectPopups,
                     state => {
                         if (state.status === "empty" || state.status === "failed") commands.feedback("signature", state.message, true);

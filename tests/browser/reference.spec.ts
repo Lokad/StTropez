@@ -116,6 +116,18 @@ test("the reference app edits, reviews and saves the document while its language
     await expect(page.locator(".st-comparison-added").first()).toContainText("Review this quote");
     await page.getByRole("button", { name: "Hover", exact: true }).click();
     await expect(page.locator("#result")).toContainText("file:///reference/quote.ts");
+    await working.press("Control+End");
+    await page.keyboard.insertText("\nlookup(");
+    await page.getByRole("button", { name: "Signature", exact: true }).click();
+    const signature = page.getByRole("tooltip", { name: "Signature help" });
+    const parameter = signature.getByLabel("Active signature parameter");
+    await expect(parameter).toHaveText("key: string");
+    await signature.getByRole("button", { name: "Next signature" }).click();
+    await expect(parameter).toHaveText("keys: readonly string[]");
+    await expect(working).toBeFocused();
+    await working.press("Escape");
+    await expect(signature).toBeHidden();
+    await working.press("Control+z");
     await working.press("Control+Home");
     await page.keyboard.type("// Approved ");
     await page.getByRole("button", { name: "Save for this tab" }).click();

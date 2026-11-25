@@ -71,7 +71,8 @@ test("language mounting releases partial owners, preserves failures and rejects 
             const { resources, documents, tabs, views, leases, subscriptions } = project.workspace.diagnostics();
             return { resources, documents, tabs, views, leases, subscriptions };
         };
-        const panels = ".st-completion, .demo-snippet, .demo-language-popups, .demo-symbols, .demo-rename, .demo-actions";
+        const panels = [".st-completion", ".st-signature", ".demo-snippet", ".demo-language-popups", ".demo-symbols", ".demo-rename", ".demo-actions"];
+        const panelCounts = () => panels.map(selector => ({ selector, count: document.querySelectorAll(selector).length }));
         const results = [], feedback = document.createElement("output");
         try {
             await frames();
@@ -100,7 +101,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
                     if (point === "late") { view!.dispose(); view!.dispose(); release!(provider); }
                     await frames();
                     const reported = errors[0];
-                    results.push({ point, before, after: ownership(), panels: document.querySelectorAll(panels).length, errors: errors.length,
+                    results.push({ point, before, after: ownership(), panels: panelCounts(), errors: errors.length,
                         original: point === "late" ? errors.length === 0 : point === "cleanup" ? reported instanceof AggregateError
                             && reported.errors[0] === failure && reported.errors[1] === cleanupFailure : reported === failure });
                 } finally {
@@ -110,15 +111,18 @@ test("language mounting releases partial owners, preserves failures and rejects 
             }
             const view = mountDemoLanguage(project, file, editor, project.language, () => {}, error => { throw error; }, feedback, document.body);
             await frames();
-            results.push({ point: "retry", panels: document.querySelectorAll(panels).length }); view.dispose();
+            results.push({ point: "retry", panels: panelCounts() }); view.dispose();
         } finally { editor.dispose(); project.dispose(); await project.language.dispose(); }
         return results;
     });
     await info.attach("language-ownership", { body: JSON.stringify(results, null, 2), contentType: "application/json" });
     for (const result of results) {
-        if (result.point === "retry") { expect(result.panels).toBe(6); continue; }
+        for (const { selector, count } of result.panels) {
+            expect(count, result.point + " " + selector).toBe(result.point === "retry" ? 1 : 0);
+        }
+        if (result.point === "retry") continue;
         expect(result.after, result.point).toEqual(result.before);
-        expect(result.panels, result.point).toBe(0); expect(result.original, result.point).toBe(true);
+        expect(result.original, result.point).toBe(true);
         expect(result.errors, result.point).toBe(result.point === "late" ? 0 : 1);
     }
 });

@@ -26,7 +26,6 @@ import { documentLinksPanelModel } from "./document-links-panel.ts";
 import { actionsPanelModel } from "./actions-panel.ts";
 import { renamePanelModel } from "./rename-panel.ts";
 import { signatureCommandsModel } from "./signature-panel.ts";
-import { mountSignaturePopup } from "../../../examples/shared/signature-popup.ts";
 import { mountHoverPanel } from "../../../examples/shared/hover-panel.ts";
 import { HostDraftRecovery } from "./draft-recovery.ts";
 import { createBrowserDraftStore } from "../../../examples/shared/draft-store.ts";
@@ -55,7 +54,6 @@ const metadataCommitted = () => { counters.metadata++; };
 // Stable refs lend empty subtrees to the shared presenters. Their returned cleanup also
 // handles Strict Mode replay; documentation and fitting never synchronize through effects.
 const hoverPopupRef = (host: HTMLDivElement | null) => host ? mountHoverPanel(host, bindings.hover) : undefined;
-const signaturePopupRef = (host: HTMLDivElement | null) => host ? mountSignaturePopup(host, bindings.signature.state, bindings.signature.activeEditor) : undefined;
 function useObserved<T>(store: Observable<T>): T { return useSyncExternalStore(store.subscribe, store.getSnapshot); }
 
 function Commands() {
@@ -174,9 +172,8 @@ function SymbolInfo() {
 }
 function SignatureTools() {
     const tools = bindings.signature, model = signatureCommandsModel(tools, useObserved(tools.state));
-    return <><section className="host-language" aria-label={model.label}><h2>{model.title}</h2><output aria-label={model.status.label}>{model.status.text}</output>
-        <div>{model.actions.map(action => <button key={action.label} onPointerDown={event => event.preventDefault()} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div></section>
-        <div ref={signaturePopupRef} /></>;
+    return <section className="host-language" aria-label={model.label}><h2>{model.title}</h2><output aria-label={model.status.label}>{model.status.text}</output>
+        <div>{model.actions.map(action => <button key={action.label} onPointerDown={event => event.preventDefault()} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div></section>;
 }
 function TablePasteTools() {
     const tools = bindings.tablePaste, model = tablePastePanelModel(tools, useObserved(tools.state));
