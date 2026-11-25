@@ -27,6 +27,9 @@ export type EditorKeymap = Readonly<{
 }>;
 
 const modifiers = ["ctrl", "meta", "alt", "shift"];
+export function isModifierKey(key: string): boolean {
+    return ["Control", "Meta", "Alt", "Shift"].includes(key);
+}
 function stroke(text: string, apple: boolean): string {
     const parts = text.toLowerCase().split("+"), key = parts.pop()!;
     const names = parts.map(part => part === "mod" ? (apple ? "meta" : "ctrl") : part);
@@ -38,32 +41,15 @@ function stroke(text: string, apple: boolean): string {
 
 // Resolve punctuation shortcuts from the position and legend together. The same position
 // can carry different shortcut keys on French and US keyboards. Shift remains a modifier.
-function shortcutPunctuation({ code, key }: KeyboardEvent): string | undefined {
-    switch (code) {
-        case "Comma":
-            if (key === ";" || key === ".") return ".";
-            break;
-        case "Period":
-            if (key === ":" || key === "/") return "/";
-            if (key === "." || key === ">") return ".";
-            break;
-        case "Slash":
-            if (key === "/" || key === "?") return "/";
-            break;
-        case "Minus":
-            if (key === ")" || key === "°") return "[";
-            break;
-        case "BracketLeft":
-            if (key === "[" || key === "{") return "[";
-            if (key === "Dead" || key === "^" || key === "¨") return "]";
-            break;
-        case "BracketRight":
-            if (key === "]" || key === "}") return "]";
-            break;
-        case "Backslash":
-            if (key === "\\" || key === "|" || key === "*" || key === "µ") return "\\";
-    }
-}
+const punctuationByCode = new Map<string, Readonly<Record<string, string>>>([
+    ["Comma", { ";": ".", ".": "." }],
+    ["Period", { ":": "/", "/": "/", ".": ".", ">": "." }],
+    ["Slash", { "/": "/", "?": "/" }],
+    ["Minus", { ")": "[", "°": "[" }],
+    ["BracketLeft", { "[": "[", "{": "[", Dead: "]", "^": "]", "¨": "]" }],
+    ["BracketRight", { "]": "]", "}": "]" }],
+    ["Backslash", { "\\": "\\", "|": "\\", "*": "\\", "µ": "\\" }],
+]);
 
 type Binding = Readonly<{ id: string; keys: string; shared: boolean; priority: number; repeat: boolean }>;
 type Strokes = Map<string, readonly Binding[]>;
@@ -100,11 +86,12 @@ export function commandRegistration(entries: Map<string, EditorCommand>, scopes:
     };
 }
 
-/** Bindings belong to one mounted view. Only the prefix of a pending chord retains event-time state. */
+/** Bindings, held shortcuts and pending chords belong to one mounted view. */
 export function createCommandRegistry(apple: boolean, available: () => boolean, chordCurrent: () => () => boolean,
     pane: () => TextEditor, shared?: ReadonlyMap<string, EditorCommand>, label?: (id: string, fallback: string) => string | undefined) {
     const entries = new Map<string, EditorCommand>();
     const bindings = new Map<string, Strokes>();
+    const held = new Set<string>();
     let disposed = false;
     let prefix: { keys: Strokes; event: KeyboardEvent; target: EventTarget | null; current: () => boolean; listeners: AbortController; timer: number } | undefined;
     function reset() {
@@ -117,18 +104,26 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         Object.freeze({ id: entry.id, owner: entry.owner ?? "host",
             label: entry.owner === "editor" ? label?.(entry.id, entry.label) ?? entry.label : entry.label,
             category: entry.category ?? "General", enabled: enabled(entry, argument) });
+    function remove(first: string, last: string, keep?: (binding: Binding) => boolean) {
+        const group = bindings.get(first);
+        const choices = group?.get(last);
+        if (!group || !choices) return;
+        const remaining = keep ? choices.filter(keep) : [];
+        if (remaining.length === choices.length) return;
+        reset();
+        if (remaining.length) group.set(last, remaining);
+        else {
+            group.delete(last);
+            if (!group.size) bindings.delete(first);
+        }
+    }
     const scope: CommandScope = {
         conflicts: id => disposed || !!lookup(id),
         bind: (...args) => keymap.bind(...args),
         removeBindings(id) {
             reset();
             for (const [first, group] of bindings) {
-                for (const [last, choices] of group) {
-                    const kept = choices.filter(binding => binding.id !== id);
-                    if (!kept.length) group.delete(last);
-                    else if (kept.length !== choices.length) group.set(last, kept);
-                }
-                if (!group.size) bindings.delete(first);
+                for (const last of group.keys()) remove(first, last, binding => binding.id !== id);
             }
         },
     };
@@ -154,11 +149,17 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.getModifierState("AltGraph") || !event.cancelable) {
             reset(); return false;
         }
-        if (["Control", "Meta", "Alt", "Shift"].includes(event.key)) return false;
+        if (isModifierKey(event.key)) return false;
+        const code = event.code || event.key;
+        if (event.repeat && held.has(code)) {
+            event.preventDefault();
+            return true;
+        }
         const modifiers = (event.ctrlKey ? "ctrl+" : "") + (event.metaKey ? "meta+" : "") + (event.altKey ? "alt+" : "");
         const mods = modifiers + (event.shiftKey ? "shift+" : "");
         const character = event.key === " " ? "space" : event.key === "+" ? "plus" : event.key.toLowerCase();
-        const punctuation = (event.ctrlKey || event.metaKey) && !event.altKey ? shortcutPunctuation(event) : undefined;
+        const legends = (event.ctrlKey || event.metaKey) && !event.altKey ? punctuationByCode.get(event.code) : undefined;
+        const punctuation = legends && Object.hasOwn(legends, event.key) ? legends[event.key] : undefined;
         const key = mods + (punctuation ?? character);
         const physical = mods + "code:" + event.code.toLowerCase();
         // Other symbols and digits can require Shift to produce their binding.
@@ -178,7 +179,9 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
                 const entry = lookup(binding.id);
                 return !!entry && enabled(entry);
             }
-            return execute(binding.id);
+            if (!execute(binding.id)) return false;
+            if (!binding.repeat) held.add(code);
+            return true;
         });
         if (pending && pending.target === chordTarget(event) && pending.current()) {
             const suffix = match(pending.keys);
@@ -212,16 +215,10 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
                 throw new Error(`Key binding conflicts: ${keys}`);
             const binding = { id, keys: keys.trim().replace(/\s+/g, " "), shared: options?.shared ?? false, priority, repeat: options?.repeat ?? true };
             reset(); group.set(last, [...choices, binding].sort((a, b) => b.priority - a.priority)); bindings.set(first, group);
-            return { dispose() {
-                const current = bindings.get(first)?.get(last);
-                if (!current?.includes(binding)) return;
-                if (current.length === 1) keymap.unbind(keys);
-                else { reset(); group.set(last, current.filter(choice => choice !== binding)); }
-            } };
+            return { dispose: () => remove(first, last, candidate => candidate !== binding) };
         },
         unbind(keys) {
-            const [first, last] = sequence(keys), group = bindings.get(first);
-            if (group?.delete(last)) { reset(); if (!group.size) bindings.delete(first); }
+            remove(...sequence(keys));
         },
         getShortcuts(id) {
             const keys: string[] = [];
@@ -233,6 +230,10 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         },
         handle: event => handle(event, true, commands.run),
     });
-    return { commands, keymap, scope, reset, handleEditor: (event: KeyboardEvent, execute: (id: string) => boolean) => handle(event, false, execute),
+    function releaseKey(event?: KeyboardEvent) {
+        if (event) held.delete(event.code || event.key);
+        else held.clear();
+    }
+    return { commands, keymap, scope, reset, releaseKey, handleEditor: (event: KeyboardEvent, execute: (id: string) => boolean) => handle(event, false, execute),
         dispose() { disposed = true; reset(); bindings.clear(); entries.clear(); } };
 }

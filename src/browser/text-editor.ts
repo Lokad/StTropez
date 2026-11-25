@@ -46,7 +46,7 @@ import { CharacterWarnings } from "../core/character-warnings.ts";
 import type { CharacterWarningConfiguration, CharacterWarningOptions } from "../core/character-warnings.ts";
 import { mountCharacterWarnings } from "./character-warnings.ts";
 import type { CharacterWarningHighlights } from "./character-warnings.ts";
-import { createCommandRegistry, type EditorCommand, type EditorCommands, type EditorKeymap } from "./command-registry.ts";
+import { createCommandRegistry, isModifierKey, type EditorCommand, type EditorCommands, type EditorKeymap } from "./command-registry.ts";
 import { defaultEditorShortcuts, editCommand, editorCommandLabels, editorKeyCommand } from "./editor-commands.ts";
 import { classifyEditingKey, commandKey, historyKey, isDeletionCommand, nativeDeletion } from "./editing-keys.ts";
 import type { DeletionCommand, KeyBinding, KeyStroke, ViewCommand } from "./editing-keys.ts";
@@ -239,6 +239,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             const version = revision, selection = currentSelections(), epoch = comparison?.epoch();
             return () => version === revision && selection === currentSelections() && epoch === comparison?.epoch();
         }, () => editor, comparison?.commands, (id, fallback) => commandLabel?.(id, fallback));
+    listen(win, "keyup", registry.releaseKey, { capture: true });
+    listen(win, "blur", () => registry.releaseKey());
     for (const [id, label] of editorCommandLabels) {
         registry.commands.register({ id, label, owner: "editor", category: "Editing", run: () => runCommand(id), enabled: () => {
             if (id === "undo" || id === "redo") {
@@ -1339,7 +1341,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const repeatedEscape = event.key === "Escape" && event.repeat;
         if (escapeSelection && event.key !== "Tab" && event.key !== "Shift" && !repeatedEscape) escapeState(false);
         if (event.defaultPrevented || composing || event.isComposing || event.keyCode === 229) return;
-        if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
+        if (isModifierKey(event.key)) return;
         if (escapeSelection && event.key === "Tab" && !captured) return;
         if (hostInsertion && event.key === "Escape") { hostInsertion.cancel(); event.preventDefault(); return; }
         if (!captured && registry.handleEditor(event, id => {
@@ -1350,21 +1352,26 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         })) return;
         const binding = captured ?? classifyEditingKey(event, apple, pairKey);
         if (binding === "prevent-native") { event.preventDefault(); return; }
+        const action = typeof binding === "object" ? binding : undefined;
+        const command = action?.command;
         // Host commands check pending input before capturing a document. Editing and
         // navigation supersede a host insertion; ordinary typing reaches beforeInput.
-        if (typeof binding === "object") hostInsertion?.cancel();
+        if (action) hostInsertion?.cancel();
         if (input.readOnly && event.key !== "Tab") {
             // A read-only textarea suppresses beforeinput for ordinary printable keys.
             const printable = ((!event.ctrlKey && !event.metaKey && !event.altKey) || event.getModifierState("AltGraph"))
                 && [...event.key].length === 1;
-            if (printable || typeof binding === "object" && binding.edit) { refuseEdit(event); return; }
+            if (printable || action?.edit) { refuseEdit(event); return; }
         }
-        if (typeof binding === "object" && binding.command.kind === "command" && binding.command.command === "go-to-line" && !options.requestLine) return;
+        if (command?.kind === "command" && command.command === "go-to-line" && !options.requestLine) return;
         if (!inputQueue.draining && (inputQueue.pending || rangeCommand) && event.key !== "Escape") {
-            if (typeof binding === "object" && (!binding.edit || !input.readOnly)) { event.preventDefault(); appendInput(captureKey(event, binding)); return; }
+            if (action && (!action.edit || !input.readOnly)) {
+                event.preventDefault();
+                appendInput(captureKey(event, action));
+                return;
+            }
             if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
         }
-        const command = typeof binding === "object" ? binding.command : undefined;
         if (command?.kind === "command") { if (runCommand(command.command)) event.preventDefault(); return; }
         view.folding.revealSelection(currentFolding());
         if (command || binding === "escape") group = undefined;

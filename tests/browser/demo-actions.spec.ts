@@ -117,7 +117,7 @@ test("explicit lazy fix activation applies once after resolution and expires wit
     await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)"); await expect(page.locator("#editor")).toContainText("// Keep later input");
 });
 
-test("provider restart expires pending fixes and a fresh request fixes current code", async ({ page }) => {
+test("after a provider restart, holding Enter applies the fresh fix once", async ({ page }) => {
     let held = false, disconnect: (() => void) | undefined;
     await page.routeWebSocket("**/demo-provider/*", client => {
         const server = client.connectToServer(), ids = new Set<number>();
@@ -131,7 +131,13 @@ test("provider restart expires pending fixes and a fresh request fixes current c
     await page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2552:/ }).click(); await source.press("Control+.");
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
     await expect(popup.getByRole("button", { name: "Apply fix", exact: true })).toBeEnabled();
-    await source.press("Enter"); await expect(popup).toBeHidden(); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
+    await page.keyboard.down("Enter");
+    await expect(popup).toBeHidden();
+    await page.keyboard.down("Enter");
+    await page.keyboard.up("Enter");
+    await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
+    await page.keyboard.press("Control+z");
+    await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)");
 });
 
 test("a clean position offers no fabricated fix and Escape preserves source and focus", async ({ page }) => {

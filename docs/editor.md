@@ -423,8 +423,8 @@ after 1.5 seconds or a change of focus, selection or document revision.
 Bindings for the same sequence run in descending `priority` (default 0). A disabled command or one
 that returns `false` lets the next binding try. A handled command consumes the keystroke.
 After a chord prefix, a bound second stroke is consumed even if every eligible command declines.
-Bindings repeat by default. Set `repeat: false`
-to consume a held shortcut without invoking its enabled command again.
+Bindings repeat by default. With `repeat: false`, a handled shortcut consumes repeats
+in that editor until key release, even if the command closes its own control.
 Equal priorities for the same sequence and single strokes that conflict with chord prefixes throw.
 `keymap.unbind(keys)` removes all bindings for a sequence. Disposing a binding removes only that registration.
 `keymap.getShortcuts(id)` returns a frozen array of the sequences currently bound to that command
