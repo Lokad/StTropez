@@ -36,7 +36,10 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
     renamePopup.setAttribute("role", "dialog"); renamePopup.setAttribute("aria-label", "Rename symbol");
     document.body.append(popup);
     (editor.element.closest("#workspace") ?? editor.element.ownerDocument.body).append(renamePopup);
-    const locationsOverlay = mountAnchoredOverlay(editor, popup, { dismissOn: ["focus-leave"], onDismiss: () => cancelNavigation() });
+    const locationsOverlay = mountAnchoredOverlay(editor, popup, {
+        dismissOn: ["focus-leave"],
+        onHide(reason) { if (reason === "focus-leave" || reason === "expired") cancelNavigation(); },
+    });
     scope.defer(locationsOverlay.dispose);
     type Query = { kind: "definition" | "references"; message: string; offset: number; revision: number;
         origin: NavigationOrigin; page: NavigationPage | undefined };

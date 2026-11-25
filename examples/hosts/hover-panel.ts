@@ -1,13 +1,15 @@
 import type { HostHoverTools } from "./hover.ts";
 import { mountDocumentation } from "../../src/browser/index.ts";
-import type { DocumentationOptions } from "../../src/browser/index.ts";
+import type { AnchoredOverlayOptions, DocumentationOptions } from "../../src/browser/index.ts";
 import { bindPopup } from "./popup-position.ts";
 export function mountHoverPanel(host: HTMLElement, tools: HostHoverTools, options: DocumentationOptions = {}): () => void {
     const owner = host.ownerDocument, popup = owner.createElement("div"), hint = owner.createElement("span"), listeners = new AbortController();
     const content = mountDocumentation(popup, options);
     popup.className = "host-symbol-info"; popup.tabIndex = -1; popup.setAttribute("role", "tooltip"); hint.textContent = "Esc to close"; popup.append(hint); host.append(popup);
     const placement = bindPopup(popup, { prefer: "below" });
-    const keyboard = { prefer: "below", dismissOn: ["focus-leave"], onDismiss: tools.dismiss } as const;
+    const keyboard: AnchoredOverlayOptions = { dismissOn: ["focus-leave"], onHide(reason) {
+        if (reason === "focus-leave" || reason === "expired") tools.dismiss();
+    } };
     const detach = tools.bindPopup(popup);
     let enteringFrom: HTMLElement | undefined, previousFocus: HTMLElement | undefined;
     // focusin exposes a shadow host as relatedTarget. Capture the departing control before retargeting.

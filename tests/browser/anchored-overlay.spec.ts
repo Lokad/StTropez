@@ -36,14 +36,26 @@ test("a range follows its painted text through horizontal clipping and folding u
     await expect(fold).toHaveAttribute("aria-expanded", "true"); await ready(page);
     const call = await page.evaluateHandle(to => {
         const f = window.editingFixture, popup = document.createElement("button");
-        popup.textContent = "Range popup"; document.body.append(popup);
-        const events: string[] = [], overlay = f.overlay(popup, { dismissOn: ["focus-leave"], onDismiss: reason => events.push(reason),
-            onFocusedAnchorHidden: () => f.focus("primary") });
+        popup.textContent = "Range popup";
+        popup.onclick = () => { popup.dataset.clicked = "true"; };
+        const root = document.querySelector<HTMLElement>("#primary .st-editor")!;
+        root.style.setProperty("--popup-theme", "local");
+        root.style.transform = "translateX(12px)";
+        root.style.zoom = "1.25";
+        const events: string[] = [], overlay = f.overlay(popup, { dismissOn: ["focus-leave"], onHide(reason, hadFocus) {
+            events.push(reason);
+            if (hadFocus && (reason === "clipped" || reason === "expired")) f.focus("primary");
+        } });
         const show = () => overlay.show({ revision: f.snapshot().document!.revision, from: 6, to });
-        show(); return { show, events, dispose: () => { overlay.dispose(); popup.remove(); } };
+        show(); return { show, events, hide: overlay.hide, dispose: overlay.dispose };
     }, text.length - 6);
     const popup = page.getByRole("button", { name: "Range popup", includeHidden: true });
     await expect(popup).toBeVisible();
+    expect(await popup.evaluate(el => [el.parentElement?.matches(".st-editor"), getComputedStyle(el).getPropertyValue("--popup-theme")]))
+        .toEqual([true, "local"]);
+    expect(await popup.evaluate(el => Math.abs(el.getBoundingClientRect().left - window.editingFixture.coords(6)!.left))).toBeLessThan(2);
+    await popup.click();
+    await expect(popup).toHaveAttribute("data-clicked", "true");
     await viewport.evaluate(el => { el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2; }); await ready(page);
     await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.viewport.scrollLeft)).toBeGreaterThan(100);
     expect(await page.evaluate(to => [window.editingFixture.coords(6), window.editingFixture.coords(to)], text.length - 6)).toEqual([undefined, undefined]);
@@ -54,7 +66,7 @@ test("a range follows its painted text through horizontal clipping and folding u
     await popup.focus(); await expect(popup).toBeFocused();
     const other = page.getByRole("textbox", { name: "Secondary source", exact: true });
     await other.focus(); await expect(popup).toBeHidden(); await expect(other).toBeFocused();
-    expect(await call.evaluate(value => value.events)).toEqual(["focus-leave"]);
+    expect(await call.evaluate(value => value.events)).toEqual(["clipped", "focus-leave"]);
     await call.evaluate(value => value.show()); await expect(popup).toBeVisible();
     await page.evaluate(() => window.editingFixture.edit([{ from: 0, to: 0, insert: "x" }]));
     await expect(popup).toBeHidden(); await expect(other).toBeFocused();
@@ -63,5 +75,8 @@ test("a range follows its painted text through horizontal clipping and folding u
     await expect(popup).toBeHidden();
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });
     await expect(input).toBeFocused(); await page.keyboard.type("!"); await expect(input).toHaveValue(/!/);
-    await call.evaluate(value => value.dispose()); await call.dispose();
+    await call.evaluate(value => { value.show(); value.hide(); value.hide(); value.show(); value.dispose(); value.dispose(); });
+    expect(await call.evaluate(value => value.events)).toEqual(["clipped", "focus-leave", "expired", "expired", "hide", "disposed"]);
+    await expect(popup).toHaveCount(0);
+    await call.dispose();
 });

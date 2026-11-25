@@ -188,16 +188,15 @@ Disposal removes all listeners.
 
 ### Anchored popups
 
-Append your popup to the document body and pass it to `mountAnchoredOverlay(editor, element)`.
+Pass a detached popup to `mountAnchoredOverlay(editor, element)` to inherit editor styles.
+The editor mounts it under its root and displays it in the browser top layer. You can also
+pass a popup already attached to the editor or to a host container. It stays in that container.
 Use `show({ revision, offset })` for a caret, with optional `affinity`. Use
 `show({ revision, from, to })` for a half-open UTF-16 range. A range anchors to the left edge of its
 first visible text row, even when both endpoints are offscreen. The popup clears the row's full
 height. An empty range uses the caret.
 Scrolling, resizing and folding update the placement. The popup hides while its anchor is outside
 the text viewport and reappears when the source is visible again. A new revision expires the anchor.
-If a popup control has focus, `onFocusedAnchorHidden` lets the host return focus before the
-popup hides. This applies when the anchor scrolls out of view, folds away or expires on a new revision.
-
 The popup opens below the line by default. Pass `{ prefer: "above" }` to prefer the other side.
 The popup keeps its position while its content fits. It can move when it grows or the available
 space changes. Set a numeric `priority` when several popups share an editor. A popup
@@ -205,12 +204,14 @@ can stack beyond a higher-priority popup to show its full height. When space is 
 the largest available interval and scrolls its content. The default priority is zero.
 
 Pass `dismissOn: ["focus-leave"]` to close when focus leaves both the editor and the popup.
-`"outside-pointerdown"` closes on a pointer press outside both. `onDismiss(reason)` runs once
-after the popup closes. The host can cancel a pending request there. Neither event moves focus.
-Without `dismissOn`, the host controls dismissal.
+`"outside-pointerdown"` closes on a pointer press outside both. Use `onHide(reason, hadFocus)` to update the host or return focus after a popup disappears.
+`"clipped"` means a visible popup lost its placement and may reappear. `"expired"` means its revision
+or view expired. The two input events above, an explicit `hide()` and disposal end the current
+placement with reasons `"focus-leave"`, `"outside-pointerdown"`, `"hide"` and `"disposed"`.
+Each terminal reason reports once for the current placement, even if its anchor was already clipped.
 
-`hide()` releases the placement and dismissal listeners. Call `dispose()` when
-removing the popup. Disposing the editor also releases the attachment.
+`dispose()` releases listeners and removes a popup supplied detached. Disposing the editor also
+releases the attachment.
 
 ### Input adapter ownership
 

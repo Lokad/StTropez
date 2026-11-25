@@ -7,11 +7,14 @@ import type { TextEditor } from "./text-editor.ts";
 
 export type OverlayPosition = Readonly<{ revision: number; offset: number; affinity?: Affinity }>;
 export type OverlayAnchor = OverlayPosition | Readonly<{ revision: number; from: number; to: number }>;
-export type OverlayDismissEvent = "focus-leave" | "outside-pointerdown";
-export type AnchoredOverlayOptions = Readonly<{ prefer?: "above" | "below"; priority?: number;
-    dismissOn?: readonly OverlayDismissEvent[]; onDismiss?: (event: OverlayDismissEvent) => void;
-    /** Called before a focused popup hides when its anchor leaves view or its revision expires. */
-    onFocusedAnchorHidden?: () => void }>;
+type DismissEvent = "focus-leave" | "outside-pointerdown";
+export type OverlayHideReason = DismissEvent | "clipped" | "expired" | "hide" | "disposed";
+export type AnchoredOverlayOptions = Readonly<{
+    prefer?: "above" | "below";
+    priority?: number;
+    dismissOn?: readonly DismissEvent[];
+    onHide?: (reason: OverlayHideReason, hadFocus: boolean) => void;
+}>;
 export type AnchoredOverlay = Readonly<{ show: (anchor: OverlayAnchor) => void; hide: () => void; dispose: () => void }>;
 
 type Placement = { priority: number; rectangle: DOMRect | undefined; schedule: () => void };
@@ -21,30 +24,29 @@ type Clip = Readonly<{ left: number; top: number; right: number; bottom: number 
 type Point = Readonly<{ left: number; top: number; height: number }>;
 type Slot = { top: number; bottom: number; above: boolean };
 
-function popupSlots(top: number, bottom: number, line: Point, occupied: { top: number; bottom: number }[]): Slot[] {
-    // The text line and overlapping higher-priority popups divide the window into free intervals.
+/** The anchor and higher-priority popups divide the window into free vertical intervals. */
+function popupSlot(top: number, bottom: number, line: Point, occupied: { top: number; bottom: number }[],
+    height: number, previous: Slot | undefined, preferAbove: boolean): Slot | undefined {
     occupied.push({ top: line.top - 4, bottom: line.top + line.height + 4 });
     occupied.sort((a, b) => a.top - b.top);
-    const slots: Slot[] = [];
+    let best: Slot | undefined, visible = 0, distance = Infinity;
     let start = top;
-    for (const rect of occupied) {
+    for (const rect of [...occupied, { top: bottom, bottom }]) {
         const end = Math.min(bottom, rect.top);
-        if (start < end) slots.push({ top: start, bottom: end, above: end <= line.top });
+        if (start < end) {
+            const above = end <= line.top, fit = Math.min(height, end - start);
+            if (fit === height && previous?.top === start && previous.bottom === end && previous.above === above) {
+                return previous;
+            }
+            const gap = above ? line.top - end : start - (line.top + line.height);
+            if (fit > visible || fit === visible && (gap < distance || gap === distance && above === preferAbove)) {
+                best = { top: start, bottom: end, above };
+                visible = fit;
+                distance = gap;
+            }
+        }
         start = Math.max(start, rect.bottom);
         if (start >= bottom) break;
-    }
-    if (start < bottom) slots.push({ top: start, bottom, above: false });
-    return slots;
-}
-
-function chooseSlot(slots: Slot[], line: Point, height: number, preferAbove: boolean): Slot | undefined {
-    let best: Slot | undefined, visible = 0, distance = Infinity;
-    for (const slot of slots) {
-        const fit = Math.min(height, slot.bottom - slot.top);
-        const gap = slot.above ? line.top - slot.bottom : slot.top - (line.top + line.height);
-        if (fit > visible || fit === visible && (gap < distance || gap === distance && slot.above === preferAbove)) {
-            best = slot; visible = fit; distance = gap;
-        }
     }
     return best;
 }
@@ -93,17 +95,26 @@ function visibleAnchor(editor: TextEditor, anchor: OverlayAnchor, buffer: TextBu
 export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, options: AnchoredOverlayOptions = {}): AnchoredOverlay {
     const { viewport, view, workspace } = editor, owner = editor.element.ownerDocument, win = owner.defaultView!;
     if (element.ownerDocument !== owner || editor.signal.aborted) throw new Error("An overlay needs a live editor in the same document.");
-    const priority = options.priority ?? 0, dismissOn = new Set(options.dismissOn);
+    const { priority = 0, onHide } = options;
+    const dismissOn = new Set(options.dismissOn);
     if (!Number.isFinite(priority)) throw new RangeError("Overlay priority must be finite.");
+    const source = workspace.observeDocument(view.documentId);
     const peers = activeOverlays.get(editor) ?? new Set<Placement>();
     activeOverlays.set(editor, peers);
     let previousSlot: Slot | undefined;
     const placement: Placement = { priority, rectangle: undefined, schedule: reconsider };
     const style = element.style, original = { left: style.left, top: style.top, maxWidth: style.maxWidth, maxHeight: style.maxHeight };
     const alreadyStyled = element.classList.contains("st-editor-overlay");
-    element.classList.add("st-editor-overlay"); element.hidden = true;
+    const detached = !element.parentNode;
+    const scoped = detached || editor.element.contains(element);
+    const priorPopover = element.popover;
+    if (scoped) {
+        element.popover = "manual";
+        if (detached) editor.element.append(element);
+    }
+    element.classList.add("st-editor-overlay");
+    element.hidden = true;
     let anchor: OverlayAnchor | undefined, events: AbortController | undefined, frame: number | undefined, disposed = false;
-    let stopRender: (() => void) | undefined;
     function report(rectangle?: DOMRect): void {
         const old = placement.rectangle;
         if (old?.left === rectangle?.left && old?.right === rectangle?.right
@@ -111,27 +122,22 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         placement.rectangle = rectangle;
         for (const peer of peers) if (peer.priority < priority) peer.schedule();
     }
-    function conceal(expired = false): void {
-        const previous = anchor;
-        if (!element.hidden && element.matches(":focus-within")) options.onFocusedAnchorHidden?.();
-        if (anchor !== previous) return;
-        if (expired) hide();
-        else { element.hidden = true; report(); }
-    }
     function position(): void {
         frame = undefined;
         if (!anchor) return;
-        const document = workspace.observeDocument(view.documentId).getSnapshot();
-        if (!document || !workspace.ownsDocumentView(view, editor.tab)) { hide(); return; }
-        if (document.revision !== anchor.revision) { conceal(true); return; }
-        if (!element.isConnected) { conceal(); return; }
+        const document = source.getSnapshot();
+        if (document?.revision !== anchor.revision || !workspace.ownsDocumentView(view, editor.tab)) return hide("expired");
+        if (!element.isConnected) return hide("clipped");
+        // A scroll can arrive before the rows for its new position have been painted.
+        if (viewport.activity().pending) return;
         const box = clientBox(viewport.element, viewport.settings().minimap, viewport.getSnapshot().gutterWidth);
         const visual = win.visualViewport, left = visual?.offsetLeft ?? 0, top = visual?.offsetTop ?? 0;
         const right = left + (visual?.width ?? owner.documentElement.clientWidth), bottom = top + (visual?.height ?? owner.documentElement.clientHeight);
         const point = visibleAnchor(editor, anchor, document.buffer, { left: Math.max(left, box.left), right: Math.min(right, box.right),
             top: Math.max(top, box.top), bottom: Math.min(bottom, box.bottom) });
-        if (!point) { conceal(); return; }
+        if (!point) return hide("clipped");
         element.hidden = false;
+        if (scoped && !element.matches(":popover-open")) element.showPopover();
         // Measure at the host's preferred size before choosing a side. A prior short window may have constrained it.
         style.maxWidth = original.maxWidth; style.maxHeight = original.maxHeight;
         const zoom = cssZoom(element), width = Math.max(0, right - left - 16);
@@ -144,11 +150,9 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
             if (peer.priority > priority && rect && rect.right > x && rect.left < x + size.width)
                 occupied.push({ top: rect.top - 4, bottom: rect.bottom + 4 });
         }
-        const slots = popupSlots(top + 8, bottom - 8, point, occupied);
-        const slot = slots.find(s => s.above === previousSlot?.above && s.top === previousSlot.top && s.bottom === previousSlot.bottom
-                && s.bottom - s.top >= size.height)
-            ?? chooseSlot(slots, point, size.height, previousSlot?.above ?? options.prefer === "above");
-        if (!slot) { conceal(); return; }
+        const slot = popupSlot(top + 8, bottom - 8, point, occupied, size.height, previousSlot,
+            previousSlot?.above ?? options.prefer === "above");
+        if (!slot) return hide("clipped");
         previousSlot = slot;
         const room = slot.bottom - slot.top;
         if (size.height > room) style.maxHeight = `${room / zoom}px`;
@@ -161,12 +165,24 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     }
     function reconsider(): void { previousSlot = undefined; schedule(); }
     const resize = new win.ResizeObserver(schedule);
-    function hide(): void {
-        element.hidden = true; report();
+    function hide(reason: OverlayHideReason = "hide"): void {
         if (!anchor) return;
-        anchor = undefined; previousSlot = undefined; peers.delete(placement);
-        events?.abort(); events = undefined; resize.disconnect(); stopRender?.(); stopRender = undefined;
-        if (frame !== undefined) { win.cancelAnimationFrame(frame); frame = undefined; }
+        const notify = reason !== "clipped" || !!placement.rectangle;
+        const hadFocus = element.matches(":focus-within");
+        if (reason !== "clipped") {
+            anchor = undefined;
+            previousSlot = undefined;
+            peers.delete(placement);
+            events?.abort();
+            events = undefined;
+            resize.disconnect();
+            if (frame !== undefined) win.cancelAnimationFrame(frame);
+            frame = undefined;
+        }
+        if (scoped && element.matches(":popover-open")) element.hidePopover();
+        element.hidden = true;
+        report();
+        if (notify) onHide?.(reason, hadFocus);
     }
     function show(next: OverlayAnchor): void {
         if (disposed) return;
@@ -177,24 +193,31 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
             peers.add(placement);
             events = new AbortController();
             const signal = events.signal;
-            const dismiss = (reason: OverlayDismissEvent) => { hide(); options.onDismiss?.(reason); };
+            if (scoped) {
+                // Popup controls own their native editing, pointer and drag gestures.
+                for (const type of ["keydown", "pointerdown", "pointermove", "dblclick", "wheel", "dragstart", "dragenter", "dragover", "drop"]) {
+                    element.addEventListener(type, event => event.stopPropagation(), { signal });
+                }
+            }
             if (dismissOn.has("focus-leave")) {
                 const left = (event: FocusEvent) => {
                     // WebKit can run a microtask between focusout and focusin, with body temporarily active.
                     const next = event.relatedTarget;
                     if (next instanceof win.Node && (editor.element.contains(next) || element.contains(next))) return;
                     queueMicrotask(() => {
-                        if (!signal.aborted && !editor.element.matches(":focus-within") && !element.matches(":focus-within")) dismiss("focus-leave");
+                        if (!signal.aborted && !editor.element.matches(":focus-within") && !element.matches(":focus-within")) hide("focus-leave");
                     });
                 };
                 editor.element.addEventListener("focusout", left, { signal });
-                element.addEventListener("focusout", left, { signal });
+                if (!scoped) element.addEventListener("focusout", left, { signal });
             }
             if (dismissOn.has("outside-pointerdown")) owner.addEventListener("pointerdown", event => {
                 const path = event.composedPath();
-                if (!path.includes(element) && !path.includes(editor.element)) dismiss("outside-pointerdown");
+                if (!path.includes(element) && !path.includes(editor.element)) hide("outside-pointerdown");
             }, { capture: true, signal });
-            stopRender = viewport.onRender(schedule); resize.observe(element);
+            signal.addEventListener("abort", viewport.onRender(schedule), { once: true });
+            resize.observe(element);
+            signal.addEventListener("abort", source.subscribe(schedule), { once: true });
             if (editor.tab) signal.addEventListener("abort", workspace.tabs.subscribe(schedule), { once: true });
             win.addEventListener("scroll", schedule, { capture: true, passive: true, signal });
             win.addEventListener("resize", reconsider, { signal });
@@ -205,9 +228,18 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     }
     function dispose(): void {
         if (disposed) return;
-        disposed = true; hide(); Object.assign(style, original);
-        if (!alreadyStyled) element.classList.remove("st-editor-overlay");
-        editor.signal.removeEventListener("abort", dispose);
+        disposed = true;
+        try {
+            hide("disposed");
+        } finally {
+            if (scoped) {
+                if (detached) element.remove();
+                element.popover = priorPopover;
+            }
+            Object.assign(style, original);
+            if (!alreadyStyled) element.classList.remove("st-editor-overlay");
+            editor.signal.removeEventListener("abort", dispose);
+        }
     }
     editor.signal.addEventListener("abort", dispose, { once: true });
     return Object.freeze({ show, hide, dispose });

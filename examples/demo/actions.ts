@@ -64,7 +64,11 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
             await result.value.apply();
         }
     }
-    const overlay = mountAnchoredOverlay(editor, popup, { onFocusedAnchorHidden: editor.focus });
+    const overlay = mountAnchoredOverlay(editor, popup, {
+        onHide(reason, hadFocus) {
+            if (hadFocus && (reason === "clipped" || reason === "expired")) editor.focus();
+        },
+    });
     scope.defer(overlay.dispose);
     let open = false;
     const hide = () => { open = false; overlay.hide(); };

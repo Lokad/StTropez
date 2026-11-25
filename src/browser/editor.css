@@ -158,4 +158,5 @@
 .st-comparison-preview pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .st-comparison-panes, .st-comparison-preview { grid-template-columns: minmax(0, 1fr); } }
 .st-editor-overlay { position: fixed; box-sizing: border-box; margin: 0; overflow: auto; }
+.st-editor > .st-editor-overlay[popover] { inset: auto; color: inherit; cursor: auto; user-select: text; overscroll-behavior: contain; }
 .st-editor-overlay[hidden] { display: none; }
