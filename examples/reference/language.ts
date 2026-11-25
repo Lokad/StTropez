@@ -56,8 +56,9 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const stopSignature = language.signature.subscribe(() => {
         hint.value = language.signature.getSnapshot().signature?.label ?? "";
     });
-    const stopEdits = editor.workspace.onDocumentChange(editor.view.documentId, () => {
-        intent++;
+    const stopEdits = editor.workspace.onDocumentChange(editor.view.documentId, change => {
+        // The language command reports its outcome after its refactor reaches this listener.
+        if (change.origin !== "host" || change.kind !== "refactor") intent++;
         clear();
     });
     renderDiagnostics();

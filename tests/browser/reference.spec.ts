@@ -1,5 +1,24 @@
 import { test, expect } from "./fixtures.ts";
 
+test("a rename reports success after changing the reference document and Undo clears the result", async ({ page }) => {
+    await page.goto("/reference/");
+    await page.getByRole("button", { name: "Connect language server" }).click();
+    await expect(page.getByRole("button", { name: "Resolve this placeholder." })).toBeVisible();
+    const source = page.getByRole("textbox", { name: "quote.ts" });
+    await source.press("ControlOrMeta+Home");
+    await source.press("Control+ArrowRight");
+    await source.press("Control+ArrowRight");
+    await source.press("ArrowRight");
+    page.once("dialog", dialog => void dialog.accept("tint"));
+    await page.getByRole("button", { name: "Rename", exact: true }).click();
+    const code = page.locator("#pane .st-viewport-row");
+    await expect(code.filter({ hasText: "export const tint" })).toBeVisible();
+    await expect(page.locator("#result")).toHaveText("Renamed");
+    await source.press("ControlOrMeta+z");
+    await expect(code.filter({ hasText: "export const accent" })).toBeVisible();
+    await expect(page.locator("#result")).toBeEmpty();
+});
+
 test("Save and Changes preserve a pending edit in the reference host", async ({ page }) => {
     await page.clock.install();
     await page.goto("/reference/");
