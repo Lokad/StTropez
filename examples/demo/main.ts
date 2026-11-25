@@ -472,21 +472,28 @@ async function openSample(id: SampleId): Promise<void> {
     mountFile(next.files.find(file => file.name === activeFiles.get(id)) ?? next.files[0]!);
     for (const control of document.querySelectorAll<HTMLButtonElement>("#compare:disabled, [data-panel]:disabled")) control.disabled = false;
 }
+function refreshReviewBaseline(): void {
+    if (!comparison || !project || !active) return;
+    const shown = comparison.controller.getSnapshot().baseline;
+    const saved = project.baseline(active);
+    if (shown && (shown.buffer !== saved.buffer || shown.version !== saved.version)) {
+        comparison.controller.beginRefresh().complete(saved);
+    }
+}
 function setPanel(next: DemoPanel): void {
     pendingPanel = undefined;
     if (!active || refusePendingEdit()) return;
     // Remounting this file would dispose Find before its replacement commits.
     if (find?.getSnapshot().status === "replacing") { pendingPanel = next; return; }
-    const samePanel = panel === next; panel = next;
+    panel = next;
     const wasCollapsed = element("workspace").classList.contains("collapsed");
     element("workspace").classList.remove("collapsed"); element("panel-collapse").textContent = "Hide";
     presentation.setEmit(panel === "javascript");
     for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-panel]")) tab.setAttribute("aria-pressed", String(tab.dataset.panel === panel));
-    if (samePanel && comparison && project) {
-        const shown = comparison.getSnapshot().comparison.baseline, requested = project.baseline(active);
-        if (shown?.buffer === requested.buffer && shown.version === requested.version) {
-            (wasCollapsed ? setReviewCollapsed?.(false) : comparison.activePane())?.focus(); return;
-        }
+    if (next === "changes" && comparison) {
+        refreshReviewBaseline();
+        (wasCollapsed ? setReviewCollapsed?.(false) : comparison.activePane())?.focus();
+        return;
     }
     if (!comparison && next !== "changes") {
         if (next === "problems") {
@@ -815,9 +822,7 @@ async function save(reviewed = false): Promise<void> {
     const captured = project; if (!captured || editor?.getSnapshot().composing) return;
     replaceResult.hidden = true;
     await captured.save(renderMetadata, reviewed);
-    if (!disposed && project === captured && comparison && active) {
-        const ticket = comparison.controller.beginRefresh(); ticket.complete(captured.baseline(active));
-    }
+    if (!disposed && project === captured) refreshReviewBaseline();
 }
 // These controls disable or disappear during storage. Return focus before starting the
 // action, while the same editor or review pane still owns the user's selection.
@@ -836,9 +841,7 @@ onFileAction("conflict-take", () => {
     if (!captured || !view) return;
     const stillOpen = () => !disposed && captured === project && view === editor && generation === opening;
     void captured.takeReviewedCopy(renderMetadata, stillOpen).then(() => {
-        if (stillOpen() && comparison && active) {
-            const ticket = comparison.controller.beginRefresh(); ticket.complete(captured.baseline(active));
-        }
+        if (stillOpen()) refreshReviewBaseline();
     });
 });
 onFileAction("recovery-restore", () => { void project?.recovery.restore(); });
