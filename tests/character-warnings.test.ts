@@ -1,7 +1,7 @@
 import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CharacterWarnings, characterWarningKinds } from "../src/core/character-warnings.ts";
+import { CharacterWarnings } from "../src/core/character-warnings.ts";
 import { characterWarningLabel, TextBuffer } from "../src/index.ts";
 import type { CharacterWarning, CharacterWarningKind } from "../src/index.ts";
 
@@ -21,6 +21,7 @@ test("directional controls and unusual whitespace follow their distinct categori
 test("category switches never reclassify disabled warnings and copied character allow-lists are exact", () => {
     const representatives: Readonly<Record<CharacterWarningKind, number>> = { "bidi-control": 0x202e, invisible: 0x200d, bom: 0xfeff,
         "non-breaking-space": 0xa0, "unusual-space": 0x2003 };
+    const characterWarningKinds = Object.keys(representatives) as CharacterWarningKind[];
     for (const kind of characterWarningKinds) {
         const rules = new CharacterWarnings({ categories: { [kind]: false } });
         for (const other of characterWarningKinds) assert.equal(rules.kind(representatives[other], 1), other === kind ? null : other);

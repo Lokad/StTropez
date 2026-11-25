@@ -166,7 +166,7 @@ type ResourceRecord = {
     saveReservations: number; reloadReservations: number; saving: symbol | null; editLease: EditLease | null;
 };
 const loadLane = Symbol("resource load");
-const defaultCapabilities: Capabilities = Object.freeze({ edit: Object.freeze(["human", "agent", "host"] as const), save: true });
+const defaultCapabilities: Capabilities = { edit: ["human", "agent", "host"], save: true };
 function capabilities(value: Capabilities): Capabilities {
     return Object.freeze({ edit: Object.freeze([...new Set(value.edit)]), save: value.save });
 }

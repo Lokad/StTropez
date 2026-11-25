@@ -3,16 +3,20 @@ import { defaultIgnorable } from "./grapheme-data.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { highSurrogate, lowSurrogate } from "./utf16.ts";
 
-export const characterWarningKinds = Object.freeze(["bidi-control", "invisible", "bom", "non-breaking-space", "unusual-space"] as const);
-export type CharacterWarningKind = typeof characterWarningKinds[number];
+const labels = {
+    "bidi-control": "Directional control",
+    invisible: "Invisible character",
+    bom: "Mid-file byte order mark",
+    "non-breaking-space": "Non-breaking space",
+    "unusual-space": "Unusual whitespace",
+} as const;
+export type CharacterWarningKind = keyof typeof labels;
 export type CharacterWarningOptions = Readonly<{ categories?: Partial<Readonly<Record<CharacterWarningKind, boolean>>>; allow?: readonly string[] }>;
 export type CharacterWarningConfiguration = Readonly<{ categories: Readonly<Record<CharacterWarningKind, boolean>>; allow: readonly string[] }>;
 export type CharacterWarning = Readonly<{ from: number; to: number; codePoint: number; kind: CharacterWarningKind }>;
 export type CharacterWarningLimits = Readonly<{ maxUnits?: number; maxWarnings?: number }>;
 export type CharacterWarningBatch = Readonly<{ from: number; to: number; nextFrom: number; complete: boolean;
     limit: "units" | "warnings" | null; warnings: readonly CharacterWarning[]; scannedUnits: number; readUnits: number }>;
-const labels: Readonly<Record<CharacterWarningKind, string>> = Object.freeze({ "bidi-control": "Directional control", invisible: "Invisible character",
-    bom: "Mid-file byte order mark", "non-breaking-space": "Non-breaking space", "unusual-space": "Unusual whitespace" });
 export function characterWarningLabel(warning: Pick<CharacterWarning, "kind" | "codePoint">): string {
     return `${labels[warning.kind]} (U+${warning.codePoint.toString(16).toUpperCase().padStart(4, "0")})`;
 }
@@ -30,8 +34,10 @@ export class CharacterWarnings {
     readonly configuration: CharacterWarningConfiguration;
     readonly #allowed: ReadonlySet<number>;
     constructor(options: CharacterWarningOptions = {}) {
-        const categories = { "bidi-control": true, invisible: true, bom: true, "non-breaking-space": true, "unusual-space": true };
-        for (const kind of characterWarningKinds) categories[kind] = options.categories?.[kind] ?? true;
+        const categories = {} as Record<CharacterWarningKind, boolean>;
+        for (const kind of Object.keys(labels) as CharacterWarningKind[]) {
+            categories[kind] = options.categories?.[kind] ?? true;
+        }
         const allowed = new Set<number>();
         for (const character of options.allow ?? []) {
             if (!character.length || character.length !== (character.codePointAt(0)! > 0xffff ? 2 : 1)) throw new TypeError("Allow-list entries must be single characters.");

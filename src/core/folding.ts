@@ -6,6 +6,7 @@ import type { SelectionSet } from "./selections.ts";
 import type { Observable } from "./observable.ts";
 import { partitionPoint } from "./bound-search.ts";
 import { appendNestedFold } from "./fold-nesting.ts";
+import { emptyList } from "./empty-list.ts";
 import { lineBoundary, lineContentEnd } from "./newlines.ts";
 import { lineSwaps, type LineSwap } from "./line-moves.ts";
 import type { TextStep } from "./text-transaction.ts";
@@ -31,7 +32,7 @@ function retain(regions: readonly FoldRegion[]): readonly FoldRegion[] {
     for (const r of regions) { maxTo = Math.max(maxTo, r.to); maxLineTo = Math.max(maxLineTo, r.lineTo); if (r.collapsed) collapsed++; }
     owned.set(regions, { maxTo, maxLineTo, collapsed }); return Object.freeze(regions);
 }
-const empty: readonly FoldRegion[] = retain([]);
+const empty: readonly FoldRegion[] = emptyList;
 /** Internal handoff from reconciliation: raw ranges remain public, trusted rows stay private. */
 export function prepareFoldRanges(buffer: TextBuffer, ranges: readonly FoldRange[], regions: readonly FoldRegion[]): void {
     let entries = resolved.get(buffer); if (!entries) { entries = new WeakMap(); resolved.set(buffer, entries); }
@@ -234,7 +235,7 @@ export class FoldIndex {
     declare readonly regions: readonly FoldRegion[];
     constructor(lineCount: number, regions: readonly FoldRegion[] = empty) {
         if (!isPositiveInteger(lineCount)) throw new RangeError("Invalid fold line count.");
-        const values = regions.length ? regions : empty;
+        const values = regions.length ? regions : retain(empty);
         const metadata = owned.get(values);
         if (!metadata || metadata.maxLineTo > lineCount) throw new RangeError("Expected validated fold row intervals.");
         const previous = indexed.get(values);
