@@ -69,87 +69,45 @@ Reviewers check the accuracy of the contracts.
 
 ### Where to put a regression test
 
-Model tests live in `tests/`. Browser tests in `tests/browser/` add native events, layout and
-view remounts. The package smoke test runs the reference host against the NuGet archive.
-Add another host or engine when it exercises a different behavior.
+Start with the test that can reproduce the failure. For example, a replacement refused by an edit
+lock belongs in the Find controller test. A result banner showing the wrong total after clicking
+Replace All belongs in the demo. Extend the existing case when it already performs the action.
 
-| Behavior | Where to test the rule | Where to check the integration |
+| Behavior | Model or controller test | Browser or consumer test |
 | --- | --- | --- |
-| Text, UTF-16 offsets, newlines and selections | Buffer, [positions](../tests/positions.test.ts), ranges and selections | Type and edit, place the caret in CRLF text, and enter text at multiple selections. |
-| Atomic revisions, shared history and detached views | [Workspace](../tests/workspace.test.ts), history, history bounds and resources | Edit in two panes, detach a view and check the document and its history. |
-| Save conflicts and server corrections | Save review, [host conflicts](../tests/host-save-conflict.test.ts) and save failures | [Save conflicts](../tests/browser/save-conflicts.spec.ts), captured writes and retry |
-| Fixed references, hunks and closing a review | [Comparison](../tests/comparison.test.ts), row alignment, scrolling and scheduling | Close and reopen the review, find text in the reference, and align the two panes. |
-| Demo recovery and syntax colors | Demo recovery, [syntax](../tests/demo-syntax.test.ts) and token colors | Save, switch files or samples, reload, and check stored text and visible colors. Exercise storage failures too. |
-| Position-based LSP requests and invalid replies | LSP clients, workspace edits and [stale language-controller replies](../tests/document-language-controllers.test.ts) | Check typing in the color field, host alias changes and focus after navigation. |
-| Protocol negotiation, selectors, shared providers and command handling | JSON-RPC, sessions, selectors and the protocol fixture | WebSocket fixture and provider interoperability tests |
-| Native input and composition recovery | [Input context](../tests/input-context.test.ts) and input targets | Input targeting, queued keystrokes and dead-key composition |
-| Caret, grapheme boundaries, scroll, focus and drag | Geometry-independent and Unicode models | Viewport/geometry/paint, zoom, grapheme, pointer/drag and shadow-focus suites |
-| Host conversion, source annotations and forms | Table paste, text transfer and host rules | [Table paste](../tests/browser/host-table-paste.spec.ts), domain examples and transfers through the form |
-| Framework mount/disposal and surrounding UI | Host controller/policy models | Plain/React attachment, Strict Mode, queued-work disposal and error recovery |
-| Compiled assets and installation | Manifest/hash/dependency/export checks | One restored consumer smoke test in CI |
+| Typing, selections and history | [Text buffer](../tests/text-buffer.test.ts), [positions](../tests/positions.test.ts), [undo groups](../tests/history.test.ts) | [Edit using the keyboard](../tests/browser/editing.spec.ts), [move the caret](../tests/browser/navigation.spec.ts) |
+| Shortcuts and composition | [Key bindings and layouts](../tests/editor-keymap.test.ts), [input context](../tests/input-context.test.ts) | [Input targeting](../tests/browser/input-target.spec.ts). Physical layout and dead-key checks need a device. |
+| Clipboard and conversions | [Clipboard edits](../tests/clipboard-edits.test.ts), [table paste](../tests/table-paste.test.ts) | [Browser clipboard events](../tests/browser/clipboard-delegation.spec.ts), [host keyboard routing](../tests/browser/host-keyboard-clipboard.spec.ts). Cross-application paste needs an OS clipboard. |
+| Find and replace | [Match retention and navigation](../tests/find-retention.test.ts), [edit permissions](../tests/find-permission.test.ts), [regex replies](../tests/find-regex.test.ts) | [Keyboard commands and painted matches](../tests/browser/language-find.spec.ts), [reference host result text](../tests/browser/reference.spec.ts) |
+| Folds, minimap and scrolling | [Fold ranges and edit mapping](../tests/folding.test.ts) | [Gutter controls](../tests/browser/folding.spec.ts), [minimap gestures and selection](../tests/browser/viewport-presentation.spec.ts), [scrollbar interaction](../tests/browser/viewport-scrollbars.spec.ts) |
+| Changes and review | [Hunks and reference versions](../tests/comparison.test.ts) | [Pane alignment](../tests/browser/comparison-rows.spec.ts), [captured review actions](../tests/browser/comparison-ownership.spec.ts) |
+| Save, recovery and remount | [Save conflicts](../tests/host-save-conflict.test.ts), [draft restoration](../tests/host-drafts.test.ts) | [Review a conflicting save](../tests/browser/save-conflicts.spec.ts), [demo recovery](../tests/browser/demo-recovery.spec.ts), [host attachment](../tests/browser/host-attachment.spec.ts) |
+| Completion and language requests | [Completion items and resolve](../tests/lsp-completion.test.ts), [stale controller replies](../tests/document-language-controllers.test.ts) | [Accept a choice while the list refreshes](../tests/browser/host-lsp.spec.ts), [provider interoperability](../tests/browser/lsp-interop.spec.ts) |
+| Protocol and transport | [Workspace requests and synchronization](../tests/lsp-workspace.test.ts), [transport](../tests/websocket-transport.test.ts) | [WebSocket fixture](../tests/browser/protocol-websocket.spec.ts). A consuming host checks its provider against the [supported LSP subset](language-server.md). |
+| Demo and distribution | [Syntax after edits](../tests/demo-syntax.test.ts), [color spans](../tests/demo-syntax-colors.test.ts) | [Source demo controls](../tests/browser/demo-interface.spec.ts), [static-site walkthrough](../tests/browser/static-demo.spec.ts), [restored NuGet host](../scripts/test-package.mjs) |
 
-Tests in `tests/integration/` start real servers and processes on temporary loopback ports. Each
-test closes its listeners, stops its processes and removes its files. Keep in-memory peers in
-the model suite. To run just the demo provider, use `node --test tests/integration/demo-provider.test.ts`.
+Use the plain host for shared behavior. Add a React case for attachment, Strict Mode, render
+isolation or error recovery. Use a shadow root when event retargeting affects the outcome.
+For layout, exercise the actual control and inspect the painted row, caret or selection.
 
-Use the plain host for shared editing, language and review workflows. Use React for stable refs,
-Strict Mode, render isolation and root-error recovery. Keep separate cases for light- and shadow-DOM
-event paths when a focus or input transition depends on the event target.
+For a race, hold the reply, change or close its target, release it and check the document and
+selection that the user sees. For a save, check what was written and whether later edits remain
+dirty. The LSP helper can wait for a later reply on the same connection to confirm delivery.
+[Held LSP replies](../tests/helpers/lsp-replies.ts)
 
-The editor fixture checks the native textarea's actual value during editing. Viewport tests check
-painted rows and selection geometry. Model tests check which operations materialize text.
-The host disposal test checks for leaked views, leases and subscriptions. In a save or recovery
-test, check the pending write or draft after the editor remounts.
-
-Use `tests/helpers/lsp-replies.ts` to hold a completed reply by connection and request ID. Interrupt
-the operation, release the reply, then wait for another reply on that stream to confirm delivery. A
-new connection cannot confirm delivery on the old one.
-
-### Behavioral coverage
-
-If a user switches tabs during a save, check which file the host wrote and whether subsequent
-edits are dirty. Choose assertions from the relevant [API contract](README.md#subjects).
-
-| Area | Required observations |
-| --- | --- |
-| Resource identity and loading | Give two resources the same label in different scopes or variants. While a load, confirmation or save is pending, move, replace or close the tab and check its captured target. Check that pending work keeps the resource alive and a failed load can recover. |
-| Publication and views | Check that an unchanged field keeps its snapshot. Throw in a listener or attempt a reentrant write and check the committed state. Remount two views and typed forms after an error and check their independent selections. |
-| Transactions and authority | Check that a stale or invalid batch affecting several resources publishes nothing. Test each edit origin against its permissions and locks. Undo and redo must restore the full selections and saved baseline without losing later corrections. |
-| Editing and navigation | Assert the exact text and selection after typing, deleting, moving by arrow/word/line/page/grapheme, indenting, commenting, inserting pairs or newlines, and editing multiple selections. Exercise find/replace (regex, case and whole word), clipboard, drag and moving focus out of the editor. |
-| Unicode and geometry | Check text, caret placement and pointer hits for surrogates, combining sequences, emoji with joiners and CRLF. Vary selection affinity, zoom and font within the supported geometry. |
-| Save and Run | Queue a save, type more text, then deliver a server correction or conflict. Check the submitted text, server precondition, retry and dirty flag. Check the source and settings each Save or Run captured. |
-| Reviewed proposal | The host previews a replacement, checks its captured revision, then corrects and saves the applied edit |
-| Comparison | Give the reference, saved copy and proposal different versions. Refresh, accept, revert, discard and navigate hunks with whitespace changes, later edits, delayed loads or a takeover pending. Check each pane's text, colors and folds, and that stale decisions preserve history and corrections. |
-| Language features | Change the target while a completion, diagnostic, hover, signature, navigation, rename, action, link or color request is pending. Check the visible result, token classes, edits and command decisions. Disconnect the provider and keep typing. |
-| Protocol | Run initialization, capability negotiation and dynamic registration, incremental sync, cancellation, diagnostics, server edits, custom messages and reconnect over the transport you ship. Internal worker replies alone can't test LSP compatibility. |
-| Host extensions and forms | Check the target selection and undo step for domain folds, notes, table paste and imports. Source, settings and run logs keep separate permissions. Edit, fold, undo, resize or scroll a form out of view and back. Check invalid text, unknown fields and anchors. A progress update alone must leave Save and Run idle. |
-| Recovery and lifecycle | Restore a draft and check its save permissions against the loaded resource. Switch input routes or remount a view and check its state. Close, replace or dispose during pending work and check for leftover views, listeners, jobs or leases and for lost drafts. Previous-session undo is outside the recovery contract. |
-| Large documents and background work | Edit and navigate at the start, middle and end of the file. Scroll both axes and make bulk edits while inactive documents and background jobs exist. Check the result, native input size, DOM size and routine reads. |
-| Responsiveness and retention | Record the build, hardware and raw timings. Check that the correct text and selection reached the screen. For repeated mounts, record which object you disposed and which memory you measured. |
-| Distribution | Restore outside the checkout. Compile against the public declarations, load the CSS and worker, and edit text. Check the manifest and public exports against the restored files. |
-| Optional acceleration | Verify that the accelerator ran and produced the same result. Exercise startup, failure and cancellation, and include transfer and allocation in its timings. |
-
-The generic fixture covers the [declared LSP subset](language-server.md). A consuming application
-must check its own provider.
+Tests in `tests/integration/` start real servers and processes on temporary loopback ports and clean
+them up on exit. Run just the demo provider with `node --test tests/integration/demo-provider.test.ts`.
 
 ### Fixtures and test hooks
 
-Fixture hooks expose test controls. Read text explicitly. Routine snapshots carry IDs, revisions,
-activity and bounded counters.
+The editing, viewport, comparison, protocol and host fixtures declare their browser hooks beside
+the code that installs them. Use the fixture for the surface under test. Read a source range
+explicitly when the assertion needs text. A demo-specific probe belongs beside its scenario.
+[Editing](../examples/editing/main.ts) · [Viewport](../examples/viewport/main.ts) · [Comparison](../examples/comparison/main.ts) · [Protocol](../examples/protocol/main.ts) · [Host](../examples/hosts/harness.ts)
 
-| Hook | Fixture purpose |
-| --- | --- |
-| `window.editingFixture` | Editor/view state, bounded input/viewport activity, explicit source ranges and disposal |
-| `window.comparisonFixture` | Reference/working captures, hunk ranges, tickets and view lifetime |
-| `window.hostFixture` | Plain/React resources, deferred service decisions, recovery metadata, view attachment and disposal |
-
-`npm run inspect` starts an isolated loopback server and headless Chromium. Assert text, selections,
-revisions and ownership across affected panes before capturing screenshots.
-
-`tests/helpers/browser-errors.ts` collects uncaught errors and unexpected console errors across
-pages. A fault-injection test can allow one exact message and source URL. Browser suites disable
-retries, reject focused-only tests and retain failure traces. Missing binaries, unmet readiness
-conditions and empty selections fail the run.
+`npm run inspect` starts a separate server and headless Chromium. Check the editor state before
+capturing a screenshot. Playwright retains traces on failure. When a test injects an error,
+allow its exact message and source URL. [Browser error checks](../tests/helpers/browser-errors.ts)
 
 <a id="readiness-and-visible-continuity"></a>
 
