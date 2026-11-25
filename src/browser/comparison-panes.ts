@@ -1,7 +1,7 @@
 import type { MountedTextEditor } from "./text-editor.ts";
 import type { TextViewport } from "./viewport.ts";
 
-type Kind = "render" | "fold" | "scroll" | "input" | "pointerdown" | "compositionend" | "resize";
+type Kind = "render" | "fold" | "input" | "pointerdown" | "compositionend" | "resize";
 type Callback = (pane: TextViewport, event?: Event) => void;
 type Binding = { mount: MountedTextEditor; base: AbortController; stops: Map<Kind, () => void> };
 type Registration = { callback: Callback };
@@ -36,7 +36,7 @@ export function createComparisonPanes(working: MountedTextEditor, compositionCha
         const events = new AbortController();
         const types = kind === "input" ? ["keydown", "beforeinput"] : [kind];
         for (const type of types) pane.element.addEventListener(type, event => emit(kind, binding, event), {
-            signal: events.signal, capture: kind === "input" || kind === "pointerdown" || kind === "compositionend", passive: kind === "scroll"
+            signal: events.signal, capture: kind === "input" || kind === "pointerdown" || kind === "compositionend"
         });
         return () => events.abort();
     }

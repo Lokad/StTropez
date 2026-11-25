@@ -40,9 +40,21 @@ test(`plain linked review scroll preserves captured rows, selections, history, r
     const reference = p.locator(".st-comparison-panes .st-viewport").first(); await reference.scrollIntoViewIfNeeded();
     const box = await reference.boundingBox(); expect(box).not.toBeNull(); const wheelTop = c.referenceViewport!.scrollTop;
     expect(await reference.evaluate(node => { const box = node.getBoundingClientRect(); return node.ownerDocument.elementFromPoint(box.x + 100, box.y + 100)?.closest(".st-viewport") === node; })).toBe(true);
-    await p.mouse.move(box!.x + 100, box!.y + 100); await p.mouse.wheel(0, 250);
-    await expect.poll(async () => (await snapshot(p)).bindings.comparison!.referenceViewport!.scrollTop).toBeGreaterThan(wheelTop + 50); await waitForReview(p); c = (await snapshot(p)).bindings.comparison!;
-    await expect.poll(async () => { const c = (await snapshot(p)).bindings.comparison!; return Math.abs(c.referenceViewport!.scrollTop - c.workingViewport.scrollTop - 2 * c.workingViewport.lineHeight); }).toBeLessThan(.5);
+    await p.mouse.move(box!.x + 100, box!.y + 100);
+    const firstFrame = await reference.evaluateHandle(node => ({
+        positions: new Promise<[number, number]>(resolve => node.addEventListener("wheel", () => {
+            requestAnimationFrame(() => {
+                const review = window.hostFixture.snapshot().bindings.comparison!;
+                resolve([review.referenceViewport!.scrollTop, review.workingViewport.scrollTop]);
+            });
+        }, { once: true }))
+    }));
+    await p.mouse.wheel(0, 250);
+    const [savedTop, workingTop] = await firstFrame.evaluate(frame => frame.positions);
+    await firstFrame.dispose();
+    expect(savedTop).toBeGreaterThan(wheelTop + 50);
+    expect(workingTop).toBeCloseTo(savedTop - 2 * c.workingViewport.lineHeight, 0);
+    await waitForReview(p);
     c = (await snapshot(p)).bindings.comparison!;
     await exact(p, working); expect((await snapshot(p)).history).toEqual(before.history); expect(c.selectionSet).toEqual(before.bindings.comparison!.selectionSet);
     // Disable after changing the scroll position, before its next paint.
