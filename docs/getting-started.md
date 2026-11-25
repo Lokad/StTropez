@@ -42,7 +42,7 @@ it to both mounts. The selection and folds follow the working document into comp
 
 Start `app.js` with a checklist. Create a resource for the file and mount its document in the page.
 
-```ts
+```js file=app.js
 import { Workspace } from "sttropez";
 import { mountTextEditor } from "sttropez/browser";
 
@@ -97,7 +97,7 @@ and open `http://localhost:8000/`. The examples use native ES modules and need n
 Add this toolbar helper to `app.js`. Append the remaining snippets there too, except for the tokenizer
 in `checklist.js`.
 
-```js
+```js file=app.js
 const controls = new AbortController();
 const toolbar = document.querySelector("nav");
 const output = document.querySelector("output");
@@ -119,7 +119,7 @@ both editors mounted preserves each caret, fold and scroll position. Your toolba
 show and where to put focus. `workspace.tabs.move` keeps the tab ID and pending captures valid across
 panes. `workspace.tabs.replace` reuses the ID and expires captures for the old tab.
 
-```js
+```js file=app.js
 const notes = workspace.createTextResource(
     { scope: "checklist", resource: "notes.md", variant: "working" }, "notes.md", { value: "" });
 const notesHost = document.querySelector("aside");
@@ -134,7 +134,7 @@ let notesTab;
 const notesPane = () => notesTab && workspace.tabs.resolve(notesTab.target)?.paneId;
 ```
 
-```js
+```js file=app.js
 const showChecklist = () => {
     primary.hidden = false;
     notesHost.hidden = notesPane() !== "side";
@@ -161,7 +161,7 @@ editing the notes after **Review close** instead. The edit expires the decision,
 the tab. Reopening **Notes** gives the same document a new tab, with its draft and undo history
 intact.
 
-```js
+```js file=app.js
 /** @type {import("sttropez").CloseIntent | undefined} */
 let closing;
 button("Review close", () => {
@@ -187,7 +187,7 @@ The remaining commands act on the checklist. Click **Propose task**, type in the
 then click **Apply task**. The workspace rejects the
 old offsets. Propose again and apply without typing to add the task in one undo step.
 
-```js
+```js file=app.js
 /** @type {(() => boolean) | undefined} */
 let proposal;
 button("Propose task", () => {
@@ -228,7 +228,7 @@ Back in `app.js`, attach a token provider to the second editor. The host loads t
 tokenizer or grammar parser and maps its output to document offsets and CSS classes. The stylesheet gives
 `open-task` and `done-task` different colors. Change a space to `x` to see the marker change.
 
-```js
+```js file=app.js
 import { tokens } from "./checklist.js";
 
 const second = document.createElement("section");
@@ -267,7 +267,7 @@ Paste tab-separated text in either pane to turn it into checklist rows. Other te
 paste handler. `insert` replaces the captured selections in one undo step. If your converter runs
 asynchronously, keep the capture until it finishes.
 
-```js
+```js file=app.js
 for (const pane of [editor, split]) {
     const stop = pane.registerPasteHandler(data => {
         const text = data.getData("text/plain");
@@ -283,7 +283,7 @@ for (const pane of [editor, split]) {
 
 Show unsaved edits in the page title. Subscribe once, then read the snapshot on each change.
 
-```js
+```js file=app.js
 const showDirty = () => { document.title = file.metadata.getSnapshot().dirty ? name + " (unsaved)" : name; };
 const stopDirty = file.metadata.subscribe(showDirty);
 showDirty();
@@ -294,7 +294,7 @@ The example writes to session storage and keeps each successful save as a review
 unsaved. For shared storage, send `expectedServerVersion` with the write. Call `ticket.conflict()`
 if the server reports a competing version.
 
-```js
+```js file=app.js
 import { TextBuffer } from "sttropez";
 
 let baseline = { buffer: TextBuffer.from(openedText), version: "opened" };
@@ -302,7 +302,7 @@ button("Save", () => {
     const ticket = workspace.captureSave(file);
     try {
         sessionStorage.setItem(name, ticket.start().value);
-        const receipt = ticket.accept({ serverVersion: crypto.randomUUID() });
+        const receipt = ticket.accept({ serverVersion: String(ticket.revision) });
         baseline = { buffer: TextBuffer.from(receipt.savedValue), version: receipt.serverVersion };
         output.textContent = "Saved";
     } catch (error) {
@@ -318,7 +318,7 @@ button("Save", () => {
 
 This host counts unfinished tasks using the current draft and the configured marker.
 
-```js
+```js file=app.js
 const rules = workspace.createResource(
     { scope: "checklist", resource: "rules", variant: "working" },
     "Checklist rules", { value: { marker: "- [ ] " } });
@@ -337,7 +337,7 @@ Open a review against the last successful save, or the
 file as opened. The reference stays fixed while the working pane follows edits. Click again
 to pick up a later save.
 
-```js
+```js file=app.js
 import { mountTextComparison } from "sttropez/browser";
 
 const reviewHost = document.getElementById("review");
@@ -356,7 +356,7 @@ The HTTP server above serves the checklist files. **Connect** needs a separately
 language server at the same origin’s `/lsp` WebSocket endpoint. It must speak LSP 3.17, use
 UTF-16 positions and recognize the URI assigned to the checklist resource.
 
-```js
+```js file=app.js
 import { BrowserLspWorkspace, attachEditorLanguage, openWebSocketTransport } from "sttropez/browser";
 
 const endpoint = new URL("/lsp", location.href);
@@ -369,15 +369,15 @@ const provider = new BrowserLspWorkspace(workspace, {
 Attach the provider to the first pane. Use **Connect**, then Ctrl+Space in the editor to request
 completion. Arrow keys choose a suggestion and Enter accepts it.
 
-```js
+```js file=app.js
 const language = attachEditorLanguage(editor, provider, {
     completion: { autoConnect: false }, diagnostics: { autoConnect: false }
 });
 const { completion, diagnostics } = language;
-function showLanguage() {
+const showLanguage = () => {
     const state = completion.getSnapshot();
     output.textContent = state.offerText ?? diagnostics.getSnapshot().diagnostics[0]?.message ?? state.message;
-}
+};
 const stopLanguage = completion.subscribe(showLanguage);
 const stopDiagnostics = diagnostics.subscribe(showLanguage);
 button("Connect", completion.connect);
@@ -398,7 +398,7 @@ acknowledges a write. Undo back to the saved text and the file is clean again.
 
 Close the attachments when the host closes this file. Ask before discarding edits.
 
-```js
+```js file=app.js
 button("Close", () => {
     const dirty = file.metadata.getSnapshot().dirty || notes.metadata.getSnapshot().dirty;
     if (dirty && !window.confirm("Discard unsaved changes and close the workspace?")) return;
@@ -409,6 +409,7 @@ button("Close", () => {
     language.dispose();
     provider.dispose();
     review?.dispose();
+    checklist.dispose();
     split.dispose();
     if (notesTab) { notesTab.editor.dispose(); workspace.tabs.close(notesTab.target.id); }
     editor.dispose();

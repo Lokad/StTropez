@@ -19,7 +19,7 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 | Command | Scope |
 | --- | --- |
 | `npm run typecheck` | Strict TypeScript checks for core, protocol, browser and development tools |
-| `npm run check:docs` | Page structure, links and anchors, public exports and prose. Compiles each TypeScript example separately. |
+| `npm run check:docs` | Page structure, links, anchors, prose and compilation of JavaScript, TypeScript and TSX examples. |
 | `npm test` | All model, host-policy, tooling and server/process integration tests |
 | `npm run test:models` | Headless model, host-policy and tooling checks without live servers or provider/compiler processes |
 | `npm run test:integration` | Real HTTP/WebSocket, provider, compiler and child-process lifecycle checks |
@@ -56,8 +56,10 @@ rendered heading slugs, duplicate-heading suffixes, explicit HTML anchors and so
 rejects other raw HTML. It skips external URLs and paths written as inline code.
 
 Each API page includes a checked example and links to the support matrix. Headings follow the subject.
-Each TypeScript or TSX fence compiles separately against public entries. Private imports and other packages fail with a Markdown file and
-line number.
+Examples import StTropez through its public entries. By default each code example compiles on its own.
+For a multi-file tutorial, mark fences with `file=app.js` or the companion filename. The checker joins
+sections of the same file and resolves imports such as `./checklist.js` within that page. Errors point
+to the corresponding Markdown line.
 
 Keep dates, commit IDs, milestone labels and test-run counts in research notes. The vocabulary check
 covers prose. Contributor instructions are exempt, but their links and examples are checked.

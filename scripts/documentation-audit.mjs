@@ -6,7 +6,7 @@ import { posix } from "node:path";
 import { libraryModules } from "./library-entries.mjs";
 
 /** @typedef {import("mdast").Nodes} MarkdownNode */
-/** @typedef {{path: string, line: number, language: string, code: string}} DocumentationExample */
+/** @typedef {{path: string, line: number, language: string, code: string, file?: string}} DocumentationExample */
 /** @typedef {{path: string, line: number, code: string, message: string}} DocumentationIssue */
 /** @typedef {{path: string, tree: import("mdast").Root, examples: DocumentationExample[],
  * links: {url: string, node: MarkdownNode}[], anchors: Set<string>,
@@ -16,6 +16,7 @@ export const apiPages = ["getting-started", "editor", "viewport", "folding", "se
 export const subjectPages = [...apiPages, "docs/README.md", "docs/testing.md", "docs/examples.md"];
 export const documentationPages = [...subjectPages, "README.md", "packaging/README.md", "AGENTS.md"];
 export const publicEntries = Object.fromEntries(libraryModules.map(entry => [entry.specifier, entry.source]));
+export const exampleExtensions = new Map([["js", "js"], ["javascript", "js"], ["ts", "ts"], ["typescript", "ts"], ["tsx", "tsx"]]);
 
 /** @param {MarkdownNode} node @param {(node: MarkdownNode) => void} action */
 function visit(node, action) { action(node); for (const child of "children" in node ? node.children : []) visit(child, action); }
@@ -30,13 +31,15 @@ function inlineText(node, code = true) {
 /** @param {Pick<DocumentationPage, "path">} page @param {MarkdownNode | undefined} node @param {string} code @param {string} message */
 const diagnostic = (page, node, code, message) => ({ path: page.path, line: node?.position?.start.line ?? 1, code, message });
 
-/** Parse once for links, headings, prose and independently compiled examples.
+/** Parse once for links, headings, prose and checked examples.
  * @param {string} path @param {string} markdown */
 export function parseDocumentation(path, markdown) {
     const tree = fromMarkdown(markdown, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
     /** @type {DocumentationPage} */
     const page = { path, tree, examples: [], links: [], anchors: new Set(), prose: [], diagnostics: [] };
     const slugger = new GithubSlugger();
+    /** @type {Map<string, DocumentationExample>} */
+    const modules = new Map();
     /** @type {Map<string, import("mdast").Definition>} */ const definitions = new Map();
     visit(tree, node => { if (node.type === "definition" && !definitions.has(node.identifier)) definitions.set(node.identifier, node); });
     visit(tree, node => {
@@ -69,7 +72,25 @@ export function parseDocumentation(path, markdown) {
         const closed = lines.length > 1 && close.test(last)
             && (!node.value || node.value.split(/\r\n|\r|\n/).length < lines.length - 1);
         if (!closed) page.diagnostics.push(diagnostic(page, node, "fence", "Unclosed code fence."));
-        if (node.lang === "ts" || node.lang === "typescript" || node.lang === "tsx") page.examples.push({ path, line: node.position.start.line + 1, language: node.lang, code: node.value });
+        if (!node.lang) return;
+        const extension = exampleExtensions.get(node.lang);
+        if (!extension) return;
+        const line = node.position.start.line + 1;
+        const file = node.meta?.startsWith("file=") ? node.meta.slice(5) : undefined;
+        if (file !== undefined && !file.endsWith("." + extension)) {
+            page.diagnostics.push(diagnostic(page, node, "fence", `Expected a .${extension} filename.`));
+            return;
+        }
+        const previous = file && modules.get(file);
+        if (previous) {
+            // Keep the Markdown line numbers in a file assembled from several fences.
+            const lastLine = previous.line + previous.code.split(/\r\n|\r|\n/).length - 1;
+            previous.code += "\n".repeat(line - lastLine) + node.value;
+        } else {
+            const example = { path, line, language: node.lang, code: node.value, ...(file !== undefined && { file }) };
+            page.examples.push(example);
+            if (file) modules.set(file, example);
+        }
     });
     return page;
 }
@@ -83,7 +104,7 @@ export function auditPage(page, { api = false, vocabulary = true } = {}) {
         for (const match of text.matchAll(banned)) issues.push({ ...diagnostic(page, node, "prose", `Describe current behavior; move historical wording ${JSON.stringify(match[0])} to ignored research (code identifiers belong in inline code).`), line: (node.position?.start.line ?? 1) + text.slice(0, match.index).split("\n").length - 1 });
     }
     if (api) {
-        if (!page.examples.length) issues.push(diagnostic(page, undefined, "example", "Expected a checked TypeScript example."));
+        if (!page.examples.length) issues.push(diagnostic(page, undefined, "example", "Expected a checked code example."));
         if (!page.links.some(link => link.url === "README.md#support-matrix")) {
             issues.push(diagnostic(page, undefined, "support", "Link to the support matrix in docs/README.md."));
         }

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { moduleSpecifiers } from "./module-specifiers.mjs";
-import { apiPages, subjectPages, documentationPages, publicEntries as entries, parseDocumentation, auditPage, auditLinks } from "./documentation-audit.mjs";
+import { apiPages, subjectPages, documentationPages, publicEntries as entries, exampleExtensions, parseDocumentation, auditPage, auditLinks } from "./documentation-audit.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
@@ -15,13 +15,23 @@ export function documentationExamples(path, markdown) {
     return page.examples;
 }
 
-/** Compile each example as its own module against the public source entry points.
+/** Compile the examples against public entries. Named files can import a sibling on the same page.
  * @param {ReturnType<typeof parseDocumentation>["examples"]} examples */
 export async function compileDocumentation(examples) {
-    if (!examples.length) throw new Error("No TypeScript documentation examples found.");
-    for (const example of examples) {
+    if (!examples.length) throw new Error("No documentation examples found.");
+    const pages = [...new Set(examples.map(example => example.path))];
+    const modules = examples.map((example, index) => {
+        const extension = exampleExtensions.get(example.language);
+        if (!extension) throw new Error(`Unknown example language ${example.language}.`);
+        if (example.file === undefined) return { example, filename: `example-${index + 1}.${extension}` };
+        if (!/^[\w-]+\.(?:js|ts|tsx)$/.test(example.file) || !example.file.endsWith("." + extension)) {
+            throw new Error(`${example.path}:${example.line}: Invalid example filename ${JSON.stringify(example.file)}.`);
+        }
+        return { example, filename: join(String(pages.indexOf(example.path)), example.file) };
+    });
+    for (const { example, filename } of modules) {
         let specifiers;
-        try { specifiers = moduleSpecifiers(`${example.path}.${example.language === "tsx" ? "tsx" : "ts"}`, example.code); }
+        try { specifiers = moduleSpecifiers(filename, example.code); }
         catch (error) {
             if (!(error instanceof Error)) throw error;
             const offset = "offset" in error && typeof error.offset === "number" ? error.offset : 0;
@@ -29,7 +39,9 @@ export async function compileDocumentation(examples) {
             throw new Error(`${example.path}:${line}: ${error.message}`, { cause: error });
         }
         for (const specifier of specifiers) {
-            if (!Object.hasOwn(entries, specifier.value)) {
+            const sibling = example.file && examples.some(other => other.path === example.path
+                && other.file !== undefined && specifier.value === "./" + other.file);
+            if (!sibling && !Object.hasOwn(entries, specifier.value)) {
                 const line = example.line + example.code.slice(0, specifier.from).split("\n").length - 1;
                 throw new Error(`${example.path}:${line}: Import ${JSON.stringify(specifier.value)} must use a public entry point.`);
             }
@@ -40,15 +52,16 @@ export async function compileDocumentation(examples) {
     const directory = await mkdtemp(join(scratch, "compile-"));
     try {
         const files = [];
-        for (const [index, example] of examples.entries()) {
-            const file = join(directory, `example-${index + 1}.${example.language === "tsx" ? "tsx" : "ts"}`);
+        for (const { example, filename } of modules) {
+            const file = join(directory, filename);
+            await mkdir(dirname(file), { recursive: true });
             await writeFile(file, "\n".repeat(example.line - 1) + example.code + "\nexport {};\n");
             files.push(file);
         }
         const configuration = join(directory, "tsconfig.json");
         await writeFile(configuration, JSON.stringify({
             extends: resolve(root, "tsconfig.base.json"),
-            compilerOptions: { noEmit: true, skipLibCheck: false, types: [],
+            compilerOptions: { noEmit: true, skipLibCheck: false, allowJs: true, checkJs: true, types: [],
                 paths: Object.fromEntries(Object.entries(entries).map(([name, path]) => [name, [resolve(root, path)]])) },
             files, include: [], exclude: []
         }, null, 2));
@@ -84,7 +97,7 @@ async function main() {
     if (issues.length) throw new Error(issues.map(issue => `${issue.path}:${issue.line}: [${issue.code}] ${issue.message}`).join("\n"));
     const examples = pages.flatMap(page => page.examples), result = await compileDocumentation(examples);
     if (!result.success) throw new Error(result.output || "Documentation compilation failed.");
-    console.log(`Checked ${pages.length} documents, repository links/anchors and prose; compiled ${examples.length} independent TypeScript examples.`);
+    console.log(`Checked ${pages.length} documents, repository links/anchors and prose. Compiled ${examples.length} example modules.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
