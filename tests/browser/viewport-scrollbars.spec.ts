@@ -10,7 +10,7 @@ test("a fitting demo settles at fractional zoom with visible scrollbars", async 
     await expect(page.locator("#analysis-status")).toContainText("syntax & emit");
     await page.evaluate(() => document.fonts.ready.then(() => {}));
     // Let optional provider decorations settle before counting presentation mutations.
-    if (await page.locator("#language-status").count()) await expect(page.locator("#language-status")).toHaveText("Language ready");
+    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     await page.evaluate(() => { document.documentElement.style.zoom = "1.25"; });
     const result = await page.locator("#editor .st-viewport").evaluate(async root => {
         let paintBatches = 0, counting = false;
