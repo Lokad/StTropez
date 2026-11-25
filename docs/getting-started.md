@@ -28,8 +28,9 @@ Save and Run execute. [Regex worker](search.md#regular-expressions-and-worker-li
 ## Use
 
 Run `npm run demo` and open `http://127.0.0.1:4173/reference/` for a complete host.
-Edit `quote.ts`, choose **Changes** to review it, then **Save for this tab**. The saved text
-survives a reload in that tab. **Connect language server** enables the local example provider.
+Edit `quote.ts` and choose **Changes** to review it. Use **Save for this tab** or press
+Ctrl+S (Cmd+S on macOS) in either pane. Reload the tab to reopen the saved text.
+**Connect language server** enables the local example provider.
 
 Before saving or switching views, the host checks `editor.activity()` and the Find bar. If input,
 a command or a replacement is pending, finish the edit and retry. This keeps the working view alive until the edit commits.

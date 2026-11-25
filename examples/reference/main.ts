@@ -52,6 +52,8 @@ function mount(review: boolean) {
     if (review) comparison = mountTextComparison(pane, workspace, file.documentId, baseline, { view, settings });
     const editor = comparison?.panes.working
         ?? mountTextEditor(pane, workspace, file.documentId, { ariaLabel: name, view, settings });
+    (comparison ?? editor).commands.register({ id: "source.save", label: "Save for this tab", run: save },
+        { keys: ["Mod+s"], repeat: false });
     const folds = createFoldingController(editor, doc => discoverIndentationFolds(doc.buffer));
     const referenceFolds = comparison && createFoldingController(comparison.panes.reference,
         doc => discoverIndentationFolds(doc.buffer));

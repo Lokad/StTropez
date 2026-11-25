@@ -170,8 +170,7 @@ test("Save and Changes preserve a pending edit in the reference host", async ({ 
     await source.press("Control+a");
     await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
     await page.keyboard.press("Control+/");
-    // Skip the animation-frame wait for click stability while the command's timer is held.
-    await save.click({ force: true });
+    await page.keyboard.press("ControlOrMeta+s");
     expect(await page.locator("#saved").innerText()).toBe("An edit is pending. Try again when it finishes.");
     expect(await page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"))).toBeNull();
     await changes.click({ force: true });
@@ -186,7 +185,7 @@ test("Save and Changes preserve a pending edit in the reference host", async ({ 
     const working = page.getByRole("textbox", { name: "Comparison working source" });
     await expect(working).toBeFocused();
     await working.press("Control+z");
-    await save.click();
+    await page.getByRole("textbox", { name: "Comparison baseline source" }).press("ControlOrMeta+s");
     expect(await page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"))).toBe(text);
 });
 
@@ -232,7 +231,7 @@ test("the reference app edits, reviews and saves the document while its language
     await working.press("Control+z");
     await working.press("Control+Home");
     await page.keyboard.type("// Approved ");
-    await page.getByRole("button", { name: "Save for this tab" }).click();
+    await working.press("ControlOrMeta+s");
     await expect(page.locator("#saved")).toHaveText("Saved");
     await page.getByRole("button", { name: "Source", exact: true }).click();
     await expect(source).toBeFocused();
