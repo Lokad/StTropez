@@ -89,6 +89,8 @@ Replace All belongs in the demo. Extend the existing case when it already perfor
 Use the plain host for shared behavior. Add a React case for attachment, Strict Mode, render
 isolation or error recovery. Use a shadow root when event retargeting affects the outcome.
 For layout, exercise the actual control and inspect the painted row, caret or selection.
+For browser tests that import source modules directly, declare the entries once per suite.
+The [fixture bundler](../tests/helpers/fixture-modules.ts) builds them on first use and serves them to each test page.
 
 For a race, hold the reply, change or close its target, release it and check the document and
 selection that the user sees. For a save, check what was written and whether later edits remain

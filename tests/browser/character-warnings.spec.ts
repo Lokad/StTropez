@@ -1,7 +1,5 @@
 import { test, expect } from "./fixtures.ts";
-import { build } from "esbuild";
-import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
+import { editorModules } from "../helpers/fixture-modules.ts";
 import type { Page } from "@playwright/test";
 import type { Workspace, ResourceId, TabId } from "../../src/index.ts";
 import type { CharacterWarningCapture, TextEditor } from "../../src/browser/index.ts";
@@ -9,18 +7,12 @@ import type { CharacterWarningCapture, TextEditor } from "../../src/browser/inde
 type Fixture = { workspace: Workspace; editor: TextEditor; tab: TabId; resource: ResourceId; host: HTMLElement;
     set: (text: string, caret?: number) => void; capture?: CharacterWarningCapture };
 declare global { interface Window { warningFixture: Fixture } }
-let modules: Map<string, string>, css: string;
-test.beforeAll(async () => {
-    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts" }, outdir: "artifacts/warning-fixture",
-        bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text])); css = await readFile("src/browser/editor.css", "utf8");
-});
 async function fixture(page: Page, text = "a\u00a0b\u200bc", enabled = false) {
-    await page.route("**/warning-fixture/**", route => {
-        const name = new URL(route.request().url()).pathname.split("/").at(-1)!;
-        return route.fulfill({ contentType: name === "" ? "text/html" : name === "editor.css" ? "text/css" : "text/javascript",
-            body: name === "" ? '<!doctype html><link rel="stylesheet" href="editor.css"><style>.fixture-color { color: rgb(160, 30, 120) }</style>' : name === "editor.css" ? css : modules.get(name)! });
-    });
+    await editorModules(page, "/warning-fixture/");
+    await page.route("**/warning-fixture/editor.css", route => route.fulfill({ path: "src/browser/editor.css" }));
+    await page.route("**/warning-fixture/", route => route.fulfill({
+        contentType: "text/html", body: '<!doctype html><link rel="stylesheet" href="editor.css"><style>.fixture-color { color: rgb(160, 30, 120) }</style>',
+    }));
     await page.goto("/warning-fixture/");
     await page.evaluate(async ({ text, enabled }) => {
         const path = "/warning-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");

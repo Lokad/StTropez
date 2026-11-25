@@ -1,28 +1,26 @@
 import { isolatedTest as test, expect } from "./fixtures.ts";
-import { build } from "esbuild";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
 import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
 import type { Page } from "@playwright/test";
 import type { Workspace, TextResourceHandle, TabId } from "../../src/index.ts";
 import type { TextEditor, InputConflictDetail, CompletionController, LspHighlightController } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
+
+const serveModules = fixtureModules({
+    core: "src/index.ts",
+    browser: "src/browser/index.ts",
+    protocol: "src/protocol/index.ts",
+});
 
 type Fixture = { workspace: Workspace; source: TextResourceHandle; tab: TabId; editor: TextEditor;
     provider?: LspWorkspace; completion?: CompletionController; highlights?: LspHighlightController;
     prepareCompletion?: () => Promise<void>;
     errors: string[]; cancellations: string[]; dispose: () => Promise<void> };
 declare global { interface Window { shadowFocus: Fixture } }
-let modules: Map<string, string>, css: string;
-test.beforeAll(async () => {
-    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts", protocol: "src/protocol/index.ts" },
-        outdir: "artifacts/shadow-focus", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text])); css = await readFile("src/browser/editor.css", "utf8");
-});
+let css: string;
+test.beforeAll(async () => { css = await readFile("src/browser/editor.css", "utf8"); });
 async function mount(page: Page, language: boolean) {
-    await page.route("**/shadow-focus/*.js", route => {
-        const name = new URL(route.request().url()).pathname.split("/").at(-1)!;
-        return route.fulfill({ contentType: "text/javascript", body: modules.get(name)! });
-    });
+    await serveModules(page, "/shadow-focus/");
     // Keep a real local response as the document origin for native WebSocket policy.
     await page.goto("/protocol/");
     await page.evaluate(async ({ css, language }) => {

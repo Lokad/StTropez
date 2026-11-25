@@ -1,17 +1,18 @@
-import { build } from "esbuild";
-import { basename } from "node:path";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
 import { test, expect } from "./fixtures.ts";
 
+const serveModules = fixtureModules({
+    project: "examples/demo/project.ts",
+    language: "examples/demo/language-view.ts",
+    commands: "examples/demo/language-commands.ts",
+    cleanup: "examples/shared/cleanup-scope.ts",
+    core: "src/index.ts",
+    browser: "src/browser/index.ts",
+    provider: "tests/fixtures/demo/server-provider.ts",
+});
+
 test.beforeEach(async ({ page }) => {
-    const built = await build({ entryPoints: { project: "examples/demo/project.ts", language: "examples/demo/language-view.ts",
-        commands: "examples/demo/language-commands.ts", cleanup: "examples/shared/cleanup-scope.ts", core: "src/index.ts",
-        browser: "src/browser/index.ts", provider: "tests/fixtures/demo/server-provider.ts" }, outdir: "artifacts/demo-language-lifecycle",
-        bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
-    await page.route("**/demo-language-lifecycle/**", route => {
-        const name = new URL(route.request().url()).pathname.split("/").at(-1)!;
-        return modules.has(name) ? route.fulfill({ contentType: "text/javascript", body: modules.get(name)! }) : route.abort();
-    });
+    await serveModules(page, "/demo-language-lifecycle/");
     // Keep the real loopback document's network address space for its WebSocket.
     await page.route("**/protocol-fixture.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
     await page.goto("/protocol/");

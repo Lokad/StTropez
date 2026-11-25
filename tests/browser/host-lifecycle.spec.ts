@@ -1,15 +1,17 @@
-import { build } from "esbuild";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
 import { test, expect } from "./fixtures.ts";
 
 for (const mode of ["plain", "react"] as const) test(`${mode} boots without fixture installation and retains cached-page state until final hide`, async ({ page }, testInfo) => {
     testInfo.annotations.push({ type: "page-transition-policy", description: "Synthetic persisted/final pagehide events exercise host policy; real back/forward-cache eligibility is not asserted." });
-    const result = await build({ entryPoints: [`tests/fixtures/hosts/${mode}-entry.ts`],
-        outfile: `artifacts/host-lifecycle/${mode}.js`, bundle: true, format: "esm", platform: "browser", target: "es2022", write: false,
-        plugins: [{ name: "omit-fixture-installation", setup(builder) {
-            builder.onLoad({ filter: /[\\/]hosts[\\/]harness\.ts$/ }, () => ({ contents: "export function installHostHarness() {}", loader: "ts" }));
-        } }] });
-    const script = result.outputFiles.find(file => file.path.endsWith(".js"))!;
-    await page.route(`**/host-${mode}.js`, route => route.fulfill({ contentType: "text/javascript", body: script.text }));
+    const serveModules = fixtureModules({ [`host-${mode}`]: `tests/fixtures/hosts/${mode}-entry.ts` }, [{
+        name: "omit-fixture-installation",
+        setup(builder) {
+            builder.onLoad({ filter: /[\\/]hosts[\\/]harness\.ts$/ }, () => ({
+                contents: "export function installHostHarness() {}", loader: "ts",
+            }));
+        },
+    }]);
+    await serveModules(page, "/");
     await page.goto(`/hosts/${mode}/`);
     const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
     await expect(primary).toBeVisible(); expect(await page.evaluate(() => typeof window.hostFixture)).toBe("undefined");

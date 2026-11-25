@@ -1,15 +1,15 @@
 import { test, expect } from "./fixtures.ts";
-import { build } from "esbuild";
-import { basename } from "node:path";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
+
+const serveModules = fixtureModules({
+    core: "src/index.ts",
+    browser: "src/browser/text-editor.ts",
+    readiness: "tests/fixtures/readiness.ts",
+    rows: "src/core/comparison-rows.ts",
+});
 
 test("owner activity retains immutable captures without collecting metrics and follows pending work", async ({ page }, testInfo) => {
-    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/text-editor.ts", readiness: "tests/fixtures/readiness.ts",
-        rows: "src/core/comparison-rows.ts" }, outdir: "artifacts/owner-activity", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
-    await page.route("**/owner-activity/**", route => {
-        const body = modules.get(new URL(route.request().url()).pathname.split("/").at(-1)!);
-        return body === undefined ? route.abort() : route.fulfill({ contentType: "text/javascript", body });
-    });
+    await serveModules(page, "/owner-activity/");
     await page.goto("/viewport/");
     const result = await page.evaluate(async () => {
         const path = "/owner-activity/";

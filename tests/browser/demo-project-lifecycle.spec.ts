@@ -1,6 +1,8 @@
-import { build } from "esbuild";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
 import { demoSample } from "../../examples/demo/samples.ts";
 import { test, expect } from "./fixtures.ts";
+
+const serveModules = fixtureModules({ app: "tests/fixtures/demo/fail-project-open.ts" });
 
 test("the focused sample picker can move past a pending project and return to the same load", async ({ page }) => {
     type Probe = { reads: number; release?: () => void };
@@ -50,22 +52,7 @@ test("the focused sample picker can move past a pending project and return to th
 
 test("failed project opening leaves startup and the current sample retryable", async ({ page }) => {
     // Patch only the project factory boundary; model tests own construction/rollback faults.
-    const built = await build({ stdin: { resolveDir: process.cwd(), contents: `
-        import { DemoProject } from "./examples/demo/project.ts";
-        const state = { armed: true, reported: 0, failure: new Error("Injected project startup failure") };
-        window.demoProjectFailure = state;
-        const open = DemoProject.open, report = console.error;
-        DemoProject.open = async (...args) => {
-            if (state.armed) { state.armed = false; throw state.failure; }
-            return open(...args);
-        };
-        console.error = (...args) => {
-            if (args.length === 1 && args[0] === state.failure) { state.reported++; return; }
-            report(...args);
-        };
-        await import("./examples/demo/browser-main.ts");
-    ` }, outdir: "artifacts/demo-project-lifecycle", bundle: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    await page.route("**/app.js", route => route.fulfill({ contentType: "text/javascript", body: built.outputFiles.find(file => file.path.endsWith(".js"))!.text }));
+    await serveModules(page, "/");
     await page.goto("/");
     const sample = page.locator("#sample"), source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await expect(page.locator("#status")).toContainText("Could not open this sample");

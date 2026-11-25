@@ -1,9 +1,12 @@
 import { readFile } from "node:fs/promises";
-import { relative, resolve, sep } from "node:path";
-import { build } from "esbuild";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
 import { libraryCss, libraryModules } from "../../scripts/library-entries.mjs";
 import { parseDocumentation } from "../../scripts/documentation-audit.mjs";
 import { expect, pauseBetweenCommandTurns, test } from "./fixtures.ts";
+
+const serveModules = fixtureModules(
+    Object.fromEntries(libraryModules.map(entry => [entry.output.slice(0, -3), entry.source])),
+);
 
 test("the tutorial keeps a pending split edit through Save and Close", async ({ page }) => {
     const path = "docs/getting-started.md";
@@ -14,14 +17,6 @@ test("the tutorial keeps a pending split edit through Save and Close", async ({ 
     for (const { file, code } of guide.examples) {
         if (file) assets.set(file, code);
     }
-    const outdir = resolve("artifacts/tutorial-test");
-    const built = await build({
-        entryPoints: Object.fromEntries(libraryModules.map(entry => [entry.output.slice(0, -3), entry.source])),
-        outdir, bundle: true, splitting: true, format: "esm", target: "es2022", write: false
-    });
-    for (const file of built.outputFiles) {
-        assets.set("sttropez/" + relative(outdir, file.path).split(sep).join("/"), file.text);
-    }
     await page.route("**/checklist/**", route => {
         const name = new URL(route.request().url()).pathname.slice("/checklist/".length);
         const body = assets.get(name);
@@ -29,6 +24,7 @@ test("the tutorial keeps a pending split edit through Save and Close", async ({ 
         const contentType = name === "" ? "text/html" : name.endsWith(".css") ? "text/css" : "text/javascript";
         return route.fulfill({ contentType, body });
     });
+    await serveModules(page, "/checklist/sttropez/");
     await page.clock.install();
     await page.goto("/checklist/");
     const split = page.getByRole("textbox", { name: "Checklist split" });

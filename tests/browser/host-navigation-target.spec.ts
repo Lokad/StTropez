@@ -1,16 +1,19 @@
-import { build } from "esbuild";
-import { basename } from "node:path";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
 import { test, expect } from "./fixtures.ts";
+
+const serveModules = fixtureModules({
+    core: "src/index.ts",
+    browser: "src/browser/index.ts",
+    host: "tests/fixtures/hosts/navigation.ts",
+    panel: "tests/fixtures/hosts/navigation-panel.ts",
+    panes: "examples/shared/language-host.ts",
+    links: "tests/fixtures/hosts/document-links.ts",
+    linkPanel: "tests/fixtures/hosts/document-links-panel.ts",
+});
 
 test("links and definitions retry a failed presentation and keep the requesting source", async ({ page }) => {
     const path = "/navigation-target/";
-    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts",
-        host: "tests/fixtures/hosts/navigation.ts", panel: "tests/fixtures/hosts/navigation-panel.ts", panes: "examples/shared/language-host.ts",
-        links: "tests/fixtures/hosts/document-links.ts", linkPanel: "tests/fixtures/hosts/document-links-panel.ts" },
-        outdir: "artifacts/navigation-target", bundle: true, splitting: true, format: "esm", platform: "browser", write: false });
-    const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
-    await page.route("**/navigation-target/*.js", route =>
-        route.fulfill({ contentType: "text/javascript", body: modules.get(basename(route.request().url()))! }));
+    await serveModules(page, "/navigation-target/");
     await page.route("**/protocol-fixture.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
     await page.routeWebSocket("**/lsp-fixture", client => {
         const server = client.connectToServer();

@@ -1,15 +1,8 @@
 import { test, expect } from "./fixtures.ts";
-import { build } from "esbuild";
-import { basename } from "node:path";
+import { viewportModules } from "../helpers/fixture-modules.ts";
 
 test("viewport input ownership and render delivery survive removal, reentrancy and disposal", async ({ page }) => {
-    const built = await build({ entryPoints: { core: "src/index.ts", viewport: "src/browser/viewport.ts" }, outdir: "artifacts/viewport-input",
-        bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
-    await page.route("**/viewport-input/**", route => {
-        const body = modules.get(new URL(route.request().url()).pathname.split("/").at(-1)!);
-        return body === undefined ? route.abort() : route.fulfill({ contentType: "text/javascript", body });
-    });
+    await viewportModules(page, "/viewport-input/");
     await page.goto("/viewport/");
     const result = await page.evaluate(async () => {
         const path = "/viewport-input/";

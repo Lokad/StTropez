@@ -1,9 +1,10 @@
 import { test, expect } from "./fixtures.ts";
-import { build } from "esbuild";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
+
+const serveModules = fixtureModules({ "text-geometry-owner": "src/browser/text-geometry.ts" });
 
 test("lazy caret points match full native preparation before and after reordered queries", async ({ page }, testInfo) => {
-    const built = await build({ entryPoints: ["src/browser/text-geometry.ts"], bundle: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    await page.route("**/text-geometry-owner.js", route => route.fulfill({ contentType: "text/javascript", body: built.outputFiles[0]!.text }));
+    await serveModules(page, "/");
     await page.goto("/viewport/");
     const result = await page.evaluate(async () => {
         const path = "/text-geometry-owner.js", { rowGeometry } = await import(path) as typeof import("../../src/browser/text-geometry.ts");

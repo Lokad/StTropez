@@ -1,15 +1,14 @@
 import { test, expect } from "./fixtures.ts";
-import { build } from "esbuild";
-import { basename } from "node:path";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
+
+const serveModules = fixtureModules({
+    core: "src/index.ts",
+    viewport: "src/browser/viewport.ts",
+    editor: "src/browser/text-editor.ts",
+});
 
 test.beforeEach(async ({ page }) => {
-    const built = await build({ entryPoints: { core: "src/index.ts", viewport: "src/browser/viewport.ts", editor: "src/browser/text-editor.ts" }, outdir: "artifacts/viewport-decorations",
-        bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
-    await page.route("**/viewport-decorations/**", route => {
-        const body = modules.get(new URL(route.request().url()).pathname.split("/").at(-1)!);
-        return body === undefined ? route.abort() : route.fulfill({ contentType: "text/javascript", body });
-    });
+    await serveModules(page, "/viewport-decorations/");
     await page.goto("/viewport/");
 });
 

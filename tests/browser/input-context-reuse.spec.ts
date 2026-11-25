@@ -1,15 +1,15 @@
 import { test, expect } from "./fixtures.ts";
-import { build } from "esbuild";
-import { basename } from "node:path";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
+
+const serveModules = fixtureModules({
+    probe: "tests/observe-buffer-reads.ts",
+    core: "src/index.ts",
+    browser: "src/browser/index.ts",
+    context: "src/browser/input-context.ts",
+});
 
 test("input refresh reuses bounded projections while repairing native state and capturing current targets", async ({ page }, testInfo) => {
-    const built = await build({ entryPoints: { probe: "tests/observe-buffer-reads.ts", core: "src/index.ts", browser: "src/browser/index.ts", context: "src/browser/input-context.ts" },
-        outdir: "artifacts/input-context-reuse", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
-    await page.route("**/input-context-reuse/**", route => {
-        const body = modules.get(new URL(route.request().url()).pathname.split("/").at(-1)!);
-        return body === undefined ? route.abort() : route.fulfill({ contentType: "text/javascript", body });
-    });
+    await serveModules(page, "/input-context-reuse/");
     await page.goto("/viewport/");
     const result = await page.evaluate(async () => {
         const path = "/input-context-reuse/";

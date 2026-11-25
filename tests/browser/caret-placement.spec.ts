@@ -1,16 +1,15 @@
 import { test, expect } from "./fixtures.ts";
-import { build } from "esbuild";
-import { basename } from "node:path";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
 import { readFile } from "node:fs/promises";
 
+const serveModules = fixtureModules({
+    core: "src/index.ts",
+    viewport: "src/browser/viewport.ts",
+    caret: "src/browser/input-caret.ts",
+});
+
 for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} caret placement measures every visible head before writes and remeasures after reveal`, async ({ page }, testInfo) => {
-    const built = await build({ entryPoints: { core: "src/index.ts", viewport: "src/browser/viewport.ts", caret: "src/browser/input-caret.ts" },
-        outdir: "artifacts/caret-placement", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
-    await page.route("**/caret-placement/**", route => {
-        const body = modules.get(new URL(route.request().url()).pathname.split("/").at(-1)!);
-        return body === undefined ? route.abort() : route.fulfill({ contentType: "text/javascript", body });
-    });
+    await serveModules(page, "/caret-placement/");
     await page.goto("/viewport/");
     const result = await page.evaluate(async ({ shadow, css }) => {
         const path = "/caret-placement/";

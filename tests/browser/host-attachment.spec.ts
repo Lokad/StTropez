@@ -1,16 +1,17 @@
-import { build } from "esbuild";
-import { basename } from "node:path";
+import { fixtureModules } from "../helpers/fixture-modules.ts";
 import { test, expect } from "./fixtures.ts";
 
+const serveModules = fixtureModules({
+    controller: "tests/fixtures/hosts/controller.ts",
+    bindings: "tests/fixtures/hosts/bindings.ts",
+    editor: "src/browser/index.ts",
+});
+
 test.beforeEach(async ({ page }) => {
-    const built = await build({ entryPoints: { controller: "tests/fixtures/hosts/controller.ts", bindings: "tests/fixtures/hosts/bindings.ts", editor: "src/browser/index.ts" },
-        outdir: "artifacts/host-attachment", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
-    await page.route("**/host-attachment/**", route => {
-        const name = new URL(route.request().url()).pathname.split("/").at(-1)!;
-        return name === "" ? route.fulfill({ contentType: "text/html", body: '<div id="host" style="width:600px;height:240px"></div>' })
-            : modules.has(name) ? route.fulfill({ contentType: "text/javascript", body: modules.get(name)! }) : route.abort();
-    });
+    await serveModules(page, "/host-attachment/");
+    await page.route("**/host-attachment/", route => route.fulfill({
+        contentType: "text/html", body: '<div id="host" style="width:600px;height:240px"></div>',
+    }));
     await page.goto("/host-attachment/");
 });
 

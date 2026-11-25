@@ -1,15 +1,8 @@
 import { test, expect } from "./fixtures.ts";
-import { build } from "esbuild";
-import { basename } from "node:path";
+import { viewportModules } from "../helpers/fixture-modules.ts";
 
 test("viewport retains valid native geometry and expires changed captures without stale caret positions", async ({ page }, testInfo) => {
-    const built = await build({ entryPoints: { core: "src/index.ts", viewport: "src/browser/viewport.ts" }, outdir: "artifacts/viewport-geometry",
-        bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
-    await page.route("**/viewport-geometry/**", route => {
-        const body = modules.get(new URL(route.request().url()).pathname.split("/").at(-1)!);
-        return body === undefined ? route.abort() : route.fulfill({ contentType: "text/javascript", body });
-    });
+    await viewportModules(page, "/viewport-geometry/");
     await page.goto("/viewport/");
     const result = await page.evaluate(async () => {
         const path = "/viewport-geometry/";

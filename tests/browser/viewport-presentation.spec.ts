@@ -1,7 +1,5 @@
 import { test, expect } from "./fixtures.ts";
-import { build } from "esbuild";
-import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
+import { editorModules } from "../helpers/fixture-modules.ts";
 import type { Workspace, ResourceId, TabId } from "../../src/index.ts";
 import type { TextEditor, TextComparison } from "../../src/browser/index.ts";
 import { fontFixture } from "../fixtures/consumer/font-fixture.ts";
@@ -10,20 +8,11 @@ import { paintedCharacter } from "../helpers/painted-character.ts";
 type Fixture = { workspace: Workspace; editor: TextEditor; host: HTMLElement; tab: TabId; resource: ResourceId; comparison?: TextComparison };
 declare global { interface Window { presentationFixture: Fixture } }
 
-let modules: Map<string, string>, css: string;
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
-test.beforeAll(async () => {
-    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts" }, outdir: "artifacts/presentation-fixture",
-        bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
-    modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text])); css = await readFile("src/browser/editor.css", "utf8");
-});
 test.beforeEach(async ({ page }) => {
-    await page.route("**/presentation-fixture/*.js", route => {
-        const name = new URL(route.request().url()).pathname.split("/").at(-1)!;
-        return route.fulfill({ contentType: "text/javascript", body: modules.get(name)! });
-    });
+    await editorModules(page, "/presentation-fixture/");
     await page.goto("/presentation-fixture/");
-    await page.addStyleTag({ content: css });
+    await page.addStyleTag({ path: "src/browser/editor.css" });
 });
 
 test("fold labels describe the hidden imports and their changes in each review pane", async ({ page }) => {
