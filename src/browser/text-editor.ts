@@ -234,9 +234,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (id === "go-to-line") return !!options.requestLine;
             if (isDeletionCommand(id)) return !input.readOnly;
             if (!editCommand(id)) return true;
-            if (input.readOnly) return false;
-            if (id === "block-comment") return !!language.blockComment;
-            return !["line-comment", "add-line-comment", "remove-line-comment"].includes(id) || !!language.lineComment;
+            return !input.readOnly && hasCommentSyntax(id);
         } });
     }
     for (const [keys, command] of apple ? defaultEditorShortcuts.apple : defaultEditorShortcuts.standard) {
@@ -557,7 +555,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                     release = options.prepare(sourceRanges.slice(index, batchEnd));
                 }
                 // Cheap caret moves share a time slice. The count limit also bounds work on a coarse clock.
-                while (index < batchEnd && !waiting && count++ < commandBudget.rangeCalls
+                while (index < batchEnd && !waiting && count++ < commandBudget.maxCalls
                     && (options.inline || win.performance.now() - began < commandBudget.sliceMs)) {
                     waiting = true;
                     resolve(sourceRanges[index]!, range => {
@@ -904,10 +902,15 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }, capture => shortVertical(capture, direction, page, add));
         return true;
     }
+    function hasCommentSyntax(command: TextEditorCommand | Readonly<{ character: string }>): boolean {
+        switch (command) {
+            case "line-comment": case "add-line-comment": case "remove-line-comment": return !!language.lineComment;
+            case "block-comment": return !!language.blockComment;
+            default: return true;
+        }
+    }
     function languageCommand(command: EditingCommand | Readonly<{ character: string }>): boolean {
-        if (disposed || composing || input.disabled || input.readOnly) return false;
-        if ((command === "line-comment" || command === "add-line-comment" || command === "remove-line-comment") && !language.lineComment
-            || command === "block-comment" && !language.blockComment) return false;
+        if (disposed || composing || input.disabled || input.readOnly || !hasCommentSyntax(command)) return false;
         cancelWord(); syncSelection();
         const capture = commandCapture(true), overtyped: number[] = [];
         const folds = typeof command === "string" && command !== "newline" && command !== "block-comment"
@@ -921,22 +924,36 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }, language, folds);
         const acceptPairs = (edits: readonly TextEdit[]) => paired.accept(workspace.document(documentId), capture.revision, edits, capture.selectionSet, opening, overtyped);
         let planning = false;
-        const job = { capture, purpose: "grapheme" as const, release: () => { if (!planning) planner.dispose(); } }; rangeCommand = job;
+        let cancelNextSlice: (() => void) | undefined;
+        const job = {
+            capture,
+            purpose: "grapheme" as const,
+            release() {
+                cancelNextSlice?.();
+                if (!planning) planner.dispose();
+            },
+        };
+        rangeCommand = job;
         const step = () => commandTurn(() => {
             if (rangeCommand !== job) return;
             if (!validCommand(capture) || folds && !folds.sameProjection(view.folding.getSnapshot().index)) { cancelWord(); return; }
+            // Keep the key handler short. On later slices the next timer can elapse while the planner works.
+            const calls = cancelNextSlice ? commandBudget.maxCalls : commandBudget.initialLanguageCalls;
+            if (cancelNextSlice) cancelNextSlice = commandRunner.schedule(step);
             let result;
             try {
                 planning = true;
                 result = commandRunner.slice(() => planner.next(commandBudget.languageUnits),
-                    result => result.status === "running" && rangeCommand === job, commandBudget.languageCalls);
+                    result => result.status === "running" && rangeCommand === job, calls);
             }
             finally { planning = false; }
             if (rangeCommand !== job) { planner.dispose(); return; }
             if (result.status === "running") {
-                cancelRangeTask = commandRunner.schedule(() => { if (rangeCommand === job) cancelRangeTask = undefined; step(); }); return;
+                cancelNextSlice ??= commandRunner.schedule(step);
+                return;
             }
-            rangeCommand = undefined; planner.dispose();
+            rangeCommand = undefined;
+            job.release();
             completeCaptured(capture, () => {
                 const plan = result.result!;
                 const autoIndent = language.enter !== undefined && (command === "newline" || command === "insert-line-above" || command === "insert-line-below");
@@ -952,7 +969,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 return true;
             });
         }, typeof command === "object" ? command.character : "");
-        group = undefined; step(); return true;
+        group = undefined;
+        step();
+        return true;
     }
     function runCommand(command: TextEditorCommand): boolean {
         if (disposed || composing || input.disabled || !live()) return false;

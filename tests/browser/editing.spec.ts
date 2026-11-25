@@ -820,14 +820,24 @@ test("configured commands retain native ordering and expire on configuration cha
     await expect.poll(async () => (await state(page)).primary.pendingInput).toBe(false);
     expect((await state(page)).conflicts).toEqual([]);
     expect(await page.evaluate(() => window.editingFixture.range(20475, 20485))).toBe("// x\n(\n  z");
-    await page.evaluate(() => {
-        window.editingFixture.setText("x\n".repeat(4096)); window.editingFixture.select("primary", { anchor: 0, head: 8192 });
-        window.editingFixture.command("line-comment");
-        if (!window.editingFixture.snapshot().primary.pendingCommand) throw new Error("Expected deferred comment planning");
-        window.editingFixture.configure({ language: { tabSize: 4 } });
-    });
-    await expect.poll(async () => (await state(page)).primary.pendingCommand).toBe(false);
-    expect((await state(page)).document!.length).toBe(8192);
+    const rows = 65_536;
+    await page.evaluate(async rows => {
+        const f = window.editingFixture;
+        const source = "x\n".repeat(rows);
+        f.setText(source);
+        f.select("primary", { anchor: 0, head: source.length });
+        f.command("line-comment");
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+        if (!f.snapshot().primary.pendingCommand) throw new Error("Expected comment planning to span two turns");
+        f.configure({ language: { tabSize: 4 } });
+        f.select("primary", { anchor: 0, head: 0 });
+        f.command("indent");
+    }, rows);
+    await ready(page);
+    expect(await page.evaluate(rows => {
+        const f = window.editingFixture;
+        return f.range(0, f.snapshot().document!.length) === "    " + "x\n".repeat(rows);
+    }, rows)).toBe(true);
     expect(await page.locator("#primary .st-viewport").evaluate(node => getComputedStyle(node).tabSize)).toBe("4");
 });
 
