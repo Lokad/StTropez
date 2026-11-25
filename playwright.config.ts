@@ -7,7 +7,6 @@ export default defineConfig({
     testDir: "tests/browser",
     testIgnore: "static-demo.spec.ts",
     timeout: 30_000,
-    // The expanded inventory includes long integrated journeys; individual deadlines stay separate.
     globalTimeout: 1_800_000,
     forbidOnly: true,
     retries: 0,
@@ -15,6 +14,9 @@ export default defineConfig({
     reporter: [["list"], ["json", { outputFile: "artifacts/browser-results.json" }]],
     use: { baseURL, headless: true, viewport: { width: 1440, height: 900 },
         trace: "retain-on-failure", screenshot: "only-on-failure" },
-    projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+    projects: (["chromium", "firefox", "webkit"] as const).map(browserName => ({
+        name: browserName,
+        use: { browserName },
+    })),
     webServer: { command: "npm run demo", env: { STTROPEZ_PORT: port }, url: baseURL, reuseExistingServer: false, timeout: 30_000 },
 });

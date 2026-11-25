@@ -1,0 +1,47 @@
+# Editing and navigation
+editing.spec.ts
+editor-pointer-focus.spec.ts
+navigation.spec.ts
+text-geometry.spec.ts
+caret-placement.spec.ts
+shadow-focus.spec.ts
+folding.spec.ts
+input-context-reuse.spec.ts
+bracket-highlights.spec.ts
+character-warnings.spec.ts
+
+# Rendering
+viewport-decorations.spec.ts
+viewport-geometry.spec.ts
+viewport-scrollbars.spec.ts
+viewport-paint.spec.ts
+viewport-input.spec.ts
+viewport-row-retention.spec.ts
+viewport-presentation.spec.ts
+
+# Review, save and host lifecycle
+comparison.spec.ts
+comparison-ownership.spec.ts
+save-conflicts.spec.ts
+hosts.spec.ts
+host-attachment.spec.ts
+host-lifecycle.spec.ts
+demo-project-lifecycle.spec.ts
+owner-activity.spec.ts
+
+# Language integration
+demo-language-lifecycle.spec.ts
+protocol-websocket.spec.ts
+host-completion-indentation.spec.ts
+host-popup.spec.ts
+host-hover.spec.ts
+host-lsp-review.spec.ts
+host-lsp-input.spec.ts
+host-lsp-sync.spec.ts
+lsp-interop.spec.ts
+
+# One end-to-end case per workflow
+demo-language.spec.ts > real member completion preserves provider punctuation, resolves, applies once and undoes
+host-find-regex.spec.ts > plain regex worker captures Unicode replacements through comparison, save and remount
+host-lsp-navigation.spec.ts > plain LSP inspection/navigation > F12 follows a newly typed import while its background link reply is held
+host-lsp-rename.spec.ts > plain LSP rename host > new-name preview applies exact provider edits across captured resources with shared complete-set history

@@ -25,7 +25,7 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 | `npm run test:integration` | Real HTTP/WebSocket, provider, compiler and child-process lifecycle checks |
 | `npm run test:browser` | Source browser suite in Chromium |
 | `npm run test:browsers` | Source browser suite in Chromium, Firefox and WebKit. The scrollbar tests enable visible native tracks in their own fixture. |
-| `npm run test:ci` | Chromium tests selected in `playwright.ci.config.ts` |
+| `npm run test:ci` | Chromium suites and individual workflows in the [CI test list](../tests/browser/ci.txt) |
 | `npm run check` | Type checks, documentation checks, model and integration tests, library build and Chromium tests against the source |
 | `npm run inspect` | Check editor behavior in headless Chromium and capture screenshots with the corresponding state |
 | `npm run build:demo` then `npm run test:demo` | Built static demo in the configured engines |
