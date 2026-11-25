@@ -3,12 +3,15 @@ import { isFocused, revealInPage } from "./dom-focus.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { DocumentSnapshot, DocumentView } from "../core/workspace.ts";
+import type { TextEditor } from "./text-editor.ts";
 import type { TextViewport, ViewportActivity, ViewportSnapshot } from "./viewport.ts";
 
 const pageReveals = new WeakMap<HTMLElement, () => void>();
 
-export function revealCaretInPage(root: HTMLElement): void {
-    pageReveals.get(root)?.();
+export function revealSelectionHead(editor: TextEditor, scrollPage = true): void {
+    const { head, headAffinity } = editor.view.getSnapshot().selection;
+    editor.viewport.revealOffset(head, { vertical: "nearest", horizontal: "nearest", affinity: headAffinity ?? "after" });
+    if (scrollPage) pageReveals.get(editor.element)?.();
 }
 
 /** Owns only caret DOM, placement cache and its animation frame; input/model state stays with the adapter. */

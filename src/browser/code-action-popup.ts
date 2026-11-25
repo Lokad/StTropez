@@ -1,6 +1,7 @@
 import type { CodeActionChoice, CodeActionController, CodeActionPreview } from "./code-action-controller.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { mountAnchoredOverlay } from "./anchored-overlay.ts";
+import { revealSelectionHead } from "./input-caret.ts";
 import { listenUntil, onAbort } from "./listen.ts";
 import { reviewPanel } from "./review-controls.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -108,6 +109,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
         if (items !== undefined && (state.status !== "ready" || items !== state.choices)) return false;
         if (options.beforeOpen?.() === false || items !== undefined && actions.getSnapshot() !== state) return false;
         editor.focus();
+        revealSelectionHead(editor);
         command = false;
         if (items === undefined) {
             // A refresh replaces its capture. Keep the open popover in place during the reset.

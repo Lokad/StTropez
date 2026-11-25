@@ -15,7 +15,7 @@ import type { LspPrepare } from "../protocol/lsp-workspace.ts";
 import { canInspectView, captureViewRequest } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import type { TextEditor } from "./text-editor.ts";
-import { revealCaretInPage } from "./input-caret.ts";
+import { revealSelectionHead } from "./input-caret.ts";
 import { acceptedTypedText, typedTextEvent } from "./input-events.ts";
 
 export type SignatureControllerOptions = Readonly<{
@@ -129,11 +129,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
             stopTimer();
             const retained = context.isRetrigger && job && !job.call && job.capture.isCurrent() ? job : undefined;
             if (!retained) release();
-            if (context === manual) {
-                const caret = currentView().selection;
-                editor.viewport.revealOffset(caret.head, { horizontal: "nearest", vertical: "nearest", affinity: caret.headAffinity ?? "after" });
-                if (focused()) revealCaretInPage(element);
-            }
+            if (context === manual) revealSelectionHead(editor, focused());
             current = retained ?? captureRequest();
             if (!current) {
                 cancel();

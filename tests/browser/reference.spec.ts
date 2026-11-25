@@ -78,14 +78,19 @@ test("the reference host highlights the completion that Enter inserts", async ({
 });
 
 test("the reference shortcut and toolbar review a captured code action at the source", async ({ page }) => {
+    await page.setViewportSize({ width: 760, height: 240 });
     await page.goto("/reference/");
     await page.getByRole("button", { name: "Connect language server" }).click();
     await page.getByRole("button", { name: "Resolve this placeholder." }).click();
     const source = page.getByRole("textbox", { name: "quote.ts" });
     const panel = page.locator("#pane").getByRole("region", { name: "Quick fixes" });
-    await source.press("ControlOrMeta+.");
+    const caret = source.locator("..").locator(".st-input-caret");
+    await caret.evaluate(node => window.scrollBy(0, node.getBoundingClientRect().bottom + 30));
+    expect(await caret.evaluate(node => node.getBoundingClientRect().bottom)).toBeLessThan(0);
+    await page.keyboard.press("ControlOrMeta+.");
     const unavailable = panel.getByRole("button", { name: "Unavailable context example" });
     await expect(unavailable).toBeDisabled();
+    await expect(panel).toBeInViewport();
     await expect(unavailable).toHaveAttribute("title", "The fixture requires another context.");
     await source.press("Escape");
     await expect(panel).toBeHidden();

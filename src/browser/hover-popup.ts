@@ -3,7 +3,7 @@ import { emptyList } from "../core/empty-list.ts";
 import { refused } from "../core/outcome.ts";
 import { mountAnchoredOverlay, type OverlayPosition } from "./anchored-overlay.ts";
 import { mountDocumentation, type DocumentationOptions } from "./documentation.ts";
-import { revealCaretInPage } from "./input-caret.ts";
+import { revealSelectionHead } from "./input-caret.ts";
 import { editorElement } from "./editor-element.ts";
 import type { HoverController } from "./hover-controller.ts";
 import { observePointerDwell } from "./pointer-dwell.ts";
@@ -15,7 +15,7 @@ export type HoverPopupOptions = DocumentationOptions & Readonly<{
 }>;
 
 export function mountHoverPopup(editor: TextEditor, hover: HoverController, options: HoverPopupOptions) {
-    const { element, view, viewport, commands } = editor;
+    const { element, view, commands } = editor;
     const doc = element.ownerDocument;
     const win = doc.defaultView!;
     const popup = editorElement(doc, "div", "hover");
@@ -58,10 +58,7 @@ export function mountHoverPopup(editor: TextEditor, hover: HoverController, opti
         if (signal.aborted || options.beforeInspect?.(byPointer ? "pointer" : "keyboard") === false) return refused("unavailable-view");
         const selected = view.getSnapshot();
         const target = point ?? { revision: selected.revision, offset: selected.selection.head, affinity: selected.selection.headAffinity ?? "after" };
-        if (!point) {
-            viewport.revealOffset(target.offset, { vertical: "nearest", horizontal: "nearest", affinity: target.affinity ?? "after" });
-            revealCaretInPage(element);
-        }
+        if (!point) revealSelectionHead(editor);
         anchor = target;
         pointer = byPointer;
         const result = await hover.request(target, mode);

@@ -454,7 +454,7 @@ on refusal. An empty edit creates no Undo entry. Use `readLspEditNotes` to show 
 Enable `codeActions` on the attachment. `actions.request()` sends the primary selection and
 its overlapping diagnostics to the provider. Supply `documents` for edits to other project files.
 Set `codeActions: { popup: true }` for an anchored review. Ctrl+. (Cmd+. on macOS) and
-`editor.commands.run("quickfix.show")` open the same list. Arrow keys choose an action,
+`editor.commands.run("quickfix.show")` bring the caret into view and open the list. Arrow keys choose an action,
 Enter applies the preview and Escape closes it. Hover over a disabled choice to see its reason.
 Pass the choices returned by `request()` as the command argument to open a diagnostic's
 current list without another request.
