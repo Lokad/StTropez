@@ -19,13 +19,22 @@ for (const change of ["permission", "lease", "read-only"] as const) test(`queued
         find.replaceAll("dog"); assert.equal(find.getSnapshot().status, "replacing"); assert.equal(find.getSnapshot().reason, null);
         if (change === "permission") {
             const original = source.metadata.getSnapshot().capabilities; workspace.setCapabilities(source.id, { ...original, edit: ["host"] }); workspace.setCapabilities(source.id, original);
-        } else if (change === "lease") { const lease = workspace.acquireEditLease(source.id, "temporary", "host"); lease.release(); }
+        } else if (change === "lease") {
+            const lease = workspace.acquireEditLease(source.id, "temporary", "host");
+            try {
+                assert.equal(find.getSnapshot().reason, "edit-locked");
+                assert.match(find.getSnapshot().message, /cancelled/i);
+                find.replaceAll("dog");
+                assert.equal(find.getSnapshot().reason, "edit-locked");
+                assert.match(find.getSnapshot().message, /another edit/i);
+            } finally { lease.release(); }
+        }
         else editor.setReadOnly(true);
         drain(); const after = workspace.document(source.documentId);
         assert.equal(after.buffer.slice(0, after.buffer.length), "cat cat"); assert.strictEqual(after.buffer, before.buffer); assert.equal(after.revision, before.revision);
         assert.deepEqual(view.getSnapshot().selectionSet, selected); assert.deepEqual(workspace.observeHistory(source.documentId).getSnapshot(), history);
-        assert.match(find.getSnapshot().message, /cancelled/i); assert.equal(workspace.diagnostics().subscriptions, idleSubscriptions);
-        assert.equal(find.getSnapshot().reason, "editing-unavailable");
+        assert.equal(workspace.diagnostics().subscriptions, idleSubscriptions);
+        assert.equal(find.getSnapshot().reason, change === "lease" ? "edit-locked" : "read-only");
         editor.setReadOnly(false);
         find.replaceAll("dog"); assert.equal(find.getSnapshot().reason, null); drain(); assert.equal(workspace.document(source.documentId).buffer.slice(0, 7), "dog dog");
         assert.equal(find.getSnapshot().reason, "replaced");

@@ -27,7 +27,7 @@ import type { GraphemePoint } from "../core/grapheme-point.ts";
 import { captureNativeInsertion, resolveNativeInsertion } from "./input-target.ts";
 import type { NativeInsertionTarget } from "./input-target.ts";
 import type { InputContext } from "./input-context.ts";
-import { dispatchTypedText, editRefusedEvent, inputConflictEvent } from "./input-events.ts";
+import { dispatchTypedText, editRefusedEvent, humanEditRefusal, inputConflictEvent } from "./input-events.ts";
 import type { EditRefusedDetail, InputConflictDetail } from "./input-events.ts";
 import { mountViewport, validateRevealAlignment } from "./viewport.ts";
 import type { ComparisonPresentation, MountedViewport, RevealAlignment, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
@@ -263,8 +263,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (disposed || selecting || committing) return;
         const state = resource.getSnapshot(), disabled = !live() || state.state !== "ready";
         if (disabled) contextBuffer = undefined;
-        const reason = readOnly || !state.metadata.capabilities.edit.includes("human") ? "read-only"
-            : state.metadata.editLock !== null ? "edit-locked" : undefined;
+        const reason = readOnly ? "read-only" : humanEditRefusal(state.metadata);
         if (reason !== readOnlyReason || disabled !== input.disabled) {
             readOnlyReason = reason;
             input.readOnly = reason !== undefined;

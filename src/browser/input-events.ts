@@ -1,4 +1,4 @@
-import type { DocumentId, DocumentViewSnapshot } from "../core/workspace.ts";
+import type { DocumentId, DocumentViewSnapshot, ResourceMetadata } from "../core/workspace.ts";
 import type { TextEdit } from "../core/changes.ts";
 import type { SelectionSet } from "../core/selections.ts";
 
@@ -22,6 +22,12 @@ export const inputConflictEvent = "sttropez-conflict";
 /** Bubbles from the editor root when read-only authority prevents an input gesture. */
 export const editRefusedEvent = "sttropez-edit-refused";
 export type EditRefusedDetail = Readonly<{ documentId: DocumentId; reason: "read-only" | "edit-locked" }>;
+
+export function humanEditRefusal(metadata: ResourceMetadata): EditRefusedDetail["reason"] | undefined {
+    if (!metadata.capabilities.edit.includes("human")) return "read-only";
+    if (metadata.editLock) return "edit-locked";
+    return undefined;
+}
 
 /** A recovery notification, not permission to apply an edit. Validate external event details. */
 export type InputConflictDetail = Readonly<{

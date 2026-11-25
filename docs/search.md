@@ -118,7 +118,9 @@ edit permission.
 | Reason | Meaning |
 | --- | --- |
 | `null` | No notice; the message is empty |
-| `editing-unavailable` | Replacement is refused or cancelled because the view is read-only or resource authority is unavailable |
+| `read-only` | The view is read-only or the resource disallows human edits |
+| `edit-locked` | Another edit holds the resource. Retry after the lock is released. |
+| `not-ready` | The resource is unavailable for editing |
 | `composition-active` | Navigation/replacement is refused, or queued replacement is cancelled, for composition |
 | `backend-unavailable` | Regular-expression mode has no configured backend |
 | `search-failed` | Search construction, matching or result validation failed. For invalid regex syntax, the worker reports the engine's reason in the message. |
@@ -139,7 +141,7 @@ import type { FindSnapshot } from "sttropez/browser";
 
 export function findNotice(state: FindSnapshot): string {
     if (state.reason === "composition-active") return "Finish text composition first.";
-    if (state.reason === "editing-unavailable") return "Editing is unavailable for this view.";
+    if (state.reason === "edit-locked") return "Try again after the other edit finishes.";
     return state.message || `${state.count} matches`;
 }
 ```

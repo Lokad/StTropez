@@ -133,8 +133,9 @@ test("keyboard find routing, read-only replacement and a pilot-sized replace-all
     await page.keyboard.press("ControlOrMeta+z");
     await page.keyboard.press("ControlOrMeta+h"); await found(page, 10_000); await expect(replacement).toBeFocused();
     await page.evaluate(() => window.editingFixture.readOnly(true)); await page.getByRole("button", { name: "Replace all", exact: true }).click();
-    await expect(page.locator("#find-status")).toHaveText("read-only"); expect((await snapshot(page)).document!.length).toBe(240_000);
-    expect((await snapshot(page)).find.reason).toBe("editing-unavailable");
+    await expect(page.locator("#find-status")).toHaveText("This document is read-only.");
+    expect((await snapshot(page)).document!.length).toBe(240_000);
+    expect((await snapshot(page)).find.reason).toBe("read-only");
     await page.evaluate(() => window.editingFixture.readOnly(false)); const before = await snapshot(page);
     await page.getByRole("button", { name: "Replace all", exact: true }).click(); await found(page, 0); await ready(page);
     expect((await snapshot(page)).document).toMatchObject({ revision: before.document!.revision + 1, length: 220_000 });

@@ -14,9 +14,17 @@ import type { SelectionSet } from "../core/selections.ts";
 import { Store } from "../core/observable.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 import { visibleFindMatch } from "./find-preview.ts";
+import { humanEditRefusal } from "./input-events.ts";
 import type { TextViewport } from "./viewport.ts";
 import type { DecorationLayers } from "./decoration-layers.ts";
 const literalBudget = Object.freeze({ units: 4096, matches: 1024, calls: 32 });
+type ReplacementRefusal = Extract<EditResult, { applied: false }>["reason"] | "composition-active";
+const replacementMessages: Partial<Record<ReplacementRefusal, string>> = {
+    "read-only": "This document is read-only.",
+    "edit-locked": "Another edit is in progress. Try again when it finishes.",
+    "not-ready": "The document is unavailable.",
+    "composition-active": "Finish composition before replacing."
+};
 export type FindFlags = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
 export type FindControllerOptions = Readonly<{ regularExpressionBackend?: FindBackend; regularExpressionDelayMs?: number; highlightMatches?: boolean }>;
 type FindEvents = Pick<EventTarget, "addEventListener" | "removeEventListener">;
@@ -36,8 +44,8 @@ export type FindHost = Readonly<{
     focus: () => void;
 }>;
 /** Stable cause of the last published notice, independent of its display message. */
-export type FindReason = "editing-unavailable" | "composition-active" | "backend-unavailable" | "search-failed"
-    | "replacement-failed" | "view-unavailable" | "cancelled" | "replaced" | Extract<EditResult, { applied: false }>["reason"];
+export type FindReason = ReplacementRefusal | "backend-unavailable" | "search-failed"
+    | "replacement-failed" | "view-unavailable" | "cancelled" | "replaced";
 export type FindSnapshot = Readonly<{ highlightMatches: boolean; query: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean; revision: number; status: "idle" | "searching" | "ready" | "replacing" | "failed" | "cancelled" | "expired" | "disposed";
     count: number; scanned: number; length: number; retained: boolean; current: number | null; wrappedTo: "start" | "end" | null; matchesVersion: number; reason: FindReason | null; message: string }>;
 export type FindDiagnostics = Readonly<{ maxScanStepMs: number; replaceTransactionMs: number }>;
@@ -159,16 +167,22 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             ...(selected?.from === range.from && selected.to === range.to && { properties: { "--st-search-border": "var(--st-search-current-border, #ffe494)" } }) }));
     } });
     let layer = store.get().highlightMatches ? addHighlights() : undefined;
-    const canEdit = () => { const state = resource.getSnapshot(); return editor.getSnapshot().readOnlyReason === null && state.state === "ready" && state.metadata.capabilities.edit.includes("human") && state.metadata.editLock === null; };
-    function cancelUnavailablePlan(reason: "composition-active" | "editing-unavailable") {
-        stop();
-        const message = reason === "composition-active" ? "Replacement cancelled for composition."
-            : "Replacement cancelled because editing became unavailable.";
-        publish({ status: "ready", reason, message });
+    function refuseReplacement(reason: ReplacementRefusal, planning: boolean) {
+        const message = replacementMessages[reason] ?? "Could not apply the replacement.";
+        if (planning) {
+            stop();
+            publish({ status: "ready", reason, message: "Replacement cancelled. " + message });
+        } else publish({ reason, message });
+        return false;
+    }
+    function replacementAllowed(planning = false): boolean {
+        const metadata = resource.metadata.getSnapshot();
+        const reason = metadata.state !== "ready" ? "not-ready" : editor.getSnapshot().readOnlyReason
+            ?? humanEditRefusal(metadata) ?? (editor.activity().composing ? "composition-active" : null);
+        return !reason || refuseReplacement(reason, planning);
     }
     const observePlanAuthority = (token: number) => { stopPlanAuthority = resource.metadata.subscribe(() => {
-        if (token !== generation || canEdit()) return;
-        cancelUnavailablePlan("editing-unavailable");
+        if (token === generation) replacementAllowed(true);
     }); };
     const capture = ({ query, wholeWord, matchCase }: Pick<FindQueryCapture, "query" | "wholeWord" | "matchCase">): FindQueryCapture => {
         const document = readDocument(); return Object.freeze({ documentId, revision: document.revision, buffer: document.buffer, query, wholeWord, matchCase });
@@ -425,11 +439,6 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         advanceAfterReplace = undefined;
         return selectMatch(match.index, true, match.wrappedTo);
     };
-    function replacementAllowed(): boolean {
-        if (!canEdit()) { publish({ reason: "editing-unavailable", message: "read-only" }); return false; }
-        if (editor.activity().composing) { publish({ reason: "composition-active", message: "Finish composition before replacing." }); return false; }
-        return true;
-    }
     function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch, focusEditor = false): boolean {
         const immediate = !!range && !state.regularExpression;
         if (!valid() || state.revision !== readDocument().revision || (state.regularExpression && !backend)) return false;
@@ -456,9 +465,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const current = () => {
             if (token !== generation) return false;
             if (!valid() || readDocument().revision !== state.revision || currentSelection() !== selectionSet) { restart(state.query); return false; }
-            const reason = !canEdit() ? "editing-unavailable" : editor.activity().composing ? "composition-active" : null;
-            if (reason) { cancelUnavailablePlan(reason); return false; }
-            return true;
+            return replacementAllowed(true);
         };
         const receive = (result: FindPlanStep) => {
             if (!current()) return;
@@ -472,7 +479,10 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             stopPlanAuthority?.(); stopPlanAuthority = undefined;
             if (!valid()) return;
             replaceTransactionMs = win.performance.now() - started;
-            if (!applied.applied) { publish({ status: "ready", reason: applied.reason, message: applied.reason }); return; }
+            if (!applied.applied) {
+                refuseReplacement(applied.reason, true);
+                return;
+            }
             if (!immediate && readDocument().revision === state.revision) publish({ status: "ready" });
             if (range && range.from === range.to && store.get().query === state.query && store.get().regularExpression && valid()) {
                 replacedZero = { revision: readDocument().revision, head: head!, selectionSet: currentSelection() };
@@ -537,7 +547,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const compositionStarted = () => {
         cancelNavigation();
         if (store.get().status !== "replacing") return;
-        cancelUnavailablePlan("composition-active");
+        refuseReplacement("composition-active", true);
     };
     const editIntent = editor.onEditIntent(kind => { if (kind === "compositionstart") compositionStarted(); });
     const folds = editor.view.folding;
