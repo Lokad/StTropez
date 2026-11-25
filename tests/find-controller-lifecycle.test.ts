@@ -1,7 +1,8 @@
 import { editorState } from "./helpers/editor-state.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createComparisonController, TextBuffer, Workspace } from "../src/index.ts";
+import { compareText } from "../src/core/comparison.ts";
+import { TextBuffer, Workspace } from "../src/index.ts";
 import { findForView } from "../src/browser/find.ts";
 import type { FindHost } from "../src/browser/find.ts";
 
@@ -14,7 +15,7 @@ test("controller and workspace notifications reject cross-owner writes through n
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ composing: false, disposed: false }),
         viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
-    const find = findForView(workspace, workspace.tabs.capture(tab), editor), comparison = createComparisonController(workspace, tab, { buffer: TextBuffer.from("cat"), version: "one" });
+    const find = findForView(workspace, workspace.tabs.capture(tab), editor), comparison = compareText(workspace, tab, { buffer: TextBuffer.from("cat"), version: "one" });
     const other = new Workspace(), independent = other.createDocument({ scope: "find", resource: "other", variant: "working" }, "Other", "a");
     const write = () => workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "human", edits: [{ from: 0, to: 0, insert: "x" }] });
     const rejected: string[] = [], attempt = (name: string, command: () => unknown) => { try { command(); } catch (error) { if (error instanceof Error && /Reentrant mutation/.test(error.message)) rejected.push(name); else errors.push(error); } };

@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createComparisonController, TextBuffer, Workspace } from "../src/index.ts";
+import { compareText } from "../src/core/comparison.ts";
+import { TextBuffer, Workspace } from "../src/index.ts";
 import { mapComparisonHunks } from "../src/core/comparison-presentation.ts";
 import type { ComparisonController } from "../src/index.ts";
 function fixture(suffix = "") {
     const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "working", variant: "source" }, "Working", { value: "first\nworking\nlast\n" + suffix, serverVersion: "saved-1" });
     const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "main");
     const reference = Object.freeze({ buffer: TextBuffer.from("first\nbaseline\nlast\n" + suffix), version: "reference-1" });
-    const comparison = createComparisonController(workspace, tab, reference);
+    const comparison = compareText(workspace, tab, reference);
     const edit = (insert: string) => workspace.edit({ documentId: resource.documentId, expectedRevision: workspace.document(resource.documentId).revision,
         origin: "human", edits: [{ from: workspace.document(resource.documentId).buffer.length, to: workspace.document(resource.documentId).buffer.length, insert }] });
     return { workspace, resource, tab, reference, comparison, edit };
@@ -18,7 +19,7 @@ test("a comparison of two documents follows reference edits and rejects an older
     const workspace = new Workspace();
     const working = workspace.createDocument({ scope: "test", resource: "work", variant: "text" }, "Working", "a\nb\n");
     const reference = workspace.createDocument({ scope: "test", resource: "base", variant: "text" }, "Reference", "a\nc\n");
-    const comparison = createComparisonController(workspace, working, reference);
+    const comparison = compareText(workspace, working, reference);
     assert.equal(ready(comparison).hunks.length, 1);
     const revert = comparison.beginReversion();
     assert.equal(revert.capture.tab, undefined);
@@ -38,7 +39,7 @@ test("a comparison of two documents follows reference edits and rejects an older
 test("invalid comparison budgets preserve live work and the shared minimum can finish it", () => {
     const workspace = new Workspace(), prefix = "same\r\n".repeat(1000), reference = TextBuffer.from(prefix + "baseline\n");
     const resource = workspace.createTextResource({ scope: "test", resource: "budget", variant: "working" }, "Working", { value: prefix + "working\n" });
-    const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "main"), comparison = createComparisonController(workspace, tab, { buffer: reference, version: "one" });
+    const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "main"), comparison = compareText(workspace, tab, { buffer: reference, version: "one" });
     let notifications = 0; const unsubscribe = comparison.subscribe(() => notifications++);
     const rejectInvalid = () => {
         const before = comparison.getSnapshot(), count = notifications;
@@ -62,7 +63,7 @@ test("invalid comparison budgets preserve live work and the shared minimum can f
 test("captured whole-review reversion preserves distant changes and complete shared history", () => {
     const workspace = new Workspace(), text = "first\r\n" + "unchanged value\r\n".repeat(10_000) + "last 😀\r", reference = TextBuffer.from(text);
     const resource = workspace.createTextResourceFromBuffer({ scope: "review", resource: "source", variant: "working" }, "Working", { buffer: reference, serverVersion: "saved-1" });
-    const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "main"), comparison = createComparisonController(workspace, tab, { buffer: reference, version: "review-1" }), peer = workspace.createDocumentView(resource.documentId);
+    const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "main"), comparison = compareText(workspace, tab, { buffer: reference, version: "review-1" }), peer = workspace.createDocumentView(resource.documentId);
     workspace.edit({ documentId: resource.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 5, insert: "different" }, { from: text.length - 8, to: text.length, insert: "tail" }] });
     ready(comparison); const buffer = workspace.document(resource.documentId).buffer;
     comparison.view.setSelections(1, [{ anchor: 8, head: 0 }, { anchor: 70_000, head: 70_003 }, { anchor: buffer.length, head: buffer.length }], 2);
@@ -194,7 +195,7 @@ test("comparison observes its document, policy and tab rather than unrelated wor
     class ObservedWorkspace extends Workspace { reads = 0; override document(...args: Parameters<Workspace["document"]>) { this.reads++; return super.document(...args); } }
     const workspace = new ObservedWorkspace(), source = workspace.createTextResource({ scope: "review", resource: "own", variant: "source" }, "Own", { value: "working" });
     const other = workspace.createDocument({ scope: "review", resource: "other", variant: "source" }, "Other", "other");
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "main"), controller = createComparisonController(workspace, tab, { buffer: TextBuffer.from("base"), version: "one" });
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "main"), controller = compareText(workspace, tab, { buffer: TextBuffer.from("base"), version: "one" });
     try {
         const captured = ready(controller), hunk = controller.hunkAt(0)!; workspace.reads = 0;
         workspace.edit({ documentId: other, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "x" }] });
@@ -246,7 +247,7 @@ test("captured presentation survives moves, expires on replacement, and disposal
 
 test("supplied views remain owned by the host and buffer resources retain their identity", () => {
     const { workspace, resource, tab, reference, comparison } = fixture(); comparison.dispose();
-    const view = workspace.createDocumentView(resource.documentId), controller = createComparisonController(workspace, tab, reference, { view });
+    const view = workspace.createDocumentView(resource.documentId), controller = compareText(workspace, tab, reference, { view });
     controller.dispose(); assert.equal(workspace.ownsDocumentView(view), true); view.dispose();
     const buffer = TextBuffer.from("a\r\nb\n").replace(1, 1, "\t"), display = workspace.createTextResourceFromBuffer({ scope: "test", resource: "reference", variant: "display" }, "Reference", { buffer, serverVersion: "v1" }, { edit: [], save: false });
     assert.equal(workspace.document(display.documentId).buffer, buffer);
@@ -284,7 +285,7 @@ test("notification commands reject reentrancy and a disposed supplied view expir
     let refusal: unknown;
     const unsubscribe = comparison.subscribe(() => { try { comparison.beginRefresh(); } catch (error) { refusal = error; } });
     ready(comparison); assert.match(String(refusal), /Reentrant/); unsubscribe(); comparison.dispose();
-    const view = workspace.createDocumentView(resource.documentId), controller = createComparisonController(workspace, tab, reference, { view });
+    const view = workspace.createDocumentView(resource.documentId), controller = compareText(workspace, tab, reference, { view });
     view.dispose(); assert.equal(controller.advance().status, "expired"); assert.equal(controller.getSnapshot().baseline, null);
     controller.dispose(); assert.equal(workspace.diagnostics().leases, 0);
 });

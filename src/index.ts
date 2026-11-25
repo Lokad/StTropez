@@ -16,7 +16,6 @@ export type { DiscoveredFold, IndentationFoldingOptions, IndentationFoldingProgr
 export type { WordStep, WordOptions } from "./core/words.ts";
 export type { GraphemeSource, GraphemeRange, GraphemeOptions, GraphemeProgress, GraphemeCursor } from "./core/graphemes.ts";
 export type { DiffHunk, DiffProgress, DiffRange } from "./core/diff.ts";
-export { createComparisonController } from "./core/comparison.ts";
 export type { ComparisonBaseline, ComparisonCapture, ComparisonController, ComparisonHunk, ComparisonSnapshot, ComparisonTicket, ComparisonReversion } from "./core/comparison.ts";
 export type { EditKind, HistoryOptions, HistorySnapshot, Selection } from "./core/history.ts";
 export type { SelectionSet, SelectionEditPlan } from "./core/selections.ts";

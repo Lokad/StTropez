@@ -41,15 +41,9 @@ function baseline(value: ComparisonBaseline, epoch: number): ComparisonBaseline 
     return Object.freeze({ buffer: value.buffer, version: value.version, epoch });
 }
 
-/** A reference version is independent of the working resource's saved/server version. No I/O or implicit save. */
-export function createComparisonController(workspace: Workspace, identity: DocumentId | TabId, initial: ComparisonBaseline | DocumentId,
-    options: Readonly<{ view?: DocumentView; onListenerError?: (error: unknown) => void }> = {}): ComparisonController {
-    return compareText(workspace, identity, initial, options);
-}
-
 /** The browser can project an external reference into a retained document in the same publication. */
 export function compareText(workspace: Workspace, identity: DocumentId | TabId, initial: ComparisonBaseline | DocumentId,
-    options: Readonly<{ view?: DocumentView; onListenerError?: (error: unknown) => void }>,
+    options: Readonly<{ view?: DocumentView; onListenerError?: (error: unknown) => void }> = {},
     projectReference?: (next: ComparisonBaseline) => boolean): ComparisonController {
     const { documentId, resource, tab: target } = captureTextSurface(workspace, identity);
     const document = workspace.document(documentId);

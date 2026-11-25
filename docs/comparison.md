@@ -1,9 +1,9 @@
 # Text comparison
 
 To review unsaved edits, pass the last saved text to `mountTextComparison`. It displays that
-baseline beside the editable document and keeps it fixed as the user types. Use
-`createComparisonController` if you only need the diff. Your application fetches versions,
-chooses which changes to accept and saves the result.
+baseline beside the editable document and keeps it fixed as the user types. Your application
+fetches versions, chooses which changes to accept and saves the result. For a headless diff
+between two buffers, use [`TextDiff` from `sttropez/kernels`](#exact-text-and-scheduling).
 
 ## Use
 
@@ -57,15 +57,14 @@ export function bindRestoreButton(button: HTMLButtonElement, comparison: TextCom
 
 ### Identity and comparison state
 
-Pass a working document or text tab to `createComparisonController`. A supplied view must belong
+Pass a working document or text tab to `mountTextComparison`. A supplied view must belong
 to that workspace and document. Moving a tab preserves the comparison. Closing or replacing a
 captured tab expires it.
 
 For an external baseline, supply a `TextBuffer` and opaque `version`. Alternatively, pass the
-baseline’s `DocumentId`. The headless controller retains both documents, follows each baseline
+baseline’s `DocumentId`. The comparison retains both documents, follows each baseline
 revision, and uses its decimal revision as the baseline version. Editing either document expires
 old hunk commands. Refresh and acceptance tickets apply to external baselines.
-`mountTextComparison` attaches the controller and panes for a browser review.
 
 `ComparisonController` is an observable with immutable `ComparisonSnapshot` values:
 
@@ -310,8 +309,7 @@ and alignment phase/work/failure; controller readiness alone does not establish 
 Fetch and retain the baseline, attach search or language clients and store view state. Capture the
 working resource explicitly for Save or Run from the baseline pane. On confirmation, check
 composition and whether the user chose another version. Handle transport failures in the host.
-Finish or cancel tickets and call `dispose()` on the mount or headless controller before releasing
-host-owned views.
+Finish or cancel tickets and call `dispose()` on the mount before releasing host-owned views.
 
 ## Not covered
 
