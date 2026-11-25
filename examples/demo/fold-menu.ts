@@ -1,7 +1,7 @@
 import type { FoldCommand, FoldingController, TextEditor } from "../../src/browser/index.ts";
 import { showMenuShortcut } from "./code-menu.ts";
 
-/** Keep the last source pane as the command target while the menu itself holds focus. */
+/** A pane offers folding commands when it has a folding controller. */
 export function mountDemoFoldMenu(menu: HTMLDetailsElement, activePane: () => TextEditor | undefined) {
     const group = menu.querySelector<HTMLSelectElement>("#fold-group")!, status = menu.querySelector<HTMLOutputElement>("#folding-status")!;
     const commands = [["fold", "fold.collapse"], ["unfold", "fold.expand"], ["fold-group-collapse", "fold.collapse-all"], ["fold-group-expand", "fold.expand-all"]] as const;
@@ -16,7 +16,8 @@ export function mountDemoFoldMenu(menu: HTMLDetailsElement, activePane: () => Te
         const active = target();
         for (const { button, command } of buttons) {
             const entry = active?.editor.commands.get(command, filter(command));
-            if (entry && button.textContent !== entry.label) button.textContent = entry.label;
+            const label = entry?.label ?? targets.keys().next().value?.commands.get(command)?.label ?? "";
+            if (button.textContent !== label) button.textContent = label;
             showMenuShortcut(button, active && entry ? active.editor.keymap.getShortcuts(command) : []);
             button.disabled = !entry?.enabled;
         }
@@ -41,16 +42,15 @@ export function mountDemoFoldMenu(menu: HTMLDetailsElement, activePane: () => Te
     menu.addEventListener("toggle", () => { if (menu.open) renderCommands(); }, { signal: listeners.signal });
     renderCommands();
     function bind(editor: TextEditor, controller: FoldingController, name: string) {
-        const events = new AbortController();
         targets.set(editor, { name, editor, controller });
-        editor.element.addEventListener("focusin", render, { signal: events.signal });
         const stop = controller.subscribe(() => { if (activePane() === editor) render(); });
         const stopRender = editor.viewport.onRender(() => { if (menu.open && activePane() === editor) renderCommands(); });
         render();
         return () => {
-            events.abort(); stop(); stopRender();
+            stop();
+            stopRender();
             targets.delete(editor); render();
         };
     }
-    return { bind, dispose: () => listeners.abort() };
+    return { bind, render, dispose: () => listeners.abort() };
 }

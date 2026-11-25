@@ -36,7 +36,7 @@ const pageOptions = new URL(location.href).searchParams;
 for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: TextEditor | undefined;
 let comparison: TextComparison | undefined, activePane: TextEditor | undefined;
-const foldMenu = mountDemoFoldMenu(codeMenu, () => comparison?.activePane() ?? editor);
+const foldMenu = mountDemoFoldMenu(codeMenu, () => activePane);
 const renderCodeMenu = mountCodeMenuCommands(codeMenu, () => activePane, () => editor, listeners.signal);
 let output: ReturnType<typeof mountDemoOutput> | undefined;
 let setReviewCollapsed: ReturnType<typeof reviewLayout> | undefined;
@@ -569,6 +569,7 @@ function setActivePane(target: TextEditor): void {
     if (activePane !== target) {
         project?.setEditRefusal();
         activePane = target;
+        foldMenu.render();
         scheduleMetadata();
     }
     find.setTarget(target);
@@ -599,7 +600,7 @@ indentation.addEventListener("change", () => {
     editor?.configure({ language: editingConfiguration() });
     comparison?.panes.reference.configure({ language: editingConfiguration(referencePresentation?.editing) }); folding?.refresh(); referenceFolding?.refresh();
     codeMenu.open = false;
-    (comparison?.activePane() ?? editor)?.focus();
+    activePane?.focus();
 }, { signal: listeners.signal });
 element("host-paste-mode").addEventListener("change", () => { codeMenu.open = false; }, { signal: listeners.signal });
 codeMenu.addEventListener("click", event => {
@@ -680,7 +681,10 @@ async function save(reviewed = false): Promise<void> {
 // These controls disable or disappear during storage. Return focus before starting the
 // action, while the same editor or review pane still owns the user's selection.
 function onFileAction(id: string, action: () => void): void {
-    on(id, () => { (comparison?.activePane() ?? editor)?.focus(); action(); });
+    on(id, () => {
+        activePane?.focus();
+        action();
+    });
 }
 onFileAction("save", () => { void save(); });
 on("conflict-review", () => {
