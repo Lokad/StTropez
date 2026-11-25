@@ -8,8 +8,6 @@ export type LspRenameRequest = LspProjectRequest & Readonly<{ offset: number; ne
 export type LspRenameClient = LspFeatureClient<"textDocument/rename", LspRenameRequest, LspWorkspaceEdit>;
 
 /** A rename response is a fixed provider edit batch for one captured new name. */
-export const createLspRenameClient: (provider: LspWorkspace) => LspRenameClient = renameClient;
-
 export function renameClient(provider: LspWorkspace | LspDocumentOwner): LspRenameClient {
     const client = createLspClient(provider, renameMethod);
     return Object.freeze({ ...lspFeatureHandle(client),

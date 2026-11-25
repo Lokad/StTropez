@@ -7,10 +7,10 @@ import type { Observable } from "../core/observable.ts";
 import type { DocumentationContent } from "../core/documentation.ts";
 import type { FoldIndex } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
-import { hoverClient } from "../protocol/lsp-hover.ts";
+import { hoverClient, type LspHoverResult } from "../protocol/lsp-hover.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import type { LspHoverResult, LspDiagnostic, LspPrepare } from "../protocol/index.ts";
+import type { LspDiagnostic, LspPrepare } from "../protocol/index.ts";
 import type { OverlayPosition } from "./anchored-overlay.ts";
 import type { TextEditor } from "./text-editor.ts";
 

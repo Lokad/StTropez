@@ -7,6 +7,7 @@ StTropez is a standalone TypeScript editor and workspace foundation.
 - `src/core` is headless and must not import DOM, React, Node, networking or storage APIs.
 - `src/protocol` is headless and may depend on core. Supply transport and scheduling through interfaces; keep DOM, Node and platform networking/storage APIs out of this layer. Browser transport adapters belong in `src/browser`.
 - `src/kernels` re-exports headless algorithms from core and protocol.
+- Add a public value when a host, sample or demo calls it. Put standalone algorithms used by providers in `sttropez/kernels`. Test internal helpers through their owning module.
 - `src/browser` owns its DOM subtree. A host owns surrounding application UI and services.
 - React examples use controllers with stable observable handles for shared state and pure function components. Effects register/clean up listeners; never use effects, layout effects or memo callbacks to synchronize or manage application/editor state. Mount views through stable refs or explicit host lifecycle APIs. Keep reactive libraries and design-system components in the host.
 - Keep resource identity, document revision, tab identity and view state separate. Never address delayed work by a tab's array position or by whichever editor is focused later.

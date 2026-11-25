@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { actionClient } from "../../src/protocol/lsp-actions.ts";
+import { highlightClient } from "../../src/protocol/lsp-highlights.ts";
 import { withProtocolFixture } from "../helpers/protocol-fixture.ts";
 import { reviewHeader, reviewFooter } from "../../fixtures/language/project-commands.ts";
 import { Workspace } from "../../src/index.ts";
 import { openWebSocketTransport } from "../../src/browser/index.ts";
-import { LspWorkspace, RpcError, createLspActionClient, createLspHighlightClient, lspCompletionPlan } from "../../src/protocol/index.ts";
+import { LspWorkspace, RpcError, lspCompletionPlan } from "../../src/protocol/index.ts";
 import { decodeLspCompletions, decodeLspResolvedCompletion } from "../../src/kernels/index.ts";
 import type { LspDocumentCapture, LspCommandScope, LspWorkspaceEdit } from "../../src/protocol/index.ts";
 
@@ -57,9 +59,9 @@ test("generic host profile joins selector registration, space-triggered lazy sni
         schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); }
     });
     defer(() => owner.dispose());
-    const scope = owner.createScope(), highlights = createLspHighlightClient(owner); defer(() => highlights.dispose());
-    const defaultActions = createLspActionClient(owner); defer(() => defaultActions.dispose());
-    const actions = createLspActionClient(owner, { commandPolicy: invocation => invocation.command === "fixture.unadvertised" ? { kind: "server" } : null });
+    const scope = owner.createScope(), highlights = highlightClient(owner); defer(() => highlights.dispose());
+    const defaultActions = actionClient(owner); defer(() => defaultActions.dispose());
+    const actions = actionClient(owner, { commandPolicy: invocation => invocation.command === "fixture.unadvertised" ? { kind: "server" } : null });
     defer(() => actions.dispose());
     const apply = (edit: LspWorkspaceEdit) => workspace.editDocuments(edit.documents.map(change => {
         assert.equal(change.target.document.documentId, source.documentId);

@@ -1,11 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { actionClient } from "../src/protocol/lsp-actions.ts";
+import { highlightClient } from "../src/protocol/lsp-highlights.ts";
+import { hoverClient } from "../src/protocol/lsp-hover.ts";
+import { colorClient, linkClient, signatureClient } from "../src/protocol/lsp-language.ts";
+import { navigationClient } from "../src/protocol/lsp-navigation.ts";
+import { renameClient } from "../src/protocol/lsp-rename.ts";
 import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
 import { latch } from "./helpers/latch.ts";
 import type { DocumentSnapshot } from "../src/core/workspace.ts";
 import type { LspPrepare } from "../src/protocol/index.ts";
 import { createLspClient, retainLspDocument } from "../src/protocol/lsp-client.ts";
-const { createLspHoverClient, createLspNavigationClient, createLspRenameClient, createLspActionClient, RpcError } = protocol;
+const { RpcError } = protocol;
 const stale = (error: unknown) => error instanceof RpcError && error.code === -32801;
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
 
@@ -72,15 +78,15 @@ test("features sharing a mounted scope cancel independently and capture only the
 test("public feature handles share read-only options, busy state and disposal", async t => {
     type Fixture = ReturnType<typeof clientFixture>;
     const cases = [
-        ["hover", (f: Fixture) => { const client = createLspHoverClient(f.provider); return { client, run: () => client.run({ document: f.document(), offset: 0 }).result }; }],
+        ["hover", (f: Fixture) => { const client = hoverClient(f.provider); return { client, run: () => client.run({ document: f.document(), offset: 0 }).result }; }],
         ["foldingRange", (f: Fixture) => { const client = protocol.createLspFoldingClient(f.provider); return { client, run: () => client.run({ document: f.document() }).result }; }],
-        ["documentHighlight", (f: Fixture) => { const client = protocol.createLspHighlightClient(f.provider); return { client, run: () => client.run({ document: f.document(), offset: 0 }).result }; }],
-        ["definition", (f: Fixture) => { const client = createLspNavigationClient(f.provider); return { client, run: () => client.run({ document: f.document(), offset: 0, kind: "definition" }).result }; }],
-        ["rename", (f: Fixture) => { const client = createLspRenameClient(f.provider); return { client, run: () => client.run({ document: f.document(), offset: 0, newName: "next" }).result }; }],
-        ["codeAction", (f: Fixture) => { const client = createLspActionClient(f.provider); return { client, run: () => client.run({ document: f.document(), from: 0, to: 0 }).result }; }],
-        ["signatureHelp", (f: Fixture) => { const client = protocol.createLspSignatureClient(f.provider); return { client, run: () => client.run({ document: f.document(), offset: 0 }).result }; }],
-        ["documentLink", (f: Fixture) => { const client = protocol.createLspLinkClient(f.provider); return { client, run: () => client.run({ document: f.document() }).result }; }],
-        ["documentColor", (f: Fixture) => { const client = protocol.createLspColorClient(f.provider); return { client, run: () => client.run({ document: f.document() }).result }; }]
+        ["documentHighlight", (f: Fixture) => { const client = highlightClient(f.provider); return { client, run: () => client.run({ document: f.document(), offset: 0 }).result }; }],
+        ["definition", (f: Fixture) => { const client = navigationClient(f.provider); return { client, run: () => client.run({ document: f.document(), offset: 0, kind: "definition" }).result }; }],
+        ["rename", (f: Fixture) => { const client = renameClient(f.provider); return { client, run: () => client.run({ document: f.document(), offset: 0, newName: "next" }).result }; }],
+        ["codeAction", (f: Fixture) => { const client = actionClient(f.provider); return { client, run: () => client.run({ document: f.document(), from: 0, to: 0 }).result }; }],
+        ["signatureHelp", (f: Fixture) => { const client = signatureClient(f.provider); return { client, run: () => client.run({ document: f.document(), offset: 0 }).result }; }],
+        ["documentLink", (f: Fixture) => { const client = linkClient(f.provider); return { client, run: () => client.run({ document: f.document() }).result }; }],
+        ["documentColor", (f: Fixture) => { const client = colorClient(f.provider); return { client, run: () => client.run({ document: f.document() }).result }; }]
     ] as const;
     for (const [name, create] of cases) await t.test(name, async t => {
         const f = clientFixture(t), { client, run } = create(f), entered = latch<void>(), answer = latch<unknown>();
@@ -102,7 +108,7 @@ test("public feature handles share read-only options, busy state and disposal", 
 });
 
 test("multi-method handles query their declared methods and reject another client's method", async t => {
-    const f = clientFixture(t), navigation = createLspNavigationClient(f.provider), color = protocol.createLspColorClient(f.provider);
+    const f = clientFixture(t), navigation = navigationClient(f.provider), color = colorClient(f.provider);
     t.after(() => { navigation.dispose(); color.dispose(); }); await f.provider.connect();
     assert.equal(navigation.options(f.document(), "textDocument/references").length, 1);
     assert.equal(color.options(f.document(), "textDocument/colorPresentation").length, 1);
@@ -112,7 +118,7 @@ test("multi-method handles query their declared methods and reject another clien
 });
 
 test("subscribers observe busy request and follow-up work on unchanged documents", async t => {
-    const f = clientFixture(t), client = protocol.createLspLinkClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = linkClient(f.provider); t.after(client.dispose);
     const wire = { range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, data: { token: 1 } };
     f.peer.onRequest("textDocument/documentLink", () => [wire]);
     const run = () => client.run({ document: f.document() }).result;
@@ -131,7 +137,7 @@ test("subscribers observe busy request and follow-up work on unchanged documents
 });
 
 test("queued busy delivery permits cancellation and suppresses disposed work without replacing its capture", async t => {
-    const f = clientFixture(t), client = createLspHoverClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = hoverClient(f.provider); t.after(client.dispose);
     await client.run({ document: f.document(), offset: 0 }).result; await settled();
     const observed: boolean[] = []; let cancel = true;
     const stop = client.subscribe(() => { observed.push(client.isBusy()); if (cancel && client.isBusy()) client.cancel(); }); t.after(stop);
@@ -145,7 +151,7 @@ test("queued busy delivery permits cancellation and suppresses disposed work wit
 
 test("a held project reply cannot rebind a source whose URI changed", async t => {
     const f = clientFixture(t),
-        client = createLspNavigationClient(f.provider); t.after(client.dispose);
+        client = navigationClient(f.provider); t.after(client.dispose);
     const resources = [f.source, f.other, ...Array.from({ length: 48 }, (_, i) => f.workspace.createTextResource(
         { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, { value: "source" }, undefined, { language: { uri: `generic:extra/${i}`, languageId: "generic" } }))];
     const snapshots = () => resources.map(resource => f.workspace.document(resource.documentId));
@@ -165,7 +171,7 @@ test("a held project reply cannot rebind a source whose URI changed", async t =>
 test("actions forward immutable diagnostic metadata only for matching current versions and placed overlapping ranges", async t => {
     const f = clientFixture(t), control = f.provider.createScope(); t.after(control.dispose);
     const binding = control.attachDocument(f.source.documentId); await control.ensureConnected();
-    const client = createLspActionClient(f.provider); t.after(client.dispose);
+    const client = actionClient(f.provider); t.after(client.dispose);
     const diagnostics = control.observeDiagnostics(binding);
     assert.deepEqual((f.sent("initialize")[0]!.params as { capabilities: { textDocument: { publishDiagnostics: unknown } } }).capabilities.textDocument.publishDiagnostics,
         { versionSupport: true, relatedInformation: true, tagSupport: { valueSet: [1, 2] }, codeDescriptionSupport: true, dataSupport: true });
@@ -190,7 +196,7 @@ test("actions forward immutable diagnostic metadata only for matching current ve
 });
 
 test("a new hover invalidates a completed result on the same unchanged document", async t => {
-    const f = clientFixture(t), client = createLspHoverClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = hoverClient(f.provider); t.after(client.dispose);
     const first = client.run({ document: f.document(), offset: 0 }), a = await first.result;
     first.cancel(); // A view may release a completed call while retaining its published result.
     assert.equal(a!.isCurrent(), true);
@@ -200,7 +206,7 @@ test("a new hover invalidates a completed result on the same unchanged document"
     assert.equal(f.sent("textDocument/didOpen").length, 1);
 });
 test("hover supersession cancels obsolete wire work promptly and old cancellation cannot affect its replacement", async t => {
-    const f = clientFixture(t), client = createLspHoverClient(f.provider), entered = latch<void>(), answer = latch<unknown>();
+    const f = clientFixture(t), client = hoverClient(f.provider), entered = latch<void>(), answer = latch<unknown>();
     t.after(() => { answer.resolve({ contents: "cleanup" }); client.dispose(); }); let calls = 0;
     f.peer.onRequest("textDocument/hover", () => ++calls === 1 ? (entered.resolve(), answer.promise) : ({ contents: "replacement" }));
     const first = client.run({ document: f.document(), offset: 0 }), rejected = assert.rejects(first.result, cancelled); await entered.promise;
@@ -211,7 +217,7 @@ test("hover supersession cancels obsolete wire work promptly and old cancellatio
     answer.resolve({ contents: "late" }); await settled(); assert.equal(next!.text, "replacement");
 });
 test("cancelling delayed connection settles the feature without disconnecting another scope", async t => {
-    const opening = latch<void>(), f = clientFixture(t, () => opening.promise), client = createLspHoverClient(f.provider);
+    const opening = latch<void>(), f = clientFixture(t, () => opening.promise), client = hoverClient(f.provider);
     t.after(() => { opening.resolve(); client.dispose(); });
     const control = f.provider.createScope(); control.attachDocument(f.source.documentId); t.after(control.dispose);
     const call = client.run({ document: f.document(), offset: 6 }); let result: unknown;
@@ -222,12 +228,12 @@ test("cancelling delayed connection settles the feature without disconnecting an
     assert.equal(f.provider.snapshot().created, 1); assert.equal(control.synchronized(control.attachDocument(f.source.documentId))!.isCurrent(), true);
 });
 test("a document edit during delayed connection rejects the original position before dispatch", async t => {
-    const opening = latch<void>(), f = clientFixture(t, () => opening.promise), client = createLspHoverClient(f.provider); t.after(() => { opening.resolve(); client.dispose(); });
+    const opening = latch<void>(), f = clientFixture(t, () => opening.promise), client = hoverClient(f.provider); t.after(() => { opening.resolve(); client.dispose(); });
     const call = client.run({ document: f.document(), offset: 6 }), rejected = assert.rejects(call.result, stale);
     f.edit(); opening.resolve(); await rejected; assert.equal(f.sent("textDocument/hover").length, 0);
 });
 test("superseding delayed preparation and switching documents leaves only the new capture current", async t => {
-    const f = clientFixture(t), client = createLspHoverClient(f.provider), entered = latch<void>(), prepared = latch<void>(); t.after(() => { prepared.resolve(); client.dispose(); });
+    const f = clientFixture(t), client = hoverClient(f.provider), entered = latch<void>(), prepared = latch<void>(); t.after(() => { prepared.resolve(); client.dispose(); });
     const call = client.run({ document: f.document(), offset: 6, prepare: async () => { entered.resolve(); await prepared.promise; } }), rejected = assert.rejects(call.result, cancelled); await entered.promise;
     const next = await client.run({ document: f.workspace.document(f.other.documentId), offset: 0 }).result; await rejected;
     assert.equal(next!.isCurrent(), true); assert.equal(f.provider.snapshot().documents, 1); assert.equal(f.sent("textDocument/hover").length, 1);
@@ -236,19 +242,19 @@ test("superseding delayed preparation and switching documents leaves only the ne
 for (const feature of ["hover", "navigation", "rename", "actions"] as const) test(`${feature} rejects preparation edits before interpreting captured positions against newer text`, async t => {
     const f = clientFixture(t), doc = f.document();
     const prepare: LspPrepare = async scope => { f.edit(); await scope.flush(); };
-    const client = feature === "hover" ? createLspHoverClient(f.provider) : feature === "navigation" ? createLspNavigationClient(f.provider) : feature === "rename" ? createLspRenameClient(f.provider) : createLspActionClient(f.provider);
+    const client = feature === "hover" ? hoverClient(f.provider) : feature === "navigation" ? navigationClient(f.provider) : feature === "rename" ? renameClient(f.provider) : actionClient(f.provider);
     t.after(client.dispose);
-    const run = (snapshot: DocumentSnapshot, hook: LspPrepare | undefined) => feature === "hover" ? (client as ReturnType<typeof createLspHoverClient>).run({ document: snapshot, offset: 6, prepare: hook }).result
-        : feature === "navigation" ? (client as ReturnType<typeof createLspNavigationClient>).run({ document: snapshot, offset: 6, kind: "definition", includeDeclaration: true, prepare: hook }).result
-        : feature === "rename" ? (client as ReturnType<typeof createLspRenameClient>).run({ document: snapshot, offset: 6, newName: "renamed", prepare: hook }).result
-        : (client as ReturnType<typeof createLspActionClient>).run({ document: snapshot, from: 6, to: 10, prepare: hook }).result;
+    const run = (snapshot: DocumentSnapshot, hook: LspPrepare | undefined) => feature === "hover" ? (client as ReturnType<typeof hoverClient>).run({ document: snapshot, offset: 6, prepare: hook }).result
+        : feature === "navigation" ? (client as ReturnType<typeof navigationClient>).run({ document: snapshot, offset: 6, kind: "definition", includeDeclaration: true, prepare: hook }).result
+        : feature === "rename" ? (client as ReturnType<typeof renameClient>).run({ document: snapshot, offset: 6, newName: "renamed", prepare: hook }).result
+        : (client as ReturnType<typeof actionClient>).run({ document: snapshot, from: 6, to: 10, prepare: hook }).result;
     await assert.rejects(run(doc, prepare), stale); await settled();
     const method = feature === "navigation" ? "textDocument/definition" : feature === "actions" ? "textDocument/codeAction" : `textDocument/${feature}`;
     assert.equal(f.sent(method).length, 0); assert.equal(f.provider.snapshot().protocol.pendingRequests, 0); assert.equal(f.workspace.diagnostics().leases, 0);
     assert.equal((await run(f.document(), undefined))?.isCurrent(), true);
 });
 test("a changed project target is rejected even when the origin and its position are unchanged", async t => {
-    const f = clientFixture(t), client = createLspNavigationClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = navigationClient(f.provider); t.after(client.dispose);
     const source = f.document(), target = f.workspace.document(f.other.documentId);
     await assert.rejects(client.run({ document: source, project: [source, target], offset: 6, kind: "definition", includeDeclaration: true, prepare: async () => {
         f.workspace.edit({ documentId: target.id, expectedRevision: target.revision, edits: [{ from: 0, to: 0, insert: "changed " }], origin: "human" });
@@ -259,7 +265,7 @@ test("a changed project target is rejected even when the origin and its position
     assert.equal(f.sent("textDocument/definition").length, 0);
 });
 test("action resolution rejects a changed project before sending captured lazy data", async t => {
-    const f = clientFixture(t), client = createLspActionClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = actionClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "lazy", data: { token: 1 } }]);
     f.peer.onRequest("codeAction/resolve", (value: object) => ({ ...value, edit: { changes: {} } }));
     const doc = f.document(), result = await client.run({ document: doc, from: 6, to: 10 }).result;
@@ -268,7 +274,7 @@ test("action resolution rejects a changed project before sending captured lazy d
     assert.equal(f.sent("codeAction/resolve").length, 1); assert.equal(result.isCurrent(), false); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
 });
 test("confirmed action preparation may deliberately edit and synchronize through its separate host policy", async t => {
-    const f = clientFixture(t), client = createLspActionClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = actionClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "command", command: "fixture.command", arguments: [{ opaque: "unchanged" }] }]);
     const doc = f.document(), result = await client.run({ document: doc, from: 6, to: 10 }).result;
     await result.execute(result.actions[0]!, { snapshots: () => [f.document()], isCurrent: () => true, prepare: () => { f.edit(); }, review: async () => ({ applied: false }) });
@@ -276,7 +282,7 @@ test("confirmed action preparation may deliberately edit and synchronize through
     assert.deepEqual((f.sent("workspace/executeCommand")[0]!.params as { arguments: unknown }).arguments, [{ opaque: "unchanged" }]);
 });
 test("disposal settles hanging preparation, releases participation and leaves an independent client useful", async t => {
-    const f = clientFixture(t), client = createLspHoverClient(f.provider), other = createLspHoverClient(f.provider), entered = latch<void>(), prepared = latch<void>();
+    const f = clientFixture(t), client = hoverClient(f.provider), other = hoverClient(f.provider), entered = latch<void>(), prepared = latch<void>();
     t.after(() => { prepared.resolve(); client.dispose(); other.dispose(); });
     const call = client.run({ document: f.document(), offset: 0, prepare: async () => { entered.resolve(); await prepared.promise; } }); let error: unknown;
     const observed = call.result.catch(value => { error = value; }); await entered.promise; client.dispose(); client.dispose(); await settled();

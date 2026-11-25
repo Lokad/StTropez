@@ -20,8 +20,6 @@ export type LspActionResult = Readonly<{
 export type LspActionClient = LspFeatureClient<"textDocument/codeAction", LspActionRequest, LspActionResult>;
 
 /** Reads share capture policy; confirmed commands retain their distinct mutation policy. */
-export const createLspActionClient: (provider: LspWorkspace, options?: LspActionOptions) => LspActionClient = actionClient;
-
 export function actionClient(owner: LspWorkspace | LspDocumentOwner, options: LspActionOptions = {}): LspActionClient {
     const client = createLspClient(owner, codeActionMethod), session = client.scope;
     let executing = false, runner: LspCommandRunner | undefined;

@@ -29,8 +29,6 @@ const same = (left: DocumentSnapshot | undefined, right: DocumentSnapshot) => !!
     && left.resourceId === right.resourceId && left.revision === right.revision && left.buffer === right.buffer;
 
 /** One current choice batch and one request/resolve intent; host view and acceptance policy stay outside. */
-export const createLspCompletionClient: (provider: LspWorkspace) => LspCompletionClient = completionClient;
-
 export function completionClient(provider: LspWorkspace | LspDocumentOwner): LspCompletionClient {
     const client = createLspClient(provider, completionMethod), batches = new WeakMap<LspCompletionBatch, Batch>();
     let active: Batch | undefined, sequence = 0, received = 0, disposed = false;

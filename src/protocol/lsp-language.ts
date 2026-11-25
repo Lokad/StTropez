@@ -21,8 +21,6 @@ export type LspColorClient = LspFeatureClient<"textDocument/documentColor" | "te
     presentations: (item: LspDocumentColor, color: LspColor, prepare?: LspPrepare, onCancel?: LspConnectContext["onCancel"]) => Promise<readonly LspColorPresentation[]>;
 }>>;
 
-export const createLspSignatureClient: (provider: LspWorkspace) => LspSignatureClient = signatureClient;
-
 export function signatureClient(provider: LspWorkspace | LspDocumentOwner): LspSignatureClient {
     const lane = createLspClient(provider, signatureHelpMethod);
     // Prior wire context is not fresh range/edit authority. Keep only its binding identities,
@@ -63,8 +61,6 @@ export function signatureClient(provider: LspWorkspace | LspDocumentOwner): LspS
             }));
         } });
 }
-export const createLspLinkClient: (provider: LspWorkspace) => LspLinkClient = linkClient;
-
 export function linkClient(provider: LspWorkspace | LspDocumentOwner,
     watched?: { item: LspDocumentLink; isCurrent(): boolean }): LspLinkClient {
     const lane = createLspClient(provider, documentLinkMethod);
@@ -86,8 +82,6 @@ export function linkClient(provider: LspWorkspace | LspDocumentOwner,
             } });
         }, watched ? "documentLink/resolve" : undefined) });
 }
-export const createLspColorClient: (provider: LspWorkspace) => LspColorClient = colorClient;
-
 export function colorClient(provider: LspWorkspace | LspDocumentOwner): LspColorClient {
     const lane = createLspClient(provider, documentColorMethod, colorPresentationMethod);
     return Object.freeze({ ...lspFeatureHandle(lane),

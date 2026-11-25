@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { highlightClient } from "../src/protocol/lsp-highlights.ts";
 import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
 import { latch } from "./helpers/latch.ts";
-const { createLspHighlightClient, RpcError } = protocol;
+const { RpcError } = protocol;
 const range = (line: number, from: number, to: number) => ({ start: { line, character: from }, end: { line, character: to } });
 
 test("occurrences negotiate UTF-16 ranges, text/read/write and validate malformed tails atomically", async t => {
-    const f = clientFixture(t), client = createLspHighlightClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = highlightClient(f.provider); t.after(client.dispose);
     f.workspace.edit({ documentId: f.source.documentId, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 10, insert: "a😀\r\nalpha alpha" }] });
     let value: unknown = [{ range: range(1, 6, 11), kind: 2 }, { range: range(0, 1, 3) }, { range: range(1, 0, 5), kind: 3 }];
     f.peer.onRequest("textDocument/documentHighlight", () => value);
@@ -25,7 +26,7 @@ test("occurrences negotiate UTF-16 ranges, text/read/write and validate malforme
 });
 
 test("large occurrence results retain every range and query overlapping intervals at exclusive boundaries", async t => {
-    const f = clientFixture(t), client = createLspHighlightClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = highlightClient(f.provider); t.after(client.dispose);
     f.workspace.edit({ documentId: f.source.documentId, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 10, insert: "x\n".repeat(10000) }] });
     const ranges = Array.from({ length: 10000 }, (_, line) => ({ range: range(line, 0, 1), kind: 2 }));
     ranges.push({ range: { start: { line: 0, character: 0 }, end: { line: 9999, character: 1 } }, kind: 1 }, { range: range(5000, 0, 0), kind: 3 });
@@ -39,7 +40,7 @@ test("large occurrence results retain every range and query overlapping interval
 });
 
 test("occurrence cancellation preserves one synchronization binding until document replacement or disposal", async t => {
-    const f = clientFixture(t), client = createLspHighlightClient(f.provider), entered = latch<void>(), answer = latch<unknown>();
+    const f = clientFixture(t), client = highlightClient(f.provider), entered = latch<void>(), answer = latch<unknown>();
     t.after(() => { answer.resolve([]); client.dispose(); });
     f.peer.onRequest("textDocument/documentHighlight", () => { entered.resolve(); return answer.promise; });
     const call = client.run({ document: f.document(), offset: 1 }), rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32800);

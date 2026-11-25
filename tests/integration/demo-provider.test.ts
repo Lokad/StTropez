@@ -6,11 +6,12 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { actionClient } from "../../src/protocol/lsp-actions.ts";
 import { attachDemoProvider } from "../../examples/demo/provider-server.ts";
 import type { DemoProviderBootstrap } from "../../examples/demo/provider-contract.ts";
 import { demoSample } from "../../examples/demo/samples.ts";
 import { Workspace } from "../../src/index.ts";
-import { LspWorkspace, createLspActionClient, lspCompletionPlan } from "../../src/protocol/index.ts";
+import { LspWorkspace, lspCompletionPlan } from "../../src/protocol/index.ts";
 import { decodeLspCompletions, decodeLspResolvedCompletion } from "../../src/kernels/index.ts";
 import type { LspDocumentCapture, LspScopeAccess } from "../../src/protocol/index.ts";
 import { openWebSocketTransport } from "../../src/browser/index.ts";
@@ -125,7 +126,7 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
     const server = createServer((request, response) => { void provider.handle(request, response).then(handled => { if (!handled) response.writeHead(404).end(); }); });
     const provider = attachDemoProvider(server, { refactoring: true }); await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const address = server.address(); assert.ok(address && typeof address === "object"); const url = `http://127.0.0.1:${address.port}`;
-    let owner: LspWorkspace | undefined, actions: ReturnType<typeof createLspActionClient> | undefined;
+    let owner: LspWorkspace | undefined, actions: ReturnType<typeof actionClient> | undefined;
     try {
         const config = await (await fetch(url + "/demo-provider?sample=pricing", { method: "POST" })).json() as DemoProviderBootstrap;
         const workspace = new Workspace(), files = Object.entries(demoSample("pricing").files).map(([name, value]) => ({ name,
@@ -182,7 +183,7 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
             assert.equal(context.isCurrent(), true); assert.equal(hint.textDocument.uri, config.documents["main.ts"]!.uri);
             assert.ok(hint.position.line >= 0 && hint.position.character >= 0); renameHints++; return null;
         });
-        actions = createLspActionClient(owner, { commandPolicy: invocation => {
+        actions = actionClient(owner, { commandPolicy: invocation => {
             const file = (invocation.arguments[0] as { file?: unknown } | undefined)?.file;
             return invocation.command === "_typescript.applyRefactoring" && typeof file === "string"
                 && pathKey(file) === pathKey(config.documents["main.ts"]!.path) ? { kind: "server" } : null;
@@ -220,7 +221,7 @@ test("real quick fixes use correlated diagnostic context through the public acti
     const provider = attachDemoProvider(server);
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const address = server.address(); assert.ok(address && typeof address === "object"); const url = `http://127.0.0.1:${address.port}`;
-    let owner: LspWorkspace | undefined, client: ReturnType<typeof createLspActionClient> | undefined;
+    let owner: LspWorkspace | undefined, client: ReturnType<typeof actionClient> | undefined;
     try {
         const config = await (await fetch(url + "/demo-provider?sample=pricing", { method: "POST" })).json() as DemoProviderBootstrap;
         const workspace = new Workspace(), files = Object.entries(demoSample("pricing").files).map(([name, value]) => ({ name,
@@ -234,7 +235,7 @@ test("real quick fixes use correlated diagnostic context through the public acti
         const source = files.find(file => file.name === "main.ts")!, binding = scope.attachDocument(source.resource.documentId), doc = workspace.document(source.resource.documentId), from = doc.text().indexOf("calculateTotl(");
         const request = () => scope.requestDocument("textDocument/codeAction", binding, index => ({ range: { start: index.at(from), end: index.at(from + 13) }, context: { diagnostics: [] } })).result;
         await assert.rejects(request(), /current captured diagnostics/);
-        client = createLspActionClient(owner);
+        client = actionClient(owner);
         const prepare = async (session: LspScopeAccess) => {
             for (const kind of ["syntactic", "semantic"]) await session.request("sttropez/diagnostics", { uri: config.documents["main.ts"]!.uri, kind }).result;
         };

@@ -5,7 +5,7 @@ import { retainLspDocument } from "../src/protocol/lsp-client.ts";
 import { actionClient } from "../src/protocol/lsp-actions.ts";
 import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
 import { latch } from "./helpers/latch.ts";
-const { createLspActionClient, RpcError } = protocol;
+const { RpcError } = protocol;
 const stale = (error: unknown) => error instanceof RpcError && error.code === -32801;
 const scopeFor = (f: ReturnType<typeof clientFixture>): LspCommandScope => ({ snapshots: () => [f.document()], isCurrent: () => true,
     review: async (request, context) => {
@@ -14,7 +14,7 @@ const scopeFor = (f: ReturnType<typeof clientFixture>): LspCommandScope => ({ sn
         return f.workspace.editDocuments(request.edit.documents.map(change => ({ documentId: f.document().id,
             expectedRevision: change.target.document.revision, edits: change.edits, origin: "host", history: { kind: "refactor" } })));
     } });
-const run = async (client: ReturnType<typeof createLspActionClient>, f: ReturnType<typeof clientFixture>) => {
+const run = async (client: ReturnType<typeof actionClient>, f: ReturnType<typeof clientFixture>) => {
     const doc = f.document(); return client.run({ document: doc, from: 0, to: 0 }).result;
 };
 
@@ -29,7 +29,7 @@ test("the direct runner snapshots command identity and arguments before host pre
 
 test("host server authority captures one immutable invocation, refuses other arguments and can be revoked", async t => {
     const f = clientFixture(t); let permitted = true, policies = 0;
-    const client = createLspActionClient(f.provider, { commandPolicy: command => {
+    const client = actionClient(f.provider, { commandPolicy: command => {
         policies++; assert.ok(Object.isFrozen(command.arguments[0]));
         return command.command === "host.allowed" && (command.arguments[0] as { token: number }).token === 1
             ? { kind: "server", isCurrent: () => permitted } : null;
@@ -51,7 +51,7 @@ test("host server authority captures one immutable invocation, refuses other arg
 });
 
 test("explicit server route retains captured applyEdit ownership and does not authorize unsolicited edits", async t => {
-    const f = clientFixture(t), client = createLspActionClient(f.provider, { commandPolicy: () => ({ kind: "server" }) }); t.after(client.dispose);
+    const f = clientFixture(t), client = actionClient(f.provider, { commandPolicy: () => ({ kind: "server" }) }); t.after(client.dispose);
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "command", command: "host.allowed" }]);
     const batch = await run(client, f), uri = (f.sent("textDocument/didOpen")[0]!.params as { textDocument: { uri: string } }).textDocument.uri;
     const edit = { edit: { changes: { [uri]: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } }, newText: "changed" }] } } };
@@ -100,7 +100,7 @@ test("an action command cannot borrow a sibling feature's edit targets on the sa
 });
 
 test("host handlers see initial edits, reuse captured edit validation, and release the lane after a known failure", async t => {
-    const f = clientFixture(t), client = createLspActionClient(f.provider, { commandPolicy: () => ({ kind: "host", run: async (_command, context) => {
+    const f = clientFixture(t), client = actionClient(f.provider, { commandPolicy: () => ({ kind: "host", run: async (_command, context) => {
         assert.equal(context.snapshots()[0]!.buffer.slice(0, 7), "prefix ");
         const uri = (f.sent("textDocument/didOpen")[0]!.params as { textDocument: { uri: string } }).textDocument.uri;
         const request = { edit: { changes: { [uri]: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 6 } }, newText: "reviewed" }] } } };
@@ -113,13 +113,13 @@ test("host handlers see initial edits, reuse captured edit validation, and relea
     await assert.rejects(batch.execute(batch.actions[0]!, { ...scopeFor(f), prepare: () => { f.edit(); } }), /later phase failure/);
     assert.equal(f.document().buffer.slice(0, 8), "reviewed"); assert.equal(f.sent("workspace/executeCommand").length, 0);
     assert.equal(f.provider.getSnapshot().commandAvailable, true); assert.equal(f.provider.getSnapshot().commandRequiresReconnect, false);
-    const fresh = createLspActionClient(f.provider, { commandPolicy: () => ({ kind: "host", run: () => "recovered" }) }); t.after(fresh.dispose);
+    const fresh = actionClient(f.provider, { commandPolicy: () => ({ kind: "host", run: () => "recovered" }) }); t.after(fresh.dispose);
     const next = await run(fresh, f); assert.equal((await next.execute(next.actions[0]!, scopeFor(f))).value, "recovered");
 });
 
 test("cancelling a hanging host handler rejects its late edits and permits a fresh action without reconnect", async t => {
     const f = clientFixture(t), entered = latch<void>(), late = latch<null>(), cancelled = latch<void>(); let captured: LspHostCommandContext | undefined, calls = 0;
-    const client = createLspActionClient(f.provider, { commandPolicy: () => ({ kind: "host", run: (_command, context) => {
+    const client = actionClient(f.provider, { commandPolicy: () => ({ kind: "host", run: (_command, context) => {
         if (++calls > 1) return "fresh";
         captured = context; context.onCancel(() => { cancelled.resolve(); throw new Error("Host cancellation failure"); }); entered.resolve(); return late.promise;
     } }) }); t.after(() => { late.resolve(null); client.dispose(); });
@@ -137,7 +137,7 @@ test("cancelling a hanging host handler rejects its late edits and permits a fre
 });
 
 test("a later successful edit cannot erase an earlier refusal from the command receipt", async t => {
-    const f = clientFixture(t), client = createLspActionClient(f.provider, { commandPolicy: () => ({ kind: "host", run: async (_command, context) => {
+    const f = clientFixture(t), client = actionClient(f.provider, { commandPolicy: () => ({ kind: "host", run: async (_command, context) => {
         assert.equal((await context.applyEdit({ edit: { changes: { "unknown:resource": [] } } })).applied, false);
         assert.equal((await context.applyEdit({ edit: { changes: {} } })).applied, true); return null;
     } }) }); t.after(client.dispose);

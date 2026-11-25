@@ -7,8 +7,6 @@ import type { LspWorkspace } from "./lsp-workspace.ts";
 export type LspHoverResult = LspHover & Readonly<{ revision: number; isCurrent: () => boolean }>;
 export type LspHoverClient = LspFeatureClient<"textDocument/hover", LspPositionRequest, LspHoverResult | null>;
 
-export const createLspHoverClient: (provider: LspWorkspace) => LspHoverClient = hoverClient;
-
 export function hoverClient(provider: LspWorkspace | LspDocumentOwner): LspHoverClient {
     const client = createLspClient(provider, hoverMethod);
     return Object.freeze({ ...lspFeatureHandle(client),

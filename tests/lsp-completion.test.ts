@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { completionClient, type LspCompletionBatch } from "../src/protocol/lsp-completion.ts";
 import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
 import { latch } from "./helpers/latch.ts";
-import type { LspCompletionBatch } from "../src/protocol/index.ts";
-const { createLspCompletionClient, ProtocolDecodeError, RpcError } = protocol;
+const { ProtocolDecodeError, RpcError } = protocol;
 const stale = (error: unknown) => error instanceof RpcError && error.code === -32801;
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
 const range = (from: number, to: number) => ({ start: { line: 0, character: from }, end: { line: 0, character: to } });
@@ -14,7 +14,7 @@ const type = (f: ReturnType<typeof clientFixture>, at = 2, insert = "x") => {
 };
 
 test("completion owns immutable sorted choices, captured options and lazy fallback without browser state", async t => {
-    const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = completionClient(f.provider); t.after(client.dispose);
     const indentation = { tabSize: 2, insertSpaces: false }, options = { indentation, fallback: { from: 0, to: 2, replaceTo: 5 } };
     f.peer.onRequest("textDocument/completion", () => [{ label: "z", sortText: "2" }, { label: "first", sortText: "1" }, { label: "second", sortText: "1" }]);
     const call = client.run({ document: f.document(), offset: 2, ...options }); indentation.tabSize = 8; options.fallback.replaceTo = 10;
@@ -31,7 +31,7 @@ test("completion owns immutable sorted choices, captured options and lazy fallba
 });
 
 test("proved prefix adoption reads the actual Core change during notification and resolves against fresh synchronized text", async t => {
-    const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = completionClient(f.provider); t.after(client.dispose);
     const wire = choice(); f.peer.onRequest("textDocument/completion", () => [wire]);
     const initial = await client.run({ document: f.document(), offset: 2 }).result; let rebased: LspCompletionBatch | undefined;
     const stop = f.workspace.observeDocument(f.source.documentId).subscribe(() => {
@@ -54,7 +54,7 @@ test("proved prefix adoption reads the actual Core change during notification an
 });
 
 test("incomplete refresh can retain a choice, cancel its replacement, and never publish the late list", async t => {
-    const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = completionClient(f.provider); t.after(client.dispose);
     const wire = choice(); f.peer.onRequest("textDocument/completion", () => ({ isIncomplete: true, items: [wire] }));
     const initial = await client.run({ document: f.document(), offset: 2 }).result; type(f); const rebased = client.rebase(initial, f.document())!; assert.ok(rebased);
     const entered = latch<void>(), answer = latch<unknown>(); t.after(() => answer.resolve([]));
@@ -70,7 +70,7 @@ test("incomplete refresh can retain a choice, cancel its replacement, and never 
 });
 
 test("prefix adoption cancels an old resolve while a replacement resolves the rebased item", async t => {
-    const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = completionClient(f.provider); t.after(client.dispose);
     const wire = choice(); f.peer.onRequest("textDocument/completion", () => [wire]);
     const initial = await client.run({ document: f.document(), offset: 2 }).result, entered = latch<void>(), answer = latch<unknown>(); t.after(() => answer.resolve(wire));
     f.peer.onRequest("completionItem/resolve", () => { entered.resolve(); return answer.promise; });
@@ -83,7 +83,7 @@ test("prefix adoption cancels an old resolve while a replacement resolves the re
 });
 
 test("shortening a typed prefix cancels resolution and stops at the provider's original query", async t => {
-    const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = completionClient(f.provider); t.after(client.dispose);
     const wire = choice(); f.peer.onRequest("textDocument/completion", () => [wire]);
     const queried = await client.run({ document: f.document(), offset: 2 }).result;
     type(f); const extended = client.rebase(queried, f.document())!;
@@ -102,7 +102,7 @@ test("shortening a typed prefix cancels resolution and stops at the provider's o
 });
 
 test("host edits, copied batches and failed preparation never acquire fresh completion authority", async t => {
-    const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = completionClient(f.provider); t.after(client.dispose);
     f.peer.onRequest("textDocument/completion", () => [choice()]);
     const batch = await client.run({ document: f.document(), offset: 2 }).result;
     assert.throws(() => client.resolve({ ...batch }, batch.items[0]!), stale);
@@ -117,7 +117,7 @@ test("host edits, copied batches and failed preparation never acquire fresh comp
 });
 
 test("cancellation skips unstarted preparation, supersedes held work and preserves decode failures", async t => {
-    const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = completionClient(f.provider); t.after(client.dispose);
     const entered = latch<void>(), prepared = latch<void>(); t.after(() => prepared.resolve());
     f.peer.onRequest("textDocument/completion", () => [choice()]);
     let preparations = 0;
@@ -133,7 +133,7 @@ test("cancellation skips unstarted preparation, supersedes held work and preserv
 });
 
 test("unsupported lazy snippets omit one choice and preserve current alternatives", async t => {
-    const f = clientFixture(t), client = createLspCompletionClient(f.provider); t.after(client.dispose);
+    const f = clientFixture(t), client = completionClient(f.provider); t.after(client.dispose);
     const unsupported = { ...choice("a"), insertTextFormat: 2 }, other = choice("b");
     f.peer.onRequest("textDocument/completion", () => [unsupported, other]);
     const batch = await client.run({ document: f.document(), offset: 2 }).result;
@@ -147,7 +147,7 @@ test("unsupported lazy snippets omit one choice and preserve current alternative
 
 test("registration and URI replacement expire retained choices, while cancellation leaves diagnostic participation", async t => {
     const f = clientFixture(t),
-        client = createLspCompletionClient(f.provider), diagnostics = f.provider.createScope();
+        client = completionClient(f.provider), diagnostics = f.provider.createScope();
     t.after(() => { client.dispose(); diagnostics.dispose(); }); const binding = diagnostics.attachDocument(f.source.documentId);
     f.peer.onRequest("textDocument/completion", () => [choice()]); const batch = await client.run({ document: f.document(), offset: 2 }).result;
     assert.equal(f.workspace.diagnostics().leases, 1);

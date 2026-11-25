@@ -3,7 +3,7 @@ import { emptyList } from "../core/empty-list.ts";
 import { isIndex, isPositiveInteger } from "../core/bounds.ts";
 import { completionMethod } from "../protocol/lsp-methods.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
-import { completionClient } from "../protocol/lsp-completion.ts";
+import { completionClient, type LspCompletionBatch, type LspCompletionResolution } from "../protocol/lsp-completion.ts";
 import { beginReadRequest } from "../protocol/lsp-workspace.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { isStaleRequest, ProtocolDecodeError, rpcCodes, staleRequest } from "../protocol/wire.ts";
@@ -21,7 +21,7 @@ import { editorInput } from "./editor-input.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
 import { sameEditAuthority } from "./captured-view.ts";
 import { RpcError, lspCompletionPlan } from "../protocol/index.ts";
-import type { LspCall, LspCompletion, LspCompletionBatch, LspCompletionResolution, LspCompletions, LspCompletionFallback, LspScopeAccess, LspWorkspace, LspWorkspaceSnapshot, JsonValue } from "../protocol/index.ts";
+import type { LspCall, LspCompletion, LspCompletions, LspCompletionFallback, LspScopeAccess, LspWorkspace, LspWorkspaceSnapshot, JsonValue } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 

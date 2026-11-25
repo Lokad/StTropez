@@ -43,8 +43,6 @@ export function decodeLspDocumentHighlights(value: unknown, capture: LspDocument
 export type LspHighlightClient = LspFeatureClient<"textDocument/documentHighlight", LspPositionRequest,
     LspDocumentHighlights & Readonly<{ revision: number; isCurrent: () => boolean }>>;
 
-export const createLspHighlightClient: (provider: LspWorkspace) => LspHighlightClient = highlightClient;
-
 export function highlightClient(provider: LspWorkspace | LspDocumentOwner): LspHighlightClient {
     const client = createLspClient(provider, documentHighlightMethod);
     return Object.freeze({ ...lspFeatureHandle(client),

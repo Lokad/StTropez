@@ -1,9 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { actionClient } from "../../src/protocol/lsp-actions.ts";
+import { hoverClient } from "../../src/protocol/lsp-hover.ts";
+import { colorClient, linkClient, signatureClient } from "../../src/protocol/lsp-language.ts";
+import { navigationClient } from "../../src/protocol/lsp-navigation.ts";
+import { renameClient } from "../../src/protocol/lsp-rename.ts";
 import { FixtureLspWorkspace } from "../../fixtures/protocol/fixture-workspace.ts";
 import { Workspace } from "../../src/index.ts";
 import { openWebSocketTransport } from "../../src/browser/index.ts";
-import { RpcError, createLspActionClient, createLspColorClient, createLspHoverClient, createLspLinkClient, createLspNavigationClient, createLspRenameClient, createLspSignatureClient } from "../../src/protocol/index.ts";
+import { RpcError } from "../../src/protocol/index.ts";
 import type { JsonValue, LspDocumentFeature, LspPrepare } from "../../src/protocol/index.ts";
 import { latch } from "../helpers/latch.ts";
 import { withProtocolFixture, type ProtocolFixture } from "../helpers/protocol-fixture.ts";
@@ -24,8 +29,8 @@ test("fixture hover policy belongs to the captured request across overlapping sc
         schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
     });
     defer(() => owner.dispose());
-    const scope = owner.createScope(), first = createLspHoverClient(owner); defer(() => first.dispose());
-    const second = createLspHoverClient(owner); defer(() => second.dispose());
+    const scope = owner.createScope(), first = hoverClient(owner); defer(() => first.dispose());
+    const second = hoverClient(owner); defer(() => second.dispose());
     const held = latch<void>(); defer(held.resolve);
     scope.setDocuments(documents); await scope.ensureConnected();
     // Same-document views also need separate request ownership: a URI alone cannot key policy.
@@ -99,10 +104,10 @@ async function languagePolicy({ url, defer }: ProtocolFixture) {
 
 test("fixture faults stay local to overlapping language requests", { timeout: 15000 }, async () => withProtocolFixture(async fixture => {
     const { owner, document, offset, own, completionScope } = await languagePolicy(fixture);
-    const signatures = [own(createLspSignatureClient(owner)), own(createLspSignatureClient(owner))],
-        links = [own(createLspLinkClient(owner)), own(createLspLinkClient(owner))], colors = [own(createLspColorClient(owner)), own(createLspColorClient(owner))],
-        navigation = [own(createLspNavigationClient(owner)), own(createLspNavigationClient(owner))], renames = [own(createLspRenameClient(owner)), own(createLspRenameClient(owner))],
-        completion = [completionScope(), completionScope()], actions = [own(createLspActionClient(owner)), own(createLspActionClient(owner))];
+    const signatures = [own(signatureClient(owner)), own(signatureClient(owner))],
+        links = [own(linkClient(owner)), own(linkClient(owner))], colors = [own(colorClient(owner)), own(colorClient(owner))],
+        navigation = [own(navigationClient(owner)), own(navigationClient(owner))], renames = [own(renameClient(owner)), own(renameClient(owner))],
+        completion = [completionScope(), completionScope()], actions = [own(actionClient(owner)), own(actionClient(owner))];
     type Run = (index: number, prepare: LspPrepare) => Promise<unknown>;
     const overlap = async (method: LspDocumentFeature, run: Run) => {
         const prepared = latch<void>(); let count = 0;
@@ -132,7 +137,7 @@ test("fixture faults stay local to overlapping language requests", { timeout: 15
 
 test("fixture link captures retain nested aliases and independent resolve policy", { timeout: 15000 }, async () => withProtocolFixture(async fixture => {
     const { owner, scope, document, defaultUri, firstUri, secondUri, own } = await languagePolicy(fixture);
-    const links = [own(createLspLinkClient(owner)), own(createLspLinkClient(owner))];
+    const links = [own(linkClient(owner)), own(linkClient(owner))];
     // Distinct views of the same source capture different alias maps, including nested data.
     const prepared = latch<void>(); let count = 0;
     const batches = await Promise.all(links.map((client, index) => client.run({ document, prepare: async session => {
@@ -165,7 +170,7 @@ test("fixture link captures retain nested aliases and independent resolve policy
 
 test("fixture action captures retain module and resolve policies", { timeout: 15000 }, async () => withProtocolFixture(async fixture => {
     const { owner, scope, document, offset, own } = await languagePolicy(fixture);
-    const actions = [own(createLspActionClient(owner)), own(createLspActionClient(owner))];
+    const actions = [own(actionClient(owner)), own(actionClient(owner))];
     const binding = scope.attachDocument(document.id);
     const actionBatches = await Promise.all(actions.map((client, index) => client.run({ document, from: offset, to: offset, prepare: session => owner.prepareRequest(session, "textDocument/codeAction", { delay: 0, module: index ? "other-utils" : "first-utils" }) }).result));
     for (const [index, batch] of actionBatches.entries()) assert.ok(batch.actions[0]!.edit!.documents[0]!.edits[0]!.insert.includes(index ? "other-utils" : "first-utils"));

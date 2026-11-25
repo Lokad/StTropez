@@ -12,8 +12,9 @@ and each mounted pane scrolls independently. The host owns storage, execution an
 | Public import | Use it to |
 | --- | --- |
 | `sttropez` | Open files and edit shared text with the headless `Workspace`. Capture a ticket when saving. |
-| `sttropez/browser` | Mount the DOM editor with `mountTextEditor`, review changes with `mountTextComparison`, or open a WebSocket transport. |
+| `sttropez/browser` | Mount an editor or comparison and enable language features with `attachEditorLanguage`. |
 | `sttropez/protocol` | Share an `LspWorkspace` across views. The host supplies its transport and scheduler. |
+| `sttropez/kernels` | Use individual algorithms in a provider, such as `validateTextEdits` to check an edit batch. |
 
 Capture the document and revision when you request an edit. If the user types or switches tabs before
 the reply arrives, its offsets refer to the original text.
@@ -371,10 +372,9 @@ const stopDiagnostics = diagnostics.subscribe(showLanguage);
 button("Connect", completion.connect);
 ```
 
-For cross-file rename, set `workspaceEdits: true` and pass the project’s document snapshots to
-the client returned by `createLspRenameClient(provider)`. Its `run` method returns a proposed
-edit. Show the changes with `readLspEditNotes`. On approval, recheck the target and
-apply the plan with `applyLspWorkspaceEdit`. One undo restores every affected file.
+For cross-file rename, enable `workspaceEdits` on the provider. Pass the project’s document
+snapshots through the attachment’s `rename.documents` callback. Request the rename with
+`{ review: true }` and bind Apply to the returned preview. One Undo restores all affected files.
 [Complete rename example](language-features.md#rename-and-workspace-edits)
 
 ## Contract

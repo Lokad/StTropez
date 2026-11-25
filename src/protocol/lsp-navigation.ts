@@ -16,8 +16,6 @@ export type LspNavigationClient = LspFeatureClient<"textDocument/definition" | "
 }>;
 
 /** Captured read-only queries; the host chooses how to present each validated target. */
-export const createLspNavigationClient: (provider: LspWorkspace) => LspNavigationClient = navigationClient;
-
 export function navigationClient(provider: LspWorkspace | LspDocumentOwner): LspNavigationClient {
     const client = createLspClient(provider, definitionMethod, referencesMethod);
     type Reply = Parameters<Parameters<typeof client.request>[3]>[0];

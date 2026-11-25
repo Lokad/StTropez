@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { actionClient } from "../../src/protocol/lsp-actions.ts";
 import { withProtocolFixture, type ProtocolFixture } from "../helpers/protocol-fixture.ts";
 import { Workspace } from "../../src/index.ts";
 import { openWebSocketTransport } from "../../src/browser/index.ts";
-import { LspWorkspace, RpcError, createLspActionClient } from "../../src/protocol/index.ts";
+import { LspWorkspace, RpcError } from "../../src/protocol/index.ts";
 import { JsonRpcConnection } from "../../src/kernels/index.ts";
 import type { JsonValue, LspWorkspaceEdit } from "../../src/protocol/index.ts";
 import { isRecord } from "../../src/protocol/wire.ts";
@@ -25,8 +26,8 @@ function fixture({ url, defer }: ProtocolFixture) {
 }
 
 test("independent action clients retain repeatable lazy previews on an unchanged source", { timeout: 15000 }, async () => withProtocolFixture(async context => {
-    const f = fixture(context), first = createLspActionClient(f.owner); context.defer(() => first.dispose());
-    const second = createLspActionClient(f.owner); context.defer(() => second.dispose());
+    const f = fixture(context), first = actionClient(f.owner); context.defer(() => first.dispose());
+    const second = actionClient(f.owner); context.defer(() => second.dispose());
     const documents = f.documents(), source = documents[0]!;
     const one = await first.run({ document: source, project: documents, from: 21, to: 25 }).result, action = one.actions.find(item => item.resolve);
     assert.ok(action);

@@ -1,17 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
+import { highlightClient } from "../src/protocol/lsp-highlights.ts";
+import { hoverClient } from "../src/protocol/lsp-hover.ts";
+import { colorClient, linkClient, signatureClient } from "../src/protocol/lsp-language.ts";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams } from "vscode-languageserver-protocol/node.js";
 import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
 import type { LspFeature, LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
 import { Workspace } from "../src/index.ts";
-import { LspWorkspace, createLspHoverClient, createLspCommandRunner, createLspSignatureClient, createLspLinkClient, createLspColorClient, createLspFoldingClient, createLspHighlightClient, RpcError } from "../src/protocol/index.ts";
+import { LspWorkspace, createLspCommandRunner, createLspFoldingClient, RpcError } from "../src/protocol/index.ts";
 import { latch } from "./helpers/latch.ts";
 const settled = async () => { await setImmediate(); await setImmediate(); };
 
 test("a pending hover and its result survive unrelated capability changes", async t => {
-    const f = fixture(t), client = createLspHoverClient(f.provider);
+    const f = fixture(t), client = hoverClient(f.provider);
     t.after(client.dispose);
     await f.provider.connect();
     const peer = f.peers[0]!.rpc, received = latch<void>(), reply = latch<unknown>();
@@ -52,7 +55,7 @@ test("binding captures read local revisions across request cancellation and expi
 });
 
 test("feature options for other documents preserve pending and completed captures without acquiring participation", async t => {
-    const f = fixture(t, { features: ["textDocument/signatureHelp"] }), client = createLspSignatureClient(f.provider); t.after(client.dispose);
+    const f = fixture(t, { features: ["textDocument/signatureHelp"] }), client = signatureClient(f.provider); t.after(client.dispose);
     for (const resource of [f.source, f.companion]) {
         const title = resource.metadata.getSnapshot().title;
         f.workspace.setDocumentLanguage(resource.documentId, { uri: `custom:/${title}`, languageId: title });
@@ -90,7 +93,7 @@ test("feature options for other documents preserve pending and completed capture
 
 test("signature retriggers preserve the last resolved context through a cancelled reply without crossing document or provider authority", async t => {
     const f = fixture(t, { features: ["textDocument/signatureHelp"] }),
-        client = createLspSignatureClient(f.provider); t.after(client.dispose);
+        client = signatureClient(f.provider); t.after(client.dispose);
     await f.provider.connect(); const peer = f.peers[0]!, entered = latch<void>(), held = latch<unknown>(); t.after(() => held.resolve(null));
     const contexts: { isRetrigger: boolean; activeSignatureHelp?: unknown }[] = []; let pause = false;
     const help = (label: string) => ({ signatures: [{ label }], activeSignature: 0 });
@@ -129,7 +132,7 @@ test("signature retriggers preserve the last resolved context through a cancelle
     await run(f.companion.documentId, false); assert.equal(contexts.at(-1)!.activeSignatureHelp, undefined); assert.deepEqual(f.errors, []);
 });
 test("occurrences require current dynamic authority through withdrawal and reconnect", async t => {
-    const f = fixture(t, { features: ["textDocument/documentHighlight"] }), client = createLspHighlightClient(f.provider); t.after(client.dispose);
+    const f = fixture(t, { features: ["textDocument/documentHighlight"] }), client = highlightClient(f.provider); t.after(client.dispose);
     await f.provider.connect();
     const register = async () => {
         const peer = f.peers.at(-1)!; peer.rpc.onRequest("textDocument/documentHighlight", () => [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, kind: 3 }]);
@@ -220,7 +223,7 @@ async function languageFixture(t: test.TestContext) {
     peer.rpc.onRequest("textDocument/documentLink", () => [{ range, data: { token: 1 } }]); peer.rpc.onRequest("documentLink/resolve", (item: object) => ({ ...item, target: "host+opaque:%2F unknown" }));
     peer.rpc.onRequest("textDocument/documentColor", () => [{ range, color: rgba }]);
     peer.rpc.onRequest("textDocument/colorPresentation", () => [{ label: "red", textEdit: { range, newText: "#f00" }, additionalTextEdits: [{ range: { start: { line: 1, character: 6 }, end: { line: 1, character: 6 } }, newText: "!" }] }]);
-    const signature = createLspSignatureClient(f.provider), links = createLspLinkClient(f.provider), colors = createLspColorClient(f.provider); t.after(() => { signature.dispose(); links.dispose(); colors.dispose(); });
+    const signature = signatureClient(f.provider), links = linkClient(f.provider), colors = colorClient(f.provider); t.after(() => { signature.dispose(); links.dispose(); colors.dispose(); });
     return { f, peer, signature, links, colors, rgba, doc: f.workspace.document(f.source.documentId) };
 }
 
@@ -294,7 +297,7 @@ test("feature scopes wait for their captured project without flushing unrelated 
     const f = fixture(t, { schedule: (ms, callback) => {
         if (blocked && ms === 0) { queued.add(callback); return () => { queued.delete(callback); }; }
         const timer = setTimeout(callback, ms); return () => clearTimeout(timer);
-    } }), client = createLspHoverClient(f.provider), other = f.provider.createScope(); t.after(client.dispose);
+    } }), client = hoverClient(f.provider), other = f.provider.createScope(); t.after(client.dispose);
     const run = () => client.run({ document: f.workspace.document(f.source.documentId), offset: 0 }).result;
     await run(); blocked = true; f.edit(f.companion.documentId, "large\n".repeat(10_000)); other.attachDocument(f.companion.documentId);
     let completed = false, flushed = false;
@@ -513,7 +516,7 @@ test("pending diagnostics map consecutive edits and undo without renewing provid
 });
 
 test("feature requests require explicit reconnect after transport loss", async t => {
-    const f = fixture(t), client = createLspHoverClient(f.provider); t.after(client.dispose);
+    const f = fixture(t), client = hoverClient(f.provider); t.after(client.dispose);
     const run = () => client.run({ document: f.workspace.document(f.source.documentId), offset: 0 }).result;
     await run(); f.peers[0]!.transport.dispose(); await settled();
     for (let i = 0; i < 3; i++) await assert.rejects(run(), /explicit.*connect/i);
