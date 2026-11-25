@@ -438,155 +438,92 @@ Dispose the history with its host.
 
 ### Rename and workspace edits
 
-Enable `rename` on the editor attachment. Supply a `documents` callback for other open files
-that the provider can rename. `await language.rename.request(name)` applies the edit at the
-captured caret. On success, `value` lists the changed documents. Undo from any one of those
-documents restores the whole rename.
+Enable `rename` on the editor attachment. Pass other open project files through `rename.documents`.
+`await rename.request(name)` renames the symbol at the caret. Undo from any changed file restores
+the whole rename.
 
-Pass `{ review: true }` to inspect the rename first. Use `preview.readEdits(first, end)` to read
-the notes in that half-open range and the total number of changed edits. Replacements that
-already match the source are omitted. Bind Apply to the captured preview and call
-`rename.cancel()` when the user changes the name or dismisses the request.
+To ask for approval, request a preview. Let the dialog page through `preview.readEdits(first, end)`
+and enable Apply when `canApply` is true. Keep the preview the user saw while the dialog was open.
 
 ```ts
-import type { RenameController } from "sttropez/browser";
+import type { RenameController, RenamePreview } from "sttropez/browser";
 
-export async function renameButton(rename: RenameController, name: string) {
+export async function reviewRename(
+    rename: RenameController, name: string, approve: (preview: RenamePreview) => Promise<boolean>
+) {
     const result = await rename.request(name, { review: true });
-    if (result.status !== "done") return;
+    if (result.status !== "done") return result;
     const preview = result.value;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "Apply rename";
-    button.disabled = !preview.canApply;
-    button.onclick = () => preview.apply();
-    return button;
+    if (await approve(preview)) return preview.apply();
+    if (rename.getSnapshot().preview === preview) rename.cancel();
+    return undefined;
 }
 ```
 
-Direct rename and a preview's synchronous `apply()` check every original target. Both return
-`done` with the changed files, `stale` for an expired capture, or `failed` with the error.
-A `refused` result gives the reason `not-writable` for a locked or read-only target and
-`no-changes` for an empty or text-identical edit. A request can also refuse `empty-name` or
-`unavailable-view`. Once a preview expires, `readEdits(first, end)` returns `undefined`.
+Here `undefined` means the user dismissed the dialog. On `done`, report the changed files in
+`value`. On `stale`, close the old preview. For `refused`, check `reason` (`empty-name`,
+`unavailable-view`, `not-writable` or `no-changes`). On `failed`, report `error`. The host sets
+name-field limits and the server checks naming rules. Cancel the pending rename if the user
+edits the proposed name. [Working host example](../examples/reference/language.ts)
 
-The server checks language naming rules. The host sets the name field’s input limits.
+**Workspace text edits.** The client accepts a `changes` map or `documentChanges`. If both are present,
+it uses `documentChanges`. Each URI must resolve to a current, captured document. Numeric versions
+must match its wire version. An unknown URI, repeated document, invalid range or overlap rejects the
+whole batch. Equal-position inserts preserve provider order and inserted text keeps its line endings.
 
-Workspace edits accept `changes` maps and versioned `documentChanges` text edits.
-When both are supplied, `documentChanges` takes precedence. Numeric versions must match captured
-wire versions; absent/null versions require current captured buffers too. Unknown URIs, repeated
-document identities, invalid ranges, overlap or malformed final entries refuse the entire batch.
-Edits sort stably in original coordinates, preserving provider order for equal-position inserts.
-No newline normalization is performed. There are no extra decoder quotas on document/edit counts
-or inserted text; session/transport bounds and direct-call input policy apply.
+A preview page contains edits with ordinals in `[first, end)` and the total across all files.
+An empty range returns the total alone. Notes include bounded excerpts and the full insertion length.
+Rename omits text-identical replacements. Reading an expired preview returns `undefined`.
+[Preview limits](#limits)
 
-Use `readLspEditNotes(edit, titleForDocumentId, first, end)` to read `notes` in provider order.
-The bounds are zero-based edit ordinals. Each note contains a bounded excerpt and the full
-insertion length. `total` counts edits across all files. An empty range reads no excerpts.
-The host chooses its page size and asks for approval of the full edit.
-
-A headless command's `review` callback can import `applyLspWorkspaceEdit` from `sttropez/kernels`.
-Retain the target documents and recheck approval before calling it. The helper checks every
-target and commits the changes as one shared Undo step. Pass the edit `origin` and any
-`requiredOrigins`, originating `view` or `historyKind` (default `"replace"`). It returns the
-changed document snapshots and throws on refusal. An empty or text-identical edit adds no history.
-For a mounted editor, give the browser attachment your review decision. It applies the edit and
-manages the document lifetimes.
+For a headless approval callback, retain the targets and recheck permission before calling
+`applyLspWorkspaceEdit` from `sttropez/kernels`. It accepts the edit origin, optional required
+origins, view and history kind (default `"replace"`). It returns the changed snapshots or throws
+on refusal. An empty edit creates no Undo entry. Use `readLspEditNotes` to show the same excerpts.
 
 ### Code actions and commands
 
-Enable `codeActions` on the attachment to request actions for the editor’s primary
-selection. The origin document is always included. Supply `documents` to include other project files.
-`await actions.request()` returns `done` with the same choices as `getSnapshot().choices`.
-An empty list means the provider found no actions. Cancellation, supersession and a changed
-capture return `stale`. An unavailable view returns `refused` with reason `unavailable-view`.
-A provider error or timeout returns `failed` with the error.
-Call `await choice.select()` to resolve and apply the action. The result contains the changed
-documents. An edit-only action has one Undo step across its files. Pass `{ review: true }` to
-receive a preview with `readEdits(first, end)` and `apply()`. Read an empty range for the total alone.
-Choosing another action retires the pending choice. Repeated selections of the same pending
-action share its provider request. Only the latest selection can apply or return a preview.
+Enable `codeActions` on the attachment. `actions.request()` sends the primary selection and
+its overlapping diagnostics to the provider. Supply `documents` for edits to other project files.
+Present the returned choices, including disabled reasons. Bind the menu to the choice objects so
+a later selection or editor replacement cannot redirect an old click.
 
 ```ts
-import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
-import type { LspWorkspace } from "sttropez/protocol";
+import type { CodeActionChoice, CodeActionController } from "sttropez/browser";
 
-export function attachFixes(editor: TextEditor, provider: LspWorkspace) {
-    const { codeActions: actions, dispose } = attachEditorLanguage(editor, provider, { codeActions: {} });
-    const stop = actions.subscribe(() => {
-        const { choices, preview } = actions.getSnapshot();
-        // Bind each button to this choice or preview, including across a later render.
-        renderFixes(choices.map(choice => ({ title: choice.title, select: () => choice.select({ review: true }) })),
-            preview?.readEdits(0, 0)?.total ?? 0, preview?.canApply ? preview.apply : undefined);
-    });
-    return { request: actions.request, dispose() { stop(); dispose(); } };
-}
-
-declare function renderFixes(choices: { title: string; select(): void }[], edits: number, confirm?: () => void): void;
-```
-
-A change to the captured selection, fold projection, document revision or edit authority expires
-the preview. Choices and Apply buttons also expire when their editor is replaced.
-Approve incoming server edits with `reviewCommandEdit(request, context, writable)`.
-Use `writable` to disable Apply when a file is locked or read-only.
-For a dialog, use `context.onCancel` to close it when the request expires. The attachment applies
-the action’s initial edit before sending the command. It validates each approved edit against the
-originating view and captured documents. Each changed batch has one Undo step across its files.
-
-`await preview.apply()` returns `done` with a list of `ChangedDocument` values, `stale` if the view or request
-expired, `refused` for a denied action or edit, or `failed` for an error. Earlier edits stay undoable
-if a later step fails. Use `canRunCommand` to withhold execution while another host operation is
-active. A busy command returns `refused("command-unavailable")` and leaves the preview available.
-
-`commands.run(name, args)` runs an advertised command on a connected provider. Supply
-`commands.documents` for additional project files and `commands.reviewCommandEdit` to approve
-edits. The command keeps its originating view through approval and returns the same outcomes as
-`preview.apply()`. Its snapshot lists the files changed by the running or last command, including
-edits committed before a lost acknowledgement. A command that makes no edits preserves an open
-action preview. After cancellation, check `provider.getSnapshot().commandRequiresReconnect`
-before offering another command.
-
-Action requests include the selected range and overlapping diagnostics for the captured revision.
-The provider can resolve a choice after the user selects it.
-
-The code-action controller accepts a complete array or null, including CodeAction and Command literals,
-disabled reasons, preferred flags, open kind strings, workspace edits and opaque data. Titles and
-reasons are literal text. Disabled choices also undergo full metadata/target validation. Malformed
-final items and partial-list envelopes reject the batch. An unresolved choice without an edit or
-command can resolve when matching provider options advertise `resolveProvider`.
-
-Resolving an action accepts only the advertised addition of `edit`. All other attributes and
-data must match, irrespective of JSON key order. A changed title, new command, missing edit or stale
-capture rejects the reply. Browsing and resolving actions leave the files untouched.
-
-By default command support requires static/dynamic advertisement. `codeActions.commandPolicy`
-can authorize an exact immutable invocation, including arguments, and return a server route, local
-host route or null. This example permits only the host-selected command with no arguments:
-
-```ts
-import type { LspCommandPolicy } from "sttropez/protocol";
-
-export function commandPolicy(
-    allowedCommand: string,
-    isAuthorized: () => boolean
-): LspCommandPolicy {
-    return invocation => {
-        if (!isAuthorized() || invocation.command !== allowedCommand
-            || invocation.arguments.length !== 0) return null;
-        return { kind: "server", isCurrent: isAuthorized };
-    };
+export async function chooseFix(
+    actions: CodeActionController,
+    choose: (items: readonly CodeActionChoice[]) => Promise<CodeActionChoice | undefined>
+) {
+    const list = await actions.request();
+    if (list.status !== "done") return list;
+    const choice = await choose(list.value);
+    return choice?.select();
 }
 ```
 
-The policy receives the command and its arguments. A route’s `isCurrent` can revoke it. If
-host policy changes during a request, call `codeActions.cancel()`. Denying a command disables
-the entire choice, including its initial edit. Earlier approved batches remain undoable if a
-later batch fails. [Command permissions and reconnect](language-server.md#commands-and-edit-decisions)
+An empty list means the provider found no actions. In this example dismissal returns `undefined`.
+`choice.select()` resolves and applies the action. To review it first, call
+`choice.select({ review: true })`, display the returned preview’s `readEdits(first, end)`, then
+call `await preview.apply()` on approval. Repeated selection of the same pending choice shares one
+request. Choosing another supersedes it. Wire replies can add the advertised edit on resolve.
+A changed title, command or opaque data invalidates the reply. The client validates the whole
+list, including disabled choices. Render titles and reasons as text.
 
-An incoming edit request checks the optional literal label and every text edit. Return an
-`LspApplyEditResult` for each decision. To decline, return `applied: false` and an optional failure
-reason. Cancellation uses the usual request path. Set a review deadline. If the connection closes
-after commit, report the uncertain delivery and leave the edit in history.
+An applied edit creates one Undo step across its files. If the action includes a command,
+the initial edit commits first. Use `reviewCommandEdit(request, context, writable)` to approve
+each server edit. Disable Apply for unwritable files and close the dialog on `context.onCancel`.
+A later failure leaves earlier edits undoable. The result uses the same outcomes as rename.
+`canRunCommand` lets the host defer execution while busy. A `command-unavailable` refusal keeps
+the preview open.
+
+Use `commands.run(name, args)` for an advertised command. Its snapshot lists files changed even
+if the acknowledgement is lost. A command that makes no edits preserves any open action preview.
+After cancellation, check `provider.getSnapshot().commandRequiresReconnect` before retrying.
+
+For host-authorized commands, `codeActions.commandPolicy` receives the exact command and arguments.
+Return a server or local route with a revocable `isCurrent`, or `null` to disable the whole action.
+Cancel an open request if host policy changes. [Command permissions, review deadlines and reconnect](language-server.md#commands-and-edit-decisions)
 
 ### Document links
 
@@ -703,7 +640,7 @@ Most features rely on the
 | Document links | 1,024 items; 4,096-unit URI/tooltip; 8,192-unit serialized data/item; 16,384-unit captured resolve payload/item; separate 65,536 display and opaque budgets, with data and captured resolve payload both charged to the opaque budget |
 | Color discovery | 1,024 items |
 | Color presentations | 64 choices; 4,096-unit labels; 32 additional edits/choice; 1,024 total edits; 16,384 units/insertion; 65,536 aggregate label/insertion units |
-| Edit previews | 64 edits/page; 128-unit titles; 256 units of deletion/insertion text, with full insertion size; deletion context bounded independently of deletion length |
+| Edit previews | The host chooses the page size. Titles use up to 128 units. Excerpts show up to 256 units of removed and inserted text each, plus the full insertion length. |
 | Occurrence controller | 150 ms default quiet interval, configurable nonnegative `delayMs`; at most five seconds waiting for queued input |
 
 ## Host responsibilities
