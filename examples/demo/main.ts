@@ -134,7 +134,9 @@ function renderProblems(): void {
             const file = captured.files.find(file => file.resource.documentId === target.documentId);
             if (!file || captured.workspace.document(target.documentId).revision !== target.revision) return false;
             if (file !== active) mountFile(file);
-            return editor?.view === file.view && !!editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true });
+            return editor?.view === file.view && !!editor.reveal(target, {
+                expectedRevision: target.revision, align: "center-if-outside", select: true, focus: true
+            });
         };
         item.disabled = !confirmed;
         item.addEventListener("click", () => open(problem));

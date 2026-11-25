@@ -1022,6 +1022,18 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     await expect(problems.getByRole("button", { name: "Previous problems" })).toBeFocused();
     await expect(rows).toHaveCount(44); await expect(problems).toContainText("257–300 of 300");
     await expect(rows.last()).toContainText("problems.ts:300:7 · TS2322:");
+    await rows.first().click();
+    const viewport = page.locator("#editor .st-viewport");
+    const selected = viewport.locator('.st-viewport-row[data-line="256"]');
+    await expect.poll(() => selected.evaluate(row => {
+        const box = row.getBoundingClientRect();
+        const pane = row.closest(".st-viewport")!.getBoundingClientRect();
+        return Math.abs(box.top + box.height / 2 - pane.top - pane.height / 2) / box.height;
+    })).toBeLessThan(1);
+    const scroll = await viewport.evaluate(node => node.scrollTop);
+    await rows.nth(1).click();
+    await expect(page.locator("#cursor")).toContainText("Ln 258,");
+    expect(await viewport.evaluate(node => node.scrollTop)).toBe(scroll);
     await rows.last().scrollIntoViewIfNeeded();
     await expect(problems.getByRole("button", { name: "Previous problems" })).toBeInViewport();
     await rows.last().click();
@@ -1073,7 +1085,6 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     await locations.getByRole("button", { name: "Previous locations" }).click();
     await expect(locations.locator('[data-chosen="true"]')).toHaveAttribute("data-location", "1151");
     await locations.getByRole("button", { name: "Next locations" }).click();
-    const viewport = page.locator("#editor .st-viewport");
     async function scrollAwayAndBack(popup: Locator, lineNumber: number) {
         const initial = await viewport.evaluate(node => node.scrollTop);
         await viewport.evaluate((node, line) => { node.scrollTop = line === 0 ? node.scrollHeight : 0; }, lineNumber);
