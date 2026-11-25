@@ -1,7 +1,7 @@
-import { openWebSocketTransport } from "../../src/browser/index.ts";
-import type { DemoProvider, DemoProviderBootstrap } from "./provider-contract.ts";
+import { openWebSocketTransport } from "../../../src/browser/index.ts";
+import type { DemoProvider, DemoProviderBootstrap } from "../../../examples/demo/provider-contract.ts";
 
-/** Local development host, selected explicitly by the demo page. */
+/** Connect the playground to the real-server interoperability fixture. */
 export async function openDemoProvider(sample: string, signal: AbortSignal, names: readonly string[], backing: Readonly<Record<string, string>> = {}): Promise<DemoProvider> {
     const response = await fetch(new URL(`demo-provider?sample=${encodeURIComponent(sample)}`, document.baseURI), { method: "POST", signal,
         ...(Object.keys(backing).length ? { body: JSON.stringify(backing), headers: { "Content-Type": "application/json" } } : {}) });

@@ -243,7 +243,8 @@ manifest, hashes and public exports. It compiles the reference host with strict 
 and a host-supplied font, runs a regex search in the packaged worker, and types into the editor.
 The consumer directory is removed on exit. [Package layout and host setup](packaging.md)
 
-Demo feature tests run on the development server with the WebSocket or browser provider.
+Source demo tests start the WebSocket fixture. Run `npm run demo -- --server-provider` to try it locally.
+In that fixture, `?provider=browser` selects the playground's usual worker.
 The static suite checks that assets load under the repository prefix, exercises one editing and
 review walkthrough, and verifies worker failure and retry.
 

@@ -18,5 +18,5 @@ export default defineConfig({
         name: browserName,
         use: { browserName },
     })),
-    webServer: { command: "npm run demo", env: { STTROPEZ_PORT: port }, url: baseURL, reuseExistingServer: false, timeout: 30_000 },
+    webServer: { command: "node scripts/serve.mjs --server-provider", env: { STTROPEZ_PORT: port }, url: baseURL, reuseExistingServer: false, timeout: 30_000 },
 });

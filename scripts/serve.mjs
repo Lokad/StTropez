@@ -4,16 +4,16 @@ import { createServer } from "node:http";
 import { relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
-import { attachDemoProvider } from "../examples/demo/provider-server.ts";
 import { demoBundle, demoFontFiles, demoFontSource, demoLibraries } from "./demo-assets.mjs";
 import { libraryCss, regexWorker } from "./library-entries.mjs";
 import { closePackageResources, closePackageServer, listenPackageServer, sendAsset } from "./package-host.mjs";
 
 /**
  * @param {number} port
- * @param {{watch?: boolean}} [options]
+ * @param {{watch?: boolean; serverProvider?: boolean}} [options]
  */
-export async function startServer(port, { watch = true } = {}) {
+export async function startServer(port, { watch = true, serverProvider = false } = {}) {
+    const attachDemoProvider = serverProvider ? (await import("../tests/fixtures/demo/provider-server.ts")).attachDemoProvider : undefined;
     const routes = {
         "/": "demo/index.html",
         "/viewport/": "viewport/index.html",
@@ -27,11 +27,7 @@ export async function startServer(port, { watch = true } = {}) {
     /** @type {Map<string, Buffer>} */
     const pages = new Map();
     for (const [path, file] of Object.entries(routes)) {
-        let bytes = await readFile(resolve("examples", file));
-        if (path === "/") {
-            const html = bytes.toString().replace('data-demo-provider="browser"', 'data-demo-provider="server"');
-            bytes = Buffer.from(html);
-        }
+        const bytes = await readFile(resolve("examples", file));
         pages.set(path, bytes);
         pages.set(path + "index.html", bytes);
     }
@@ -52,6 +48,7 @@ export async function startServer(port, { watch = true } = {}) {
         ...demoBundle,
         entryPoints: {
             ...demoBundle.entryPoints,
+            app: serverProvider ? "tests/fixtures/demo/main.ts" : demoBundle.entryPoints.app,
             comparison: "examples/comparison/main.ts",
             editing: "examples/editing/main.ts",
             viewport: "examples/viewport/main.ts",
@@ -83,13 +80,13 @@ export async function startServer(port, { watch = true } = {}) {
         }],
     });
     const server = createServer((request, response) => { void handle(request, response).catch(() => { if (!response.headersSent) response.writeHead(500); response.end("Development service failed."); }); });
-    const demoProvider = attachDemoProvider(server);
+    const demoProvider = attachDemoProvider?.(server);
     /**
      * @param {import("node:http").IncomingMessage} request
      * @param {import("node:http").ServerResponse} response
      */
     async function handle(request, response) {
-        if (await demoProvider.handle(request, response)) return;
+        if (demoProvider && await demoProvider.handle(request, response)) return;
         if (request.method !== "GET" && request.method !== "HEAD") { response.writeHead(405, { Allow: "GET, HEAD" }).end(); return; }
         let path;
         // IncomingMessage.url is populated for server requests.
@@ -104,11 +101,11 @@ export async function startServer(port, { watch = true } = {}) {
     const releaseProtocolFixture = attachProtocolFixture(server, { allowOtherUpgrades: true });
     server.on("upgrade", (request, socket) => {
         const path = new URL(/** @type {string} */ (request.url), "http://localhost").pathname;
-        if (path !== "/lsp-fixture" && !/^\/demo-provider\/[a-f0-9-]+$/.test(path)) socket.destroy();
+        if (path !== "/lsp-fixture" && !(demoProvider && /^\/demo-provider\/[a-f0-9-]+$/.test(path))) socket.destroy();
     });
     /** @param {readonly unknown[]} [failures] */
     const release = (failures = []) => closePackageResources([
-        releaseProtocolFixture, () => demoProvider.close(), () => builder.dispose(), () => closePackageServer(server),
+        releaseProtocolFixture, () => demoProvider?.close(), () => builder.dispose(), () => closePackageServer(server),
     ], failures);
     try {
         if (watch) { await builder.watch(); await initial; }
@@ -123,7 +120,7 @@ export async function startServer(port, { watch = true } = {}) {
     return { url: `http://127.0.0.1:${address.port}`, buildMode: watch ? "development-bundle-watch" : "development-bundle-no-watch", close: () => closing ??= release() };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-    const server = await startServer(Number(process.env.STTROPEZ_PORT ?? 4173));
+    const server = await startServer(Number(process.env.STTROPEZ_PORT ?? 4173), { serverProvider: process.argv.includes("--server-provider") });
     console.log(`StTropez: ${server.url}`);
     process.on("SIGINT", async () => { await server.close(); process.exit(0); });
     process.on("SIGTERM", async () => { await server.close(); process.exit(0); });

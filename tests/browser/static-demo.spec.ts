@@ -5,9 +5,11 @@ import { runDemoWalkthrough } from "./demo-walkthrough.ts";
 test("browser-only demo completes the real editing and review walkthrough below a repository path", async ({ page, baseURL }) => {
     const requests: string[] = [], sockets: string[] = [];
     page.on("request", request => requests.push(request.url())); page.on("websocket", socket => sockets.push(socket.url()));
-    await runDemoWalkthrough(page, baseURL!);
-    expect(sockets).toEqual([]);
     const root = new URL(baseURL!);
+    // A link copied from the server fixture must still open the published worker playground.
+    root.searchParams.set("provider", "server");
+    await runDemoWalkthrough(page, root.href);
+    expect(sockets).toEqual([]);
     expect(requests.every(request => { const url = new URL(request); return url.origin === root.origin && url.pathname.startsWith(root.pathname); })).toBe(true);
     expect(requests.some(request => new URL(request).pathname.includes("demo-provider"))).toBe(false);
 });

@@ -6,7 +6,7 @@ import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
 import { bindFindCommands } from "../shared/find-commands.ts";
 import { findNotice, findStatus } from "../shared/find-status.ts";
-import { selectDemoProvider } from "./provider.ts";
+import type { DemoProviderFactory } from "./provider-contract.ts";
 import type { DemoFile } from "./project.ts";
 import { DemoPresentation } from "./presentation.ts";
 import { sampleChoices } from "./samples.ts";
@@ -37,7 +37,6 @@ const projects = new Map<SampleId, DemoProject>(), activeFiles = new Map<SampleI
 const pendingProjects = new Map<SampleId, Promise<DemoProject>>();
 const listeners = new AbortController(), sample = element("sample") as HTMLSelectElement;
 const pageOptions = new URL(location.href).searchParams;
-const openProvider = selectDemoProvider(pageOptions.get("provider") ?? document.documentElement.dataset.demoProvider ?? "browser");
 for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: TextEditor | undefined;
 let comparison: TextComparison | undefined, find: FindController | undefined, activePane: TextEditor | undefined;
@@ -408,7 +407,7 @@ function showSampleError(message: string): void {
         element("description").textContent = "Choose an example to try again.";
     }
 }
-function loadProject(id: SampleId): Promise<DemoProject> {
+function loadProject(id: SampleId, openProvider: DemoProviderFactory): Promise<DemoProject> {
     const pending = pendingProjects.get(id);
     if (pending) return pending;
     const load = DemoProject.open(id, () => {
@@ -423,7 +422,7 @@ function loadProject(id: SampleId): Promise<DemoProject> {
     pendingProjects.set(id, load);
     return load;
 }
-async function openSample(id: SampleId): Promise<void> {
+async function openSample(id: SampleId, openProvider: DemoProviderFactory): Promise<void> {
     const generation = ++opening;
     if (refusePendingEdit()) { selectSample(project!.sample.id); return; }
     pendingPanel = undefined;
@@ -441,7 +440,7 @@ async function openSample(id: SampleId): Promise<void> {
         if (disposed || generation !== opening) return;
     }
     let next: DemoProject;
-    try { next = projects.get(id) ?? await loadProject(id); }
+    try { next = projects.get(id) ?? await loadProject(id, openProvider); }
     catch (error) {
         if (disposed || generation !== opening) return;
         console.error(error);
@@ -903,7 +902,6 @@ findBar.addEventListener("keydown", event => {
 for (const controls of document.querySelectorAll<HTMLElement>("header, #files, #panels")) {
     controls.addEventListener("keydown", event => { activePane?.keymap.handle(event); }, { signal: listeners.signal });
 }
-sample.addEventListener("change", () => { void openSample(sample.value as SampleId); }, { signal: listeners.signal });
 element("files").addEventListener("click", event => {
     const name = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-file]")?.dataset.file;
     const file = project?.files.find(file => file.name === name);
@@ -925,5 +923,8 @@ window.addEventListener("pagehide", event => {
     disposed = true; opening++; listeners.abort(); stopWorkspace?.(); stopRecovery?.(); stopLanguage?.(); detachView(); foldMenu.dispose(); presentation.dispose();
     for (const project of projects.values()) project.dispose(); projects.clear(); savedViews.clear();
 }, { signal: listeners.signal });
-const requestedSample = pageOptions.get("sample");
-await openSample(sampleChoices.find(choice => choice.id === requestedSample)?.id ?? "pricing");
+export function startPlayground(openProvider: DemoProviderFactory): Promise<void> {
+    sample.addEventListener("change", () => { void openSample(sample.value as SampleId, openProvider); }, { signal: listeners.signal });
+    const requestedSample = pageOptions.get("sample");
+    return openSample(sampleChoices.find(choice => choice.id === requestedSample)?.id ?? "pricing", openProvider);
+}

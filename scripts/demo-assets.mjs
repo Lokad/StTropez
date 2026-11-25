@@ -8,7 +8,7 @@ export const demoBundle = {
     format: "esm",
     target: "es2022",
     entryPoints: {
-        app: "examples/demo/main.ts",
+        app: "examples/demo/browser-main.ts",
         "demo-syntax-worker": "examples/demo/syntax-worker.ts",
         "demo-language-worker": "examples/demo/language-worker.ts",
     },

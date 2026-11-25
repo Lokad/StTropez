@@ -5,7 +5,7 @@ import { test, expect } from "./fixtures.ts";
 test.beforeEach(async ({ page }) => {
     const built = await build({ entryPoints: { project: "examples/demo/project.ts", language: "examples/demo/language-view.ts",
         commands: "examples/demo/language-commands.ts", cleanup: "examples/shared/cleanup-scope.ts", core: "src/index.ts",
-        browser: "src/browser/index.ts", provider: "examples/demo/provider.ts" }, outdir: "artifacts/demo-language-lifecycle",
+        browser: "src/browser/index.ts", provider: "tests/fixtures/demo/server-provider.ts" }, outdir: "artifacts/demo-language-lifecycle",
         bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
     await page.route("**/demo-language-lifecycle/**", route => {
@@ -54,10 +54,10 @@ test("language mounting releases partial owners, preserves failures and rejects 
     const results = await page.evaluate(async () => {
         const path = "/demo-language-lifecycle/";
         const { DemoProject } = await import(path + "project.js") as typeof import("../../examples/demo/project.ts");
-        const { selectDemoProvider } = await import(path + "provider.js") as typeof import("../../examples/demo/provider.ts");
+        const { openDemoProvider } = await import(path + "provider.js") as typeof import("../fixtures/demo/server-provider.ts");
         const { mountDemoLanguage } = await import(path + "language.js") as typeof import("../../examples/demo/language-view.ts");
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
-        const project = await DemoProject.open("pricing", () => true, selectDemoProvider("server"));
+        const project = await DemoProject.open("pricing", () => true, openDemoProvider);
         const prepared = await project.language.prepare();
         if (prepared.getSnapshot().phase !== "disconnected" || project.language.state.getSnapshot().status !== "starting")
             throw new Error("Preparing language controls must keep the initial connection pending.");

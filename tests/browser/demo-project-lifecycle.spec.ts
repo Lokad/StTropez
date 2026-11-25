@@ -60,7 +60,7 @@ test("failed project opening leaves startup and the current sample retryable", a
             if (args.length === 1 && args[0] === state.failure) { state.reported++; return; }
             report(...args);
         };
-        await import("./examples/demo/main.ts");
+        await import("./examples/demo/browser-main.ts");
     ` }, outdir: "artifacts/demo-project-lifecycle", bundle: true, format: "esm", platform: "browser", target: "es2022", write: false });
     await page.route("**/app.js", route => route.fulfill({ contentType: "text/javascript", body: built.outputFiles.find(file => file.path.endsWith(".js"))!.text }));
     await page.goto("/");

@@ -37,7 +37,7 @@ Reloading a tab with an unsaved checkpoint offers recovery for that sample.
 
 <a id="provider-ownership-and-adaptations"></a>
 
-The published demo runs the TypeScript language service in a browser worker. The development server defaults to a language server over WebSocket. Add `?provider=browser` locally to try the published configuration. [Language server integration](language-server.md)
+The playground runs TypeScript in a browser worker, both locally and on GitHub Pages. The WebSocket test fixture runs a separate language server. [Language server integration](language-server.md)
 
 ## Host workflows
 

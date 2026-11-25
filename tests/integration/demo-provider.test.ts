@@ -7,7 +7,7 @@ import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { actionClient } from "../../src/protocol/lsp-actions.ts";
-import { attachDemoProvider } from "../../examples/demo/provider-server.ts";
+import { attachDemoProvider } from "../fixtures/demo/provider-server.ts";
 import type { DemoProviderBootstrap } from "../../examples/demo/provider-contract.ts";
 import { demoSample } from "../../examples/demo/samples.ts";
 import { Workspace } from "../../src/index.ts";
