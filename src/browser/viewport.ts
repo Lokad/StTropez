@@ -1091,15 +1091,18 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             const document = workspace.document(documentId), saved = state.folding;
             if (saved && saved.documentId !== documentId) return null;
             let value = state.horizontalAnchor, vertical = state.verticalAnchor;
-            validateScroll({ top: state.scrollTop, left: state.scrollLeft });
+            const scroll = { top: state.scrollTop, left: state.scrollLeft };
+            validateScroll(scroll);
             if (value && (!isNonNegativeInteger(value.revision) || !isNonNegativeInteger(value.offset)
                 || !Number.isFinite(value.left) || value.left < 0 || value.affinity !== "before" && value.affinity !== "after")) throw new RangeError("Invalid horizontal view anchor.");
             if (value?.revision === document.revision && value.offset > document.buffer.length) throw new RangeError("Horizontal view anchor is outside the document.");
             if (vertical && (!isNonNegativeInteger(vertical.revision) || !isNonNegativeInteger(vertical.offset) || !Number.isFinite(vertical.topRemainder) || vertical.aligned !== undefined && vertical.aligned !== true)) throw new RangeError("Invalid vertical view anchor.");
             if (vertical?.revision === document.revision && vertical.offset > document.buffer.length) throw new RangeError("Vertical view anchor is outside the document.");
-            const selected = selectionToRestore(document, view, state, options), folds = currentFolds();
-            const restoreFolds = !!saved && saved.revision === document.revision && saved.viewId !== view.id && folds.generation === 0 && !folds.regions.length;
-            if (restoreFolds) createFoldRegions(document.buffer, saved.regions);
+            const selected = selectionToRestore(document, view, state, options);
+            const folds = currentFolds();
+            const regions = saved && saved.revision === document.revision && saved.viewId !== view.id
+                && folds.generation === 0 && !folds.regions.length
+                ? createFoldRegions(document.buffer, saved.regions) : undefined;
             if (value && selected.source === "current" && value.offset === state.head && value.affinity === (state.headAffinity ?? "after")
                 && (!saved || value.revision === saved.revision)) {
                 const primary = selected.set.ranges[selected.set.primary]!;
@@ -1114,14 +1117,14 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             }
             notifications.batch(() => {
                 if (!sameSelectionSet(selected.set, view.getSnapshot().selectionSet)) view.setSelections(document.revision, selected.set.ranges, selected.set.primary);
-                if (restoreFolds) view.folding.setRanges(currentFolds(), saved.regions);
+                if (regions) view.folding.setRanges(currentFolds(), regions);
                 if (currentFolds() !== folds) restoredFolds = currentFolds();
                 reveal = undefined;
-                setScroll({ top: state.scrollTop, left: state.scrollLeft });
+                setScroll(scroll);
                 if (value) horizontalAnchor = { ...value };
                 if (vertical) anchor = { ...vertical, leftRemainder: left - (vertical.offset - document.buffer.offsetAt(document.buffer.lineAt(vertical.offset))) * columnWidth };
             });
-            return Object.freeze({ selection: selected.source, foldsRestored: restoreFolds,
+            return Object.freeze({ selection: selected.source, foldsRestored: regions !== undefined,
                 horizontalAnchorRestored: !!value, verticalAnchorRestored: !!vertical });
         },
         revealOffset: (offset: number, options: RevealOptions = {}) => {

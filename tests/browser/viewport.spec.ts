@@ -96,7 +96,21 @@ test("full selection sets paint bounded ranges and round-trip while legacy state
             && s.selectionSet === state.selectionSet && s.selection === s.selectionSet!.ranges[s.selectionSet!.primary]; })).toBe(true);
     await page.evaluate(state => { const f = window.viewportFixture; f.select("primary", [{ anchor: 12, head: 12 }]); f.restore("primary", state); }, captured); await ready(page);
     expect((await page.evaluate(() => window.viewportFixture.snapshot())).primary.selectionSet).toEqual(captured.selectionSet);
-    expect(await page.evaluate(state => { const f = window.viewportFixture; f.restore("secondary", { ...state, anchor: 0, head: 0 }); return f.settled; }, captured)).toBe(false);
+    const restore = await page.evaluate(state => {
+        const f = window.viewportFixture;
+        const section = { id: "saved section", from: 720, to: 960, collapsed: true };
+        let reads = 0;
+        const result = f.restore("secondary", { ...state, anchor: 0, head: 0, folding: {
+            ...state.folding!,
+            get regions() {
+                reads++;
+                return [section];
+            },
+        } });
+        const applied = f.capture("secondary").folding!.regions;
+        return { reads, restored: result?.foldsRestored, ids: applied.map(region => region.id), settled: f.settled };
+    }, captured);
+    expect(restore).toEqual({ reads: 1, restored: true, ids: ["saved section"], settled: false });
     await ready(page);
     expect(await page.evaluate(() => window.viewportFixture.snapshot().secondary.selectionSet)).toEqual(captured.selectionSet);
     expect((await page.evaluate(() => window.viewportFixture.snapshot())).secondary.selection).toEqual(captured.selectionSet!.ranges[1]);
