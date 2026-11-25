@@ -1,14 +1,11 @@
 import type { DocumentId } from "../../src/index.ts";
-import { attachEditorLanguage, captureViewRequest, mountAnchoredOverlay } from "../../src/browser/index.ts";
-import type { CapturedViewRequest, NavigationChoice, NavigationOrigin, TextEditor } from "../../src/browser/index.ts";
+import { attachEditorLanguage, mountAnchoredOverlay } from "../../src/browser/index.ts";
+import type { NavigationChoice, NavigationOrigin, TextEditor } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
-import { HostRenameTools } from "../shared/rename.ts";
-import { pageActions, renderPanelActions, renderPanelButton } from "../shared/panel-actions.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 import { bindPopupCommands } from "./language-commands.ts";
 import { locationExcerpt, locationPage, type NavigationPage } from "../shared/location-excerpt.ts";
-import { prepareRenameTarget } from "./rename-target.ts";
 
 export type DemoSymbolTarget = Readonly<{ documentId: DocumentId; revision: number; from: number; to: number }>;
 
@@ -23,7 +20,7 @@ function locationButton(file: DemoFile, location: NavigationChoice): HTMLButtonE
 }
 
 /** Host presentation around validated public results. Navigation may replace this editor view. */
-export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file: DemoFile, editor: TextEditor,
+export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, editor: TextEditor,
     provider: LspWorkspace, valid: () => boolean, dismissOther: () => void, open: (target: DemoSymbolTarget, origin: NavigationOrigin) => void,
     notice: (message: string, signal: AbortSignal) => void) {
     const { workspace } = project;
@@ -31,11 +28,7 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
     scope.defer(() => { disposed = true; events.abort(); });
     const popup = document.createElement("section"); scope.defer(() => popup.remove());
     popup.className = "demo-symbols"; popup.hidden = true; popup.setAttribute("aria-label", "Symbol locations");
-    const renamePopup = document.createElement("section"); scope.defer(() => renamePopup.remove());
-    renamePopup.className = "demo-rename"; renamePopup.hidden = true;
-    renamePopup.setAttribute("role", "dialog"); renamePopup.setAttribute("aria-label", "Rename symbol");
     document.body.append(popup);
-    (editor.element.closest("#workspace") ?? editor.element.ownerDocument.body).append(renamePopup);
     const locationsOverlay = mountAnchoredOverlay(editor, popup, {
         dismissOn: ["focus-leave"],
         onHide(reason) { if (reason === "focus-leave" || reason === "expired") cancelNavigation(); },
@@ -46,10 +39,12 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
     let query: Query | undefined;
     const idle = () => { const s = editor.activity(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
     const language = attachEditorLanguage(editor, provider, { navigation: { canCapture: idle, resultLifetime: "view", documents: () => project.files.map(file => workspace.document(file.resource.documentId)),
-        onDefinition: offset => request("definition", offset) } });
+        onDefinition: offset => request("definition", offset) }, rename: {
+            canCapture: idle, popup: { beforeOpen() { dismissOther(); cancelNavigation(); },
+                onNotice: message => notice(message, events.signal) },
+        } });
     const { navigation } = language;
     scope.defer(language.dispose);
-    const target = workspace.tabs.capture(file.tab);
     const hideLocations = () => { query = undefined; locationsOverlay.hide(); };
     const cancelNavigation = () => { hideLocations(); navigation.cancel(); };
     scope.defer(cancelNavigation);
@@ -95,7 +90,7 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
         if (focused) editor.focus();
     };
     function request(kind: Query["kind"], pointed?: number) {
-        if (!idle()) return; dismissOther(); closeRename(false); cancelNavigation(); editor.focus();
+        if (!idle()) return; dismissOther(); editor.commands.run("rename.dismiss", false); cancelNavigation(); editor.focus();
         const caret = editor.view.getSnapshot().selection;
         if (pointed === undefined) editor.viewport.revealOffset(caret.head, {
             affinity: caret.headAffinity ?? "after", vertical: "center-if-outside", horizontal: "nearest",
@@ -119,114 +114,7 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
             showNavigation(captured, result.count ? `Choose a ${kind === "definition" ? "definition" : "reference"}.` : `No ${kind} in this sample.`);
         }).catch(reportError);
     }
-    const rename = new HostRenameTools({ workspace, canCapture: idle, present: id => id === file.resource.documentId && valid() ? editor : undefined },
-        { provider, open: beginRename });
-    scope.defer(() => rename.dispose());
-    const heading = document.createElement("h2"), status = document.createElement("p"), label = document.createElement("label"), name = document.createElement("input");
-    heading.textContent = `Rename in ${file.name}`; status.setAttribute("aria-label", "Rename status"); name.maxLength = 256; label.append("New name ", name);
-    const preview = document.createElement("button"), cancel = document.createElement("button"), targets = document.createElement("ol"), pages = document.createElement("div");
-    let apply = renderPanelButton(document.createElement("button"), { label: "Apply rename", disabled: true, invoke: null });
-    preview.textContent = "Preview rename"; cancel.textContent = "Cancel rename"; targets.setAttribute("aria-label", "Rename edits");
-    const controls = document.createElement("div");
-    controls.append(preview, apply, cancel); targets.tabIndex = 0;
-    renamePopup.append(heading, label, status, controls, pages, targets);
-    let renameSource: CapturedViewRequest | undefined;
-    let checking: { edited: boolean; submit: boolean } | undefined;
-    const closeRename = (focus: boolean) => {
-        const previous = renameSource; renameSource = undefined;
-        checking = undefined;
-        renamePopup.hidden = true; previous?.cancel(); rename.cancel(); if (focus && valid()) editor.focus();
-    };
-    scope.defer(() => closeRename(false));
-    renamePopup.addEventListener("focusout", event => {
-        if (checking && !renamePopup.contains(event.relatedTarget as Node | null)) closeRename(false);
-    }, { signal: events.signal });
-    window.addEventListener("blur", () => { if (checking) closeRename(false); }, { signal: events.signal });
-    function beginRename(prompt: (name?: string) => void) {
-        if (!idle()) return false;
-        dismissOther(); cancelNavigation(); closeRename(false);
-        const caret = editor.view.getSnapshot().selection;
-        editor.viewport.revealOffset(caret.head, {
-            affinity: caret.headAffinity ?? "after", vertical: "center-if-outside", horizontal: "nearest",
-        });
-        const source = captureViewRequest(workspace, target, editor.view, { available: idle }); if (!source) return false;
-        renameSource = source;
-        source.signal.addEventListener("abort", () => {
-            if (renameSource === source) closeRename(rename.state.getSnapshot().status === "applied" || renamePopup.contains(document.activeElement));
-        }, { once: true });
-        const needsCheck = provider.queryFeatureOptions("textDocument/rename", source.document)
-            .some(options => options.prepareProvider === true);
-        const pending = needsCheck ? { edited: false, submit: false } : undefined;
-        checking = pending;
-        renamePopup.hidden = false;
-        prompt();
-        if (!pending) return true;
-        const rejectTarget = (message: string) => {
-            if (renameSource !== source || !source.isCurrent()) return;
-            closeRename(true);
-            notice(message, events.signal);
-        };
-        void prepareRenameTarget(provider, source, caret.head, name.maxLength).then(placeholder => {
-            if (renameSource !== source || !source.isCurrent()) return;
-            if (placeholder === null) return rejectTarget("Place the caret on a name to rename it.");
-            checking = undefined;
-            if (!pending.edited && name.value !== placeholder) {
-                rename.setName(placeholder);
-                if (document.activeElement === name) name.select();
-            }
-            refreshPrompt();
-            if (pending.submit && !preview.disabled) rename.prepare();
-        }, () => rejectTarget("TypeScript could not prepare a rename here."));
-        return true;
-    }
-    name.addEventListener("input", () => {
-        if (checking) {
-            checking.edited = true;
-            checking.submit = false;
-        }
-        rename.setName(name.value);
-    }, { signal: events.signal });
-    scope.defer(editor.commands.register({ id: "rename.submitWhenReady", label: "Preview after checking the rename target",
-        enabled: () => !!checking && document.activeElement === name,
-        run: () => { if (checking) checking.submit = true; } }, { keys: ["Enter"], shared: true, priority: 34, repeat: false }).dispose);
-    preview.addEventListener("click", () => {
-        name.focus();
-        rename.prepare();
-    }, { signal: events.signal });
-    cancel.addEventListener("click", () => closeRename(true), { signal: events.signal });
-    rename.bindName(name); scope.defer(() => rename.bindName(null));
-    let displayed = rename.state.getSnapshot().locations;
-    function refreshPrompt() {
-        const state = rename.state.getSnapshot();
-        status.textContent = checking ? "Checking rename target…" : state.status === "pending" ? "Preparing rename preview…" : state.status === "ready" ? state.message
-            : state.status === "expired" ? "The code or selection changed. Preview again." : state.status === "failed" ? state.message : "Enter a name, then preview its changes.";
-        preview.disabled = !!checking || state.pending || !state.name.trim();
-    }
-    scope.defer(rename.state.subscribe(() => {
-        const state = rename.state.getSnapshot();
-        refreshPrompt();
-        if (name.value !== state.name) name.value = state.name;
-        apply = renderPanelButton(apply, { label: "Apply rename", reviewKey: state.reviewKey, disabled: !state.canApply, invoke: state.preview?.apply ?? null });
-        if (displayed !== state.locations) {
-            displayed = state.locations; targets.start = (displayed[0]?.ordinal ?? 0) + 1;
-            targets.replaceChildren(...displayed.map(at => {
-                const item = document.createElement("li"), before = document.createElement("del"), after = document.createElement("ins"), code = document.createElement("code");
-                before.textContent = at.before; after.textContent = at.after; code.append(before, " → ", after);
-                item.append(`${at.title} · ${at.line + 1}:${at.column + 1} `, code); return item;
-            }));
-            targets.scrollTop = 0;
-        }
-        renderPanelActions(pages, pageActions("edits", state.paging)); pages.hidden = !state.paging;
-        if (state.status === "applied") queueMicrotask(() => { if (!disposed && rename.state.getSnapshot() === state) closeRename(true); });
-    }));
     popup.addEventListener("pointerdown", event => event.preventDefault(), { signal: events.signal });
-    renamePopup.addEventListener("keydown", event => {
-        if (event.target === targets && ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) return;
-        if (event.target !== name && editor.keymap.handle(event)) event.stopPropagation();
-    }, { signal: events.signal });
-    scope.defer(editor.commands.register({ id: "rename.dismiss", label: "Dismiss rename",
-        enabled: () => !!renameSource && (editor.getSnapshot().focused || renamePopup.matches(":focus-within")),
-        run: () => closeRename(true) }, { keys: ["Escape"], priority: 39, shared: true }).dispose);
     const bind = bindPopupCommands(scope, editor, popup, 36);
     bind("locations.dismiss", "Close locations", "Escape", () => { cancelNavigation(); editor.focus(); });
     const move = (direction: -1 | 1, byPage = false) => {
@@ -254,11 +142,10 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, file
         const location = query?.page?.selected;
         return !!query && !!location && choose(query, location);
     });
-    scope.defer(rename.attach("source", file.tab, editor));
     scope.defer(navigation.subscribe(() => {
         const status = navigation.getSnapshot().status;
         if (query && (status === "expired" || status === "idle")) hideLocations();
     }));
     return Object.freeze({ definition: () => request("definition"), references: () => request("references"), rename: () => editor.commands.run("rename.start"),
-        dismiss: () => { cancelNavigation(); closeRename(false); }, isOpen: () => !!query || !!renameSource });
+        dismiss: () => { cancelNavigation(); editor.commands.run("rename.dismiss", false); }, isOpen: () => !!query || editor.commands.get("rename.dismiss")?.enabled === true });
 }

@@ -1,3 +1,4 @@
+import { identifierAt } from "../core/identifier.ts";
 import { onAbort } from "./listen.ts";
 import { editorElement } from "./editor-element.ts";
 import { NotificationScope, Store, type Observable } from "../core/observable.ts";
@@ -31,14 +32,7 @@ function selectedFindQuery(source: TextEditor, regex: boolean): string | undefin
     let text: string | undefined;
     if (length) text = buffer.slice(Math.min(anchor, head), Math.max(anchor, head));
     else {
-        // One extra code point on either side distinguishes long identifiers from complete words.
-        const from = Math.max(0, head - limit - 2);
-        const window = buffer.slice(from, Math.min(buffer.length, head + limit + 2));
-        for (const word of window.matchAll(/[$\p{ID_Continue}\u200c\u200d]+/gu)) {
-            const start = from + word.index;
-            if (start > head) break;
-            if (head <= start + word[0].length) { text = word[0]; break; }
-        }
+        text = identifierAt(buffer, head, limit);
     }
     if (!text || text.length > limit) return;
     const query = regex ? text.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&").replace(/\r/g, "\\r") : text.replaceAll("\r\n", "\n");

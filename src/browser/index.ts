@@ -23,6 +23,7 @@ export { createNavigationHistory, type NavigationHistory, type NavigationOrigin 
 export type { Outcome } from "../core/outcome.ts";
 export type { DocumentColorChoice, ColorPresentationChoice, ColorPresentationReview, DocumentColorSnapshot, DocumentColorController, DocumentColorControllerOptions } from "./document-color-controller.ts";
 export type { DocumentLinkChoice, DocumentLinkController, DocumentLinkControllerOptions, DocumentLinkSnapshot } from "./document-link-controller.ts";
+export type { RenamePopupOptions } from "./rename-popup.ts";
 export type { RenameController, RenameControllerOptions, RenamePreview, RenameSnapshot } from "./rename-controller.ts";
 export type { SignatureController, SignatureControllerOptions, SignatureSnapshot } from "./signature-controller.ts";
 export type { SignaturePopupOptions } from "./signature-popup.ts";

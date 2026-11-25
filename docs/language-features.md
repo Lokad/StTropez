@@ -412,7 +412,15 @@ Dispose the history with its host.
 
 ### Rename and workspace edits
 
-Enable `rename` on the editor attachment. Pass other open project files through `rename.documents`.
+Enable `rename: { popup: true }` on the editor attachment for a rename field in the working pane.
+F2 opens it at the current symbol and selects the name. Type a new name and press Enter to
+preview the edits, then Enter again to apply. Escape returns to the source. A toolbar can run
+`editor.commands.run("rename.start")`. The preview shows up to 64 edits per page and stays
+open while the user scrolls. Changing the source or selection expires the captured target.
+
+Pass `popup: { beforeOpen, onNotice, text }` to coordinate other controls, report a rejected
+target in the host UI or translate labels. For a custom interface, use `rename: {}`.
+Pass other open project files through `rename.documents`.
 `await rename.request(name)` renames the symbol at the caret. Undo from any changed file restores
 the whole rename.
 

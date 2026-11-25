@@ -1,3 +1,4 @@
+import { mountRenamePopup, type RenamePopupOptions } from "./rename-popup.ts";
 import { onAbort } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { languageReview } from "./language-review.ts";
@@ -28,6 +29,7 @@ export type RenameSnapshot = Readonly<{
     message: string; preview: RenamePreview | null; changes: Changes;
 }>;
 export type RenameControllerOptions = Readonly<{
+    popup?: boolean | RenamePopupOptions;
     documents?: () => readonly DocumentSnapshot[]; canCapture?: (id: DocumentId) => boolean; prepareRequest?: () => LspPrepare | undefined;
 }>;
 export type RenameController = ReturnType<typeof mountRename>;
@@ -162,14 +164,29 @@ export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options
             return reportFailure(error);
         }
     }
+    let hidePopup: (() => void) | undefined;
     function request(name: string, options: Readonly<{ review: true }>): Promise<Outcome<RenamePreview>>;
     function request(name: string, options?: Readonly<{ review?: false }>): Promise<Outcome<Changes>>;
     function request(name: string, options: Readonly<{ review?: boolean }>): Promise<Outcome<RenamePreview | Changes>>;
     function request(name: string, options?: Readonly<{ review?: boolean }>) {
         scope.assertWritable();
+        hidePopup?.();
         return prepare(name, options?.review === true);
     }
     const stop = owner.provider.subscribe(() => { const j = active.job; if (j?.edit && !j.edit.isCurrent()) expire(j); });
     const controls = mount(stop);
-    return Object.freeze({ ...controls, request });
+    try {
+        if (options.popup) {
+            hidePopup = mountRenamePopup(editor, owner, { ...controls, preview: name => { void prepare(name, true); } },
+                capture, signal, options.popup === true ? {} : options.popup);
+        }
+        return Object.freeze({ ...controls, request, cancel() {
+            scope.assertWritable();
+            hidePopup?.();
+            controls.cancel();
+        } });
+    } catch (error) {
+        controls.dispose();
+        throw error;
+    }
 }

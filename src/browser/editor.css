@@ -194,3 +194,18 @@
 .st-completion button:hover { background: #25354e; }
 .st-completion button[aria-selected="true"] { background: var(--st-completion-selected, #365474); color: #e2fff6; }
 .st-completion pre { flex: none; margin: 0; padding: 10px 12px; border-top: 1px solid #40536e; font: 12px/1.5 var(--st-font, monospace); color: #abc5d9; white-space: pre-wrap; max-height: 100px; overflow: auto; }
+
+.st-rename-dock { position: sticky; top: 0; left: 0; height: 0; z-index: 4; cursor: auto; }
+.st-rename { position: absolute; inset: 8px 8px auto auto; display: flex; flex-direction: column;
+    box-sizing: border-box; width: min(28rem, calc(100% - 16px)); max-height: min(28rem, 55vh);
+    padding: 12px; border: 1px solid var(--st-minimap-border, #70849b); border-radius: 7px;
+    background: var(--st-background, #1b283c); color: var(--st-foreground, #e1e7ef); box-shadow: 0 8px 28px #0007;
+    font: 13px/1.4 system-ui, sans-serif; }
+.st-rename label { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.st-rename input { min-width: 0; flex: 1; }
+.st-rename button { margin: 0 4px 4px 0; }
+.st-rename ol { min-height: 2.3em; overflow: auto; margin: 0; padding: 2px 0; list-style-position: inside;
+    line-height: 1.8; overflow-wrap: anywhere; }
+.st-rename ol:empty { display: none; }
+.st-rename del { color: var(--st-rename-removed, #ed9a9a); }
+.st-rename ins { color: var(--st-rename-added, #8ce0ca); }

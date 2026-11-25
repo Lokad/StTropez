@@ -8,7 +8,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const language = attachEditorLanguage(editor, provider, {
         completion: { autoConnect: false, automatic: false, list: true }, diagnostics: { autoConnect: false },
         hover: { popup: true }, signature: { popup: true }, navigation: {}, occurrences: {}, links: { paint: true },
-        colors: { swatches: true }, rename: {}, codeActions: {}, commands: {},
+        colors: { swatches: true }, rename: { popup: { onNotice: message => { result.value = message; } } }, codeActions: {}, commands: {},
     });
     const events = new AbortController();
     let intent = 0;
@@ -72,10 +72,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
             });
         });
     });
-    command("rename", async request => {
-        const name = window.prompt("New symbol name");
-        if (name) display(request, await language.rename.request(name), () => { result.value = "Renamed"; });
-    });
+    command("rename", () => { editor.commands.run("rename.start"); });
     command("actions", async request => {
         display(request, await language.codeActions.request(), actions => {
             if (!actions.length) result.value = "No code actions here.";

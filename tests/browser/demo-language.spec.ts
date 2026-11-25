@@ -190,7 +190,7 @@ test("connection and partial mount failures preserve editing and retry their own
     await page.getByRole("button", { name: "Retry language service", exact: true }).click();
     await expect(page.locator("#language-status")).toHaveText("Language controls unavailable");
     expect(await page.evaluate(() => (window as unknown as { demoMountFailure: { reported: number } }).demoMountFailure.reported)).toBe(1);
-    await expect(page.locator(".st-completion, .demo-snippet, .st-hover, .demo-symbols, .demo-rename, .demo-actions")).toHaveCount(0);
+    await expect(page.locator(".st-completion, .demo-snippet, .st-hover, .demo-symbols, .st-rename, .demo-actions")).toHaveCount(0);
     await source.press("Control+Home"); await source.pressSequentially("// Mount recovery\n"); await source.press("Control+s");
     await expect(page.locator("#status")).toContainText("Saved in this browser");
     const connectedStarts = starts.length;
