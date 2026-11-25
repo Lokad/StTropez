@@ -43,7 +43,7 @@ export function anchoredRange(length: number, from: number, to: number, options:
 class ChangePositionMap implements PositionMapping {
     readonly oldLength: number;
     readonly newLength: number;
-    private readonly changes: readonly IndexedChange[];
+    readonly #changes: readonly IndexedChange[];
     #compiled: GeometryPair | undefined;
     constructor(oldLength: number, batch: readonly Change[] | { edits: readonly TextEdit[] }) {
         this.oldLength = oldLength;
@@ -68,57 +68,57 @@ class ChangePositionMap implements PositionMapping {
             if (next && change.to === next.from) change.coveredTo = next.coveredTo;
             Object.freeze(change);
         }
-        this.changes = Object.freeze(indexed);
+        this.#changes = Object.freeze(indexed);
         this.newLength = oldLength + delta;
         if (!Number.isSafeInteger(this.newLength)) throw new RangeError("Resulting length exceeds safe positions.");
         Object.freeze(this);
     }
     [unchangedEdges](): UnchangedEdges {
-        return { prefix: this.changes[0]?.from ?? this.oldLength, suffix: this.oldLength - (this.changes.at(-1)?.to ?? 0) };
+        return { prefix: this.#changes[0]?.from ?? this.oldLength, suffix: this.oldLength - (this.#changes.at(-1)?.to ?? 0) };
     }
-    [batchChanges](): readonly Change[] { return this.changes; }
+    [batchChanges](): readonly Change[] { return this.#changes; }
     map(offset: number, side: Affinity = "after"): MappedPosition {
         position(this.oldLength, offset);
-        return this.mapped(offset, side, this.preceding(offset, side));
+        return this.#mapped(offset, side, this.#preceding(offset, side));
     }
     createMapper(): PositionMapping["map"] {
         let previous = -1, before = -1, after = -1;
         return (offset, side = "after") => {
             position(this.oldLength, offset);
             if (offset !== previous) {
-                before = this.preceding(offset, "before", offset > previous ? after + 1 : 0);
-                after = this.preceding(offset, "after", before + 1);
+                before = this.#preceding(offset, "before", offset > previous ? after + 1 : 0);
+                after = this.#preceding(offset, "after", before + 1);
                 previous = offset;
             }
-            return this.mapped(offset, side, side === "before" ? before : after);
+            return this.#mapped(offset, side, side === "before" ? before : after);
         };
     }
-    private mapped(offset: number, side: Affinity, index: number): MappedPosition {
-        const change = this.changes[index];
+    #mapped(offset: number, side: Affinity, index: number): MappedPosition {
+        const change = this.#changes[index];
         if (!change) return Object.freeze({ offset, deleted: false });
         if (offset < change.to) return Object.freeze({ offset: change.from + change.deltaBefore + (side === "after" ? change.insertedLength : 0), deleted: !change.unitDeletion && offset > change.from });
         return Object.freeze({ offset: offset + (change.deltaBefore + (change.insertedLength - (change.to - change.from))), deleted: false });
     }
-    private preceding(offset: number, side: Affinity, start?: number): number {
-        let low = start ?? 0, high = this.changes.length;
+    #preceding(offset: number, side: Affinity, start?: number): number {
+        let low = start ?? 0, high = this.#changes.length;
         // Gallop from a cursor's known prefix: nearby endpoints advance in constant time,
         // while a sparse jump (including the first lookup at EOF) stays logarithmic.
         if (start !== undefined) {
             let step = 1;
             while (low < high) {
-                const from = this.changes[low]!.from;
+                const from = this.#changes[low]!.from;
                 if (from > offset || from === offset && side === "before") { high = low; break; }
                 const next = Math.min(high, low + step);
                 low++;
                 if (next === high) break;
-                const end = this.changes[next]!.from;
+                const end = this.#changes[next]!.from;
                 if (end > offset || end === offset && side === "before") { high = next; break; }
                 low = next; step *= 2;
             }
         }
         const base = low;
         return base + partitionPoint(high - base, index => {
-            const from = this.changes[base + index]!.from;
+            const from = this.#changes[base + index]!.from;
             return from < offset || from === offset && side === "after";
         }) - 1;
     }
@@ -126,7 +126,7 @@ class ChangePositionMap implements PositionMapping {
         validateRange(this.oldLength, range.from, range.to);
         const from = this.map(range.from, range.fromAffinity), to = this.map(range.to, range.toAffinity);
         if (range.onDelete === "invalidate") {
-            const change = this.changes[this.preceding(range.from, "after")];
+            const change = this.#changes[this.#preceding(range.from, "after")];
             const deleted = range.from === range.to ? from.deleted : change && change.to >= range.from && change.coveredTo >= range.to;
             if (deleted) return undefined;
         }
@@ -134,7 +134,7 @@ class ChangePositionMap implements PositionMapping {
     }
     invert(): PositionMapping {
         let delta = 0;
-        const changes = this.changes.map(change => {
+        const changes = this.#changes.map(change => {
             const from = change.from + delta;
             delta += change.insertedLength - (change.to - change.from);
             return { from, to: from + change.insertedLength, insertedLength: change.to - change.from, lineMove: change.lineMove,
@@ -143,20 +143,20 @@ class ChangePositionMap implements PositionMapping {
         return new ChangePositionMap(this.newLength, changes);
     }
     [compactUnitChanges](next: ChangePositionMap): ChangePositionMap | undefined {
-        const inserted = this.joinUnitInsertions(next);
+        const inserted = this.#joinUnitInsertions(next);
         if (inserted) return inserted;
-        const unitDeletes = (map: ChangePositionMap) => map.changes.length > 0 && map.changes.every(change => change.insertedLength === 0 && (change.to - change.from === 1 || change.unitDeletion));
+        const unitDeletes = (map: ChangePositionMap) => map.#changes.length > 0 && map.#changes.every(change => change.insertedLength === 0 && (change.to - change.from === 1 || change.unitDeletion));
         if (unitDeletes(this) && unitDeletes(next)) {
-            const reversed = (next.invert() as ChangePositionMap).joinUnitInsertions(this.invert() as ChangePositionMap);
+            const reversed = (next.invert() as ChangePositionMap).#joinUnitInsertions(this.invert() as ChangePositionMap);
             if (reversed) return reversed.invert() as ChangePositionMap;
         }
         return undefined;
     }
-    private joinUnitInsertions(next: ChangePositionMap): ChangePositionMap | undefined {
-        if (!this.changes.length || this.changes.length !== next.changes.length) return undefined;
+    #joinUnitInsertions(next: ChangePositionMap): ChangePositionMap | undefined {
+        if (!this.#changes.length || this.#changes.length !== next.#changes.length) return undefined;
         const changes: Change[] = [];
-        for (let index = 0; index < this.changes.length; index++) {
-            const a = this.changes[index]!, b = next.changes[index]!;
+        for (let index = 0; index < this.#changes.length; index++) {
+            const a = this.#changes[index]!, b = next.#changes[index]!;
             if (a.from !== a.to || b.from !== b.to || !(a.insertedLength === 1 || a.inverseUnitDeletion) || !(b.insertedLength === 1 || b.inverseUnitDeletion)) return undefined;
             const start = a.from + a.deltaBefore;
             if (b.from < start || b.from > start + a.insertedLength) return undefined;
@@ -167,12 +167,12 @@ class ChangePositionMap implements PositionMapping {
         return new ChangePositionMap(this.oldLength, changes);
     }
     [compiledGeometry](): GeometryPair | undefined {
-        if (!this.changes.length) return undefined; // Exact identity, without compiling input-context no-op maps.
-        return this.#compiled ??= Object.freeze({ forward: this.geometry(), reverse: (this.invert() as ChangePositionMap).geometry() });
+        if (!this.#changes.length) return undefined; // Exact identity, without compiling input-context no-op maps.
+        return this.#compiled ??= Object.freeze({ forward: this.#geometry(), reverse: (this.invert() as ChangePositionMap).#geometry() });
     }
-    private geometry(): MappingGeometry {
-        return batchGeometry(this, this.changes.flatMap(change => [change.from, change.from + 1, change.to, change.to + 1]),
-            this.changes.filter(change => change.from < change.to));
+    #geometry(): MappingGeometry {
+        return batchGeometry(this, this.#changes.flatMap(change => [change.from, change.from + 1, change.to, change.to + 1]),
+            this.#changes.filter(change => change.from < change.to));
     }
 }
 

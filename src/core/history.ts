@@ -50,120 +50,120 @@ export function validateHistoryGroup(group: string | undefined): void {
 
 /** Workspace-local history units shared by the participating documents. No I/O or clock policy. */
 export class TextHistory {
-    private readonly documents = new Map<string, DocumentHistory>();
-    private readonly changed = new Set<string>();
-    private readonly retained = new Set<HistoryEntry>();
-    private steps = 0;
-    private units = 0;
-    private nextId = 0;
-    private readonly limits: Readonly<{ groups: number; changes: number; units: number; selections: number }>;
+    readonly #documents = new Map<string, DocumentHistory>();
+    readonly #changed = new Set<string>();
+    readonly #retained = new Set<HistoryEntry>();
+    #steps = 0;
+    #units = 0;
+    #nextId = 0;
+    readonly #limits: Readonly<{ groups: number; changes: number; units: number; selections: number }>;
     constructor(options: HistoryOptions = {}) {
-        this.limits = { groups: options.maxGroups ?? Number.MAX_SAFE_INTEGER, changes: options.maxChanges ?? Number.MAX_SAFE_INTEGER,
+        this.#limits = { groups: options.maxGroups ?? Number.MAX_SAFE_INTEGER, changes: options.maxChanges ?? Number.MAX_SAFE_INTEGER,
             units: options.maxChangedUnits ?? 8_388_608, selections: options.maxSelectionRanges ?? 1_000_000 };
-        if (Object.values(this.limits).some(value => !isNonNegativeInteger(value))) throw new RangeError("History limits must be nonnegative safe integers.");
+        if (Object.values(this.#limits).some(value => !isNonNegativeInteger(value))) throw new RangeError("History limits must be nonnegative safe integers.");
     }
     snapshot(id: string): HistorySnapshot {
-        const doc = this.documents.get(id), undoDepth = doc ? doc.cursor - doc.start : 0;
+        const doc = this.#documents.get(id), undoDepth = doc ? doc.cursor - doc.start : 0;
         return Object.freeze({ undoDepth, redoDepth: (doc?.slots.size ?? 0) - undoDepth });
     }
     takeChangedDocuments(): readonly string[] {
-        const ids = Object.freeze([...this.changed]); this.changed.clear(); return ids;
+        const ids = Object.freeze([...this.#changed]); this.#changed.clear(); return ids;
     }
     diagnostics(): Readonly<{ groups: number; changes: number; changedUnits: number }> {
-        return Object.freeze({ groups: this.retained.size, changes: this.steps, changedUnits: this.units });
+        return Object.freeze({ groups: this.#retained.size, changes: this.#steps, changedUnits: this.#units });
     }
     peek(id: string, direction: "undo" | "redo"): HistoryEntry | undefined {
-        const doc = this.documents.get(id);
+        const doc = this.#documents.get(id);
         return doc?.slots.get(direction === "undo" ? doc.cursor - 1 : doc.cursor)?.entry;
     }
     available(entry: HistoryEntry, direction: "undo" | "redo"): boolean {
         return entry.changes.every(change => this.peek(change.documentId, direction) === entry);
     }
     seal(id: string): void {
-        const doc = this.documents.get(id); if (doc) doc.last = undefined;
+        const doc = this.#documents.get(id); if (doc) doc.last = undefined;
     }
     record(changes: readonly HistoryChange[], origin: string, kind: EditKind, group?: string): void {
         validateHistoryGroup(group);
         const ids = changes.map(change => change.documentId);
-        this.clear(ids, true);
-        if (!this.limits.groups || !this.limits.changes || changes.some(change =>
-            change.units > this.limits.units || selectionRanges(change) > this.limits.selections)) {
+        this.#clear(ids, true);
+        if (!this.#limits.groups || !this.#limits.changes || changes.some(change =>
+            change.units > this.#limits.units || selectionRanges(change) > this.#limits.selections)) {
             for (const id of ids) {
                 const top = this.peek(id, "undo");
-                if (top) this.trimThrough(id, top.id);
+                if (top) this.#trimThrough(id, top.id);
             }
             return;
         }
-        const first = changes[0]!, doc = this.documents.get(first.documentId), previous = doc?.last, old = previous?.changes[0];
+        const first = changes[0]!, doc = this.#documents.get(first.documentId), previous = doc?.last, old = previous?.changes[0];
         let entry: StoredEntry;
         if (group !== undefined && previous && old && changes.length === 1 && previous.changes.length === 1
             && previous.origin === origin && previous.kind === kind && previous.group === group
             && first.before === old.after && first.initiatingView === old.initiatingView
             && first.selections.length === old.selections.length && first.selections.every((view, i) => view.viewId === old.selections[i]!.viewId)
-            && previous.steps < this.limits.changes && previous.units + first.units <= this.limits.units
-            && old.selections.reduce((sum, view, i) => sum + view.before.ranges.length + first.selections[i]!.after.ranges.length, 0) <= this.limits.selections) {
+            && previous.steps < this.#limits.changes && previous.units + first.units <= this.#limits.units
+            && old.selections.reduce((sum, view, i) => sum + view.before.ranges.length + first.selections[i]!.after.ranges.length, 0) <= this.#limits.selections) {
             const run = appendStep(previous.run ?? { size: 1, step: textStep(old) }, textStep(first));
             let joined: TextStep | undefined;
             const step = () => joined ??= finishSteps(run);
             const change = Object.freeze({ ...first, before: old.before,
                 get mapping() { return step().mapping; }, get parts() { return step().parts; },
                 units: old.units + first.units, selections: Object.freeze(old.selections.map((view, i) => Object.freeze({ ...view, after: first.selections[i]!.after }))) });
-            entry = Object.freeze({ ...previous, id: ++this.nextId, changes: Object.freeze([change]), steps: previous.steps + 1, units: change.units, run });
-            this.discard(doc.remove(--doc.cursor));
+            entry = Object.freeze({ ...previous, id: ++this.#nextId, changes: Object.freeze([change]), steps: previous.steps + 1, units: change.units, run });
+            this.#discard(doc.remove(--doc.cursor));
         } else {
             const units = changes.reduce((sum, change) => sum + change.units, 0);
-            entry = Object.freeze({ id: ++this.nextId, origin, kind, group: group ?? null, changes: Object.freeze([...changes]), steps: 1, units });
-            ids.forEach(id => this.changed.add(id));
+            entry = Object.freeze({ id: ++this.#nextId, origin, kind, group: group ?? null, changes: Object.freeze([...changes]), steps: 1, units });
+            ids.forEach(id => this.#changed.add(id));
         }
-        this.retained.add(entry); this.steps += entry.steps; this.units += entry.units;
+        this.#retained.add(entry); this.#steps += entry.steps; this.#units += entry.units;
         for (const change of entry.changes) {
-            let owner = this.documents.get(change.documentId);
-            if (!owner) this.documents.set(change.documentId, owner = new DocumentHistory());
+            let owner = this.#documents.get(change.documentId);
+            if (!owner) this.#documents.set(change.documentId, owner = new DocumentHistory());
             owner.put(entry, change);
         }
         for (const id of ids) {
-            const owner = this.documents.get(id)!;
-            while (owner.slots.size > this.limits.groups || owner.steps > this.limits.changes
-                || owner.units > this.limits.units || owner.selections > this.limits.selections) {
-                this.trimThrough(id, owner.slots.get(owner.start)!.entry.id);
+            const owner = this.#documents.get(id)!;
+            while (owner.slots.size > this.#limits.groups || owner.steps > this.#limits.changes
+                || owner.units > this.#limits.units || owner.selections > this.#limits.selections) {
+                this.#trimThrough(id, owner.slots.get(owner.start)!.entry.id);
             }
         }
     }
     move(entry: HistoryEntry, direction: "undo" | "redo"): void {
         if (!this.available(entry, direction)) throw new Error("History unit is blocked by a later edit in a participating document.");
         for (const { documentId } of entry.changes) {
-            const doc = this.documents.get(documentId)!;
-            doc.cursor += direction === "undo" ? -1 : 1; doc.last = undefined; this.changed.add(documentId);
+            const doc = this.#documents.get(documentId)!;
+            doc.cursor += direction === "undo" ? -1 : 1; doc.last = undefined; this.#changed.add(documentId);
         }
     }
-    forget(id: string): void { this.clear([id], false); }
-    private clear(ids: readonly string[], futureOnly: boolean): void {
+    forget(id: string): void { this.#clear([id], false); }
+    #clear(ids: readonly string[], futureOnly: boolean): void {
         const pending = new Set(ids);
         for (const id of pending) {
-            const doc = this.documents.get(id); if (!doc) continue;
+            const doc = this.#documents.get(id); if (!doc) continue;
             const end = doc.start + doc.slots.size, from = futureOnly ? doc.cursor : doc.start;
-            if (from < end) this.changed.add(id);
+            if (from < end) this.#changed.add(id);
             for (let i = from; i < end; i++) {
-                const entry = doc.remove(i); this.discard(entry);
+                const entry = doc.remove(i); this.#discard(entry);
                 for (const change of entry.changes) pending.add(change.documentId);
             }
-            if (!doc.slots.size) this.documents.delete(id);
+            if (!doc.slots.size) this.#documents.delete(id);
         }
     }
     /** Losing a shared undo also cuts off older entries behind it, but keeps newer edits and redo reachable. */
-    private trimThrough(documentId: string, through: number): void {
+    #trimThrough(documentId: string, through: number): void {
         const pending = [{ documentId, through }];
         while (pending.length) {
-            const cut = pending.pop()!, doc = this.documents.get(cut.documentId)!;
+            const cut = pending.pop()!, doc = this.#documents.get(cut.documentId)!;
             while (doc.start < doc.cursor && doc.slots.get(doc.start)!.entry.id <= cut.through) {
-                const entry = doc.remove(doc.start++); this.discard(entry); this.changed.add(cut.documentId);
+                const entry = doc.remove(doc.start++); this.#discard(entry); this.#changed.add(cut.documentId);
                 for (const change of entry.changes) if (change.documentId !== cut.documentId) {
                     pending.push({ documentId: change.documentId, through: entry.id });
                 }
             }
         }
     }
-    private discard(entry: HistoryEntry): void {
-        if (this.retained.delete(entry)) { this.steps -= entry.steps; this.units -= entry.units; }
+    #discard(entry: HistoryEntry): void {
+        if (this.#retained.delete(entry)) { this.#steps -= entry.steps; this.#units -= entry.units; }
     }
 }
