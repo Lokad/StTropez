@@ -737,6 +737,52 @@ test("opening Changes during Replace all reviews the committed edit and a file s
     await expect(review.locator(".st-comparison-controls output")).toHaveText("No changes");
 });
 
+test("switching views during a source edit preserves the command and its Undo", async ({ page, baseURL }) => {
+    await page.clock.install();
+    await page.goto(browserDemo(baseURL!));
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const changes = page.getByRole("button", { name: "Changes", exact: true });
+    const pricing = page.locator('#files [data-file="pricing.ts"]');
+    const sample = page.locator("#sample");
+    await source.press("Control+a");
+    await page.keyboard.insertText("0\n".repeat(40_000));
+    await source.press("Control+a");
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
+    await page.keyboard.press("Control+/");
+    await changes.click({ force: true });
+    await pricing.click({ force: true });
+    await sample.selectOption("results", { force: true });
+    expect(await changes.getAttribute("aria-pressed")).toBe("false");
+    expect(await pricing.getAttribute("aria-pressed")).toBe("false");
+    expect(await sample.inputValue()).toBe("pricing");
+    await page.clock.resume();
+    await expect(page.locator("#editor .st-viewport-row").first()).toHaveText("// 0");
+    await changes.click();
+    const working = page.locator(".st-comparison .st-editor").last();
+    await expect(working.locator(".st-viewport-row").first()).toHaveText("// 0");
+    await working.getByRole("textbox").press("Control+z");
+    await expect(working.locator(".st-viewport-row").first()).toHaveText("0");
+});
+
+test("refocusing the current file and switching result panels preserve source caret history", async ({ page, baseURL }) => {
+    await page.goto(browserDemo(baseURL!));
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const firstRow = page.locator("#editor .st-viewport-row").first();
+    const tabs = ['#files [data-file="main.ts"]', '[data-panel="problems"]', '[data-panel="javascript"]'];
+    for (const tab of tabs) {
+        await source.press("Control+a");
+        await page.keyboard.insertText("value + value;");
+        await source.press("Control+Home");
+        await source.press("Control+d");
+        await source.press("Control+d");
+        await page.locator(tab).click();
+        await expect(source).toBeFocused();
+        await source.press("Control+u");
+        await page.keyboard.insertText("X");
+        await expect(firstRow).toHaveText("X + value;");
+    }
+});
+
 test("cancelling a replacement makes a reviewed save conflict actionable again", async ({ page, context, baseURL }) => {
     const gate = await holdRegexReply(page, "regex-edits");
     await page.goto(browserDemo(baseURL!));

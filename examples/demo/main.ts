@@ -129,8 +129,7 @@ function renderProblems(): void {
         const { line, character } = problem.range.start;
         item.textContent = `${problem.name}:${line + 1}:${character + 1} · ${code}${problem.message}`;
         const open = (target: { documentId: typeof problem.documentId; revision: number; from: number; to: number }) => {
-            const activity = editor?.activity();
-            if (!current() || !list.contains(row) || !confirmed || activity?.composing || activity?.pendingCommand || activity?.pendingInput) return false;
+            if (!current() || !list.contains(row) || !confirmed || editorBusy()) return false;
             const file = captured.files.find(file => file.resource.documentId === target.documentId);
             if (!file || captured.workspace.document(target.documentId).revision !== target.revision) return false;
             if (file !== active) mountFile(file);
@@ -300,8 +299,18 @@ function detachLanguage(): void {
     const previous = languageView; languageView = undefined; languageViewFailure = undefined;
     try { previous?.dispose(); } catch (error) { console.error(error); }
 }
+function editorBusy(): boolean {
+    const activity = editor?.activity();
+    return !!activity && (activity.composing || activity.pendingInput || activity.pendingCommand);
+}
+function canSwitchView(): boolean {
+    if (!editorBusy()) return true;
+    project?.setEditRefusal("An edit is pending. Try switching views when it finishes.");
+    scheduleMetadata();
+    return false;
+}
 function mountFile(file: DemoFile, focus = false): void {
-    if (!project || disposed || editor?.getSnapshot().composing) return;
+    if (!project || disposed || !canSwitchView()) return;
     const viewState = editor?.captureView();
     const previous = active;
     if (previous && previous !== file) replaceResult.hidden = true;
@@ -370,7 +379,7 @@ function mountFile(file: DemoFile, focus = false): void {
 // View IDs are local to a Workspace; each sample owns a separate workspace.
 const savedViews = new Map<DemoFile["view"], ReturnType<TextEditor["captureView"]>>();
 function goBack(): void {
-    if (!project || !editor || editor.activity().composing || editor.activity().pendingInput || editor.activity().pendingCommand) return;
+    if (!project || !editor || editorBusy()) return;
     const current = project;
     current.navigation.back(view => {
         const origin = current.files.find(file => file.view === view);
@@ -400,8 +409,7 @@ function loadProject(id: SampleId): Promise<DemoProject> {
     const pending = pendingProjects.get(id);
     if (pending) return pending;
     const load = DemoProject.open(id, () => {
-        const state = project?.sample.id === id ? editor?.activity() : undefined;
-        return !state || !state.composing && !state.pendingInput && !state.pendingCommand && find?.getSnapshot().status !== "replacing";
+        return project?.sample.id !== id || !editorBusy() && find?.getSnapshot().status !== "replacing";
     }, openProvider, { peerChanged: changed => {
         if (changed === project && !disposed) scheduleMetadata();
     } }).then(next => {
@@ -413,9 +421,10 @@ function loadProject(id: SampleId): Promise<DemoProject> {
     return load;
 }
 async function openSample(id: SampleId): Promise<void> {
-    if (editor?.getSnapshot().composing) { selectSample(project!.sample.id); return; }
+    const generation = ++opening;
+    if (!canSwitchView()) { selectSample(project!.sample.id); return; }
     pendingPanel = undefined;
-    const generation = ++opening; selectSample(id);
+    selectSample(id);
     if (id === "host") {
         // Keep the current editor and sample picker usable while the shared stylesheet loads.
         sample.disabled = false;
@@ -437,8 +446,8 @@ async function openSample(id: SampleId): Promise<void> {
         return;
     }
     if (disposed || generation !== opening) return;
-    // A composition can start in the retained editor during asynchronous preparation.
-    if (editor?.getSnapshot().composing) { selectSample(project!.sample.id); sample.disabled = false; return; }
+    // The user can start editing while the next sample loads.
+    if (!canSwitchView()) { selectSample(project!.sample.id); sample.disabled = false; return; }
     stopWorkspace?.(); stopWorkspace = undefined;
     stopRecovery?.(); stopRecovery = undefined;
     stopLanguage?.(); stopLanguage = undefined;
@@ -462,7 +471,7 @@ async function openSample(id: SampleId): Promise<void> {
 }
 function setPanel(next: DemoPanel): void {
     pendingPanel = undefined;
-    if (!active || editor?.getSnapshot().composing) return;
+    if (!active || !canSwitchView()) return;
     // Remounting this file would dispose Find before its replacement commits.
     if (find?.getSnapshot().status === "replacing") { pendingPanel = next; return; }
     const samePanel = panel === next; panel = next;
@@ -476,7 +485,18 @@ function setPanel(next: DemoPanel): void {
             (wasCollapsed ? setReviewCollapsed?.(false) : comparison.activePane())?.focus(); return;
         }
     }
-    if (samePanel && !comparison) { renderOutput(); editor?.focus(); return; }
+    if (!comparison && next !== "changes") {
+        if (next === "problems") {
+            if (output && editor && activePane === output.editor) setActivePane(editor);
+            output?.dispose();
+            output = undefined;
+            renderProblems();
+        } else {
+            renderOutput();
+        }
+        editor?.focus();
+        return;
+    }
     mountFile(active, true);
 }
 function observePane(target: TextEditor): void {
@@ -873,7 +893,10 @@ for (const controls of document.querySelectorAll<HTMLElement>("header, #files, #
 sample.addEventListener("change", () => { void openSample(sample.value as SampleId); }, { signal: listeners.signal });
 element("files").addEventListener("click", event => {
     const name = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-file]")?.dataset.file;
-    const file = project?.files.find(file => file.name === name); if (file) mountFile(file, true);
+    const file = project?.files.find(file => file.name === name);
+    if (!file) return;
+    if (file === active) editor?.focus();
+    else mountFile(file, true);
 }, { signal: listeners.signal });
 window.addEventListener("keydown", event => {
     if (event.target === document.body) activePane?.keymap.handle(event);
