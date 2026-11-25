@@ -139,14 +139,11 @@ function renderProblems(): void {
             });
         };
         item.disabled = !confirmed;
-        item.addEventListener("click", () => open(problem));
+        item.addEventListener("click", () => {
+            if (open(problem) && !active?.readOnly) void languageView?.offerFixes(metadata, current);
+        });
         metadata.textContent = [({ 1: "Error", 2: "Warning", 3: "Information", 4: "Hint" } as Record<number, string>)[problem.severity ?? 1],
             problem.source, ...(!confirmed ? ["Awaiting recheck"] : []), ...(problem.tags ?? []).flatMap(tag => tag === 1 ? ["Unnecessary"] : tag === 2 ? ["Deprecated"] : [])].filter(Boolean).join(" · ");
-        if (captured.files.some(file => file.resource.documentId === problem.documentId && !file.readOnly)) {
-            const fixes = document.createElement("button"); fixes.textContent = "Check quick fixes"; fixes.disabled = !confirmed;
-            fixes.onclick = () => { if (open(problem)) editor?.commands.run("demo.language.quickfix", "menu"); };
-            metadata.append(" · ", fixes);
-        }
         const href = problem.codeDescription?.href;
         if (href && canOpenDemoHelp(href)) {
             const help = document.createElement("button"); help.textContent = "Diagnostic help"; help.title = href;
@@ -257,7 +254,7 @@ function paintMetadata(): void {
     }
     document.title = `${project.dirty() ? "● " : ""}${active.name} · StTropez`;
 }
-function detachView(): void {
+function detachView(keepProblems = false): void {
     hostIntegrations?.dispose(); hostIntegrations = undefined;
     stopFolding?.(); stopFolding = undefined; folding?.dispose(); folding = undefined;
     stopReferenceFolding?.(); stopReferenceFolding = undefined; referenceFolding?.dispose(); referenceFolding = undefined;
@@ -271,7 +268,8 @@ function detachView(): void {
     if (comparison) comparison.dispose(); else editor?.dispose();
     comparison = undefined; editor = undefined; reviewLabel = undefined; setReviewCollapsed = undefined;
     element("panel-content").classList.remove("demo-working-only");
-    element("editor").replaceChildren(); element("panel-content").replaceChildren();
+    element("editor").replaceChildren();
+    if (!keepProblems) element("panel-content").replaceChildren();
     if (metadataFrame !== undefined) cancelAnimationFrame(metadataFrame); metadataFrame = undefined;
 }
 function openLocation(capturedProject: DemoProject, capturedEditor: TextEditor, target: DemoSymbolTarget,
@@ -308,7 +306,7 @@ function mountFile(file: DemoFile, focus = false): void {
     const previous = active;
     if (previous && previous !== file) replaceResult.hidden = true;
     if (previous && viewState) savedViews.set(previous.view, viewState);
-    detachView(); active = file; activeFiles.set(project.sample.id, file.name);
+    detachView(panel === "problems"); active = file; activeFiles.set(project.sample.id, file.name);
     initializeDemoFolds(project, file);
     element("workspace").classList.toggle("reviewing", panel === "changes");
     const settings = { ...presentationSettings(), language: editingConfiguration(), bracketMatching: true, characterWarnings: field("character-warnings").checked };

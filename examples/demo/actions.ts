@@ -80,17 +80,47 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
         const { revision, selection } = editor.view.getSnapshot();
         overlay.show({ revision, offset: selection.head, affinity: selection.headAffinity ?? "after" });
     };
-    const request = () => {
-        if (!idle()) return; dismissOther(); editor.focus();
+    const show = () => {
+        dismissOther(); editor.focus();
         commandAction = false;
         open = true;
         anchor();
+    };
+    const request = () => {
+        if (!idle()) return;
+        show();
         void requestActionsForReview(tools);
     };
+    let offered: { button: HTMLButtonElement; choices: readonly CodeActionChoice[] } | undefined;
+    function clearOffer() {
+        offered?.button.remove();
+        offered = undefined;
+    }
+    scope.defer(clearOffer);
+    async function offerFixes(host: HTMLElement, current: () => boolean) {
+        if (!idle()) return;
+        hide();
+        const reply = await tools.request();
+        if (reply.status !== "done" || disposed || !host.isConnected || !current() || tools.getSnapshot().choices !== reply.value) return;
+        const available = reply.value.filter(choice => choice.disabled === null);
+        const first = available[0];
+        if (!first) return;
+        const button = document.createElement("button");
+        button.textContent = available.length === 1 ? `Review fix: ${first.title}` : `Review ${available.length} fixes`;
+        button.onpointerdown = event => event.preventDefault();
+        button.onclick = () => {
+            if (offered?.button !== button || !button.isConnected || !current() || !idle() || tools.getSnapshot().choices !== reply.value) return;
+            show();
+            if (!first.needsResolve) void first.select({ review: true });
+        };
+        offered = { button, choices: reply.value };
+        host.append(button);
+    }
     const readPages = createActionPages(tools, reviewKey, render);
     let oldChoices: unknown, oldChoicePage = -1;
     function render(): void {
         const state = tools.getSnapshot(), preview = state.preview;
+        if (offered && offered.choices !== state.choices) clearOffer();
         if (state.status === "expired") {
             const hadFocus = popup.contains(document.activeElement);
             hide();
@@ -157,5 +187,5 @@ export function mountDemoActions(scope: CleanupScope, workspace: Workspace, file
     };
     bind("quickfix.previous", "Previous quick fix", "ArrowUp", () => move(-1));
     bind("quickfix.next", "Next quick fix", "ArrowDown", () => move(1));
-    return Object.freeze({ request, dismiss, isOpen: () => !popup.hidden });
+    return Object.freeze({ request, offerFixes, dismiss, isOpen: () => !popup.hidden });
 }

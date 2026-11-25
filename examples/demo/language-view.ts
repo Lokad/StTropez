@@ -120,6 +120,6 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
         const prepared = language.preparedProvider;
         if (prepared) attach(prepared);
         else void language.prepare().then(attach, () => { if (!disposed) commands.failed(); });
-        return Object.freeze({ dispose });
+        return Object.freeze({ dispose, offerFixes: (host: HTMLElement, current: () => boolean) => actions?.offerFixes(host, current) });
     } catch (error) { disposed = true; return scope.rollback(error); }
 }

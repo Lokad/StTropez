@@ -149,6 +149,7 @@ button.demo-source-note { pointer-events: auto; cursor: pointer; text-decoration
 .demo-problem button { text-align: left; line-height: 1.7; }
 .demo-problem .problem-location { display: block; width: 100%; color: #e6bbc2; background: #231e2c; }
 .problem-metadata { color: #bbb7c4; font-size: 12px; margin-top: 4px; }
+.problem-metadata > button { margin-inline-start: .35em; }
 .demo-problem summary { cursor: pointer; margin-top: 6px; }
 .demo-problem details button { display: block; margin-top: 4px; width: 100%; }
 .problem-pages { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
