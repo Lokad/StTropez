@@ -27,16 +27,51 @@ class MemoryStore implements DraftStore {
         assert.equal(this.row?.token ?? null, expected); this.row = row; this.writes++;
     };
     remove = async (expected: string) => { assert.equal(this.row?.token, expected); this.row = null; };
-    watch = () => () => {};
+    watch = (_changed: () => void) => () => {};
     close = async () => { this.closed = true; this.closes++; };
 }
 
 const unusedProvider = async () => { throw new Error("This project fixture never starts a language provider."); };
 
+test("a save supersedes an in-flight peer read and disposal retires its replacement", async () => {
+    const store = new MemoryStore(), recovery = new MemoryStore();
+    let notify: (() => void) | undefined;
+    store.watch = changed => {
+        notify = changed;
+        return () => { notify = undefined; };
+    };
+    const seen: string[] = [];
+    const project = await DemoProject.open("pricing", () => true, unusedProvider, {
+        createStore: name => name === "sttropez-demo-projects-v1" ? store : recovery,
+        peerChanged: project => seen.push(project.message),
+    });
+    try {
+        const stale = latch<StoredDraft>();
+        store.read = () => stale.promise;
+        notify!();
+        await project.save(() => {});
+        const reread = latch<void>(), fresh = latch<StoredDraft>();
+        store.read = () => { reread.resolve(); return fresh.promise; };
+        stale.resolve({ ...store.row!, token: "previous" });
+        await reread.promise;
+        assert.deepEqual(seen, []);
+        assert.equal(project.hasConflict(), false);
+        project.dispose();
+        fresh.resolve({ ...store.row!, token: "newer" });
+        await project.language.dispose();
+        assert.deepEqual(seen, []);
+        assert.equal(project.hasConflict(), false);
+        assert.equal(notify, undefined);
+    } finally {
+        project.dispose();
+        await project.language.dispose();
+    }
+});
+
 test("taking a reviewed copy preserves edits and replacement views during the storage read", async () => {
     const store = new MemoryStore(), recovery = new MemoryStore();
     const project = await DemoProject.open("pricing", () => true, unusedProvider,
-        name => name === "sttropez-demo-projects-v1" ? store : recovery);
+        { createStore: name => name === "sttropez-demo-projects-v1" ? store : recovery });
     try {
         const files = project.files, workspace = project.workspace, second = files[1]!.resource.documentId;
         const peer = { token: "peer", value: { version: 1, files: Object.fromEntries(files.map(file => [file.name, "// peer " + file.name])) } };
@@ -69,7 +104,7 @@ test("demo startup falls back only for unreadable storage and preserves the stor
         store.row = original;
         if (failure === "read") store.read = async () => { throw new Error("Storage is unavailable"); };
         const project = await DemoProject.open("pricing", () => true, unusedProvider,
-            name => name === "sttropez-demo-projects-v1" ? store : recovery);
+            { createStore: name => name === "sttropez-demo-projects-v1" ? store : recovery });
         try {
             assert.match(project.message, failure === "read" ? /Storage is unavailable/ : /stored copy has been left untouched/);
             const doc = project.workspace.document(project.files[0]!.resource.documentId);
@@ -105,11 +140,11 @@ test("demo construction rolls back acquired owners without retrying or replacing
             watches++; return () => { watches--; };
         };
         if (point === "cleanup") recovery.close = async () => { recovery.closed = true; recovery.closes++; throw cleanup; };
-        await assert.rejects(DemoProject.open("pricing", () => true, unusedProvider, name => {
+        await assert.rejects(DemoProject.open("pricing", () => true, unusedProvider, { createStore: name => {
             if (name === "sttropez-demo-projects-v1") return store;
             recoveryAttempts++; if (point === "recovery-store") throw original;
             return recovery;
-        }), error => point === "cleanup" ? error instanceof AggregateError && error.errors[0] === original && error.errors.includes(cleanup) : error === original);
+        } }), error => point === "cleanup" ? error instanceof AggregateError && error.errors[0] === original && error.errors.includes(cleanup) : error === original);
         assert.equal(recoveryAttempts, 1); assert.equal(store.closes, 1);
         assert.equal(recovery.closes, point === "recovery-store" ? 0 : 1); assert.equal(watches, 0);
         if (workspace) {
@@ -125,7 +160,7 @@ test("demo save releases partial capture and started tickets before retry or pro
         const store = new MemoryStore(), recovery = new MemoryStore();
         const project = await DemoProject.open("pricing", () => true,
             async () => { throw new Error("This save fixture never starts a language provider."); },
-            name => name === "sttropez-demo-projects-v1" ? store : recovery);
+            { createStore: name => name === "sttropez-demo-projects-v1" ? store : recovery });
         try {
             const [first, second] = project.files;
             assert.ok(first && second);

@@ -154,7 +154,10 @@ test("demo edits and undoes on the final line of the large sample", async ({ pag
 
 test("demo local save persists both files and prevents a stale page from replacing them", async ({ page, context }) => {
     await page.goto("/");
-    const peer = await context.newPage(); await peer.goto("/");
+    const peer = await context.newPage();
+    // Model a browser without cross-tab notifications. The storage transaction still checks the version.
+    await peer.addInitScript(() => { Object.defineProperty(window, "BroadcastChannel", { value: undefined }); });
+    await peer.goto("/");
     await expect(peer.getByRole("textbox", { name: "main.ts", exact: true })).toBeVisible();
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+Home"); await source.pressSequentially("// First page\n");
@@ -165,6 +168,7 @@ test("demo local save persists both files and prevents a stale page from replaci
     await expect(page.locator("#status")).toContainText("Saved in this browser");
     await expect(page.locator("#files")).not.toContainText("●");
     const peerSource = peer.getByRole("textbox", { name: "main.ts", exact: true });
+    await expect(peer.locator("#save-conflict")).toBeHidden();
     await peerSource.press("Control+Home"); await peerSource.pressSequentially("// Peer changes\n");
     await peer.getByRole("button", { name: "Save locally", exact: true }).click();
     await expect(peer.locator("#status")).toContainText("Another page saved this sample");

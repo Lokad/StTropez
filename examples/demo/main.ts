@@ -243,7 +243,7 @@ function paintMetadata(): void {
     element("save-conflict").hidden = !project.hasConflict();
     button("conflict-save").disabled = button("conflict-take").disabled = !project.canSaveReviewed() || find?.getSnapshot().status === "replacing";
     button("conflict-review").disabled = project.saving;
-    if (reviewLabel) reviewLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy";
+    if (reviewLabel) reviewLabel.textContent = project.referenceLabel();
     paintRecovery(project);
     for (const file of project.files) {
         let tab = element("files").querySelector<HTMLButtonElement>(`[data-file="${file.name}"]`);
@@ -317,7 +317,7 @@ function mountFile(file: DemoFile, focus = false): void {
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
         reviewLabel = savedLabel;
-        savedLabel.textContent = project.isReviewingConflict() ? "Other page's saved copy" : "Saved copy"; workingLabel.textContent = "Your changes";
+        savedLabel.textContent = project.referenceLabel(); workingLabel.textContent = "Your changes";
         const hint = document.createElement("span"); hint.className = "demo-review-hint";
         hint.textContent = "Fold each pane independently. Shaded gaps keep matching lines aligned.";
         labels.append(savedLabel, workingLabel, hint); surface.append(labels);
@@ -402,7 +402,9 @@ function loadProject(id: SampleId): Promise<DemoProject> {
     const load = DemoProject.open(id, () => {
         const state = project?.sample.id === id ? editor?.activity() : undefined;
         return !state || !state.composing && !state.pendingInput && !state.pendingCommand && find?.getSnapshot().status !== "replacing";
-    }, openProvider).then(next => {
+    }, openProvider, { peerChanged: changed => {
+        if (changed === project && !disposed) scheduleMetadata();
+    } }).then(next => {
         if (disposed) next.dispose();
         else projects.set(id, next);
         return next;

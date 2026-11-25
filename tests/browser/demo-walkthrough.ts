@@ -931,9 +931,15 @@ export async function runDemoConflict(page: Page, url = "/") {
         }));
         expect(shortcuts.map(s => s.consumed)).toEqual([false, false, false, true, true]);
         expect(shortcuts.every(s => !s.saving)).toBe(true);
+        const peerMain = peer.getByRole("textbox", { name: "main.ts", exact: true });
+        await peerMain.press("Control+End");
+        const cleanSelection = await peerMain.evaluate(node => (node as HTMLTextAreaElement).selectionStart);
         await main.press("Control+s");
         await expect(page.locator("#status")).toContainText("Saved in this browser");
-        const peerMain = peer.getByRole("textbox", { name: "main.ts", exact: true });
+        await expect(peer.locator("#save-conflict")).toBeVisible();
+        await expect(peer.locator("#files")).not.toContainText("●");
+        await expect(peerMain).toBeFocused();
+        expect(await peerMain.evaluate(node => (node as HTMLTextAreaElement).selectionStart)).toBe(cleanSelection);
         await peerMain.press("Control+Home");
         await peer.keyboard.insertText("// Peer local work\n");
         await expect(peer.locator("#recovery-status")).toContainText("captured");
@@ -963,6 +969,8 @@ export async function runDemoConflict(page: Page, url = "/") {
         const save = peer.getByRole("button", { name: "Save my reviewed version", exact: true }); await expect(save).toBeDisabled();
         await expect(peer.getByRole("button", { name: "Use reviewed saved files" })).toBeDisabled();
         await review.click(); await expect(save).toBeEnabled();
+        await main.press("Control+End");
+        await page.keyboard.insertText("\n// Still working locally");
         // Hold the choice while the recovery notice settles and the narrow footer wraps.
         const saveBox = (await save.boundingBox())!;
         await peer.mouse.move(saveBox.x + saveBox.width / 2, saveBox.y + saveBox.height / 2);
@@ -971,14 +979,18 @@ export async function runDemoConflict(page: Page, url = "/") {
         await peer.mouse.up();
         await expect(peer.locator("#status")).toContainText("Saved in this browser"); await expect(peer.locator("#files")).not.toContainText("●");
         const original = await main.inputValue();
-        await main.press("Control+s"); await page.getByRole("button", { name: "Review saved copy" }).click();
+        await expect(page.locator("#status")).toContainText("Another page saved this sample");
+        await expect(page.locator("#files")).toContainText("●");
+        await expect(main).toBeFocused();
+        await page.getByRole("button", { name: "Review saved copy" }).click();
         const take = page.getByRole("button", { name: "Use reviewed saved files" });
         const local = page.getByRole("textbox", { name: "Comparison working source", exact: true });
         await expect(take).toBeEnabled();
         await working.press("Control+Home"); await peer.keyboard.insertText("type NewerPeerSave = true;\n");
         await expect(peer.locator("#files")).toContainText("●"); await working.press("Control+s");
         await expect(peer.locator("#files")).not.toContainText("●");
-        await take.click(); await expect(page.locator("#status")).toHaveText("The other page saved again. Review the new saved copy.");
+        await expect(page.locator("#status")).toHaveText("The other page saved again. Review the new saved copy.");
+        await expect(page.locator(".demo-review-labels").first()).toContainText("Previously reviewed copy");
         await expect(local).toHaveValue(original); await expect(take).toBeDisabled();
         await page.getByRole("button", { name: "Review saved copy" }).click();
         await expect(page.getByRole("textbox", { name: "Comparison baseline source" })).toHaveValue(/^type NewerPeerSave/);
