@@ -278,6 +278,8 @@ test("a column drag released in comparison padding ends on the last source row c
 
 test("a one-sided change marks the empty range without tinting its unchanged neighbour", async ({ page }) => {
     const tail = "shared long line ".repeat(32);
+    const prefix = "x".repeat(159);
+    const inserted = prefix + "🙂";
     const original = "first\nmiddle\nlast\n" + tail;
     await page.evaluate(text => {
         const f = window.comparisonFixture; f.setText(text); f.begin("accept"); f.finish("accept");
@@ -285,13 +287,17 @@ test("a one-sided change marks the empty range without tinting its unchanged nei
     }, original);
     const sections = page.locator(".st-comparison-panes > section");
     for (const insert of [true, false]) {
-        const working = (insert ? "first\nextra\nmiddle\nlast\n" : "first\nlast\n") + tail;
+        const working = (insert ? `first\n${inserted}\nmiddle\nlast\n` : "first\nlast\n") + tail;
         await page.evaluate(text => window.comparisonFixture.setText(text), working); await ready(page);
         const empty = insert ? sections.first() : sections.last(), changed = insert ? sections.last() : sections.first();
         const row = empty.locator('.st-viewport-row[data-line="1"]');
         await row.click(); await empty.getByRole("textbox").press("Home");
         const restore = page.getByRole("button", { name: "Use baseline", exact: true });
         await expect(restore).toBeEnabled();
+        const excerpts = page.locator(".st-comparison-preview pre");
+        await expect(excerpts).toHaveText(insert
+            ? ["Baseline: no text removed", `Working line 2: ${prefix}…`]
+            : ["Baseline line 2: middle↵", "Working: no text added"]);
         await empty.getByRole("textbox").press("ArrowRight"); await expect(restore).toBeDisabled();
         for (const aligned of [true, false]) {
             await page.getByRole("checkbox", { name: "Align review rows" }).setChecked(aligned); await ready(page);
@@ -299,7 +305,8 @@ test("a one-sided change marks the empty range without tinting its unchanged nei
             await expect(row).not.toHaveClass(/st-comparison-line-/);
             const marker = row.locator('.st-comparison-anchor[data-ornament="point"]');
             expect(await marker.evaluate(el => parseFloat(getComputedStyle(el, "::after").borderBottomWidth))).toBeGreaterThan(0);
-            await expect(changed.locator(insert ? ".st-comparison-line-working" : ".st-comparison-line-baseline")).toHaveText(insert ? "extra" : "middle");
+            await expect(changed.locator(insert ? ".st-comparison-line-working" : ".st-comparison-line-baseline"))
+                .toHaveText(insert ? inserted : "middle");
             if (aligned) {
                 const viewport = empty.locator(".st-viewport");
                 await viewport.evaluate(node => { node.scrollLeft = 220; node.dispatchEvent(new Event("scroll")); }); await ready(page);

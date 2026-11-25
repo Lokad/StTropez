@@ -327,7 +327,8 @@ The destination selects the dropped text, including all fragments of a multiline
 Same-document moves use one original-coordinate plan; cross-document moves use shared atomic
 history. Undo restores the initiating sets. Dragend does not delete text. External plain text
 inserts literally at the accepted offset; HTML is not interpreted and unsupported file drops
-do not navigate. Preview text is capped at 160 UTF-16 units. Cancellation/disposal removes the
+do not navigate. The drag preview takes up to 160 UTF-16 units and keeps surrogate pairs and CRLF
+together at the cutoff. The drop uses the full selection. Cancellation/disposal removes the
 drop caret, preview and edge-scrolling work.
 
 A selection starts scrolling when the pointer leaves the viewport. For a text drop, the pointer enters

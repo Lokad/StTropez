@@ -7,6 +7,7 @@ import { applyTextDrop, captureTextTransfer, isCurrentTextTransfer } from "./tex
 import type { TextTransferCapture } from "./text-transfer.ts";
 import type { TextViewport } from "./viewport.ts";
 import { createEdgeAutoscroll, edgeVelocity } from "./edge-autoscroll.ts";
+import { previewText } from "./preview-text.ts";
 
 const transferType = "application/x-sttropez-text";
 type ActiveDrag = { token: string; owner: symbol; source?: TextTransferCapture; end: () => void };
@@ -117,7 +118,8 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         const { token } = beginDrag(root, owner, source); armed = undefined;
         event.dataTransfer.setData("text/plain", source.text); event.dataTransfer.setData(transferType, token);
         event.dataTransfer.effectAllowed = source.moveAllowed ? "copyMove" : "copy";
-        preview.textContent = source.text.slice(0, 160) + (source.text.length > 160 ? "…" : ""); root.append(preview);
+        preview.textContent = previewText(source.text);
+        root.append(preview);
         event.dataTransfer.setDragImage(preview, 8, 8);
         // The browser captures the drag image after dragstart; its source need not stay painted.
         previewFrame = win.requestAnimationFrame(clearPreview);

@@ -220,6 +220,7 @@ current query, and folding maps surviving ranges to the new revision. Publish de
 against the revision of the pane they describe. [Decoration layers](viewport.md#decoration-layers)
 
 A pure insertion or deletion marks the empty side with a point at the corresponding text position.
+The preview shows line numbers on the changed side and says when no text was added or removed.
 Only the side containing changed text receives a changed-line background. The tint fills the
 visible text area as you scroll sideways. Its change bar stays beside the gutter.
 In forced colors, dashed bars and underlines mark removals and solid ones mark additions.

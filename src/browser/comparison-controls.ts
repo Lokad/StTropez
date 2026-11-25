@@ -1,21 +1,31 @@
 import type { TextComparison, TextComparisonSnapshot } from "./comparison.ts";
+import { previewText } from "./preview-text.ts";
 
 /** Optional presentation. Pane ownership and command validation stay with the comparison. */
 export function mountComparisonControls(
     comparison: Pick<TextComparison, "element" | "activePane" | "getSnapshot" | "subscribe" | "revertSelectedHunk" | "setScrollLinked" | "setRowsAligned">,
     referencePane: HTMLElement, workingPane: HTMLElement
 ): () => void {
-    const owner = comparison.element.ownerDocument, controls = owner.createElement("div"), listeners = new AbortController();
+    const owner = comparison.element.ownerDocument;
+    const element = <K extends keyof HTMLElementTagNameMap>(tag: K) => owner.createElement(tag);
+    const controls = element("div");
+    const listeners = new AbortController();
+    const options = { signal: listeners.signal };
     controls.className = "st-comparison-controls";
-    const button = (label: string) => { const result = owner.createElement("button"); result.type = "button"; result.textContent = label; controls.append(result); return result; };
+    const button = (label: string) => {
+        const result = element("button");
+        result.type = "button";
+        result.textContent = label;
+        controls.append(result);
+        return result;
+    };
     const previous = button("Previous change"), next = button("Next change"), revert = button("Use baseline");
     controls.addEventListener("pointerdown", event => {
         if (event.pointerType === "mouse" && event.button === 0
             && (event.target === previous || event.target === next || event.target === revert)) event.preventDefault();
-    }, { capture: true, signal: listeners.signal });
+    }, { capture: true, ...options });
     function bindNavigation(control: HTMLButtonElement, id: string): void {
         const hint = () => { control.title = comparison.activePane().keymap.getShortcuts(id).join(" or "); };
-        const options = { signal: listeners.signal };
         control.addEventListener("pointerenter", hint, options);
         control.addEventListener("focus", hint, options);
         control.addEventListener("click", event => {
@@ -26,17 +36,34 @@ export function mountComparisonControls(
     }
     bindNavigation(previous, "comparison.previousChange"); bindNavigation(next, "comparison.nextChange");
     const checkbox = (label: string) => {
-        const wrapper = owner.createElement("label"), input = owner.createElement("input"); input.type = "checkbox";
-        wrapper.append(input, ` ${label}`); controls.append(wrapper); return input;
+        const wrapper = element("label");
+        const input = element("input");
+        input.type = "checkbox";
+        wrapper.append(input, ` ${label}`);
+        controls.append(wrapper);
+        return input;
     };
-    const link = checkbox("Link review scrolling"), align = checkbox("Align review rows"), status = owner.createElement("output"); controls.append(status);
-    const message = owner.createElement("span"); status.append(message); status.dataset.pendingLabel = "Updating…";
-    const referenceHeading = owner.createElement("h3"), workingHeading = owner.createElement("h3");
-    referencePane.prepend(referenceHeading); workingPane.prepend(workingHeading);
-    const preview = owner.createElement("div"), referencePreview = owner.createElement("pre"), workingPreview = owner.createElement("pre");
-    preview.className = "st-comparison-preview"; preview.setAttribute("aria-label", "Change preview");
-    const previewHint = owner.createElement("span"); previewHint.textContent = "Select a changed line to preview it.";
-    preview.append(referencePreview, workingPreview, previewHint); comparison.element.prepend(controls); comparison.element.append(preview);
+    const link = checkbox("Link review scrolling");
+    const align = checkbox("Align review rows");
+    const status = element("output");
+    controls.append(status);
+    const message = element("span");
+    status.append(message);
+    status.dataset.pendingLabel = "Updating…";
+    const referenceHeading = element("h3");
+    const workingHeading = element("h3");
+    referencePane.prepend(referenceHeading);
+    workingPane.prepend(workingHeading);
+    const preview = element("div");
+    const referencePreview = element("pre");
+    const workingPreview = element("pre");
+    preview.className = "st-comparison-preview";
+    preview.setAttribute("aria-label", "Change preview");
+    const previewHint = element("span");
+    previewHint.textContent = "Select a changed line to preview it.";
+    preview.append(referencePreview, workingPreview, previewHint);
+    comparison.element.prepend(controls);
+    comparison.element.append(preview);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     const visible = (value: string) => value.replaceAll(" ", "·").replaceAll("\t", "⇥").replaceAll("\r", "␍").replaceAll("\n", "↵\n");
     let rendered: TextComparisonSnapshot | undefined, hasCompletedResult = false;
@@ -80,23 +107,29 @@ export function mountComparisonControls(
         if (old?.selectedHunk !== selected) { preview.scrollTop = 0; preview.scrollLeft = 0; }
         if (hunk && state.baseline && state.working) {
             const text = (side: "baseline" | "working") => {
-                const range = hunk[side], buffer = side === "baseline" ? state.baseline!.buffer : state.working!.buffer;
-                return `${side === "baseline" ? "Baseline" : "Working"} lines ${range.lineFrom + 1}–${Math.max(range.lineFrom + 1, range.lineTo)}: ${range.from === range.to ? "∅" : visible(buffer.slice(range.from, Math.min(range.to, range.from + 160))) + (range.to - range.from > 160 ? "…" : "")}`;
+                const { from, to, lineFrom, lineTo } = hunk[side];
+                if (from === to) return side === "baseline" ? "Baseline: no text removed" : "Working: no text added";
+                const first = lineFrom + 1;
+                const lines = first === lineTo ? `line ${first}` : `lines ${first}–${lineTo}`;
+                const excerpt = previewText(state[side]!.buffer, from, to);
+                return `${side === "baseline" ? "Baseline" : "Working"} ${lines}: ${visible(excerpt)}`;
             };
             setText(referencePreview, text("baseline")); setText(workingPreview, text("working"));
         } else { setText(referencePreview, ""); setText(workingPreview, ""); }
     }
     let press: TextComparisonSnapshot | null | undefined;
-    revert.addEventListener("pointerdown", () => { press = comparison.getSnapshot(); }, { signal: listeners.signal });
-    revert.addEventListener("keydown", event => { if (!event.repeat && (event.key === " " || event.key === "Enter")) press = comparison.getSnapshot(); }, { signal: listeners.signal });
-    revert.addEventListener("pointercancel", () => { press = undefined; }, { signal: listeners.signal });
-    revert.addEventListener("blur", () => { if (press) press = null; }, { signal: listeners.signal });
+    revert.addEventListener("pointerdown", () => { press = comparison.getSnapshot(); }, options);
+    revert.addEventListener("keydown", event => {
+        if (!event.repeat && (event.key === " " || event.key === "Enter")) press = comparison.getSnapshot();
+    }, options);
+    revert.addEventListener("pointercancel", () => { press = undefined; }, options);
+    revert.addEventListener("blur", () => { if (press) press = null; }, options);
     revert.addEventListener("click", event => {
         const shown = event.isTrusted ? press : undefined; press = undefined;
         if (shown !== null) comparison.revertSelectedHunk(shown);
-    }, { signal: listeners.signal });
-    link.addEventListener("change", () => comparison.setScrollLinked(link.checked), { signal: listeners.signal });
-    align.addEventListener("change", () => comparison.setRowsAligned(align.checked), { signal: listeners.signal });
+    }, options);
+    link.addEventListener("change", () => comparison.setScrollLinked(link.checked), options);
+    align.addEventListener("change", () => comparison.setRowsAligned(align.checked), options);
     const stop = comparison.subscribe(render); render();
     return () => { stop(); listeners.abort(); controls.remove(); preview.remove(); referenceHeading.remove(); workingHeading.remove(); };
 }
