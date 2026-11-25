@@ -23,10 +23,15 @@ export class DemoDiagnosticState {
             const before = this.documents.get(target.documentId)?.document, after = next.get(target.documentId)?.document;
             if (!before || !after || before.key !== after.key || before.resourceId !== after.resourceId || before.language !== after.language || before.revision !== target.revision) return;
             if (same(before, after)) return target;
-            const range = anchoredRange(before.buffer.length, target.from, target.to, { onDelete: "invalidate" });
+            const length = before.buffer.length;
+            // A point at a nonempty EOF depends on the last source unit. Map that unit, then display its end.
+            const eofPoint = target.from === length && target.to === length && length > 0;
+            const range = anchoredRange(length, eofPoint ? length - 1 : target.from, target.to,
+                { onDelete: "invalidate", toAffinity: eofPoint ? "after" : "before" });
             const mapped = before.buffer === after.buffer ? range
                 : after.change?.previousRevision === before.revision ? after.change.mapping.mapRange(range) : undefined;
-            return mapped && Object.freeze({ documentId: target.documentId, revision: after.revision, from: mapped.from, to: mapped.to });
+            return mapped && Object.freeze({ documentId: target.documentId, revision: after.revision,
+                from: eofPoint ? mapped.to : mapped.from, to: mapped.to });
         };
         const at = (id: DocumentId, offset: number) => {
             const { line, column } = next.get(id)!.document.buffer.positionAt(offset);

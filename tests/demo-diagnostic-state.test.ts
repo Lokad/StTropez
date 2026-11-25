@@ -33,6 +33,35 @@ test("retained diagnostics map UTF-16 ranges and related locations without mutat
     assert.equal(state.accept([original, linked], [item]), false, "an old project cannot restore discarded diagnostics");
 });
 
+test("an EOF diagnostic follows unrelated edits and disappears when its source is deleted", () => {
+    const workspace = new Workspace();
+    const state = new DemoDiagnosticState();
+    const id = workspace.createDocument({ scope: "diagnostics", resource: "main", variant: "working" },
+        "main", "ok\r\nif (ready) {");
+    const original = workspace.document(id);
+    const eof = (document: DocumentSnapshot) => problem(document, document.buffer.length, document.buffer.length);
+    state.update([original]);
+    assert.ok(state.accept([original], [eof(original)]));
+    workspace.edit({ documentId: id, expectedRevision: original.revision, origin: "human",
+        edits: [{ from: 0, to: 0, insert: "// 😀\r\n" }] });
+    const shifted = workspace.document(id);
+    state.update([shifted]);
+    assert.deepEqual(state.diagnostics, [eof(shifted)]);
+
+    workspace.edit({ documentId: id, expectedRevision: shifted.revision, origin: "human",
+        edits: [{ from: shifted.buffer.offsetAt(2), to: shifted.buffer.length, insert: "" }] });
+    const fixed = workspace.document(id);
+    state.update([fixed]);
+    assert.deepEqual(state.diagnostics, []);
+    assert.equal(state.accept([shifted], [eof(shifted)]), false);
+    workspace.undo({ documentId: id, expectedRevision: fixed.revision });
+    const restored = workspace.document(id);
+    state.update([restored]);
+    assert.deepEqual(state.diagnostics, []);
+    assert.ok(state.accept([restored], [eof(restored)]));
+    assert.deepEqual(state.diagnostics, [eof(restored)]);
+});
+
 test("syntax reuse follows document identity and revision, including empty results and linked targets", () => {
     const workspace = new Workspace(), state = new DemoDiagnosticState();
     const first = workspace.createDocument({ scope: "diagnostics", resource: "first", variant: "working" }, "first", "one");
