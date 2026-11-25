@@ -15,8 +15,7 @@ export type PositionMapping = Readonly<{ oldLength: number; newLength: number;
     createMapper?: () => PositionMapping["map"];
     mapRange: (range: AnchoredRange) => AnchoredRange | undefined;
     invert: () => PositionMapping }>;
-type Change = Readonly<{ from: number; to: number; insertedLength: number; lineMove?: true | undefined;
-    unitDeletion?: boolean; inverseUnitDeletion?: boolean }>;
+type Change = Readonly<{ from: number; to: number; insertedLength: number; lineMove?: true | undefined }>;
 type IndexedChange = Change & Readonly<{ deltaBefore: number; coveredTo: number }>;
 type GeometryPair = Readonly<{ forward: MappingGeometry; reverse: MappingGeometry }>;
 const compiledGeometry = Symbol("compiled position geometry");
@@ -44,23 +43,33 @@ class ChangePositionMap implements PositionMapping {
     readonly oldLength: number;
     readonly newLength: number;
     readonly #changes: readonly IndexedChange[];
+    // Several one-unit edits leave each interior boundary intact, even after compaction and inversion.
+    readonly #unitRun: boolean;
     #compiled: GeometryPair | undefined;
-    constructor(oldLength: number, batch: readonly Change[] | { edits: readonly TextEdit[] }) {
+    constructor(oldLength: number, batch: readonly Change[] | { edits: readonly TextEdit[] } | ChangePositionMap,
+        unitRun = false) {
         this.oldLength = oldLength;
+        this.#unitRun = unitRun;
         let delta = 0;
         const indexed: (Change & { deltaBefore: number; coveredTo: number })[] = [];
-        const append = (change: Change) => {
-            const { from, to, insertedLength } = change;
-            indexed.push({ ...change, deltaBefore: delta, coveredTo: to });
+        const append = (from: number, to: number, insertedLength: number, lineMove?: true) => {
+            indexed.push({ from, to, insertedLength, lineMove, deltaBefore: delta, coveredTo: to });
             delta += insertedLength - (to - from);
         };
         if ("edits" in batch) {
             validateTextEdits(oldLength, batch.edits);
             for (const { from, to, insert, lineMove } of batch.edits) {
-                if (from !== to || insert.length) append({ from, to, insertedLength: insert.length, lineMove });
+                if (from !== to || insert.length) append(from, to, insert.length, lineMove);
+            }
+        } else if (batch instanceof ChangePositionMap) {
+            for (const change of batch.#changes) {
+                const start = change.from + change.deltaBefore;
+                append(start, start + change.insertedLength, change.to - change.from, change.lineMove);
             }
         } else {
-            for (const change of batch) append(change);
+            for (const change of batch) {
+                append(change.from, change.to, change.insertedLength, change.lineMove);
+            }
         }
         // Adjacent consumed intervals cover an original range even if insertions lie between them.
         for (let index = indexed.length - 1; index >= 0; index--) {
@@ -96,7 +105,10 @@ class ChangePositionMap implements PositionMapping {
     #mapped(offset: number, side: Affinity, index: number): MappedPosition {
         const change = this.#changes[index];
         if (!change) return Object.freeze({ offset, deleted: false });
-        if (offset < change.to) return Object.freeze({ offset: change.from + change.deltaBefore + (side === "after" ? change.insertedLength : 0), deleted: !change.unitDeletion && offset > change.from });
+        if (offset < change.to) return Object.freeze({
+            offset: change.from + change.deltaBefore + (side === "after" ? change.insertedLength : 0),
+            deleted: !this.#unitRun && offset > change.from,
+        });
         return Object.freeze({ offset: offset + (change.deltaBefore + (change.insertedLength - (change.to - change.from))), deleted: false });
     }
     #preceding(offset: number, side: Affinity, start?: number): number {
@@ -133,19 +145,13 @@ class ChangePositionMap implements PositionMapping {
         return Object.freeze({ ...range, from: from.offset, to: Math.max(from.offset, to.offset) });
     }
     invert(): PositionMapping {
-        let delta = 0;
-        const changes = this.#changes.map(change => {
-            const from = change.from + delta;
-            delta += change.insertedLength - (change.to - change.from);
-            return { from, to: from + change.insertedLength, insertedLength: change.to - change.from, lineMove: change.lineMove,
-                unitDeletion: change.inverseUnitDeletion === true, inverseUnitDeletion: change.unitDeletion === true };
-        });
-        return new ChangePositionMap(this.newLength, changes);
+        return new ChangePositionMap(this.newLength, this, this.#unitRun);
     }
     [compactUnitChanges](next: ChangePositionMap): ChangePositionMap | undefined {
         const inserted = this.#joinUnitInsertions(next);
         if (inserted) return inserted;
-        const unitDeletes = (map: ChangePositionMap) => map.#changes.length > 0 && map.#changes.every(change => change.insertedLength === 0 && (change.to - change.from === 1 || change.unitDeletion));
+        const unitDeletes = (map: ChangePositionMap) => map.#changes.length > 0 && map.#changes.every(change =>
+            change.insertedLength === 0 && (change.to - change.from === 1 || map.#unitRun));
         if (unitDeletes(this) && unitDeletes(next)) {
             const reversed = (next.invert() as ChangePositionMap).#joinUnitInsertions(this.invert() as ChangePositionMap);
             if (reversed) return reversed.invert() as ChangePositionMap;
@@ -157,14 +163,15 @@ class ChangePositionMap implements PositionMapping {
         const changes: Change[] = [];
         for (let index = 0; index < this.#changes.length; index++) {
             const a = this.#changes[index]!, b = next.#changes[index]!;
-            if (a.from !== a.to || b.from !== b.to || !(a.insertedLength === 1 || a.inverseUnitDeletion) || !(b.insertedLength === 1 || b.inverseUnitDeletion)) return undefined;
+            if (a.from !== a.to || b.from !== b.to || !(a.insertedLength === 1 || this.#unitRun)
+                || !(b.insertedLength === 1 || next.#unitRun)) return undefined;
             const start = a.from + a.deltaBefore;
             if (b.from < start || b.from > start + a.insertedLength) return undefined;
             // Every inserted unit has its own original boundary when undone. A net deletion
             // would incorrectly mark those boundaries deleted; retain that distinction explicitly.
-            changes.push({ from: a.from, to: a.to, insertedLength: a.insertedLength + b.insertedLength, inverseUnitDeletion: true });
+            changes.push({ from: a.from, to: a.to, insertedLength: a.insertedLength + b.insertedLength });
         }
-        return new ChangePositionMap(this.oldLength, changes);
+        return new ChangePositionMap(this.oldLength, changes, true);
     }
     [compiledGeometry](): GeometryPair | undefined {
         if (!this.#changes.length) return undefined; // Exact identity, without compiling input-context no-op maps.
