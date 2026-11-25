@@ -69,7 +69,8 @@ export function markColor(editor: TextEditor, revision: number, from: number, to
 
 Style the marker with a host CSS class. For example, give `.color-swatch` a width, height and
 `background: var(--swatch-color)`. Labels render as plain text after the line. Markers and labels
-contribute no characters to selections or copied source. A point range paints a short mark at the caret stop.
+contribute no characters to selections or copied source. An empty range paints a short mark at the caret stop.
+With `afterLine`, an empty range places its label at the end of the logical line, including when the line wraps.
 An inline range's `className` accepts space-separated CSS class tokens (64 characters per token,
 256 total). The selection background runs continuously across syntax tokens and inline decorations.
 

@@ -5,6 +5,19 @@ import { decorationParts, validDecorationClass } from "../src/browser/decoration
 import type { RowPart } from "../src/browser/decoration-parts.ts";
 import type { InlineDecoration } from "../src/browser/viewport.ts";
 
+test("a zero-width line label paints once at the last fragment", () => {
+    const label = { from: 2, to: 2, className: "note", afterLine: "12 rows" };
+    const point = { from: 1, to: 1, className: "stop" };
+    const parts = [
+        ...decorationParts("abc", 0, 3, 6, [label, point], []),
+        ...decorationParts("def", 3, 6, 6, [label], [], 0),
+    ];
+    assert.deepEqual(parts.filter(part => part.ornament).map(part => [part.ornament, part.className, part.label]),
+        [["point", "stop", undefined], ["afterLine", "note", "12 rows"]]);
+    assert.equal(parts.at(-1)?.ornament, "afterLine");
+    assert.equal(parts.map(part => part.text).join(""), "abcdef");
+});
+
 // Deliberately scan individual UTF-16 units and every range. This oracle shares neither
 // sorted events nor an active-set merge with the production sweep.
 function oracle(text: string, from: number, to: number, length: number, decorations: readonly InlineDecoration[], selections: readonly { from: number; to: number }[]): RowPart[] {

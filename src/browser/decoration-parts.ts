@@ -1,3 +1,4 @@
+import { isOffsetRange } from "../core/bounds.ts";
 import type { InlineDecoration } from "./viewport.ts";
 
 export type RowPart = Readonly<{ text: string; className: string; properties?: InlineDecoration["properties"];
@@ -36,13 +37,15 @@ export function decorationParts(text: string, from: number, to: number, length: 
     }
     for (const range of decorations ?? []) {
         const start = range.from, end = range.to;
-        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end > length || start > end) continue;
+        if (!isOffsetRange(start, end, length)) continue;
         const name = range.className; if (!validInlineClasses(name)) continue;
         if (range.afterLine && lineStart !== undefined && end >= lineStart && end <= to) annotations.push({
             text: "", className: name, ornament: "afterLine", label: range.afterLine, properties: range.properties });
         if (start >= from && start <= to) {
             if (range.before && validDecorationClass(range.before)) mark(start, { text: "", className: range.before, ornament: "before", properties: range.properties });
-            if (start === end) mark(start, { text: "", className: name, ornament: "point", properties: range.properties });
+            if (start === end && !range.afterLine) {
+                mark(start, { text: "", className: name, ornament: "point", properties: range.properties });
+            }
         }
         if (start === end || start >= to || end <= from) continue;
         const id = styles.length; styles.push(range);
