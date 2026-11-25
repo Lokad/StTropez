@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyTextEdits } from "../src/core/changes.ts";
-import { HostController } from "../examples/hosts/controller.ts";
-import { instructionEdit, parseInstruction } from "../examples/hosts/instruction-syntax.ts";
+import { HostController } from "./fixtures/hosts/controller.ts";
+import { instructionEdit, parseInstruction } from "./fixtures/hosts/instruction-syntax.ts";
 
 const text = (h: HostController) => { const b = h.workspace.document(h.source.documentId).buffer; return b.slice(0, b.length); };
 function edit(h: HostController, from: number, to: number, insert: string) { const d = h.workspace.document(h.source.documentId); assert.equal(h.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from, to, insert }], history: { kind: "replace" } }).applied, true); }

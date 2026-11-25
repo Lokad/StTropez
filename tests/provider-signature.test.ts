@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SignatureScanner } from "../fixtures/language/signature.ts";
+import { SignatureScanner } from "./fixtures/language/signature.ts";
 function scan(text: string, size = 16384) {
     const input = { id: 1, document: "source", revision: 2, length: text.length, offset: text.length, delay: 0 }, scanner = new SignatureScanner();
     for (let from = 0; from < text.length; from += size) scanner.feed(text.slice(from, from + size), from);

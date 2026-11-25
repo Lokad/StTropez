@@ -4,7 +4,7 @@ import test from "node:test";
 import { setImmediate } from "node:timers/promises";
 import { Workspace } from "../src/index.ts";
 import { DemoRecovery } from "../examples/demo/recovery.ts";
-import type { DraftStore, StoredDraft } from "../examples/hosts/draft-store.ts";
+import type { DraftStore, StoredDraft } from "../examples/shared/draft-store.ts";
 import type { DemoFile } from "../examples/demo/project.ts";
 
 class MemoryDraftStore implements DraftStore {

@@ -1,6 +1,6 @@
 import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
-import { nextSeed } from "../fixtures/workloads.ts";
+import { nextSeed } from "./fixtures/workloads.ts";
 import test from "node:test";
 import { TextBuffer } from "../src/core/text-buffer.ts";
 import { adjustInsertionText, insertionContext, reindentInsertionText } from "../src/core/insertion-text.ts";

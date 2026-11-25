@@ -3,7 +3,7 @@ import { build } from "esbuild";
 import { basename } from "node:path";
 
 test("owner activity retains immutable captures without collecting metrics and follows pending work", async ({ page }, testInfo) => {
-    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/text-editor.ts", readiness: "examples/shared/readiness.ts",
+    const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/text-editor.ts", readiness: "tests/fixtures/readiness.ts",
         rows: "src/core/comparison-rows.ts" }, outdir: "artifacts/owner-activity", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
     await page.route("**/owner-activity/**", route => {
@@ -15,7 +15,7 @@ test("owner activity retains immutable captures without collecting metrics and f
         const path = "/owner-activity/";
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountEditor } = await import(path + "browser.js") as typeof import("../../src/browser/text-editor.ts");
-        const { editorSettled, viewportSettled } = await import(path + "readiness.js") as typeof import("../../examples/shared/readiness.ts");
+        const { editorSettled, viewportSettled } = await import(path + "readiness.js") as typeof import("../fixtures/readiness.ts");
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "activity", variant: "text" }, "Activity", { value: "const sample = 123;\n".repeat(100) });
         const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "activity"), host = document.createElement("section");

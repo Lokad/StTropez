@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { actionClient } from "../../src/protocol/lsp-actions.ts";
 import { highlightClient } from "../../src/protocol/lsp-highlights.ts";
 import { withProtocolFixture } from "../helpers/protocol-fixture.ts";
-import { reviewHeader, reviewFooter } from "../../fixtures/language/project-commands.ts";
+import { reviewHeader, reviewFooter } from "../fixtures/language/project-commands.ts";
 import { Workspace } from "../../src/index.ts";
 import { openWebSocketTransport } from "../../src/browser/index.ts";
 import { LspWorkspace, RpcError } from "../../src/protocol/index.ts";

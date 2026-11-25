@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
-import { DocumentColorsCursor, parseColor, hexColor, rgbaColor, sameColor } from "../fixtures/language/colors.ts";
+import { DocumentColorsCursor, parseColor, hexColor, rgbaColor, sameColor } from "./fixtures/language/colors.ts";
 const capture = (text: string) => ({ id: 1, document: "source", revision: 4, length: text.length, delay: 0 });
 function scan(text: string) {
     const cursor = new DocumentColorsCursor(capture(text), TextBuffer.from(text));

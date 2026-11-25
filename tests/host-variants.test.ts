@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { HostController } from "../examples/hosts/controller.ts";
+import { HostController } from "./fixtures/hosts/controller.ts";
 import { TextBuffer } from "../src/index.ts";
 const text = (host: HostController) => { const buffer = host.workspace.document(host.source.documentId).buffer; return buffer.slice(0, buffer.length); };
 function edit(host: HostController, value: string): void {

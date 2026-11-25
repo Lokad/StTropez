@@ -1,4 +1,4 @@
-import { pageActions, panelPaging, renderPanelButton } from "../hosts/panel-actions.ts";
+import { pageActions, panelPaging, renderPanelButton } from "../shared/panel-actions.ts";
 
 /** Keep the controls mounted while replacing the rows of this diagnostic batch. */
 export function mountProblemPages<T>(list: HTMLElement, subject: string, items: readonly T[], size: number, key: number,

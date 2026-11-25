@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { HostController } from "../examples/hosts/controller.ts";
-import { saveConflictPanelModel } from "../examples/hosts/operation-panels.ts";
+import { HostController } from "./fixtures/hosts/controller.ts";
+import { saveConflictPanelModel } from "./fixtures/hosts/operation-panels.ts";
 const settled = () => new Promise<void>(resolve => setImmediate(resolve));
 function edit(host: HostController, text: string): void {
     const current = host.workspace.document(host.source.documentId);

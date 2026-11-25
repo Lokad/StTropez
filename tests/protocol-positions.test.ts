@@ -1,6 +1,6 @@
 import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
-import { nextSeed } from "../fixtures/workloads.ts";
+import { nextSeed } from "./fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { TextBuffer as Buffer } from "../src/core/text-buffer.ts";

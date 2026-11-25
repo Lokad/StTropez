@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Workspace } from "../src/index.ts";
 import type { TextEditor } from "../src/browser/index.ts";
-import { HostTablePaste } from "../examples/hosts/table-paste.ts";
+import { HostTablePaste } from "../examples/shared/table-paste.ts";
 import { captureInsertion } from "../src/browser/captured-insertion.ts";
 
 function fixture() {

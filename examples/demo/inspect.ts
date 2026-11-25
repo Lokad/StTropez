@@ -1,7 +1,7 @@
 import type { HoverController, SignatureController, SignatureSnapshot, TextEditor } from "../../src/browser/index.ts";
-import { HostHoverTools } from "../hosts/hover.ts";
-import { mountHoverPanel } from "../hosts/hover-panel.ts";
-import { mountSignaturePopup } from "../hosts/signature-panel.ts";
+import { HostHoverTools } from "../shared/hover.ts";
+import { mountHoverPanel } from "../shared/hover-panel.ts";
+import { mountSignaturePopup } from "../shared/signature-popup.ts";
 import { canOpenDemoHelp } from "./diagnostics.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 

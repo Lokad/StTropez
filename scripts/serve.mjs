@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
+import { attachProtocolFixture } from "../tests/fixtures/protocol/fixture-server.ts";
 import { demoBundle, demoFontFiles, demoFontSource, demoLibraries } from "./demo-assets.mjs";
 import { libraryCss, regexWorker } from "./library-entries.mjs";
 import { closePackageResources, closePackageServer, listenPackageServer, sendAsset } from "./package-host.mjs";
@@ -15,19 +15,19 @@ import { closePackageResources, closePackageServer, listenPackageServer, sendAss
 export async function startServer(port, { watch = true, serverProvider = false } = {}) {
     const attachDemoProvider = serverProvider ? (await import("../tests/fixtures/demo/provider-server.ts")).attachDemoProvider : undefined;
     const routes = {
-        "/": "demo/index.html",
-        "/viewport/": "viewport/index.html",
-        "/editing/": "editing/index.html",
-        "/comparison/": "comparison/index.html",
-        "/protocol/": "protocol/index.html",
-        "/reference/": "reference/index.html",
-        "/hosts/plain/": "hosts/plain.html",
-        "/hosts/react/": "hosts/react.html",
+        "/": "examples/demo/index.html",
+        "/reference/": "examples/reference/index.html",
+        "/viewport/": "tests/fixtures/viewport/index.html",
+        "/editing/": "tests/fixtures/editing/index.html",
+        "/comparison/": "tests/fixtures/comparison/index.html",
+        "/protocol/": "tests/fixtures/protocol/index.html",
+        "/hosts/plain/": "tests/fixtures/hosts/plain.html",
+        "/hosts/react/": "tests/fixtures/hosts/react.html",
     };
     /** @type {Map<string, Buffer>} */
     const pages = new Map();
     for (const [path, file] of Object.entries(routes)) {
-        const bytes = await readFile(resolve("examples", file));
+        const bytes = await readFile(file);
         pages.set(path, bytes);
         pages.set(path + "index.html", bytes);
     }
@@ -49,13 +49,13 @@ export async function startServer(port, { watch = true, serverProvider = false }
         entryPoints: {
             ...demoBundle.entryPoints,
             app: serverProvider ? "tests/fixtures/demo/main.ts" : demoBundle.entryPoints.app,
-            comparison: "examples/comparison/main.ts",
-            editing: "examples/editing/main.ts",
-            viewport: "examples/viewport/main.ts",
+            comparison: "tests/fixtures/comparison/main.ts",
+            editing: "tests/fixtures/editing/main.ts",
+            viewport: "tests/fixtures/viewport/main.ts",
             "regex-worker": regexWorker.source,
-            "protocol-fixture": "examples/protocol/main.ts",
-            "host-plain": "fixtures/hosts/plain-main.ts",
-            "host-react": "fixtures/hosts/react-main.ts",
+            "protocol-fixture": "tests/fixtures/protocol/main.ts",
+            "host-plain": "tests/fixtures/hosts/plain-entry.ts",
+            "host-react": "tests/fixtures/hosts/react-entry.ts",
             "reference/app": "examples/reference/main.ts",
             "reference/style": "examples/reference/style.css",
         },

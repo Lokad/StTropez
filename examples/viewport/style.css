@@ -1,7 +1,0 @@
-@import "../../src/browser/editor.css";
-body { margin: 24px; color: #dbe4ee; background: #0c121b; font: 15px/1.5 system-ui, sans-serif; }
-button, select { margin: 4px; padding: 6px 12px; }
-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
-section { min-width: 0; } h2 { font-size: 16px; }
-.pane { height: 360px; border: 1px solid #40526c; }
-output { display: block; margin-top: 18px; }

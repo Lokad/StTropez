@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
-import { ModuleLinksCursor, validateLinksInput } from "../fixtures/language/links.ts";
+import { ModuleLinksCursor, validateLinksInput } from "./fixtures/language/links.ts";
 const alias = { module: "sample-utils", resource: "target-resource", document: "target", revision: 7, length: 25 };
 function scan(text: string) {
     const cursor = new ModuleLinksCursor({ id: 1, document: "source", resource: "source-resource", revision: 3, length: text.length, aliases: [alias], delay: 0 }, TextBuffer.from(text));

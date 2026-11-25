@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import { nextSeed } from "../fixtures/workloads.ts";
+import { nextSeed } from "./fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextHistory } from "../src/core/history.ts";
 import type { EditKind, HistoryChange, HistoryEntry, HistoryOptions } from "../src/core/history.ts";

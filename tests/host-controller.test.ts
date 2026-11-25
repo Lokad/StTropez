@@ -1,9 +1,9 @@
 import type { ResourceId } from "../src/index.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { HostController } from "../examples/hosts/controller.ts";
-import { formSavePanelModel } from "../examples/hosts/configuration-panel.ts";
-import { runPanelModel } from "../examples/hosts/transfer-panel.ts";
+import { HostController } from "./fixtures/hosts/controller.ts";
+import { formSavePanelModel } from "./fixtures/hosts/configuration-panel.ts";
+import { runPanelModel } from "./fixtures/hosts/transfer-panel.ts";
 
 const settled = () => new Promise<void>(done => setImmediate(done));
 

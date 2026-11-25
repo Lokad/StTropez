@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
 import { applyTextEdits } from "../src/core/changes.ts";
 import { PositionMap, validateTextEdits } from "../src/kernels/index.ts";
-import { nextSeed, corpus, editLog } from "../fixtures/workloads.ts";
+import { nextSeed, corpus, editLog } from "./fixtures/workloads.ts";
 
 test("the selected buffer applies atomic original-coordinate batches and preserves immutable snapshots", () => {
     const original = TextBuffer.from("a😀b\r\nc"), edits = [{ from: 1, to: 3, insert: "X" }, { from: 3, to: 3, insert: "Y" }, { from: 6, to: 7, insert: "Z" }];

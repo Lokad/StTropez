@@ -1,8 +1,8 @@
 import type { DocumentSnapshot, Observable, ResourceMetadata, ResourceTarget, TabTarget } from "../../src/index.ts";
 import type { Workspace } from "../../src/index.ts";
 import { HostCell } from "../shared/observable.ts";
-import { createBrowserDraftStore } from "../hosts/draft-store.ts";
-import type { DraftStore, StoredDraft } from "../hosts/draft-store.ts";
+import { createBrowserDraftStore } from "../shared/draft-store.ts";
+import type { DraftStore, StoredDraft } from "../shared/draft-store.ts";
 import type { DemoFile } from "./project.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 

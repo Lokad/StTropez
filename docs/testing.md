@@ -103,7 +103,7 @@ them up on exit. Run just the demo provider with `node --test tests/integration/
 The editing, viewport, comparison, protocol and host fixtures declare their browser hooks beside
 the code that installs them. Use the fixture for the surface under test. Read a source range
 explicitly when the assertion needs text. A demo-specific probe belongs beside its scenario.
-[Editing](../examples/editing/main.ts) · [Viewport](../examples/viewport/main.ts) · [Comparison](../examples/comparison/main.ts) · [Protocol](../examples/protocol/main.ts) · [Host](../examples/hosts/harness.ts)
+[Editing](../tests/fixtures/editing/main.ts) · [Viewport](../tests/fixtures/viewport/main.ts) · [Comparison](../tests/fixtures/comparison/main.ts) · [Protocol](../tests/fixtures/protocol/main.ts) · [Host](../tests/fixtures/hosts/harness.ts)
 
 `npm run inspect` starts a separate server and headless Chromium. Check the editor state before
 capturing a screenshot. Playwright retains traces on failure. When a test injects an error,
@@ -113,7 +113,7 @@ allow its exact message and source URL. [Browser error checks](../tests/helpers/
 
 ### When is the editor ready for an assertion?
 
-Use the fixture helpers in `examples/shared/readiness.ts` to wait for the work your assertion depends on.
+Use the fixture helpers in `tests/fixtures/readiness.ts` to wait for the work your assertion depends on.
 
 - `viewportSettled` checks a live, nonpending presentation against the view's revision,
   complete selection-set identity and fold generation.
@@ -137,7 +137,7 @@ under test. [Text-model diagnostics](text-model.md#conservative-change-spans-and
 
 ### Workloads
 
-`fixtures/workloads.ts` generates the corpora. For deterministic replay, preserve the initial seed,
+`tests/fixtures/workloads.ts` generates the corpora. For deterministic replay, preserve the initial seed,
 `nextSeed` draw order and each model’s range mapping and oracle. Model edits can split a surrogate
 pair. Browser navigation follows grapheme and geometry rules.
 

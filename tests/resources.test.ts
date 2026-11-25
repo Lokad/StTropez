@@ -1,10 +1,10 @@
-import { runWithResources, type RunSettings } from "../examples/hosts/run-command.ts";
+import { runWithResources, type RunSettings } from "./fixtures/hosts/run-command.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, Workspace } from "../src/index.ts";
-import { HostSaveQueue } from "../examples/shared/save-queue.ts";
+import { HostSaveQueue } from "./fixtures/save-queue.ts";
 import type { SaveSubmission } from "../src/index.ts";
-import type { SaveResponse } from "../examples/shared/save-queue.ts";
+import type { SaveResponse } from "./fixtures/save-queue.ts";
 
 function deferred<T>() {
     let resolve!: (value: T) => void;

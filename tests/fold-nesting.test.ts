@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { nextSeed } from "../fixtures/workloads.ts";
+import { nextSeed } from "./fixtures/workloads.ts";
 import test from "node:test";
 import { appendNestedFold } from "../src/core/fold-nesting.ts";
 

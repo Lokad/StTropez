@@ -1,5 +1,5 @@
 import test from "node:test";
-import { nextSeed } from "../fixtures/workloads.ts";
+import { nextSeed } from "./fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { decorationParts, validDecorationClass } from "../src/browser/decoration-parts.ts";
 import type { RowPart } from "../src/browser/decoration-parts.ts";

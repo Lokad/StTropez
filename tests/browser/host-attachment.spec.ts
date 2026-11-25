@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import { test, expect } from "./fixtures.ts";
 
 test.beforeEach(async ({ page }) => {
-    const built = await build({ entryPoints: { controller: "examples/hosts/controller.ts", bindings: "examples/hosts/bindings.ts", editor: "src/browser/index.ts" },
+    const built = await build({ entryPoints: { controller: "tests/fixtures/hosts/controller.ts", bindings: "tests/fixtures/hosts/bindings.ts", editor: "src/browser/index.ts" },
         outdir: "artifacts/host-attachment", bundle: true, splitting: true, format: "esm", platform: "browser", target: "es2022", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
     await page.route("**/host-attachment/**", route => {
@@ -17,8 +17,8 @@ test.beforeEach(async ({ page }) => {
 test("failed host attachments unwind acquired owners and can mount and edit again", async ({ page }, testInfo) => {
     const results = await page.evaluate(async () => {
         const path = "/host-attachment/";
-        const { HostController } = await import(path + "controller.js") as typeof import("../../examples/hosts/controller.ts");
-        const { ViewBindings } = await import(path + "bindings.js") as typeof import("../../examples/hosts/bindings.ts");
+        const { HostController } = await import(path + "controller.js") as typeof import("../fixtures/hosts/controller.ts");
+        const { ViewBindings } = await import(path + "bindings.js") as typeof import("../fixtures/hosts/bindings.ts");
         const controller = new HostController(), bindings = new ViewBindings(controller), host = document.querySelector<HTMLDivElement>("#host")!;
         const messages = (error: unknown): string[] => error instanceof AggregateError ? error.errors.flatMap(messages) : [String(error instanceof Error ? error.message : error)];
         const ownership = () => {
@@ -91,8 +91,8 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
 test("language shortcuts follow their panel and editor through attachment failure and remount", async ({ page }) => {
     const results = await page.evaluate(async () => {
         const path = "/host-attachment/";
-        const { HostController } = await import(path + "controller.js") as typeof import("../../examples/hosts/controller.ts");
-        const { ViewBindings } = await import(path + "bindings.js") as typeof import("../../examples/hosts/bindings.ts");
+        const { HostController } = await import(path + "controller.js") as typeof import("../fixtures/hosts/controller.ts");
+        const { ViewBindings } = await import(path + "bindings.js") as typeof import("../fixtures/hosts/bindings.ts");
         const { mountTextEditor } = await import(path + "editor.js") as typeof import("../../src/browser/index.ts");
         const controller = new HostController(), bindings = new ViewBindings(controller);
         const host = document.querySelector<HTMLDivElement>("#host")!, tab = controller.viewTab("primary");

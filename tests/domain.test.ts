@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, createFoldRegions } from "../src/index.ts";
-import { DomainCursor, FixtureDomainProvider, domainLimits, validateDomainResult } from "../fixtures/language/domain.ts";
-import type { DomainInput, DomainResult } from "../fixtures/language/domain.ts";
+import { DomainCursor, FixtureDomainProvider, domainLimits, validateDomainResult } from "./fixtures/language/domain.ts";
+import type { DomainInput, DomainResult } from "./fixtures/language/domain.ts";
 
 const input = (text: string, kind: DomainInput["kind"] = "analyze"): DomainInput => ({ id: 7, revision: 3, buffer: TextBuffer.from(text), kind, module: "catalogue" });
 function run(capture: DomainInput, budget = 3): DomainResult {

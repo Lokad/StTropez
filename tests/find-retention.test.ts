@@ -1,6 +1,6 @@
 import { editorState } from "./helpers/editor-state.ts";
 import test from "node:test";
-import { nextSeed } from "../fixtures/workloads.ts";
+import { nextSeed } from "./fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextBuffer, Workspace } from "../src/index.ts";
 import { LiteralSearch } from "../src/core/search.ts";

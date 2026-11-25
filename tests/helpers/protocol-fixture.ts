@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
-import { attachProtocolFixture } from "../../fixtures/protocol/fixture-server.ts";
+import { attachProtocolFixture } from "../fixtures/protocol/fixture-server.ts";
 import { closePackageResources, closePackageServer, listenPackageServer } from "../../scripts/package-host.mjs";
 
 type Cleanup = () => unknown | Promise<unknown>;

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ProviderLane } from "../examples/shared/provider-lane.ts";
+import { ProviderLane } from "./fixtures/provider-lane.ts";
 
 test("a lazy provider lane ignores retired callbacks, including disposal callbacks after replacement", () => {
     const notifications: string[] = [], disposed: string[] = [], callbacks: (() => void)[] = [];

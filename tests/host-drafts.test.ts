@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HostController } from "../examples/hosts/controller.ts";
-import { HostDraftRecovery } from "../examples/hosts/draft-recovery.ts";
-import { draftPanelModel } from "../examples/hosts/draft-panel.ts";
-import type { DraftStore, StoredDraft } from "../examples/hosts/draft-store.ts";
+import { HostController } from "./fixtures/hosts/controller.ts";
+import { HostDraftRecovery } from "./fixtures/hosts/draft-recovery.ts";
+import { draftPanelModel } from "./fixtures/hosts/draft-panel.ts";
+import type { DraftStore, StoredDraft } from "../examples/shared/draft-store.ts";
 
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 function storage() {

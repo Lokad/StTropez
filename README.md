@@ -66,15 +66,11 @@ and the native-device checklist. CI runs the restored-package smoke, selected Ch
 | `src/protocol/` | Headless JSON-RPC/LSP sessions, synchronization and feature clients |
 | `src/kernels/` | Text algorithms, JSON-RPC, LSP sessions and diagnostic decoding |
 | `src/browser/` | Editor DOM, input, geometry, view controllers and browser adapters |
-| `examples/demo/` | TypeScript project demo and example-owned compiler/providers |
-| `examples/hosts/` | Plain/React host controllers, forms, deferred services and recovery |
-| `examples/editing/` | Editing, search and language-feature fixture |
-| `examples/comparison/` | Reference/working review fixture |
-| `examples/viewport/` | Read-only rendering and geometry fixture |
-| `examples/protocol/` | Protocol integration fixture |
-| `examples/shared/` | Shared host presentation, readiness and lifecycle helpers |
-| `fixtures/` | Deterministic text/workspace workloads and language/protocol peers |
-| `tests/` | Model/browser tests, helpers and isolated-consumer fixtures |
+| `examples/demo/` | TypeScript playground and its browser workers |
+| `examples/reference/` | Runnable host that edits, folds, searches and reviews a document |
+| `examples/shared/` | UI and editing helpers shared with the playground or reference host |
+| `tests/` | Model, integration and browser tests |
+| `tests/fixtures/` | Plain and React test hosts, single-feature pages, workloads, language peers and the package consumer |
 | `scripts/` | Build, development servers, qualification, inspection and measurements |
 | `packaging/` | NuGet project, MSBuild bridge and packaged README |
 | `licenses/` | Notices for included Unicode data |

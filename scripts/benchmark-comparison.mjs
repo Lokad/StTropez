@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { TextBuffer } from "../src/index.ts";
 import { applyTextEdits } from "../src/core/changes.ts";
 import { TextDiff } from "../src/kernels/index.ts";
-import { corpus } from "../fixtures/workloads.ts";
+import { corpus } from "../tests/fixtures/workloads.ts";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
 

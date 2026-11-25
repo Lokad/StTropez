@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Workspace } from "../src/index.ts";
 import { DemoProject } from "../examples/demo/project.ts";
-import type { DraftStore, StoredDraft } from "../examples/hosts/draft-store.ts";
+import type { DraftStore, StoredDraft } from "../examples/shared/draft-store.ts";
 import { latch } from "./helpers/latch.ts";
 
 import { demoSample, sampleChoices } from "../examples/demo/samples.ts";
-import { corpus, corpusIds } from "../fixtures/workloads.ts";
+import { corpus, corpusIds } from "./fixtures/workloads.ts";
 
 test("shipped sample files and benchmark corpora fit in 512 KB of UTF-8", () => {
     for (const { id } of sampleChoices) {

@@ -1,5 +1,5 @@
 import test from "node:test";
-import { nextSeed } from "../fixtures/workloads.ts";
+import { nextSeed } from "./fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { FoldIndex } from "../src/core/folding.ts";
 import { TextBuffer, Workspace, createFoldRegions, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";

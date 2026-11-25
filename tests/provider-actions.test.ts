@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
-import { ModuleActionCursor, validateActionInput, validateActionResult } from "../fixtures/language/actions.ts";
+import { ModuleActionCursor, validateActionInput, validateActionResult } from "./fixtures/language/actions.ts";
 const capture = (text: string) => validateActionInput({ operation: "action-start", id: 1, document: "source", revision: 3, length: text.length, from: 0, to: Math.min(5, text.length), module: "sample-utils", delay: 0 });
 function scan(text: string) { const input = capture(text), buffer = TextBuffer.from(text), cursor = new ModuleActionCursor(input, buffer); let previous = 0;
     for (;;) { const step = cursor.next(); assert.ok(step.work >= previous && step.work - previous <= 16384); previous = step.work; if (step.result) { assert.equal(step.work, text.length); return { input, buffer, result: step.result }; } }

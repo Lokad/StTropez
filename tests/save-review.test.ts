@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, Workspace } from "../src/index.ts";
-import { HostSaveQueue } from "../examples/shared/save-queue.ts";
+import { HostSaveQueue } from "./fixtures/save-queue.ts";
 import type { SaveSubmission, TextTransaction } from "../src/index.ts";
-import type { SaveResponse } from "../examples/shared/save-queue.ts";
+import type { SaveResponse } from "./fixtures/save-queue.ts";
 
 function fixture() {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "review", resource: "source", variant: "working" }, "Source", { value: "base", serverVersion: "v0" });

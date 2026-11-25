@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { HostController } from "../examples/hosts/controller.ts";
+import { HostController } from "./fixtures/hosts/controller.ts";
 
 const settled = () => new Promise<void>(resolve => setImmediate(resolve));
 const value = (host: HostController) => host.workspace.document(host.source.documentId).buffer.slice(0, host.debug().source.length);

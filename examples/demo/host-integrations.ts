@@ -2,7 +2,7 @@ import type { InlineDecoration, PresentedLine, TextEditor } from "../../src/brow
 import type { LanguageConfiguration } from "../../src/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
-import { HostTablePaste } from "../hosts/table-paste.ts";
+import { HostTablePaste } from "../shared/table-paste.ts";
 import type { HostSourceNotes } from "../shared/source-notes.ts";
 import type { DemoSymbolTarget } from "./symbols.ts";
 

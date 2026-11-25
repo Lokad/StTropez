@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import { Workspace } from "../../src/index.ts";
 import { BrowserLspWorkspace, openWebSocketTransport } from "../../src/browser/index.ts";
 import type { RpcTransport } from "../../src/protocol/index.ts";
-import { FixtureLspWorkspace } from "../../fixtures/protocol/fixture-workspace.ts";
+import { FixtureLspWorkspace } from "../fixtures/protocol/fixture-workspace.ts";
 import { closePackageServer, listenPackageServer } from "../../scripts/package-host.mjs";
 import { withProtocolFixture } from "../helpers/protocol-fixture.ts";
 

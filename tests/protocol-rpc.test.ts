@@ -5,7 +5,7 @@ import { CancellationTokenSource, InitializeRequest, InitializedNotification, Re
 import type { InitializeParams, InitializeResult } from "vscode-languageserver-protocol/node.js";
 import type { RpcTransport } from "../src/protocol/json-rpc.ts";
 import type { JsonValue } from "../src/protocol/wire.ts";
-import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
+import { referencePeer } from "./fixtures/protocol/reference-peer.ts";
 import { channel } from "./helpers/rpc-channel.ts";
 
 import { JsonRpcConnection } from "../src/protocol/json-rpc.ts";

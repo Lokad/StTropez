@@ -464,7 +464,7 @@ The host creates `view` with `workspace.createDocumentView(file.documentId)` and
 `bind = createEditorRef(workspace, view)` to `<EditorPane bind={bind} />`. Unmounting releases
 the editor. The view keeps its selection and folds for the next mount, including Strict Mode's
 development replay. Call `view.dispose()` when the host retires the pane.
-[Document views](workspace.md#document-views) · [Two-pane React host](../examples/hosts/react-main.tsx)
+[Document views](workspace.md#document-views) · [Two-pane React host](../tests/fixtures/hosts/react-main.tsx)
 
 ## Not covered
 

@@ -5,7 +5,7 @@ import { hoverClient } from "../../src/protocol/lsp-hover.ts";
 import { colorClient, linkClient, signatureClient } from "../../src/protocol/lsp-language.ts";
 import { navigationClient } from "../../src/protocol/lsp-navigation.ts";
 import { renameClient } from "../../src/protocol/lsp-rename.ts";
-import { FixtureLspWorkspace } from "../../fixtures/protocol/fixture-workspace.ts";
+import { FixtureLspWorkspace } from "../fixtures/protocol/fixture-workspace.ts";
 import { Workspace } from "../../src/index.ts";
 import { openWebSocketTransport } from "../../src/browser/index.ts";
 import { RpcError } from "../../src/protocol/index.ts";

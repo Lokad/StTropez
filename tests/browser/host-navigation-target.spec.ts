@@ -5,8 +5,8 @@ import { test, expect } from "./fixtures.ts";
 test("links and definitions retry a failed presentation and keep the requesting source", async ({ page }) => {
     const path = "/navigation-target/";
     const built = await build({ entryPoints: { core: "src/index.ts", browser: "src/browser/index.ts",
-        host: "examples/hosts/navigation.ts", panel: "examples/hosts/navigation-panel.ts", panes: "examples/hosts/language-host.ts",
-        links: "examples/hosts/document-links.ts", linkPanel: "examples/hosts/document-links-panel.ts" },
+        host: "tests/fixtures/hosts/navigation.ts", panel: "tests/fixtures/hosts/navigation-panel.ts", panes: "examples/shared/language-host.ts",
+        links: "tests/fixtures/hosts/document-links.ts", linkPanel: "tests/fixtures/hosts/document-links-panel.ts" },
         outdir: "artifacts/navigation-target", bundle: true, splitting: true, format: "esm", platform: "browser", write: false });
     const modules = new Map(built.outputFiles.map(file => [basename(file.path), file.text]));
     await page.route("**/navigation-target/*.js", route =>
@@ -31,11 +31,11 @@ test("links and definitions retry a failed presentation and keep the requesting 
     const cleanup = await page.evaluateHandle(async path => {
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor, openWebSocketTransport, BrowserLspWorkspace } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
-        const { HostNavigationTools } = await import(path + "host.js") as typeof import("../../examples/hosts/navigation.ts");
-        const { createNavigationHost } = await import(path + "panes.js") as typeof import("../../examples/hosts/language-host.ts");
-        const { mountNavigationPanel } = await import(path + "panel.js") as typeof import("../../examples/hosts/navigation-panel.ts");
-        const { HostDocumentLinks } = await import(path + "links.js") as typeof import("../../examples/hosts/document-links.ts");
-        const { mountDocumentLinksPanel } = await import(path + "linkPanel.js") as typeof import("../../examples/hosts/document-links-panel.ts");
+        const { HostNavigationTools } = await import(path + "host.js") as typeof import("../fixtures/hosts/navigation.ts");
+        const { createNavigationHost } = await import(path + "panes.js") as typeof import("../../examples/shared/language-host.ts");
+        const { mountNavigationPanel } = await import(path + "panel.js") as typeof import("../fixtures/hosts/navigation-panel.ts");
+        const { HostDocumentLinks } = await import(path + "links.js") as typeof import("../fixtures/hosts/document-links.ts");
+        const { mountDocumentLinksPanel } = await import(path + "linkPanel.js") as typeof import("../fixtures/hosts/document-links-panel.ts");
         const ws = new Workspace(), source = ws.createTextResource({ scope: "host", resource: "main", variant: "working" }, "Main",
             { value: "Currency" }, undefined, { language: { uri: "project:main", languageId: "generic" } });
         const tab = ws.tabs.open({ kind: "text", documentId: source.documentId }, "Main");

@@ -1,5 +1,5 @@
 import test from "node:test";
-import { nextSeed } from "../fixtures/workloads.ts";
+import { nextSeed } from "./fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TableTextFormatter, tableLimits, tsvTokens } from "../examples/shared/table-text.ts";
 function convert(text: string, budget = 3) {

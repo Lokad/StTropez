@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { openHarness } from "./browser-harness.mjs";
 import { distribution, environment, sourceIdentity } from "./measurement.mjs";
-import { corpusIds } from "../fixtures/workloads.ts";
+import { corpusIds } from "../tests/fixtures/workloads.ts";
 
 /** @typedef {ReturnType<Window["viewportFixture"]["snapshot"]>} ViewportState */
 /** @typedef {{modelMs: number, frameReadyProxyMs: number, primary: ViewportState["primary"],

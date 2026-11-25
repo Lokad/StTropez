@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { HostLifecycle } from "../examples/hosts/lifecycle.ts";
+import { HostLifecycle } from "./fixtures/hosts/lifecycle.ts";
 
 test("final host disposal starts every cleanup synchronously, awaits all settlements and is reentrant", async () => {
     const page = new EventTarget(), recovery = new EventTarget(), calls: string[] = [];

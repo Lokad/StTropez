@@ -54,7 +54,7 @@ the original hunk range and its bounded text with whitespace marks.
 For a custom toolbar, set `controls: false` and mount your buttons outside the two panes.
 The host example returns pointer users to their active pane and leaves keyboard users on the
 navigation button. Its Restore button captures the selected change on press so a baseline
-refresh before release cannot redirect the edit. [Custom toolbar source](../examples/comparison/controls.ts)
+refresh before release cannot redirect the edit. [Custom toolbar source](../tests/fixtures/comparison/controls.ts)
 
 ## Contract
 

@@ -1,8 +1,8 @@
 import { TextBuffer, Workspace } from "../../src/index.ts";
 import { createNavigationHistory } from "../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentView, SaveReview, SaveTicket, TabId, TextResourceHandle } from "../../src/index.ts";
-import { createBrowserDraftStore } from "../hosts/draft-store.ts";
-import type { DraftStore, StoredDraft } from "../hosts/draft-store.ts";
+import { createBrowserDraftStore } from "../shared/draft-store.ts";
+import type { DraftStore, StoredDraft } from "../shared/draft-store.ts";
 import { demoSample } from "./samples.ts";
 import type { DemoSample, SampleId } from "./samples.ts";
 import { DemoRecovery } from "./recovery.ts";

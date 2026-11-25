@@ -17,7 +17,12 @@ Open `http://127.0.0.1:4173/`. Set `STTROPEZ_PORT` to choose another port.
 | --- | --- |
 | `/` | The TypeScript demo with editing, language tools and local saves. |
 | `/reference/` | Mount an editor, find text, fold code and compare edits with the saved file. |
-| `/hosts/plain/`, `/hosts/react/` | Two views of one document with deferred saves, conflicts and remounts. Both hosts use the same [controller](../examples/hosts/controller.ts). |
+
+The development server also serves these test fixtures.
+
+| Route | What it exercises |
+| --- | --- |
+| `/hosts/plain/`, `/hosts/react/` | Two views of one document with deferred saves, conflicts and remounts. Both hosts use the same [controller](../tests/fixtures/hosts/controller.ts). |
 | `/editing/`, `/viewport/` | Input and selection in the editor, or scrolling and layout in a read-only view. |
 | `/comparison/` | Edit the working pane or add `?mode=revisions` to compare two read-only revisions. |
 | `/protocol/` | Exercise the JSON-RPC connection to a local WebSocket server. |

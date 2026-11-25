@@ -2,7 +2,7 @@ import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import type { DocumentSnapshot } from "../src/index.ts";
 import { attachEditorLanguage, type TextEditor } from "../src/browser/index.ts";
-import { HostProjectTools } from "../examples/hosts/project.ts";
+import { HostProjectTools } from "./fixtures/hosts/project.ts";
 import { latch, waitForState } from "./helpers/latch.ts";
 import { editorState } from "./helpers/editor-state.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";

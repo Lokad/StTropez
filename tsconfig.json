@@ -13,7 +13,7 @@
     "tsBuildInfoFile": "artifacts/types/development.tsbuildinfo"
   },
   "include": [
-    "fixtures/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx", "tests/**/*.ts", "playwright*.ts",
+    "examples/**/*.ts", "examples/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", "playwright*.ts",
     "scripts/**/*.mjs"
   ],
   "references": [

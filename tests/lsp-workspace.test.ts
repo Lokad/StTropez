@@ -6,7 +6,7 @@ import { hoverClient } from "../src/protocol/lsp-hover.ts";
 import { colorClient, linkClient, signatureClient } from "../src/protocol/lsp-language.ts";
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams } from "vscode-languageserver-protocol/node.js";
-import { referencePeer } from "../fixtures/protocol/reference-peer.ts";
+import { referencePeer } from "./fixtures/protocol/reference-peer.ts";
 import type { LspFeature, LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
 import { Workspace } from "../src/index.ts";
 import { LspWorkspace, createLspCommandRunner, createLspFoldingClient, RpcError } from "../src/protocol/index.ts";
