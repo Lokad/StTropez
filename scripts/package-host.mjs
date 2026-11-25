@@ -1,3 +1,22 @@
+import { extname } from "node:path";
+
+const assetTypes = new Map([
+    [".html", "text/html"], [".css", "text/css"], [".js", "text/javascript"],
+    [".json", "application/json"], [".map", "application/json"], [".woff2", "font/woff2"],
+]);
+
+/**
+ * @param {import("node:http").IncomingMessage} request
+ * @param {import("node:http").ServerResponse} response
+ * @param {string} path
+ * @param {Uint8Array} bytes
+ */
+export function sendAsset(request, response, path, bytes) {
+    const type = path.endsWith("/") ? "text/html" : assetTypes.get(extname(path)) ?? "text/plain";
+    response.writeHead(200, { "Content-Type": type, "Content-Length": bytes.length });
+    response.end(request.method === "HEAD" ? undefined : bytes);
+}
+
 /**
  * Contain HTTP request failures and retain their original causes for qualification teardown.
  * The caller owns routing, methods, provider dispatch and successful response headers.

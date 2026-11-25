@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { demoLibraries } from "./demo-libraries.mjs";
-import { demoFontFiles, stageDemoFonts } from "./demo-fonts.mjs";
+import { demoBundle, demoFontFiles, demoFontSource, demoLibraries } from "./demo-assets.mjs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { build } from "esbuild";
 import { libraryModules, libraryCss } from "./library-entries.mjs";
@@ -21,9 +20,8 @@ for (const asset of manifest.assets) assert.equal(hash(await readFile(join(dist,
 const entries = new Map([...libraryModules, libraryCss].map(entry => [entry.source, entry.output]));
 assert.equal(site, join(project, "artifacts", "pages")); assert.ok(within(project, site));
 await rm(site, { recursive: true, force: true }); await mkdir(site, { recursive: true });
-const result = await build({ absWorkingDir: project,
-    entryPoints: { app: "examples/demo/main.ts", "demo-syntax-worker": "examples/demo/syntax-worker.ts", "demo-language-worker": "examples/demo/language-worker.ts" },
-    outdir: site, bundle: true, splitting: true, platform: "browser", format: "esm", target: "es2022", minify: true, metafile: true, legalComments: "linked",
+const result = await build({ ...demoBundle, absWorkingDir: project, outdir: site,
+    splitting: true, minify: true, metafile: true, legalComments: "linked",
     plugins: [{ name: "compiled-public-library", setup(builder) {
         builder.onResolve({ filter: /^\./ }, args => {
             const path = resolve(args.resolveDir, args.path), local = relative(project, path).replaceAll("\\", "/");
@@ -44,7 +42,7 @@ for (const [input, metadata] of Object.entries(result.metafile.inputs)) {
 }
 assert.ok(Object.keys(result.metafile.inputs).some(input => within(dist, resolve(input))));
 await copyFile("examples/demo/index.html", join(site, "index.html"));
-await stageDemoFonts(site);
+for (const name of demoFontFiles) await copyFile(demoFontSource(name), join(site, name));
 await copyFile(join(dist, manifest.entries.regexWorker), join(site, "regex-worker.js"));
 await copyFile(join(dist, "UNICODE-LICENSE.txt"), join(site, "UNICODE-LICENSE.txt"));
 await copyFile(join(dist, "LICENSE.txt"), join(site, "LICENSE.txt"));

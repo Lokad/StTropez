@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { closePackageResources, closePackageServer, createPackageRequestHandler, listenPackageServer } from "./package-host.mjs";
+import { closePackageResources, closePackageServer, createPackageRequestHandler, listenPackageServer, sendAsset } from "./package-host.mjs";
 
 /** Static-only qualification server: no language backend, source fallback or SPA fallback. */
 export async function serveDemo(port = 0, prefix = "/StTropez/") {
@@ -18,8 +18,7 @@ export async function serveStatic(directory, files, port = 0, prefix = "/") {
         const url = new URL(request.url ?? "/", "http://localhost"), name = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) || "index.html" : "";
         if (!files.has(name) || request.method !== "GET" && request.method !== "HEAD") { response.writeHead(404).end(); return; }
         const bytes = await readFile(join(directory, name));
-        response.writeHead(200, { "Content-Type": name.endsWith(".woff2") ? "font/woff2" : name.endsWith(".js") ? "text/javascript" : name.endsWith(".css") ? "text/css" : name.endsWith(".json") ? "application/json" : name.endsWith(".html") ? "text/html" : "text/plain", "Content-Length": bytes.length });
-        response.end(request.method === "HEAD" ? undefined : bytes);
+        sendAsset(request, response, name, bytes);
     }, failures);
     const server = createServer(requests.listener);
     /** @type {Promise<void> | undefined} */
