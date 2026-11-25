@@ -11,6 +11,7 @@ import type { LspFeature, LspRequestContext, RpcScheduler, RpcTransport } from "
 import { Workspace } from "../src/index.ts";
 import { LspWorkspace, createLspCommandRunner, createLspFoldingClient, RpcError } from "../src/protocol/index.ts";
 import { latch } from "./helpers/latch.ts";
+import { bufferReads } from "./buffer-reads.ts";
 const settled = async () => { await setImmediate(); await setImmediate(); };
 
 test("a pending hover and its result survive unrelated capability changes", async t => {
@@ -403,11 +404,28 @@ test("owner shutdown failure and disposal cannot close a replacement connection"
 });
 
 test("one reconnect reopens latest shared snapshots once and invalidates old captures without replay", async t => {
-    const f = fixture(t), a = f.provider.createScope(), b = f.provider.createScope(), doc = a.attachDocument(f.source.documentId); b.attachDocument(f.source.documentId); b.attachDocument(f.companion.documentId);
-    await a.ensureConnected(); const before = a.synchronized(doc)!; f.provider.disconnect(); f.edit(); await f.provider.connect(); await b.request("test/barrier").result;
+    const f = fixture(t), a = f.provider.createScope(), b = f.provider.createScope();
+    const doc = a.attachDocument(f.source.documentId), companion = b.attachDocument(f.companion.documentId);
+    b.attachDocument(f.source.documentId);
+    await a.ensureConnected();
+    const before = a.synchronized(doc)!;
+    f.provider.disconnect();
+    f.edit();
+    f.edit(f.companion.documentId);
+    const source = f.workspace.document(f.source.documentId), other = f.workspace.document(f.companion.documentId);
+    const sourceReads = bufferReads(source.buffer), otherReads = bufferReads(other.buffer);
+    companion.update(companion.getSnapshot().revision, other.revision, other.buffer);
+    await Promise.resolve();
+    assert.equal(doc.getSnapshot().buffer, source.buffer);
+    assert.equal(companion.getSnapshot().buffer, other.buffer);
+    assert.deepEqual(bufferReads(source.buffer), sourceReads, "Offline synchronization only needs the latest buffer.");
+    assert.deepEqual(bufferReads(other.buffer), otherReads, "An explicit offline update also skips wire edits.");
+    await f.provider.connect();
+    await b.request("test/barrier").result;
     assert.equal(before.isCurrent(), false); assert.equal(before.isBindingCurrent!(), false); assert.equal(f.peers.length, 2); const peer = f.peers[1]!;
     assert.equal(peer.events.filter(e => e.method === "initialize").length, 1); assert.equal(peer.events.filter(e => e.method === "open").length, 2);
     assert.equal(peer.events.filter(e => e.method === "change").length, 0); assert.equal(peer.documents.get(doc.getSnapshot().uri)!.getText(), "a😀\r\nsource!");
+    assert.equal(peer.documents.get(companion.getSnapshot().uri)!.getText(), "companion!");
     assert.ok(a.synchronized(doc)!.isCurrent()); assert.equal(f.provider.snapshot().created, 2); assert.equal(f.provider.snapshot().terminated, 1);
 });
 

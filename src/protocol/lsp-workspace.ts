@@ -285,13 +285,23 @@ export class LspWorkspace {
         return current?.language === entry.language && current.revision === sent.revision && current.buffer === sent.buffer;
     }
     #synchronize(entry: DocumentEntry): void {
-        if (!entry.active) return; const next = this.#workspace.observeDocument(entry.id).getSnapshot();
-        if (next?.language !== entry.language) { this.#closeDocument(entry); return; }
-        try { const before = entry.binding.getSnapshot();
-            if (before.revision !== next.revision) entry.binding.update(before.revision, next.revision, next.buffer,
-                next.change?.previousRevision === before.revision ? next.change.edits : undefined);
-            else if (before.buffer !== next.buffer) throw new Error("A provider revision cannot name different buffers.");
-        } catch (error) { this.#closeDocument(entry); this.#report(error); }
+        if (!entry.active) return;
+        const next = this.#workspace.observeDocument(entry.id).getSnapshot();
+        if (next?.language !== entry.language) return this.#closeDocument(entry);
+        try {
+            const before = entry.binding.getSnapshot();
+            if (before.revision !== next.revision || before.buffer !== next.buffer) {
+                this.#updateBinding(entry.binding, before.revision, next);
+            }
+        } catch (error) {
+            this.#closeDocument(entry);
+            this.#report(error);
+        }
+    }
+    #updateBinding(binding: LspDocument, previous: number, next: DocumentSnapshot): void {
+        const edits = this.#session.getSnapshot().phase === "ready" && next.change?.previousRevision === previous
+            ? next.change.edits : undefined;
+        binding.update(previous, next.revision, next.buffer, edits);
     }
     #closeDocument(entry: DocumentEntry): void {
         if (!entry.active) return; entry.active = false; this.#expireDiagnostics(entry); this.#documents.delete(entry.id); this.#uris.delete(entry.binding.getSnapshot().uri);
@@ -405,11 +415,14 @@ export class LspWorkspace {
             const close = () => { if (!active) return; active = false; for (const call of documentCalls.get(document) ?? []) call.cancel(); documentCalls.delete(document);
                 handles.delete(document); documents.delete(id); entry.users.delete(close); if (entry.active && !entry.users.size) this.#closeDocument(entry); };
             const document: LspDocument = Object.freeze({ getSnapshot: entry.binding.getSnapshot, dispose: close, update: (expected, revision, buffer) => {
-                writable(); if (!active || !entry.active) throw staleRequest(); const latest = this.#workspace.document(id), before = entry.binding.getSnapshot();
+                writable();
+                if (!active || !entry.active) throw staleRequest();
+                const latest = this.#workspace.document(id);
                 if (latest.language !== entry.language || latest.revision !== revision || latest.buffer !== buffer) throw staleRequest();
+                const before = entry.binding.getSnapshot();
                 if (before.revision === revision && before.buffer === buffer) return;
-                if (before.revision !== expected) throw staleRequest(); entry.binding.update(expected, revision, buffer,
-                    latest.change?.previousRevision === expected ? latest.change.edits : undefined);
+                if (before.revision !== expected) throw staleRequest();
+                this.#updateBinding(entry.binding, expected, latest);
             } });
             documents.set(id, document); handles.set(document, entry); entry.users.add(close); return document;
         };
