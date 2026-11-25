@@ -494,8 +494,8 @@ test("local edits retain useful indexing while URI replacement cancels obsolete 
         if (replacement) assert.ok(bufferReads(large).sliceUnits < 16500, "A replaced binding stops after its first bounded chunk.");
         else assert.ok(bufferReads(latest).sliceUnits < latest.length + 128, "A newer revision reuses completed indexing and exports only its final wire delta.");
         assert.equal(session.synchronized(current)?.document, current.getSnapshot());
-        if (replacement) { assert.deepEqual(peer.events.slice(-2), ["close", "open"]); assert.equal(peer.documents.get(initial.uri)?.getText(), "replacement"); assert.equal(peer.documents.get(initial.uri)?.version, 1); }
-        else { assert.equal(peer.documents.get(initial.uri)?.getText(), latest.slice(0, latest.length)); assert.equal(peer.documents.get(initial.uri)?.version, 2); }
+        if (replacement) assert.deepEqual(peer.events.slice(-2), ["close", "open"]);
+        assert.equal(peer.documents.get(initial.uri)?.getText(), replacement ? "replacement" : latest.slice(0, latest.length));
         session.dispose();
     }
 });

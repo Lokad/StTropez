@@ -117,6 +117,7 @@ export class LspSession {
     #totalUnits = 0;
     #rpc: JsonRpcConnection | undefined;
     #epoch = 0;
+    #documentVersion = 0;
     #generation = 0;
     #syncGeneration = 0;
     #methodVersions: ReadonlyMap<string, number> = new Map();
@@ -473,7 +474,9 @@ export class LspSession {
                 let changes = old && old.index !== base
                     ? await lspTextChanges(old.index, snapshot.buffer, cooperate, planHint) : plan.changes;
                 this.#ready(epoch); if (!valid()) { this.#dirty.add(uri); continue; }
-                const version = (old?.version ?? 0) + 1; if (version > 0x7fffffff) throw new RangeError("LSP document version exhausted; reconnect required.");
+                if (this.#documentVersion === 0x7fffffff) throw new RangeError("LSP document version exhausted; reconnect required.");
+                // A late versioned notification can arrive after its URI has been reopened.
+                const version = ++this.#documentVersion;
                 if (old) {
                     const send = () => rpc.notify(didChangeMethod, { textDocument: { uri, version }, contentChanges: changes });
                     try { send(); } catch (error) {
@@ -596,6 +599,7 @@ export class LspSession {
     #drop(error: Error, dispose = false): void {
         const failure = error instanceof RpcError ? error : new RpcError(rpcCodes.closed, error.message);
         this.#epoch++; this.#release(this.#cancelOpening); this.#cancelOpening = undefined; this.#connectWork = undefined;
+        this.#documentVersion = 0;
         this.#release(this.#scheduled); this.#scheduled = undefined; for (const pause of this.#pauses) { this.#release(pause.stop); pause.reject(failure); } this.#pauses.clear();
         const rpc = this.#rpc; this.#rpc = undefined; this.#release(() => rpc?.dispose(failure)); this.#pumping = false; this.#dirty.clear(); this.#settle(failure); this.#documentCalls.clear();
         this.#features.clear(); this.#clientFeatures = emptyList;

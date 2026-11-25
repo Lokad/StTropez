@@ -53,12 +53,15 @@ export type LspBindingCapture = Readonly<{ document: LspDocumentSnapshot;
     /** Current local snapshot, including edits awaiting synchronization; undefined after binding authority expires. */
     getSnapshot: () => DocumentSnapshot | undefined }>;
 export type LspDiagnosticState = Readonly<{ status: "empty" | "current" | "pending" | "expired"; result: LspDiagnostics | null;
-    received: number; stale: number; invalid: number;
     /** Provider result still belongs to the synchronized source; always false for mapped pending results. */
     isCurrent: () => boolean;
     /** Display/navigation offsets still belong to the local source, including mapped pending results. */
     isPlacementCurrent: () => boolean }>;
 export type LspWorkspaceSnapshot = LspSessionSnapshot & Readonly<{ commandAvailable: boolean; commandRequiresReconnect: boolean }>;
+const emptyDiagnostics: LspDiagnosticState = Object.freeze({
+    status: "empty", result: null, isCurrent: () => false, isPlacementCurrent: () => false
+});
+const expiredDiagnostics: LspDiagnosticState = Object.freeze({ ...emptyDiagnostics, status: "expired" });
 export type LspWorkspaceOptions = LspSessionOptions & Readonly<{
     /** Authorize an opaque URI and return a project document or read-only contents. */
     resolveTarget?: LspTargetResolver;
@@ -140,7 +143,6 @@ export class LspWorkspace {
     #disposed = false;
     #created = 0;
     #terminated = 0;
-    #unknownDiagnosticUris = 0;
     #command: CommandIntent | undefined;
     #quarantinedEpoch: number | undefined;
     readonly getSnapshot: Observable<LspWorkspaceSnapshot>["getSnapshot"];
@@ -174,18 +176,21 @@ export class LspWorkspace {
         this.#stopDiagnostics = options.diagnostics !== false ? this.#session.onNotification("textDocument/publishDiagnostics", value => {
             const uri = value && typeof value === "object" && "uri" in value ? value.uri : undefined;
             const entry = typeof uri === "string" ? this.#uris.get(uri) : undefined;
-            if (!entry) { this.#unknownDiagnosticUris++; return; }
-            const previous = entry.diagnostics.get(), sent = this.#session.synchronized(entry.binding);
-            const isCurrent = () => { const now = this.#session.synchronized(entry.binding); return this.#live(entry) && !!sent && !!now && now.epoch === sent.epoch && now.version === sent.version && now.document === sent.document; };
+            if (!entry) return;
+            const sent = this.#session.synchronized(entry.binding);
+            if (!sent) return;
+            const isCurrent = () => {
+                const now = this.#session.synchronized(entry.binding);
+                return this.#live(entry) && now?.epoch === sent.epoch && now.version === sent.version;
+            };
+            let result: LspDiagnostics;
             try {
-                if (!sent || !isCurrent()) throw staleRequest();
-                const result = decodeLspDiagnostics(value, Object.freeze({ ...sent, isCurrent }));
-                entry.diagnostics.set(Object.freeze({ ...previous, status: "current", result, received: previous.received + 1, isCurrent, isPlacementCurrent: isCurrent }), this.#changed);
+                result = decodeLspDiagnostics(value, Object.freeze({ ...sent, isCurrent }));
             } catch (error) {
                 if (!(error instanceof ProtocolDecodeError) && !(error instanceof RpcError && error.code === rpcCodes.contentModified)) throw error;
-                const key = error instanceof RpcError && error.code === rpcCodes.contentModified ? "stale" : "invalid";
-                entry.diagnostics.set(Object.freeze({ ...previous, [key]: previous[key] + 1 }), this.#changed);
+                return;
             }
+            entry.diagnostics.set(Object.freeze({ status: "current", result, isCurrent, isPlacementCurrent: isCurrent }), this.#changed);
             this.#queueDelivery();
         }) : undefined;
         this.#stopApply = options.applyEdit ? this.#session.onRequest(applyEditMethod, (value, context) => {
@@ -213,7 +218,8 @@ export class LspWorkspace {
     #queueDelivery(): void { if (!this.#notificationQueued) { this.#notificationQueued = true; void Promise.resolve().then(() => this.#deliver()).catch(error => this.#report(error)); } }
     #expireDiagnostics(entry: DocumentEntry): void {
         const before = entry.diagnostics.get(); if (before.result === null) return;
-        entry.diagnostics.set(Object.freeze({ ...before, status: "expired", result: null, isCurrent: () => false, isPlacementCurrent: () => false }), this.#changed); this.#queueDelivery();
+        entry.diagnostics.set(expiredDiagnostics, this.#changed);
+        this.#queueDelivery();
     }
     #mapDiagnostics(entry: DocumentEntry): void {
         const before = entry.diagnostics.get(), result = before.result;
@@ -235,7 +241,7 @@ export class LspWorkspace {
                 && now?.language === entry.language && now.revision === next.revision && now.buffer === next.buffer;
         };
         // Preserve provider version, original wire ranges and metadata as provenance, not fresh edit authority.
-        entry.diagnostics.set(Object.freeze({ ...before, status: "pending", result: Object.freeze({ ...result, snapshotRevision: next.revision, items: Object.freeze(items) }),
+        entry.diagnostics.set(Object.freeze({ status: "pending", result: Object.freeze({ ...result, snapshotRevision: next.revision, items: Object.freeze(items) }),
             isCurrent: () => false, isPlacementCurrent }), this.#changed); this.#queueDelivery();
     }
     /** Read the current host mapping/capabilities without acquiring document participation. */
@@ -261,7 +267,7 @@ export class LspWorkspace {
         try { binding = this.#session.bindDocument({ ...info, resourceId: current.resourceId, documentId: id, revision: current.revision, buffer: current.buffer }); }
         catch (error) { lease.release(); throw error; }
         const entry: DocumentEntry = { id, language: info, binding, lease, active: true, queued: false, stop: () => {}, users: new Set(),
-            diagnostics: new Store<LspDiagnosticState>(Object.freeze({ status: "empty", result: null, received: 0, stale: 0, invalid: 0, isCurrent: () => false, isPlacementCurrent: () => false }), this.#notifications) };
+            diagnostics: new Store<LspDiagnosticState>(emptyDiagnostics, this.#notifications) };
         this.#documents.set(id, entry); this.#uris.set(info.uri, entry);
         entry.stop = this.#workspace.observeDocument(id).subscribe(() => {
             this.#mapDiagnostics(entry);
@@ -558,7 +564,7 @@ export class LspWorkspace {
     snapshot() {
         return Object.freeze({ disposed: this.#disposed, scopes: this.#scopes.size, documents: this.#documents.size,
             documentParticipants: [...this.#documents.values()].reduce((sum, entry) => sum + entry.users.size, 0), created: this.#created, terminated: this.#terminated,
-            commandPending: !!this.#command, commandQuarantined: this.#quarantinedEpoch === this.getSnapshot().epoch, unknownDiagnosticUris: this.#unknownDiagnosticUris, protocol: this.#session.snapshotOwnership() });
+            commandPending: !!this.#command, commandQuarantined: this.#quarantinedEpoch === this.getSnapshot().epoch, protocol: this.#session.snapshotOwnership() });
     }
     dispose(): void {
         if (this.#disposed) return; this.#notifications.assertWritable(); this.#disposed = true;

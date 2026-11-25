@@ -225,8 +225,9 @@ and the scope’s request.
 The provider uses the exact URI and language ID in `DocumentSnapshot.language`. A document with
 no pair stays outside the provider. Changing either field expires existing bindings and replies
 immediately. Attach the document again to open its new identity. Local revision, resource and
-document IDs, and wire version are separate. Local edits expire captures immediately. The provider
-synchronizes them after workspace transaction delivery. Ordinary edits queue only
+document IDs, and wire version are separate. Opens and changes get increasing wire versions across
+the connection, including when another document takes over the same URI. Local edits expire captures
+immediately. The provider synchronizes them after workspace transaction delivery. Ordinary edits queue only
 the changed document. Capability and connection changes reconcile the participating bindings.
 
 The client opens a document only when static or matching dynamic capabilities cover both open/close

@@ -30,7 +30,6 @@ export type DiagnosticControllerOptions = Readonly<{
 }>;
 export type DiagnosticController = Observable<DiagnosticSnapshot> & Readonly<{
     request: () => void; cancel: () => void; dispose: () => void;
-    getDiagnostics: () => Readonly<{ received: number; stale: number; invalid: number }>;
 }>;
 
 const empty: DiagnosticSnapshot = Object.freeze({ diagnostics: emptyList, diagnosticRevision: -1,
@@ -96,8 +95,5 @@ export function mountDiagnostic(editor: TextEditor, { scope, binding }: LspDocum
         cell.clearSnapshotListeners();
     };
     try { request(); } catch (error) { dispose(); throw error; }
-    return Object.freeze({ ...controllerObservable(cell, "Diagnostic", () => disposed, notifications), request, cancel, dispose, getDiagnostics: () => {
-        const { received, stale, invalid } = source.getSnapshot();
-        return Object.freeze({ received, stale, invalid });
-    } });
+    return Object.freeze({ ...controllerObservable(cell, "Diagnostic", () => disposed, notifications), request, cancel, dispose });
 }

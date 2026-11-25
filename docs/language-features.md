@@ -84,7 +84,7 @@ buffer used for placement. The provider version and revision are null.
 Ranges on nonexistent lines retain their message and wire range with null offsets and
 `placement: "out-of-bounds"`; they have no marker. Malformed structures or metadata reject the
 whole batch, including an invalid final item. Fresh batches replace the result; an empty batch
-clears it. Invalid or known-stale pushes preserve the preceding valid batch.
+clears it. Invalid or known-stale pushes leave the observable snapshot and its markers untouched.
 
 After a local edit, transaction maps move the markers and mark the diagnostics pending. Fully deleted
 ranges disappear. Undo cannot bring them back. The provider version, revision and original wire ranges

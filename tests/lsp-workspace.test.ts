@@ -455,9 +455,15 @@ test("shared diagnostic placement preserves unknown freshness and expires on rec
     const message = { uri: capture.document.uri, diagnostics: [{ range, message: "shared warning" }] };
     await send({ ...message, version: capture.version }); const verified = first.getSnapshot();
     assert.equal(verified, second.getSnapshot()); assert.equal(verified.result!.freshness, "versioned"); assert.equal(verified.result!.revision, f.workspace.document(f.source.documentId).revision);
-    await send({ ...message, version: capture.version + 1 }); assert.equal(first.getSnapshot().result, verified.result); assert.equal(first.getSnapshot().stale, 1);
-    await send({ ...message, diagnostics: [{ range: { start: range.end, end: range.start }, message: "invalid" }] }); assert.equal(first.getSnapshot().invalid, 1);
-    await send({ ...message, uri: "host+opaque:unknown" }); assert.equal(f.provider.snapshot().unknownDiagnosticUris, 1); assert.equal(first.getSnapshot().result, verified.result);
+    await send({ ...message, version: capture.version + 1 });
+    assert.equal(first.getSnapshot(), verified);
+    await send({ ...message, diagnostics: [
+        { range, message: "partial batch" },
+        { range: { start: range.end, end: range.start }, message: "invalid" }
+    ] });
+    assert.equal(first.getSnapshot(), verified);
+    await send({ ...message, uri: "host+opaque:unknown" });
+    assert.equal(first.getSnapshot(), verified);
     await send(message); const uncertain = first.getSnapshot(); assert.equal(uncertain.result!.version, null); assert.equal(uncertain.result!.revision, null);
     assert.equal(uncertain.result!.snapshotRevision, capture.document.revision); assert.equal(uncertain.result!.items[0]!.from, 5); assert.equal(uncertain.isCurrent(), true);
     f.edit(); assert.equal(uncertain.isCurrent(), false); assert.equal(uncertain.isPlacementCurrent(), false);
@@ -465,14 +471,26 @@ test("shared diagnostic placement preserves unknown freshness and expires on rec
     await a.flush(); await send({ ...message, diagnostics: [{ range: { start: { line: 100, character: 0 }, end: { line: 100, character: 4 } }, message: "outside" }] });
     assert.equal(first.getSnapshot().result!.items[0]!.placement, "out-of-bounds"); assert.equal(first.getSnapshot().result!.items[0]!.from, null);
     const beforeReconnect = first.getSnapshot(); await f.provider.reconnect(); assert.equal(beforeReconnect.isCurrent(), false); assert.equal(first.getSnapshot().status, "expired");
-    await send(message); f.edit(f.source.documentId, "?"); const beforeReuse = first.getSnapshot();
+    const delayed = { ...message, version: a.synchronized(left)!.version };
+    await send(delayed);
+    f.edit(f.source.documentId, "?");
+    const beforeReuse = first.getSnapshot();
     assert.equal(beforeReuse.status, "pending"); assert.equal(beforeReuse.isPlacementCurrent(), true); left.dispose(); right.dispose(); await settled();
-    const replacement = a.attachDocument(f.source.documentId); await a.flush(); assert.equal(beforeReuse.isCurrent(), false);
-    assert.equal(a.observeDiagnostics(replacement).getSnapshot().status, "empty"); assert.equal(first.getSnapshot().status, "expired");
     const buffer = f.workspace.document(f.source.documentId).buffer; assert.equal(buffer.slice(0, buffer.length), "a😀\r\nsource!?"); assert.deepEqual(f.errors, []);
-    replacement.dispose(); await settled(); f.workspace.releaseResource(f.source.id, true);
+    f.workspace.releaseResource(f.source.id, true);
     assert.throws(() => f.workspace.document(f.source.documentId), /released/);
     assert.equal(beforeReuse.isCurrent(), false); assert.equal(beforeReuse.isPlacementCurrent(), false); assert.equal(verified.isCurrent(), false);
+    const file = f.workspace.createTextResource({ scope: "generic", resource: "replacement", variant: "working" },
+        "Replacement", { value: "new\nsource" }, undefined,
+        { language: { uri: message.uri, languageId: capture.document.languageId } });
+    const replacement = a.attachDocument(file.documentId);
+    await a.flush();
+    const rebound = a.observeDiagnostics(replacement);
+    await send(delayed);
+    assert.equal(rebound.getSnapshot().status, "empty", "A late warning belongs to the closed document.");
+    await send({ ...message, version: a.synchronized(replacement)!.version, diagnostics: [{ range, message: "new warning" }] });
+    assert.deepEqual(rebound.getSnapshot().result!.items.map(item => item.message), ["new warning"]);
+    assert.equal(first.getSnapshot().status, "expired");
 });
 
 test("pending diagnostics map consecutive edits and undo without renewing provider authority", async t => {
@@ -502,8 +520,10 @@ test("pending diagnostics map consecutive edits and undo without renewing provid
     const undo = () => { assert.equal(f.workspace.undo({ documentId: f.source.documentId, expectedRevision: f.workspace.document(f.source.documentId).revision }).applied, true); };
     undo(); check(11, 17); undo(); check(5, 11);
     assert.deepEqual(initial.items.map(item => [item.from, item.to]), [[5, 11], [7, 7], [null, null]], "Retained snapshots never mutate.");
-    await scope.flush(); const beforeStale = state.getSnapshot().result;
-    await send([]); assert.equal(state.getSnapshot().result, beforeStale); assert.equal(state.getSnapshot().stale, 1);
+    await scope.flush();
+    const beforeStale = state.getSnapshot();
+    await send([]);
+    assert.equal(state.getSnapshot(), beforeStale);
     edit(5, 11, "replacement"); assert.deepEqual(state.getSnapshot().result!.items.map(item => item.message), ["unplaced"]);
     undo(); assert.deepEqual(state.getSnapshot().result!.items.map(item => item.message), ["unplaced"], "Undo cannot resurrect invalidated provider ranges.");
     const beforeReconnect = state.getSnapshot(); await f.provider.reconnect();
