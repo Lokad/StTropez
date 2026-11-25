@@ -139,7 +139,7 @@ export type ComparisonRowsProgress = Readonly<{ status: KernelStatus; work: numb
 /** Charges collapsed-fold, hunk and span operations, independent of expanded folds or unchanged/padded row counts. */
 export class ComparisonRowsCursor {
     readonly #driver: KernelCursor<ComparisonRowsProgress>;
-    constructor(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af = new FoldIndex(a.lineCount, []), bf = new FoldIndex(b.lineCount, [])) {
+    constructor(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af = new FoldIndex(a.lineCount), bf = new FoldIndex(b.lineCount)) {
         if (!Object.isFrozen(hunks) || af.lineCount !== a.lineCount || bf.lineCount !== b.lineCount) throw new Error("Expected captured comparison/fold coordinates.");
         const work = { units: 0 };
         this.#driver = kernelCursor(plan(a, b, hunks, af, bf, work), () => work.units,

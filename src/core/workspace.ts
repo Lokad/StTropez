@@ -17,9 +17,10 @@ import { createSelectionSet, mapSelectionSet, mapWholeTextSelections, sameSelect
 import type { SelectionSet } from "./selections.ts";
 import { NotificationScope, Store } from "./observable.ts";
 import type { AfterDelivery, Observable } from "./observable.ts";
-import { collapseFoldRegions, createFoldRegions, foldingSnapshot, mapFoldIndex, revealIndexRange, revealIndexSelection, snapshotFromIndex } from "./folding.ts";
+import { collapseFoldRegions, createFoldRegions, foldingSnapshot, mapFoldIndex, replayDeletedFolds,
+    revealIndexRange, revealIndexSelection, snapshotFromIndex } from "./folding.ts";
 import { lineContentEnd } from "./newlines.ts";
-import type { DocumentFolding, FoldIndex, FoldingSnapshot, FoldVersion } from "./folding.ts";
+import type { DocumentFolding, FoldIndex, FoldRegion, FoldingSnapshot, FoldVersion } from "./folding.ts";
 import { plannedLineSwaps, type LineSwap } from "./line-moves.ts";
 import { equalValue, snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
@@ -140,7 +141,8 @@ function replaceDocumentBuffer(before: TextBuffer, text: string | TextBuffer) {
     return { buffer: changedUnits ? text : before, mapping: replacementMap(before.length, span), changedUnits };
 }
 
-type ViewRecord = { handle: DocumentView; state: Store<DocumentViewSnapshot>; folds: Store<FoldingSnapshot> };
+type ViewRecord = { handle: DocumentView; state: Store<DocumentViewSnapshot>; folds: Store<FoldingSnapshot>;
+    deleted?: WeakMap<PositionMapping, readonly FoldRegion[]> };
 type PreparedView = Readonly<{ view: ViewRecord; state: DocumentViewSnapshot; folds: FoldingSnapshot }>;
 type PreparedText = Readonly<{ record: ResourceRecord; buffer: TextBuffer; mapping: PositionMapping;
     state: ResourceSnapshot<SnapshotValue>; views: readonly PreparedView[] }>;
@@ -359,14 +361,14 @@ export class Workspace {
         const document = this.document(id), record = this.documents.get(id)!;
         const selections = "ranges" in initial ? createSelectionSet(document.buffer.length, initial.ranges, initial.primary) : createSelectionSet(document.buffer.length, [initial]);
         const state = new Store<DocumentViewSnapshot>(viewSnapshot(id, document.revision, selections), this.scope);
-        const folds = new Store<FoldingSnapshot>(foldingSnapshot(document.buffer, document.revision, 0, Object.freeze([])), this.scope);
+        const folds = new Store<FoldingSnapshot>(foldingSnapshot(document.buffer, document.revision, 0), this.scope);
         const viewId = `view-${++this.nextId}` as ViewId;
         const foldTarget = (expected: FoldVersion) => record.views.has(viewId) && record.state.get().state === "ready" && expected !== null && typeof expected === "object"
             && record.state.get().revision === expected.revision && folds.get().generation === expected.generation;
         const setFoldRegions = (regions: FoldingSnapshot["regions"], moveHiddenCarets = false): boolean => {
             const previous = folds.get(); if (regions === previous.regions) return true;
             this.scope.assertWritable();
-            const next = foldingSnapshot(record.buffer!, previous.revision, previous.generation + 1, regions, previous);
+            const next = foldingSnapshot(record.buffer!, previous.revision, previous.generation + 1, regions);
             const projectionChanged = !previous.index.sameProjection(next.index);
             const changed = new Set<Store<unknown>>();
             if (moveHiddenCarets && projectionChanged) {
@@ -548,7 +550,7 @@ export class Workspace {
                 this.lineSwaps.set(mapping, swaps.map(({ first, middle, end }) => ({ first, middle: first + (end - middle), end })));
             }
             return this.prepareText(participant, direction === "undo" ? change.before : change.after, mapping,
-                { selectionFor: view => selections.get(view.handle.id) });
+                { selectionFor: view => selections.get(view.handle.id), undo: direction === "undo" ? forward : undefined });
         });
         this.history.move(entry, direction);
         const changed = new Set<Store<unknown>>(), transactionId = ++this.nextTransaction, revisions = [];
@@ -560,7 +562,8 @@ export class Workspace {
     }
     /** Prepare every projection before history, resource or view mutation, including linked documents. */
     private prepareText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping,
-        options: { selectionFor?: (view: ViewRecord) => SelectionSet | undefined; wholeText?: boolean; adopted?: ResourceMetadata } = {}): PreparedText {
+        options: { selectionFor?: (view: ViewRecord) => SelectionSet | undefined; wholeText?: boolean;
+            undo?: PositionMapping | undefined; adopted?: ResourceMetadata } = {}): PreparedText {
         const current = record.state.get(), revision = current.revision + 1, before = record.buffer!;
         const state = readySnapshot(options.adopted ?? { ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
         const shared = record.views.size > 1 ? new Map<FoldIndex, FoldIndex>() : undefined;
@@ -571,7 +574,8 @@ export class Workspace {
             const prior = view.folds.get().index;
             let mapped = shared?.get(prior);
             if (!mapped) { mapped = mapFoldIndex(buffer, mapping, before, prior, this.lineSwaps.get(mapping)); shared?.set(prior, mapped); }
-            views.push(this.prepareView(view, record.documentId!, revision, buffer, selections, mapped));
+            const folds = replayDeletedFolds(view, prior, mapped, mapping, options.undo);
+            views.push(this.prepareView(view, record.documentId!, revision, buffer, selections, folds));
         }
         return { record, buffer, mapping, state, views };
     }
@@ -703,7 +707,7 @@ export class Workspace {
                 this.setRecord(record, readySnapshot({ ...current.metadata, state: "ready", dirty: false, serverVersion: loaded.serverVersion ?? null, failure: null, saveStatus: "idle" },
                     revision, record.buffer ?? value), changed);
                 for (const view of record.views.values()) {
-                    view.folds.set(foldingSnapshot(record.buffer!, revision, view.folds.get().generation + 1, Object.freeze([])), changed);
+                    view.folds.set(foldingSnapshot(record.buffer!, revision, view.folds.get().generation + 1), changed);
                     view.state.set(viewSnapshot(record.documentId!, revision, createSelectionSet(record.buffer!.length, [{ anchor: 0, head: 0 }])), changed);
                 }
                 this.syncHistory(changed); this.publish(changed);

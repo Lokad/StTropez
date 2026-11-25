@@ -127,6 +127,29 @@ test("inserting beside a collapsed header and deleting its line keep typing on v
     await page.keyboard.type("X"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["taXil"]);
     await source.press("Control+z"); await source.press("Control+z");
     expect(await page.evaluate(() => window.editingFixture.range(0, 16))).toBe("head\r\nbody\r\ntail");
+    await expect(fold).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("#primary .st-viewport-row")).toHaveText(["head", "tail"]);
+    await page.evaluate(() => {
+        const f = window.editingFixture;
+        f.setText("one\n  x\ntwo\n  y\nend");
+        const ranges = [{ id: "one", from: 0, to: 8 }, { id: "two", from: 8, to: 16 }];
+        f.folds(ranges.map(r => ({ ...r, collapsed: true })));
+        f.folds(ranges, "secondary");
+        f.select("primary", { anchor: 1, head: 1 });
+    });
+    await source.press("Control+Shift+k");
+    await page.locator('#primary [data-fold="two"]').click();
+    await source.press("Control+z");
+    const choices = () => page.evaluate(() => {
+        const f = window.editingFixture;
+        return (["primary", "secondary"] as const).map(pane =>
+            f.folding(pane).regions.map(r => [r.id, r.collapsed]));
+    });
+    expect(await choices()).toEqual([[["one", true], ["two", false]], [["one", false], ["two", false]]]);
+    await page.locator('#primary [data-fold="one"]').click();
+    await source.press("Control+Shift+z");
+    await source.press("Control+z");
+    expect(await choices()).toEqual([[["one", false], ["two", false]], [["one", false], ["two", false]]]);
     await reset(); await source.press("ArrowDown"); await source.press("Control+Shift+k");
     await expect(page.locator("#primary .st-viewport-row")).toHaveText(["head"]);
     await page.keyboard.type("Y"); await expect(page.locator("#primary .st-viewport-row")).toHaveText(["heYad"]);

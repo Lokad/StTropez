@@ -75,9 +75,10 @@ offsets. Pass `{ moveHiddenCarets: true }` to move insertion carets hidden by th
 the end of the visible header. Carets that land together merge. Nonempty selections keep both
 endpoints. Subscribers see the new folds and selections together.
 
-Fold anchors follow edits, undo and redo. Deleting a boundary expands its region. Degenerate, merged
-or crossing ranges lose their definitions. Undo restores the text. To restore an invalidated fold,
-publish fresh ranges. Folding leaves history and dirty state untouched.
+Fold anchors follow edits, Undo and Redo. Undoing Delete Lines restores the deleted block and each
+pane's fold choices. Surviving folds keep their current settings. Deleting just a boundary can
+expand or invalidate a fold. Publish fresh ranges when its structure changes. Toggling a fold
+leaves the document's history and dirty state untouched.
 
 Use `FoldIndex.rowAt` and `lineAt` to move between source lines and visible rows. `hiddenBy` finds the
 collapsed region hiding a line. `headerAt` finds the fold at a header. The index stores collapsed

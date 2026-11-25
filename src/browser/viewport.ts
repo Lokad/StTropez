@@ -30,7 +30,7 @@ import type { ComparisonRowIndex } from "../core/comparison-rows.ts";
 import { mountColumnRulers, resolveColumnRulers } from "./column-rulers.ts";
 import { mountMinimap } from "./minimap.ts";
 type RowIndex = FoldIndex | ComparisonRowIndex;
-const emptyIndex = new FoldIndex(1, []);
+const emptyIndex = new FoldIndex(1);
 const overscanLines = 4, overscanUnits = 32;
 /** Shared by view-only scroll coordination; this is independent of source coordinates. */
 export const viewportPadding = 12;

@@ -1,4 +1,4 @@
-import { isIndex, isNonNegativeInteger, isOffsetRange, isPositiveInteger } from "./bounds.ts";
+import { isIndex, isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { unchangedPositionEdges } from "./positions.ts";
 import type { PositionMapping } from "./positions.ts";
@@ -47,31 +47,33 @@ export function sameFoldRegions(a: readonly FoldRegion[], b: readonly FoldRegion
 }
 export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange[], previous: readonly FoldRegion[] = empty): readonly FoldRegion[] {
     const prepared = resolved.get(buffer)?.get(ranges);
-    if (prepared) {
-        if (prepared === ranges) return owned.has(previous) && sameFoldRegions(previous, prepared) ? previous : prepared;
-        const prior = new Map(previous.map(r => [r.id, r])); let changed = false;
-        const regions = prepared.map((r, i) => {
-            const collapsed = ranges[i]!.collapsed ?? prior.get(r.id)?.collapsed ?? false;
-            if (collapsed === r.collapsed) return r;
-            changed = true; return Object.freeze({ ...r, collapsed });
-        });
-        const result = owned.has(previous) && sameFoldRegions(previous, regions) ? previous : changed ? retain(regions) : prepared;
-        prepareFoldRanges(buffer, result, result); return result;
-    }
+    if (prepared === ranges) return owned.has(previous) && sameFoldRegions(previous, prepared) ? previous : prepared;
     const prior = new Map(previous.map(r => [r.id, r])), ids = new Set<string>();
-    const regions = ranges.map(r => {
+    let unchanged = true;
+    const regions = ranges.map((r, i) => {
+        const collapsed = r.collapsed ?? prior.get(r.id)?.collapsed ?? false;
+        const known = prepared?.[i];
+        if (known) {
+            if (known.collapsed === collapsed) return known;
+            unchanged = false;
+            return Object.freeze({ ...known, collapsed });
+        }
         if (!r.id.length || r.id.length > 256 || ids.has(r.id)) throw new TypeError("Expected unique fold identities.");
         if (r.group !== undefined && !r.group) throw new TypeError("Expected a nonempty fold group.");
-        const collapsed = r.collapsed ?? prior.get(r.id)?.collapsed ?? false;
         ids.add(r.id); const value = region(buffer, r.id, r.from, r.to, collapsed, r.group);
         if (!value) throw new RangeError("A fold needs a header and at least one body row."); return value;
-    }).sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo);
-    const stack: FoldRegion[] = [];
-    for (let i = 0; i < regions.length; i++) {
-        const r = regions[i]!; if (i && regions[i - 1]!.lineFrom === r.lineFrom) throw new RangeError("A fold header has one identity.");
-        if (!appendNestedFold(stack, r)) throw new RangeError("Fold regions must nest or remain disjoint.");
+    });
+    if (!prepared) {
+        regions.sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo);
+        const stack: FoldRegion[] = [];
+        for (let i = 0; i < regions.length; i++) {
+            const r = regions[i]!;
+            if (i && regions[i - 1]!.lineFrom === r.lineFrom) throw new RangeError("A fold header has one identity.");
+            if (!appendNestedFold(stack, r)) throw new RangeError("Fold regions must nest or remain disjoint.");
+        }
     }
-    const result = owned.has(previous) && sameFoldRegions(previous, regions) ? previous : regions.length ? retain(regions) : empty;
+    const next = prepared && unchanged ? prepared : regions;
+    const result = owned.has(previous) && sameFoldRegions(previous, next) ? previous : next.length ? retain(next) : empty;
     prepareFoldRanges(buffer, result, result); return result;
 }
 function movedFold(buffer: TextBuffer, previous: TextBuffer, r: FoldRegion, swaps: readonly LineSwap[]): FoldRegion | null | undefined {
@@ -199,17 +201,16 @@ function projectedRegion(layout: FoldLayout, r: FoldRegion): FoldRegion {
 
 function installIndex(index: FoldIndex, lineCount: number, layout: FoldLayout): FoldIndex {
     layouts.set(index, layout);
-    Object.defineProperties(index, {
-        lineCount: { value: lineCount, enumerable: true },
-        visibleLineCount: { value: lineCount - layout.removed, enumerable: true },
-        collapsedCount: { value: owned.get(layout.regions)!.collapsed, enumerable: true },
-        regions: { enumerable: true, get() {
+    Object.assign(index, { lineCount, visibleLineCount: lineCount - layout.removed, collapsedCount: owned.get(layout.regions)!.collapsed });
+    Object.defineProperty(index, "regions", {
+        enumerable: true,
+        get() {
             if (!layout.exposed) {
                 layout.exposed = retain(layout.regions.map(r => projectedRegion(layout, r)));
                 indexed.set(layout.exposed, index);
             }
             return layout.exposed;
-        } },
+        },
     });
     Object.freeze(index);
     return index;
@@ -227,26 +228,19 @@ export class FoldIndex {
     declare readonly visibleLineCount: number;
     declare readonly collapsedCount: number;
     declare readonly regions: readonly FoldRegion[];
-    constructor(lineCount: number, regions: readonly FoldRegion[]) {
+    constructor(lineCount: number, regions: readonly FoldRegion[] = empty) {
         if (!isPositiveInteger(lineCount)) throw new RangeError("Invalid fold line count.");
-        const metadata = owned.get(regions);
-        if (metadata && metadata.maxLineTo > lineCount) throw new RangeError("Invalid fold row interval.");
-        const values = metadata ? regions : Object.freeze(regions.map(r => Object.freeze({ ...r })));
+        const values = regions.length ? regions : empty;
+        const metadata = owned.get(values);
+        if (!metadata || metadata.maxLineTo > lineCount) throw new RangeError("Expected validated fold row intervals.");
         const previous = indexed.get(values);
         if (previous) { installIndex(this, lineCount, layouts.get(previous)!); return; }
-        const hidden: Hidden[] = []; let removed = 0, prior = -1; const stack: FoldRegion[] = [], ids = new Set<string>();
+        const hidden: Hidden[] = [];
+        let removed = 0;
         for (const r of values) {
-            if (!metadata) {
-                if (!r.id.length || r.id.length > 256 || ids.has(r.id) || !isNonNegativeInteger(r.from) || !isNonNegativeInteger(r.to) || r.from >= r.to
-                    || !isNonNegativeInteger(r.lineFrom) || !isNonNegativeInteger(r.lineTo) || r.lineFrom <= prior || r.lineTo > lineCount || r.lineTo <= r.lineFrom + 1) throw new RangeError("Invalid fold row interval.");
-                if (r.group !== undefined && !r.group) throw new TypeError("Expected a nonempty fold group.");
-                ids.add(r.id); prior = r.lineFrom;
-                if (!appendNestedFold(stack, r)) throw new RangeError("Crossing fold rows.");
-            }
             if (!r.collapsed || hidden.length && r.lineFrom < hidden.at(-1)!.to) continue;
             hidden.push(Object.freeze({ from: r.lineFrom + 1, to: r.lineTo, before: removed, owner: r })); removed += r.lineTo - r.lineFrom - 1;
         }
-        if (!metadata) retain(values);
         installIndex(this, lineCount, { regions: values, hidden: Object.freeze(hidden), removed, units: 0, lines: 0, exposed: values });
         indexed.set(values, this);
     }
@@ -290,6 +284,43 @@ export class FoldIndex {
 function indexFor(lineCount: number, regions: readonly FoldRegion[]): FoldIndex {
     const cached = indexed.get(regions);
     return cached?.lineCount === lineCount ? cached : new FoldIndex(lineCount, regions);
+}
+
+type FoldHistory = { deleted?: WeakMap<PositionMapping, readonly FoldRegion[]> };
+
+/** Only ranges erased by this edit travel back with Undo. Surviving ranges belong to the live view. */
+export function replayDeletedFolds(view: FoldHistory, prior: FoldIndex, mapped: FoldIndex,
+    mapping: PositionMapping, undo?: PositionMapping): FoldIndex {
+    if (!undo) {
+        if (mapped.lineCount < prior.lineCount && layouts.get(mapped)!.regions.length < layouts.get(prior)!.regions.length) {
+            const removed = prior.regions.filter(r => mapping.map(r.from, "before").offset === mapping.map(r.to, "after").offset);
+            if (removed.length) {
+                (view.deleted ??= new WeakMap()).set(mapping, removed);
+                return mapped;
+            }
+        }
+        view.deleted?.delete(mapping);
+        return mapped;
+    }
+    const removed = view.deleted?.get(undo);
+    if (!removed) return mapped;
+    const live = mapped.regions;
+    const ids = new Set(live.map(r => r.id));
+    const parents: FoldRegion[] = [];
+    const merged: FoldRegion[] = [];
+    let cursor = 0;
+    for (const fold of removed) {
+        while (cursor < live.length && live[cursor]!.lineFrom < fold.lineFrom) {
+            const next = live[cursor++]!;
+            appendNestedFold(parents, next);
+            merged.push(next);
+        }
+        while (parents.length && parents.at(-1)!.lineTo <= fold.lineFrom) parents.pop();
+        // An intervening provider update can reuse an ID or occupy these rows.
+        if (!ids.has(fold.id) && (parents.at(-1)?.lineTo ?? Infinity) >= fold.lineTo
+            && (live[cursor]?.lineFrom ?? Infinity) >= fold.lineTo) merged.push(fold);
+    }
+    return indexFor(mapped.lineCount, retain(merged.concat(live.slice(cursor))));
 }
 export function revealIndexSelection(buffer: TextBuffer, index: FoldIndex, selections: SelectionSet): FoldIndex {
     if (!index.collapsedCount) return index;
@@ -352,9 +383,8 @@ export function collapsedLineBlock(index: FoldIndex | undefined, line: number): 
     return region?.collapsed ? region : undefined;
 }
 
-export function foldingSnapshot(buffer: TextBuffer, revision: number, generation: number, regions: readonly FoldRegion[], previous?: FoldingSnapshot): FoldingSnapshot {
-    const index = previous && previous.index.lineCount === buffer.lineCount && previous.regions === regions ? previous.index : indexFor(buffer.lineCount, regions);
-    return snapshotFromIndex(revision, generation, index);
+export function foldingSnapshot(buffer: TextBuffer, revision: number, generation: number, regions = empty): FoldingSnapshot {
+    return snapshotFromIndex(revision, generation, indexFor(buffer.lineCount, regions));
 }
 export function snapshotFromIndex(revision: number, generation: number, index: FoldIndex): FoldingSnapshot {
     return Object.freeze({ revision, generation, get regions() { return index.regions; }, index });
