@@ -16,6 +16,7 @@ import { isStaleRequest } from "../protocol/wire.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainDocuments } from "./retained-documents.ts";
 import { writableDocument } from "./edit-project.ts";
+import { mountColorPicker, type ColorPickerOptions } from "./color-picker.ts";
 import { mountSwatches } from "./document-color-swatches.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -35,6 +36,7 @@ export type DocumentColorSnapshot = Readonly<{
     message: string; changed: boolean;
 }>;
 export type DocumentColorControllerOptions = Readonly<{
+    picker?: boolean | ColorPickerOptions;
     swatches?: boolean | ((item: LspDocumentColor) => void);
     canCapture?: () => boolean; prepareRequest?: (kind: "discovery" | "presentation") => LspPrepare | undefined;
 }>;
@@ -70,14 +72,16 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
     const { scope, state, signal, active, available, capture, release, expire, mount } =
         languageReview<Job, DocumentColorSnapshot>(editor, "Document color", idle, options.canCapture,
             status => publish(status), j => j.preview?.capture.cancel());
+    let picker: ReturnType<typeof mountColorPicker> | undefined;
     let swatches: ReturnType<typeof mountSwatches> | undefined;
     function setSwatches(enabled: boolean) {
         scope.assertWritable();
         if (signal.aborted || enabled === !!swatches) return;
         if (enabled) {
-            const activate = typeof options.swatches === "function" ? options.swatches : undefined;
+            const activate = typeof options.swatches === "function" ? options.swatches : picker?.open;
             swatches = mountSwatches(editor, owner, activate);
         } else {
+            picker?.close();
             swatches?.dispose();
             swatches = undefined;
         }
@@ -265,6 +269,14 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
         swatches?.dispose();
         swatches = undefined;
     });
-    try { setSwatches(!!options.swatches); } catch (error) { controls.dispose(); throw error; }
-    return Object.freeze({ ...controls, request, dismissPreview, setSwatches, colorAt: (offset: number) => swatches?.at(offset) });
+    const controller: DocumentColorController = Object.freeze({
+        ...controls, request, dismissPreview, setSwatches, colorAt: offset => swatches?.at(offset),
+    });
+    try {
+        if (options.picker && typeof options.swatches !== "function") {
+            picker = mountColorPicker(editor, controller, capture, signal, options.picker === true ? {} : options.picker);
+        }
+        setSwatches(!!(options.swatches ?? picker));
+        return controller;
+    } catch (error) { controls.dispose(); throw error; }
 }

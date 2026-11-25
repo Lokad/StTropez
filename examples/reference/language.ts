@@ -8,7 +8,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const language = attachEditorLanguage(editor, provider, {
         completion: { autoConnect: false, automatic: false, list: true }, diagnostics: { autoConnect: false },
         hover: { popup: true }, signature: { popup: true }, navigation: {}, occurrences: {}, links: { paint: true },
-        colors: { swatches: true }, rename: { popup: { onNotice: message => { result.value = message; } } }, codeActions: { popup: true }, commands: {},
+        colors: { picker: true }, rename: { popup: { onNotice: message => { result.value = message; } } }, codeActions: { popup: true }, commands: {},
     });
     const events = new AbortController();
     let intent = 0;

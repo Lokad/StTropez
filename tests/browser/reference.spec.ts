@@ -69,6 +69,51 @@ test("the reference shortcut and toolbar review a captured code action at the so
     await expect(code).toHaveCount(0);
 });
 
+test("the reference swatch reviews provider formats and preserves the source selection through Undo", async ({ page }) => {
+    await page.goto("/reference/");
+    await page.getByRole("button", { name: "Connect language server" }).click();
+    const source = page.getByRole("textbox", { name: "quote.ts" });
+    await source.press("ControlOrMeta+End");
+    await source.press("Shift+ArrowUp");
+    const selection = () => source.evaluate(node => {
+        const input = node as HTMLTextAreaElement;
+        return input.value.slice(input.selectionStart, input.selectionEnd);
+    });
+    const selected = await selection();
+    expect(selected.length).toBeGreaterThan(0);
+    const swatch = page.locator(".st-color-swatch").first();
+    const dialog = page.getByRole("dialog", { name: "Color picker" });
+    await swatch.click();
+    const format = dialog.getByRole("combobox", { name: "Format" });
+    await expect(format).toBeEnabled();
+    await expect(dialog.getByLabel("Color", { exact: true })).toHaveValue("#5fae99");
+    expect(await selection()).toBe(selected);
+    const alpha = dialog.getByRole("spinbutton", { name: "Opacity (%)" });
+    await alpha.fill("50");
+    await expect(dialog.locator("ins").filter({ hasText: /0\.5|80$/ })).toBeVisible();
+    await format.selectOption({ label: "rgba(95, 174, 153, 0.5)" });
+    await expect(dialog.locator("ins")).toContainText(["// color presentation", "rgba(95, 174, 153, 0.5)"]);
+    const apply = dialog.getByRole("button", { name: "Apply color" });
+    const previous = await apply.elementHandle();
+    await alpha.fill("101");
+    await expect(apply).toBeDisabled();
+    await expect(dialog).toContainText("Enter an opacity between 0 and 100.");
+    await previous!.evaluate(node => (node as HTMLButtonElement).click());
+    await expect(page.locator(".st-viewport-row").filter({ hasText: "#5fae99" })).toHaveCount(1);
+    await alpha.fill("25");
+    await format.selectOption({ label: "rgba(95, 174, 153, 0.25)" });
+    await apply.click();
+    await expect(dialog).toBeHidden();
+    await expect(source).toBeFocused();
+    expect(await selection()).toBe(selected);
+    const rows = page.locator("#pane .st-viewport-row");
+    await expect(rows.filter({ hasText: "rgba(95, 174, 153, 0.25)" })).toHaveCount(1);
+    await source.press("ControlOrMeta+z");
+    await expect(rows.filter({ hasText: "#5fae99" })).toHaveCount(1);
+    await expect(rows.filter({ hasText: "// color presentation" })).toHaveCount(0);
+    expect(await selection()).toBe(selected);
+});
+
 test("a rename reports success after changing the reference document and Undo clears the result", async ({ page }) => {
     await page.goto("/reference/");
     await page.getByRole("button", { name: "Connect language server" }).click();

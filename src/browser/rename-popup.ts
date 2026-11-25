@@ -1,5 +1,5 @@
 import { identifierAt } from "../core/identifier.ts";
-import { editPreview, reviewElements } from "./review-controls.ts";
+import { reviewPanel } from "./review-controls.ts";
 import { lspRangeOffsets } from "../protocol/lsp-features.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { renameMethod } from "../protocol/lsp-methods.ts";
@@ -52,27 +52,19 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     const doc = element.ownerDocument;
     const win = doc.defaultView!;
     const listen = listenUntil(signal);
-    const text = options.text ?? (label => label);
-    const ui = reviewElements(doc, text);
-    const { node, button } = ui;
-    const panel = node("section");
-    panel.className = "st-rename";
+    const { panel, text, node, button, status, pages, list, showEdits } =
+        reviewPanel(editor, signal, "st-rename", "Rename symbol", options.text);
     panel.setAttribute("role", "dialog");
-    panel.setAttribute("aria-label", text("Rename symbol"));
     const label = node("label");
     const name = node("input");
     name.maxLength = nameLimit;
     label.append(text("New name"), name);
-    const status = node("p");
     status.setAttribute("aria-label", text("Rename status"));
     const controls = node("div");
-    const pages = node("div");
-    const list = node("ol");
     list.tabIndex = 0;
     list.setAttribute("aria-label", text("Rename edits"));
     panel.append(label, status, controls, pages, list);
     panel.hidden = true;
-    const showEdits = editPreview(editor, ui, list, pages);
     let source: Source | undefined;
     let checking = false;
     let edited = false;
@@ -101,9 +93,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         status.textContent = text(checking ? "Checking rename target…" : state.message || "Enter a name, then preview its changes.");
         if (shown !== result) {
             shown = result;
-            const replacement = button(controls, "Apply rename", () => result?.apply());
-            apply.replaceWith(replacement);
-            apply = replacement;
+            apply = button(controls, "Apply rename", () => result?.apply(), apply);
             const total = showEdits(result);
             if (result?.canApply) status.textContent = text(`Review ${total} ${total === 1 ? "change" : "changes"}.`);
         }
@@ -178,7 +168,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     });
     listen(win, "blur", () => { if (checking) close(false); });
     editor.onEditIntent(() => { if (source) close(false); }, signal);
-    onAbort(signal, () => { hide(false); panel.remove(); });
+    onAbort(signal, () => hide(false));
     onAbort(signal, review.subscribe(render));
     function bind(id: string, label: string, key: string, enabled: () => boolean, run: (arg: unknown) => boolean | void, priority: number) {
         onAbort(signal, commands.register({ id, label: text(label), owner: "editor", category: "Rename", enabled, run },

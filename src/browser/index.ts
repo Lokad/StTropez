@@ -21,6 +21,7 @@ export type { WebSocketTransportOptions } from "./lsp-websocket.ts";
 export { diagnosticDecoration } from "./diagnostic-controller.ts";
 export { createNavigationHistory, type NavigationHistory, type NavigationOrigin } from "./navigation-history.ts";
 export type { Outcome } from "../core/outcome.ts";
+export type { ColorPickerOptions } from "./color-picker.ts";
 export type { DocumentColorChoice, ColorPresentationChoice, ColorPresentationReview, DocumentColorSnapshot, DocumentColorController, DocumentColorControllerOptions } from "./document-color-controller.ts";
 export type { DocumentLinkChoice, DocumentLinkController, DocumentLinkControllerOptions, DocumentLinkSnapshot } from "./document-link-controller.ts";
 export type { RenamePopupOptions } from "./rename-popup.ts";

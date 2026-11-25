@@ -1,18 +1,35 @@
 import type { DocumentId } from "../core/workspace.ts";
 import type { LspEditNotes } from "../protocol/lsp-workspace-edit.ts";
+import { onAbort } from "./listen.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 type ReadEdits = { readEdits(first: number, end: number): LspEditNotes | undefined };
+const pageSize = 64;
+
+function excerpt(value: string, length: number) {
+    return value + (length > value.length ? `… (${length} UTF-16 units)` : "");
+}
 
 /** Buttons belong to the page that created them. A held press cannot advance a replacement page. */
-export function reviewElements(doc: Document, text: (label: string) => string) {
+export function reviewPanel(editor: TextEditor, signal: AbortSignal, className: string, title: string,
+    text = (label: string) => label) {
+    const doc = editor.element.ownerDocument;
     const node = <K extends keyof HTMLElementTagNameMap>(tag: K) => doc.createElement(tag);
-    function button(parent: HTMLElement, label: string, action: () => void) {
+    const panel = node("section");
+    // Appending the panel can throw after insertion, before an overlay returns its disposer.
+    onAbort(signal, () => panel.remove());
+    panel.className = className;
+    panel.setAttribute("aria-label", text(title));
+    const status = node("p");
+    const list = node("ol");
+    const pages = node("div");
+    function button(parent: HTMLElement, label: string, action: () => void, previous?: HTMLButtonElement) {
         const control = node("button");
         control.type = "button";
         control.textContent = text(label);
         control.onclick = action;
-        parent.append(control);
+        if (previous) previous.replaceWith(control);
+        else parent.append(control);
         return control;
     }
     function paging(parent: HTMLElement, subject: string, offset: number, total: number, size: number,
@@ -31,27 +48,20 @@ export function reviewElements(doc: Document, text: (label: string) => string) {
             (enabled.find(item => item.textContent === focus) ?? enabled[0])?.focus({ preventScroll: true });
         }
     }
-    return { node, button, paging };
-}
-
-const pageSize = 64;
-function excerpt(value: string, length: number) {
-    return value + (length > value.length ? `… (${length} UTF-16 units)` : "");
-}
-
-export function editPreview(editor: TextEditor, ui: ReturnType<typeof reviewElements>, list: HTMLOListElement, pages: HTMLElement) {
-    function show(result: ReadEdits | null, offset = 0): number {
-        const batch = result?.readEdits(offset, offset + pageSize);
+    function showEdits(result: ReadEdits | Pick<LspEditNotes, "notes"> | null, offset = 0): number {
+        const batch = result && ("notes" in result
+            ? { total: result.notes.length, notes: result.notes.slice(offset, offset + pageSize) }
+            : result.readEdits(offset, offset + pageSize));
         const total = batch?.total ?? 0;
-        ui.paging(pages, "edits", offset, total, pageSize, next => show(result, next));
+        paging(pages, "edits", offset, total, pageSize, next => showEdits(result, next));
         list.replaceChildren();
         list.start = offset + 1;
         for (const note of batch?.notes ?? []) {
             const { line, column } = editor.workspace.document(note.document as DocumentId).buffer.positionAt(note.from);
-            const row = ui.node("li");
-            const code = ui.node("code");
-            const before = ui.node("del");
-            const after = ui.node("ins");
+            const row = node("li");
+            const code = node("code");
+            const before = node("del");
+            const after = node("ins");
             before.textContent = excerpt(note.before, note.to - note.from);
             after.textContent = excerpt(note.insert, note.insertUnits);
             code.append(before, " → ", after);
@@ -61,5 +71,5 @@ export function editPreview(editor: TextEditor, ui: ReturnType<typeof reviewElem
         list.scrollTop = 0;
         return total;
     }
-    return show;
+    return { panel, status, list, pages, showEdits, node, button, paging, text };
 }

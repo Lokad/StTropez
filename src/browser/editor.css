@@ -207,19 +207,21 @@
 .st-rename button { margin: 0 4px 4px 0; }
 .st-rename ol { min-height: 2.3em; overflow: auto; margin: 0; padding: 2px 0; list-style-position: inside;
     line-height: 1.8; overflow-wrap: anywhere; }
-.st-rename ol:empty { display: none; }
-.st-rename del { color: var(--st-rename-removed, #ed9a9a); }
-.st-rename ins { color: var(--st-rename-added, #8ce0ca); }
+:is(.st-rename, .st-code-actions, .st-color-picker) ol:empty { display: none; }
+:is(.st-rename, .st-code-actions, .st-color-picker) del { color: var(--st-rename-removed, #ed9a9a); }
+:is(.st-rename, .st-code-actions, .st-color-picker) ins { color: var(--st-rename-added, #8ce0ca); }
 
-.st-code-actions { width: min(390px, calc(100vw - 16px)); max-height: 270px; padding: 10px; border: 1px solid #50627f; border-radius: 7px;
+:is(.st-code-actions, .st-color-picker) { width: min(390px, calc(100vw - 16px)); max-height: 270px; padding: 10px; border: 1px solid #50627f; border-radius: 7px;
     background: var(--st-actions-background, var(--st-background, #1b283c)); box-shadow: 0 8px 28px #0007; font: 13px/1.4 system-ui, sans-serif; }
 .st-code-actions:not([hidden]) { display: flex; flex-direction: column; }
 .st-code-actions > div { min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.st-code-actions footer { display: flex; flex: none; gap: 6px; padding-top: 4px; }
+:is(.st-code-actions, .st-color-picker) footer { display: flex; flex: none; gap: 6px; padding-top: 4px; }
 .st-code-actions p { margin: 0 0 6px; }
 .st-code-actions [data-choice] { display: block; width: 100%; text-align: left; margin-bottom: 3px; }
 .st-code-actions [data-chosen="true"] { background: var(--st-actions-selected, #365474); color: #e2fff6; }
-.st-code-actions ol { padding-inline-start: 20px; overflow-wrap: anywhere; }
-.st-code-actions ol:empty { display: none; }
-.st-code-actions del { color: var(--st-rename-removed, #ed9a9a); }
-.st-code-actions ins { color: var(--st-rename-added, #8ce0ca); }
+:is(.st-code-actions, .st-color-picker) ol { padding-inline-start: 20px; overflow-wrap: anywhere; }
+.st-color-picker > div:first-child { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.st-color-picker label { display: grid; gap: 2px; min-width: 0; max-width: 100%; }
+.st-color-picker input { width: 5rem; }
+.st-color-picker select { max-width: min(18rem, 100%); min-width: 0; }
+.st-color-picker p:empty { display: none; }

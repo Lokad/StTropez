@@ -2,7 +2,7 @@ import type { CodeActionChoice, CodeActionController, CodeActionPreview } from "
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { mountAnchoredOverlay } from "./anchored-overlay.ts";
 import { listenUntil, onAbort } from "./listen.ts";
-import { editPreview, reviewElements } from "./review-controls.ts";
+import { reviewPanel } from "./review-controls.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type CodeActionPopupOptions = Readonly<{
@@ -15,22 +15,16 @@ const pageSize = 16;
 
 export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner, actions: CodeActionController,
     signal: AbortSignal, options: CodeActionPopupOptions) {
-    const text = options.text ?? (label => label);
-    const ui = reviewElements(editor.element.ownerDocument, text);
-    const { node, button } = ui;
-    const panel = node("section"), body = node("div"), footer = node("footer");
-    const status = node("p"), choices = node("div"), count = node("small"), pages = node("div");
-    const edits = node("ol"), editPages = node("div");
-    panel.className = "st-code-actions";
-    panel.setAttribute("aria-label", text("Quick fixes"));
+    const { panel, status, list: edits, pages: editPages, showEdits, paging, node, button, text } =
+        reviewPanel(editor, signal, "st-code-actions", "Quick fixes", options.text);
+    const body = node("div"), footer = node("footer");
+    const choices = node("div"), count = node("small"), pages = node("div");
     status.setAttribute("aria-label", text("Quick-fix status"));
     edits.setAttribute("aria-label", text("Quick-fix edits"));
     body.append(status, choices, count, pages, edits, editPages);
     panel.append(body, footer);
-    const showEdits = editPreview(editor, ui, edits, editPages);
     let apply = button(footer, "Apply fix", () => {});
     button(footer, "Cancel fix", close);
-    onAbort(signal, () => panel.remove());
     const overlay = mountAnchoredOverlay(editor, panel, {
         onHide(reason, focused) {
             if (focused && (reason === "expired" || reason === "clipped")) editor.focus();
@@ -67,7 +61,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
             choices.append(control);
         }
         count.textContent = items.length <= pageSize ? "" : `${start + 1}–${Math.min(start + pageSize, items.length)} of ${items.length}`;
-        ui.paging(pages, "fixes", start, items.length, pageSize, next => {
+        paging(pages, "fixes", start, items.length, pageSize, next => {
             page(items, next);
             markChoice();
         });
@@ -95,9 +89,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
         }
         if (shown !== preview) {
             shown = preview;
-            const control = button(footer, preview?.command ? "Run action" : "Apply fix", () => preview?.apply());
-            apply.replaceWith(control);
-            apply = control;
+            apply = button(footer, preview?.command ? "Run action" : "Apply fix", () => preview?.apply(), apply);
             showEdits(preview);
             if (state.choice !== null && (state.choice < start || state.choice >= start + pageSize)) {
                 page(list, Math.floor(state.choice / pageSize) * pageSize);

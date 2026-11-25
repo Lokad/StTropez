@@ -563,10 +563,16 @@ captured color choices on success. Call `choice.presentations(rgba)` for the pro
 An empty list is a successful reply. Invalid RGBA channels return `refused` with reason `invalid-color`.
 A superseded request returns `stale`.
 
-Pass `colors: { swatches: true }` to `attachEditorLanguage` to paint provider colors automatically.
+Pass `colors: { picker: true }` to `attachEditorLanguage` to make provider swatches clickable.
+Click a swatch to change its color or opacity, choose a provider format and review its edits.
+Apply writes the changes together and returns focus to the editor. Escape closes the picker.
+Opening it preserves the source selection. Moving the selection or editing the document
+expires the review. Pass `picker: { text: translate }` to translate control labels.
+
+Use `colors: { swatches: true }` for painted swatches alone.
 Views of the same document share one scan. Edits move the painted ranges while fresh colors
 are pending. `colorAt(offset)` returns a color only for the current revision. To open a picker
-without moving the caret, pass an activation callback as `swatches`. Use `setSwatches(false)`
+of your own, pass an activation callback as `swatches`. It takes precedence over `picker`. Use `setSwatches(false)`
 to hide the marks and `setSwatches(true)` to resume scanning. If a color format request fails,
 the current swatches stay available in every pane.
 
