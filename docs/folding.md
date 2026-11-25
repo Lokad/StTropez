@@ -28,6 +28,25 @@ Build controls from `FoldingController.getSnapshot()` and `subscribe()`. A toolb
 The viewport stays where the user scrolled, within the new document height.
 Omit the group to act on all folds. Call `refresh()` after a rule change. Disposing the editor cancels discovery.
 
+Translate the gutter button and the collapsed summary with `settings.foldLabels`. Pass the same
+setting to a comparison to use it in both panes, or call `editor.configure` to change one view.
+
+```ts
+import type { FoldLabels } from "sttropez/browser";
+
+export const frenchFolds: FoldLabels = {
+    action: fold => fold.group === "imports" ? (fold.collapsed ? "Ouvrir les imports" : "Replier les imports") : undefined,
+    summary: (fold, changed) => {
+        const count = fold.lineTo - fold.lineFrom - 1;
+        return `… ${count} ${count === 1 ? "ligne masquée" : "lignes masquées"}${changed ? " · avec modifications" : ""}`;
+    },
+};
+```
+
+Both formatters receive the current `FoldRegion`. Its hidden lines run from `lineFrom + 2` through
+`lineTo` in the gutter's numbering. The summary also receives whether a comparison change falls
+in those lines. Return plain text, or `undefined` for English. Passing `foldLabels: {}` restores both defaults.
+
 If you already have an outline, pass its ranges to `DocumentView.folding`.
 
 ```ts

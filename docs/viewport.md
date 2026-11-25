@@ -123,6 +123,7 @@ An unchanged viewport setting schedules no paint. Configuration returns `false` 
 | --- | --- | --- |
 | `columnRulers` | `[]` | Draw guides at monospace columns from the left text edge. Supply up to 128 positive safe integers. The viewport copies, sorts and deduplicates them. |
 | `gutter` | `true` | Show line numbers and fold controls. Hiding the gutter gives its width back to the text. |
+| `foldLabels` | `{}` | Translate the gutter action and collapsed summary. See [folding](folding.md#use). |
 | `highlightCurrentLine` | `false` | Emphasize the line number at each selection head or caret. A head inside a fold marks its header. |
 | `fontLigatures` | `false` | Enable common and contextual font ligatures. Changing this setting refreshes font and caret measurements. |
 | `minimap` | `false` | Show a document overview with a draggable visible-region marker. |

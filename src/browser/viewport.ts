@@ -19,7 +19,7 @@ import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../core/positions.ts";
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { createFoldRegions, FoldIndex } from "../core/folding.ts";
-import type { FoldingSnapshot, FoldVersion } from "../core/folding.ts";
+import type { FoldingSnapshot, FoldRegion, FoldVersion } from "../core/folding.ts";
 import { sameSelectionSet } from "../core/selections.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import { applyDecorationProperties, decorationParts } from "./decoration-parts.ts";
@@ -152,8 +152,12 @@ export function validateRevealAlignment(align: RevealAlignment): void {
     if (align !== "start" && align !== "center" && align !== "nearest" && align !== "center-if-outside") throw new RangeError("Invalid reveal alignment.");
 }
 export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertical?: "center" | "nearest" | "center-if-outside"; affinity?: Affinity }>;
+export type FoldLabels = Readonly<{
+    action?: (region: FoldRegion) => string | undefined;
+    summary?: (region: FoldRegion, containsChanges: boolean) => string | undefined;
+}>;
 export type ViewportSettings = Readonly<{ columnRulers: readonly number[]; highlightCurrentLine: boolean; gutter: boolean;
-    fontLigatures: boolean; scrollBeyondLastLine: boolean; minimap: boolean }>;
+    fontLigatures: boolean; scrollBeyondLastLine: boolean; minimap: boolean; foldLabels: FoldLabels }>;
 export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; settings?: Partial<ViewportSettings> }>;
 export type ComparisonPresentation = Readonly<{
     foldContainsChange: (buffer: TextBuffer, firstHiddenLine: number, lineTo: number) => boolean;
@@ -161,26 +165,35 @@ export type ComparisonPresentation = Readonly<{
 }>;
 
 const defaultSettings: ViewportSettings = Object.freeze({ columnRulers: resolveColumnRulers(), highlightCurrentLine: false,
-    fontLigatures: false, scrollBeyondLastLine: false, minimap: false, gutter: true });
+    fontLigatures: false, scrollBeyondLastLine: false, minimap: false, gutter: true, foldLabels: Object.freeze({}) });
+const settingKeys = Object.keys(defaultSettings) as (keyof ViewportSettings)[];
 function viewportSettings(previous: ViewportSettings, changes?: Partial<ViewportSettings>): ViewportSettings {
     if (!changes) return previous;
-    const flag = (key: Exclude<keyof ViewportSettings, "columnRulers">) => {
+    const next = { ...previous };
+    for (const key of settingKeys) {
+        if (key === "columnRulers" || key === "foldLabels") continue;
         const value = changes[key];
-        if (value === undefined) return previous[key];
+        if (value === undefined) continue;
         if (typeof value !== "boolean") throw new TypeError(`${key} must be a boolean.`);
-        return value;
-    };
-    let columns = previous.columnRulers;
-    if (changes.columnRulers !== undefined && changes.columnRulers !== columns) {
-        const next = resolveColumnRulers(changes.columnRulers);
-        if (next.length !== columns.length || next.some((value, i) => value !== columns[i])) columns = next;
+        next[key] = value;
     }
-    const highlightCurrentLine = flag("highlightCurrentLine"), fontLigatures = flag("fontLigatures");
-    const scrollBeyondLastLine = flag("scrollBeyondLastLine"), minimap = flag("minimap"), gutter = flag("gutter");
-    if (columns === previous.columnRulers && highlightCurrentLine === previous.highlightCurrentLine
-        && fontLigatures === previous.fontLigatures && scrollBeyondLastLine === previous.scrollBeyondLastLine && minimap === previous.minimap
-        && gutter === previous.gutter) return previous;
-    return Object.freeze({ columnRulers: columns, highlightCurrentLine, fontLigatures, scrollBeyondLastLine, minimap, gutter });
+    if (changes.columnRulers !== undefined && changes.columnRulers !== previous.columnRulers) {
+        const columns = resolveColumnRulers(changes.columnRulers);
+        if (columns.length !== previous.columnRulers.length || columns.some((value, i) => value !== previous.columnRulers[i])) {
+            next.columnRulers = columns;
+        }
+    }
+    const labels = changes.foldLabels;
+    if (labels !== undefined && labels !== previous.foldLabels) {
+        if (!labels || typeof labels !== "object" || Array.isArray(labels)
+            || [labels.action, labels.summary].some(value => value !== undefined && typeof value !== "function")) {
+            throw new TypeError("Invalid fold labels.");
+        }
+        if (labels.action !== previous.foldLabels.action || labels.summary !== previous.foldLabels.summary) {
+            next.foldLabels = Object.freeze({ ...labels });
+        }
+    }
+    return settingKeys.every(key => next[key] === previous[key]) ? previous : Object.freeze(next);
 }
 
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
@@ -529,8 +542,10 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const fold = item.endsLine && index?.headerAt(item.line);
         if (fold && fold.collapsed) {
             const count = fold.lineTo - fold.lineFrom - 1;
-            const changes = comparison?.foldContainsChange(document.buffer, fold.lineFrom + 1, fold.lineTo) ? " · contains changes" : "";
-            parts.push({ text: "", className: "st-fold-summary", ornament: "fold", label: `… ${count} ${count === 1 ? "line" : "lines"} hidden${changes}` });
+            const changed = comparison?.foldContainsChange(document.buffer, fold.lineFrom + 1, fold.lineTo) ?? false;
+            const label = settings.foldLabels.summary?.(fold, changed)
+                ?? `… ${count} ${count === 1 ? "line" : "lines"} hidden${changed ? " · contains changes" : ""}`;
+            parts.push({ text: "", className: "st-fold-summary", ornament: "fold", label });
         }
         return renderRowChildren(element, selections.length && parts.length > 1 ? selectedTokenRuns(parts) : parts) || changed;
     };
@@ -640,17 +655,17 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         gutterWidth = document && settings.gutter ? Math.min(Math.floor(clientWidth / 3), Math.ceil(columnWidth * gutterDigits) + 26) : 0;
         width = clientWidth - mapWidth - gutterWidth;
         if (!document) {
-            lineNumbers.clear(); numbers.replaceChildren();
-            dirtyRows.clear(); visibleItems = [];
-            minimap?.dispose(); minimap = undefined;
-            rulers.clear();
-            clearCurrentLine();
-            painted = undefined; commandGeometry = undefined;
-            layer.replaceChildren(); rows.clear(); rowSources.clear(); rowSourceRevision = null; geometries.clear(); measuredWidth = 0; measuredRevision = null; spacerWidth = 0; spacer.style.width = "0px"; spacer.style.height = "0px";
+            clearPresentation();
+            measuredWidth = 0;
+            measuredRevision = null;
+            spacerWidth = 0;
+            spacer.style.width = "0px";
+            spacer.style.height = "0px";
             root.setAttribute("aria-disabled", "true");
-            previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0;
-            renderedIndex = emptyIndex; renderedFoldGeneration = -1; renderedAlignmentId = null; comparisonRows = undefined; paddingRows.clear(); foldButtons.clear(); foldLayer.replaceChildren();
-            publishGeometry(emptyViewport); return;
+            firstLine = 0;
+            lastLine = 0;
+            publishGeometry(emptyViewport);
+            return;
         }
         const folds = currentFolds();
         if (comparisonRows && !comparisonRows.index.matches(document.buffer, folds.index)) {
@@ -845,7 +860,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             const action = region.collapsed ? "Expand" : "Collapse";
             const first = region.lineFrom + 2;
             const body = region.group === "imports" ? "imports" : first === region.lineTo ? `line ${first}` : `lines ${first}–${region.lineTo}`;
-            const label = `${action} ${body}`;
+            const label = settings.foldLabels.action?.(region) ?? `${action} ${body}`;
             button.setAttribute("aria-label", label); button.title = label; button.setAttribute("aria-expanded", String(!region.collapsed));
             // Replacing even identical text during a pointer press cancels WebKit's native click.
             const arrow = region.collapsed ? "▸" : "▾"; if (button.textContent !== arrow) button.textContent = arrow;
@@ -1044,10 +1059,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 else { minimap?.dispose(); minimap = undefined; }
             }
             if (next.highlightCurrentLine !== previous.highlightCurrentLine) { clearPreparedRows(); commandGeometry = undefined; }
-            if (next.fontLigatures !== previous.fontLigatures) {
-                root.style.fontVariantLigatures = next.fontLigatures ? "normal" : "none";
-                invalidate();
-            } else schedule();
+            if (next.fontLigatures !== previous.fontLigatures) root.style.fontVariantLigatures = next.fontLigatures ? "normal" : "none";
+            if (next.fontLigatures !== previous.fontLigatures || next.foldLabels !== previous.foldLabels) invalidate();
+            else schedule();
             return true;
         },
         invalidate,
@@ -1155,20 +1169,57 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         dispose: () => {
             if (disposed) return; disposed = true; activitySnapshot = undefined; if (frame !== undefined) win.cancelAnimationFrame(frame); frame = undefined;
             releaseScrollbar(); pressedSummary = undefined;
-            decorations.dispose(); visibleItems = []; dirtyRows.clear();
+            decorations.dispose();
             inputOwner?.detach(); inputOwner = undefined;
-            rulers.clear(); clearCurrentLine(); settings = defaultSettings;
-            minimap?.dispose(); minimap = undefined;
-            observer.disconnect(); listeners.abort(); subscriptions.forEach(unsubscribe => unsubscribe()); rows.clear(); rowSources.clear(); rowSourceRevision = null; paddingRows.clear(); comparisonRows = undefined; renderedAlignmentId = null; geometries.clear(); previous = undefined; anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
-            painted = undefined; commandGeometry = undefined; commandRow.replaceChildren(); clearPreparedRows();
-            renderedIndex = emptyIndex; renderedFoldGeneration = -1; lineNumbers.clear(); numbers.replaceChildren(); foldButtons.clear(); foldLayer.replaceChildren();
-            renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0;
-            layer.replaceChildren(); root.replaceChildren(); root.remove();
+            settings = defaultSettings;
+            observer.disconnect();
+            listeners.abort();
+            subscriptions.forEach(unsubscribe => unsubscribe());
+            clearPresentation();
+            reveal = undefined;
+            horizontalAnchor = undefined;
+            fragmentPlacement = undefined;
+            commandRow.replaceChildren();
+            clearPreparedRows();
+            root.replaceChildren();
+            root.remove();
             publishGeometry(emptyViewport);
             for (const stop of observationStops) stop();
             if (!options.view) view.dispose();
         }
     });
+    function clearPresentation(): void {
+        minimap?.dispose();
+        minimap = undefined;
+        rulers.clear();
+        clearCurrentLine();
+        lineNumbers.clear();
+        numbers.replaceChildren();
+        foldButtons.clear();
+        foldLayer.replaceChildren();
+        layer.replaceChildren();
+        rows.clear();
+        rowSources.clear();
+        rowSourceRevision = null;
+        geometries.clear();
+        dirtyRows.clear();
+        visibleItems = [];
+        paddingRows.clear();
+        comparisonRows = undefined;
+        renderedAlignmentId = null;
+        renderedIndex = emptyIndex;
+        renderedFoldGeneration = -1;
+        renderedRevision = null;
+        renderedSelection = null;
+        renderedSelectionSet = null;
+        previous = undefined;
+        anchor = undefined;
+        commandGeometry = undefined;
+        painted = undefined;
+        partialRows = 0;
+        textUnits = 0;
+        readUnits = 0;
+    }
     const columnScroll = (column: number) => column < left || column > left + width ? Math.max(0, column - width / 2) : left;
     function withColumnRow<T>(line: number, column: number, work: (row: MeasuredRow) => T): T | undefined {
         if (disposed || !live()) return;

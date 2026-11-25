@@ -26,6 +26,43 @@ test.beforeEach(async ({ page }) => {
     await page.addStyleTag({ content: css });
 });
 
+test("fold labels describe the hidden imports and their changes in each review pane", async ({ page }) => {
+    const review = await page.evaluateHandle(async () => {
+        const path = "/presentation-fixture/";
+        const { Workspace, TextBuffer } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextComparison } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const id = workspace.createDocument({ scope: "review", resource: "source", variant: "working" }, "source", "first\nnew\nshared\nlast");
+        const host = document.body.appendChild(document.createElement("section"));
+        host.style.height = "400px";
+        const review = mountTextComparison(host, workspace, id, { version: "1", buffer: TextBuffer.from("first\nold\nshared\nlast") }, {
+            settings: { foldLabels: {
+                action: region => region.group === "imports" ? `${region.collapsed ? "Ouvrir" : "Fermer"} les imports` : undefined,
+                summary: (region, changed) => `Lignes ${region.lineFrom + 2} à ${region.lineTo}${changed ? " · modifiées" : ""}`,
+            } },
+        });
+        for (const { view } of Object.values(review.panes)) {
+            const fold = view.folding;
+            fold.setRanges(fold.getSnapshot(), [{ id: "imports", group: "imports", from: 0, to: 17, collapsed: true }]);
+        }
+        return review;
+    });
+    const panes = page.locator(".st-comparison-panes > section");
+    const reference = panes.first();
+    const working = panes.last();
+    await expect(reference.getByRole("textbox")).toHaveAttribute("readonly", "");
+    await expect(reference.locator(".st-fold-summary")).toHaveAttribute("data-label", "Lignes 2 à 3 · modifiées");
+    await expect(working.locator(".st-fold-summary")).toHaveAttribute("data-label", "Lignes 2 à 3 · modifiées");
+    const open = reference.getByRole("button", { name: "Ouvrir les imports" });
+    await expect(open).toHaveAttribute("title", "Ouvrir les imports");
+    await open.press("Space");
+    await expect(reference.getByRole("button", { name: "Fermer les imports" })).toHaveAttribute("aria-expanded", "true");
+    await review.evaluate(review => review.panes.working.configure({ foldLabels: {} }));
+    await expect(working.getByRole("button", { name: "Expand imports" })).toHaveAttribute("aria-expanded", "false");
+    await expect(working.locator(".st-fold-summary")).toHaveAttribute("data-label", "… 2 lines hidden · contains changes");
+    await review.evaluate(review => review.dispose());
+});
+
 test("definition lookup uses its attached scope and recovers from a refused mount", async ({ page }) => {
     const fixture = await page.evaluateHandle(async () => {
         const path = "/presentation-fixture/";
