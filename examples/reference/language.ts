@@ -88,14 +88,11 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
         });
     });
     command("command", request => {
-        const scope = provider.createScope();
-        try {
-            const names = scope.commandNames();
-            if (!names.length) result.value = "No advertised commands.";
-            for (const name of names) choices.append(button(name, async () => {
-                display(request, await language.commands.run(name), () => { result.value = "Command completed"; });
-            }));
-        } finally { scope.dispose(); }
+        const names = provider.commandNames();
+        if (!names.length) result.value = "No advertised commands.";
+        for (const name of names) choices.append(button(name, async () => {
+            display(request, await language.commands.run(name), () => { result.value = "Command completed"; });
+        }));
     });
     return () => {
         events.abort();

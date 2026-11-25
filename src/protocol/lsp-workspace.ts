@@ -293,6 +293,9 @@ export class LspWorkspace {
         // Workspace observers run inside commit delivery, where lease writes must be deferred.
         void Promise.resolve().then(() => { try { entry.lease.release(); } catch (error) { this.#report(error); } });
     }
+    commandNames(): readonly string[] {
+        return this.#session.commandNames();
+    }
     connect(): Promise<void> { this.#writable(); for (const entry of [...this.#documents.values()]) this.#synchronize(entry); return this.#session.connect(); }
     flush(): Promise<void> { this.#writable(); for (const entry of [...this.#documents.values()]) this.#synchronize(entry); return this.#session.flush(); }
     disconnect(): void { this.#writable(); this.#session.disconnect(); }
@@ -530,7 +533,7 @@ export class LspWorkspace {
             synchronized: capture,
             canRequest: (method, document) => scope.active && this.#bindingCurrent(handles.get(document)) && this.#session.canRequest(method, unwrap(document)),
             featureOptions: (method, document) => scope.active && this.#bindingCurrent(handles.get(document)) ? this.#session.featureOptions(method, unwrap(document)) : emptyList,
-            commandNames: () => scope.active ? this.#session.commandNames() : emptyList,
+            commandNames: () => scope.active ? this.commandNames() : emptyList,
             requestDocument: (method: Parameters<LspSession["requestDocument"]>[0], document: LspDocument, params: Parameters<LspSession["requestDocument"]>[2]) => {
                 writable(); const generation = scope.generation, entry = handles.get(document); if (!entry) throw staleRequest(); this.#synchronize(entry);
                 const raw = this.#session.requestDocument(method, unwrap(document), (index, snapshot, captured) =>

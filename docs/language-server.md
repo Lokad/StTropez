@@ -91,7 +91,8 @@ export function registerResourceContext(
 }
 ```
 
-Use `request`/`notify` to send custom messages and `onRequest`/`onNotification` to receive them.
+Send custom messages through a provider scope. `scope.request(method, params)` returns a call with
+`result` and `cancel()`. Use `scope.notify()` for one-way messages and `onRequest` or `onNotification` to receive them.
 Registrations survive reconnects. Pending calls expire. Use the removal function or dispose the
 scope to unregister. Lifecycle, synchronization and reserved methods cannot be overridden.
 
@@ -299,7 +300,9 @@ The provider retains the resource and checks its identity after loading. See [ta
 
 ### Commands and edit decisions
 
-The client advertises `workspace/executeCommand` by default. Set `applyEdit: true` to accept incoming edits.
+The client advertises `workspace/executeCommand` by default. `provider.commandNames()` lists
+static and dynamically registered server commands while connected and ready. Otherwise it returns an empty list.
+Set `applyEdit: true` to accept incoming edits.
 A session advertising incoming edits requires a `workspace/applyEdit` handler before connecting;
 the workspace owner routes each edit to the command that reserved the connection.
 Use `createLspCommandRunner(scope)` with captured project snapshots, `isCurrent`, optional preparation

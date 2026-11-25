@@ -11,11 +11,12 @@ import { latch } from "../helpers/latch.ts";
 
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
 type Packet = { id?: number; method?: string; params?: { id?: number; command?: string; arguments?: JsonValue[]; _fixture?: unknown } };
-function fixture({ url, defer }: ProtocolFixture) {
+function fixture({ url, defer }: ProtocolFixture, limits: { maxScopes?: number } = {}) {
     const workspace = new Workspace(), sent: Packet[] = [], transitions: string[] = [];
     defer(() => assert.equal(workspace.diagnostics().leases, 0));
     let intercept: ((deliver: () => void) => void) | undefined;
     const owner = new FixtureLspWorkspace(workspace, {
+        ...limits,
         connect: async () => {
             const transport = await openWebSocketTransport(url);
             return { dispose: () => transport.dispose(), send: message => { sent.push(JSON.parse(message)); transport.send(message); },
@@ -68,15 +69,17 @@ test("project expiry before registration prevents dispatch and expiry during reg
 }));
 
 test("fixture review registration serializes acknowledgements, bounds pending work and distinguishes queued from dispatched cancellation", { timeout: 15000 }, async () => withProtocolFixture(async context => {
-    const f = fixture(context), register = (registered: boolean) => f.first.request("fixture/reviewRegistration", { registered });
+    const f = fixture(context, { maxScopes: 2 });
+    const register = (registered: boolean) => f.first.request("fixture/reviewRegistration", { registered });
     await f.first.ensureConnected(); await f.second.ensureConnected();
+    assert.deepEqual(f.owner.commandNames(), ["fixture.status"]);
     const held = f.holdNext(), first = register(true), others = Array.from({ length: 63 }, () => f.second.request("fixture/reviewRegistration", { registered: true }));
     const results = Promise.allSettled([first, ...others].map(call => call.result));
     await Promise.race([held.entered, first.result.then(() => assert.fail("Registration completed before its held acknowledgement"))]);
     await assert.rejects(register(true).result, error => error instanceof RpcError && error.code === -32000);
     assert.deepEqual(f.transitions, ["client/registerCapability"]); held.release();
     for (const result of await results) { assert.equal(result.status, "fulfilled"); if (result.status === "fulfilled") assert.deepEqual(result.value, { registered: true }); }
-    assert.ok(f.first.commandNames().includes("fixture.review"));
+    assert.deepEqual(f.owner.commandNames(), ["fixture.status", "fixture.review"]);
 
     // Cancellation after dispatch cannot release the transition before its acknowledgement.
     const withdrawing = f.holdNext(), withdraw = register(false), withdrew = assert.rejects(withdraw.result, cancelled);
@@ -93,7 +96,8 @@ test("fixture review registration serializes acknowledgements, bounds pending wo
     await assert.rejects(f.first.request("fixture/reviewRegistration", { registered: false, _fixture: { delay: 0, fault: "failure" } }).result,
         error => error instanceof RpcError && error.code === -32001);
     assert.ok(f.first.commandNames().includes("fixture.review"));
-    assert.deepEqual(await register(false).result, { registered: false }); assert.equal(f.first.commandNames().includes("fixture.review"), false);
+    assert.deepEqual(await register(false).result, { registered: false });
+    assert.deepEqual(f.owner.commandNames(), ["fixture.status"]);
     for (const params of [{}, { registered: 1 }, { registered: true, _fixture: { delay: -1 } }]) await assert.rejects(
         f.first.request("fixture/reviewRegistration", params).result, error => error instanceof RpcError && error.code === -32602);
 }));

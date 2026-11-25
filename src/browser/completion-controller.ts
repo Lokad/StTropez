@@ -6,7 +6,6 @@ import { isIndex, isPositiveInteger } from "../core/bounds.ts";
 import { completionMethod } from "../protocol/lsp-methods.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { completionClient, type LspCompletionBatch, type LspCompletionResolution } from "../protocol/lsp-completion.ts";
-import { beginReadRequest } from "../protocol/lsp-workspace.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { isStaleRequest, ProtocolDecodeError, RpcError, rpcCodes, staleRequest } from "../protocol/wire.ts";
 import { lspCompletionPlan } from "../protocol/lsp-features.ts";
@@ -23,7 +22,7 @@ import type { TextEditor } from "./text-editor.ts";
 import { editorInput } from "./editor-input.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
 import { sameEditAuthority } from "./captured-view.ts";
-import type { LspCall, LspCompletion, LspCompletions, LspCompletionFallback, LspScopeAccess, LspWorkspace, LspWorkspaceSnapshot, JsonValue } from "../protocol/index.ts";
+import type { LspCall, LspCompletion, LspCompletions, LspCompletionFallback, LspScopeAccess, LspWorkspace, LspWorkspaceSnapshot } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 
@@ -51,7 +50,7 @@ export type CompletionControllerOptions = Readonly<{ autoConnect?: boolean; auto
     getPageSize?: () => number;
     prepareCompletion?: (scope: LspScopeAccess) => Promise<unknown>; onError?: (error: unknown) => void }>;
 export type CompletionController = Observable<CompletionSnapshot> & Readonly<{ request: () => Promise<Outcome<CompletionSnapshot>>; cancel: () => void; connect: () => void;
-    customRequest: (method: string, params: JsonValue) => Promise<JsonValue>; dispose: () => void;
+    dispose: () => void;
     getDiagnostics: () => Readonly<{ posted: number; received: number; applied: number; stale: number; cancelled: number; invalid: number; failed: number; resolved: number;
         lastCompletionBeforeInputMs: number; lastCompletionCommandMs: number;
         connected: boolean; pending: boolean; offer: boolean; transport: "lsp3.17"; protocol: ReturnType<LspWorkspace["snapshot"]>["protocol"] }> }>;
@@ -74,16 +73,11 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     const listeners = new AbortController();
     const listen = listenUntil(listeners.signal);
     const { scope, binding, provider } = ownerConnection;
-    const custom = scope[beginReadRequest](() => {}, () => [binding]);
     const currentDocument = () => workspace.document(documentId);
     const currentView = view.getSnapshot;
     const currentFolding = view.folding.getSnapshot;
     const connectionPhase = () => scope.getSnapshot().phase;
     const completion = completionClient(ownerConnection);
-    function releaseConnection() {
-        custom.dispose();
-        completion.dispose();
-    }
     const counters = { posted: 0, applied: 0, stale: 0, cancelled: 0, invalid: 0, failed: 0, resolved: 0,
         lastCompletionBeforeInputMs: 0, lastCompletionCommandMs: 0 };
     let job: Job | undefined, disposed = false, connecting: Promise<void> | undefined, inputIntent: AutomaticInput | undefined, prefixEdit: PrefixEdit | undefined, autoFrame: number | undefined, autoTurns = 0, applying = false;
@@ -430,7 +424,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             snippet = applied ? { ...captured, stops: plan.stops, revision: currentDocument().revision } : undefined;
             publish(applied ? "Snippet placeholder edited." : "Snippet edit rejected.");
         } };
-    }); } catch (error) { releaseConnection(); throw error; }
+    }); } catch (error) { completion.dispose(); throw error; }
     const triggers = () => new Set(scope.featureOptions(completionMethod, binding).flatMap(option => Array.isArray(option.triggerCharacters)
         ? option.triggerCharacters.filter((value): value is string => typeof value === "string" && value.length > 0 && value.length <= 8).slice(0, 64) : []));
     const scheduleAuto = () => {
@@ -583,7 +577,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         for (const registration of registrations) registration.dispose();
         list?.dispose();
         stopTransform(); cancelAuto(); for (const stop of stops) stop();
-        listeners.abort(); release(); releaseConnection();
+        listeners.abort(); release(); completion.dispose();
         publish("Completion controller disposed.");
         cell.clearSnapshotListeners();
     };
@@ -613,7 +607,6 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     if (options.autoConnect !== false) connect();
     return Object.freeze({ ...controllerObservable(cell, "Completion", () => disposed, notifications), request: () => request(),
         cancel: () => { notifications.assertWritable(); if (!disposed) cancel(); }, connect: () => { notifications.assertWritable(); connect(); },
-        customRequest: (method, params) => { notifications.assertWritable(); return custom.request(method, params).result; },
         getDiagnostics: () => Object.freeze({ ...counters, received: completion.snapshot().received, connected: connectionPhase() === "ready", pending: cell.get().pending, offer: !!job?.visible.length, transport: "lsp3.17", protocol: scope.snapshotOwnership() }),
         dispose });
 }

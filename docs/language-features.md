@@ -490,7 +490,8 @@ A later failure leaves earlier edits undoable. The result uses the same outcomes
 `canRunCommand` lets the host defer execution while busy. A `command-unavailable` refusal keeps
 the preview open.
 
-Use `commands.run(name, args)` for an advertised command. Its snapshot lists files changed even
+Build a command menu from `provider.commandNames()` and run the user's choice with
+`commands.run(name, args)`. The controller's snapshot lists files changed even
 if the acknowledgement is lost. A command that makes no edits preserves any open action preview.
 After cancellation, check `provider.getSnapshot().commandRequiresReconnect` before retrying.
 

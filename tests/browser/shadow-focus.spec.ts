@@ -172,7 +172,14 @@ test("nested shadow focus supports occurrences, automatic completion, deferred a
     const input = await mount(page, true);
     try {
         await expect.poll(async () => (await completion(page)).connected).toBe(true);
-        await page.evaluate(() => window.shadowFocus.completion!.customRequest("fixture/completionStyle", { style: "interactive" }));
+        await page.evaluate(async () => {
+            const scope = window.shadowFocus.provider!.createScope();
+            try {
+                await scope.request("fixture/completionStyle", { style: "interactive" }).result;
+            } finally {
+                scope.dispose();
+            }
+        });
         await input.focus(); await page.evaluate(() => window.shadowFocus.editor.view.setSelection(0, { anchor: 1, head: 1 }));
         await expect.poll(() => page.evaluate(() => window.shadowFocus.highlights!.getSnapshot().items.length)).toBe(2);
         expect(await page.evaluate(() => document.activeElement === window.shadowFocus.editor.element.querySelector("textarea")!)).toBe(false);

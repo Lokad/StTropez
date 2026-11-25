@@ -13,7 +13,7 @@ import { createNavigationHost } from "../../../examples/shared/language-host.ts"
 import { hostLspFactories } from "../protocol/editor-provider.ts";
 import type { NavigationFault } from "../language/navigation.ts";
 import { fixtureRequests } from "../language/fixture-requests.ts";
-import type { LspWorkspace } from "../../../src/protocol/index.ts";
+import type { LspWorkspace, LspWorkspaceScope } from "../../../src/protocol/index.ts";
 import { HostHoverTools } from "./hover.ts";
 import { HostTablePaste } from "../../../examples/shared/table-paste.ts";
 import { HostDomainTools } from "./domain.ts";
@@ -39,6 +39,7 @@ export class ViewBindings {
     private readonly stopDocumentCleanup: () => void;
     private readonly mounted = new Map<string, { editor: TextEditor; documentId: DocumentId; dispose: () => void }>();
     private readonly lspOwner: LspWorkspace | undefined;
+    readonly projectScope: LspWorkspaceScope;
     private readonly states = new Map<string, Map<DocumentId, ViewState>>();
     private readonly selections = new Map<string, Map<DocumentId, DocumentView>>();
     private mounts = 0;
@@ -222,6 +223,9 @@ export class ViewBindings {
         };
         const lsp = hostLspFactories(controller.workspace, this.renameRequests.take);
         this.lspOwner = lsp.owner;
+        // Project documents and fixture commands outlive individual panes.
+        this.projectScope = lsp.owner.createScope();
+        this.projectScope.setDocuments(controller.workspace.getSnapshot().documents.filter(doc => doc.language !== null));
         const reconnectProvider = () => { void lsp.owner.reconnect().catch(controller.reportError); };
         this.language = new HostLanguageTools(controller.workspace, { canCapture, providerFactory: lsp.provider });
         this.hover = new HostHoverTools(kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, { ...lsp.hover, canCapture });

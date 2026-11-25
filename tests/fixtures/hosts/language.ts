@@ -6,7 +6,6 @@ import type { TextEditor, FindController, FindSnapshot } from "../../../src/brow
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../../src/index.ts";
 import type { LspProviderController, LspProviderFactory } from "../language/lsp-provider-controller.ts";
 import { completionPageSize } from "../../../examples/shared/language/completion-list.ts";
-import type { JsonValue } from "../../../src/protocol/index.ts";
 import { EditingPresentation } from "../language/presentation.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 
@@ -305,9 +304,6 @@ export class HostLanguageTools {
         }
         session.editor.viewport.revealOffset(session.editor.view.getSnapshot().selection.head, { horizontal: "nearest", vertical: "nearest" }); session.editor.focus();
         this.cell.set({ ...this.cell.get(), foldMessage: "All folds expanded." });
-    }
-    customRequest(method: string, params: JsonValue): Promise<JsonValue> {
-        const provider = this.active?.provider; if (!provider) return Promise.reject(new Error("No active language provider.")); return provider.customRequest(method, params);
     }
     setDelay(value: number): void { this.active?.provider?.setDelay(value); }
     faultNext(value: "malformed" | "failure"): void { this.active?.provider?.faultNext(value); }

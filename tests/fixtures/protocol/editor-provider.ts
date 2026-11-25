@@ -21,8 +21,6 @@ export function hostLspFactories(owner: Workspace, takeRenamePolicy: () => Fixtu
     const connection = new FixtureLspWorkspace(owner, { connect: signal => openWebSocketTransport(url.href, { signal }),
         initializationOptions: { fixtureDynamicLanguage: new URLSearchParams(location.search).get("lspSubset") === "dynamic" },
         workspaceEdits: true, applyEdit: true });
-    // These initial working resources belong to the host's open project, including unmounted targets.
-    connection.createScope().setDocuments(owner.getSnapshot().documents.filter(document => document.language !== null));
     return Object.freeze({
         owner: connection,
         signature: { provider: connection, prepare: policy => session => connection.prepareRequest(session, "textDocument/signatureHelp", policy) },

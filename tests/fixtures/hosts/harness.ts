@@ -73,7 +73,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         setTransferReadOnly: (value: boolean) => { if (!transferTarget) throw new Error("No transfer target is mounted.");
             controller.workspace.setCapabilities(transferTarget.id, { edit: value ? ["host"] : ["human", "host"], save: true }); },
         setProviderDelay: (delay: number) => bindings.language.setDelay(delay), faultProviderNext: (fault: "malformed" | "failure") => bindings.language.faultNext(fault),
-        providerCustom: (method: string, params: JsonValue) => bindings.language.customRequest(method, params),
+        providerCustom: (method: string, params: JsonValue) => bindings.projectScope.request(method, params).result,
         providerState: () => bindings.language.state.getSnapshot().provider,
         requestProvider: bindings.language.request,
         setDomainDelay: (delay: number) => { if (!Number.isFinite(delay) || delay < 0 || delay > 10000) throw new RangeError("Invalid domain delay."); bindings.domain.fixture.delay = delay; },
