@@ -87,11 +87,12 @@ for (const [key, id] of [["Backspace", "delete-word-backward"], ["Delete", "dele
 }
 
 export const editorCommandLabels: ReadonlyMap<TextEditorCommand, string> = labels;
-const standard = Object.freeze(common.map(row => Object.freeze(row)));
+const appleShortcuts = [...common, ...apple];
+for (const row of appleShortcuts) Object.freeze(row);
 /** Complete base-editor bindings. Feature controllers register their own shortcuts on attachment. */
 export const defaultEditorShortcuts = Object.freeze({
-    standard,
-    apple: Object.freeze([...standard, ...apple.map(row => Object.freeze(row))]),
+    standard: Object.freeze(common),
+    apple: Object.freeze(appleShortcuts),
 });
 export function editCommand(id: string): id is EditingCommand { return Object.hasOwn(edits, id); }
 export function editorKeyCommand(id: string, key: string): KeyBinding | undefined {
