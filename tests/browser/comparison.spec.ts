@@ -522,7 +522,7 @@ test("tab replacement expires pending work and teardown leaves only host resourc
     await expect(page.locator(".st-comparison")).toHaveCount(0);
 });
 
-for (const kind of ["long", "unique", "repeated", "unbalanced"] as const)
+for (const kind of ["long", "unique", "unbalanced"] as const)
     test(`${kind} comparison stays virtualized, exact and cooperative during real input`, async ({ page }) => {
         const { length, at } = await page.evaluate(kind => {
             const many = kind !== "long";

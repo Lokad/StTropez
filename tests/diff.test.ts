@@ -57,6 +57,16 @@ test("imbalanced repeated-row alignment remains minimal with one shared token an
     }
 });
 
+test("separated replacements among repeated rows keep their hunks after a trailing edit", () => {
+    const baseline = Array.from({ length: 10_000 }, (_, i) => `row ${i % 20}\n`).join("");
+    const working = baseline.replace(/^row (0|10)$/gm, "changed $1");
+    const original = TextBuffer.from(baseline);
+    const edited = TextBuffer.from(working);
+    const appended = edited.replace(edited.length, edited.length, "x");
+    assert.equal(diff(baseline, working, [original, edited]).hunks.length, 1_000);
+    assert.equal(diff(baseline, working + "x", [original, appended]).hunks.length, 1_001);
+});
+
 test("large repeated-row removal and scattered changes complete in bounded work and reconstruct both variants", () => {
     const line = "const sample = 123;\r\n", original = "old\n" + line.repeat(10_000) + "tail\n", baseline = TextBuffer.from(original);
     const removed = baseline.apply([{ from: 0, to: 3, insert: "new" }, { from: 4 + 50 * line.length, to: 4 + 2_400 * line.length, insert: "changed" },
