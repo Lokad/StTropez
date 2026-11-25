@@ -312,9 +312,8 @@ Set `settings.pasteLineEndings` to `"preserve"` to insert clipboard text verbati
 An empty or nontext payload leaves selections and pending commands
 alone.
 
-Read clipboard formats during dispatch. The editor releases the clipboard objects when the event ends.
-To convert a paste yourself, intercept the event during capture on `editor.element`, call `preventDefault()`
-and [insert at the captured selections](host-integration.md#captured-insertion-and-structured-paste).
+For custom paste, use `editor.registerPasteHandler()`. Read the clipboard during dispatch, then
+apply the converted text at the [captured selections](host-integration.md#captured-insertion-and-structured-paste).
 
 Dragging painted selected text captures source fragments, the whole selection set, revision
 and tab/view identity. Editable sources in the same workspace move by default; Control

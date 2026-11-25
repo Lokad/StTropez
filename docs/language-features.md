@@ -1,34 +1,40 @@
 # Language features
 
-A completion list, hover or rename result belongs to the revision that produced it. Attach the browser
-controllers for completion, diagnostics and occurrence highlights. For other results, your host draws the UI, opens
-files and decides which edits to apply. [Connect a provider](language-server.md)
+Attach a language provider to an editor to show suggestions, inspect symbols and review changes
+at the caret. StTropez supplies optional controls for these tasks. The host opens files and
+decides which server commands may run. [Connect a provider](language-server.md)
 
 ## Use
 
-Set the document's language ID and URI before calling `attachEditorLanguage`. A plain-text pane
-can use the editor and navigation history on their own. Pass an options object for each language feature you need.
-Panels attached to the same editor and provider share one scope and document binding. The last
-attachment to close releases both. Hover uses diagnostics from its attachment unless you supply
-another source.
+Set the document’s language ID and URI, then attach the features its provider supports.
+This example enables the editor controls and paints pushed diagnostics.
 
 ```ts
 import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
 import type { LspWorkspace } from "sttropez/protocol";
 
 export function attachLanguage(editor: TextEditor, provider: LspWorkspace) {
-    const language = attachEditorLanguage(editor, provider, { completion: { list: true }, diagnostics: {}, hover: {} });
-    return { requestCompletion: language.completion.request, dispose: language.dispose };
+    return attachEditorLanguage(editor, provider, {
+        completion: { list: true },
+        diagnostics: {},
+        hover: { popup: true },
+        signature: { popup: true },
+        rename: { popup: true },
+        codeActions: { popup: true },
+        colors: { picker: true },
+    });
 }
 ```
 
-Each feature cancels its own requests. Disposing the attachment or the editor cancels pending work
-and releases the binding. Other mounted views keep their requests.
+Call `dispose()` when detaching these features. Editor disposal also cancels their requests.
+Attachments on the same editor and provider share a document binding and scope until the last
+attachment closes. Each pane owns its requests. Hover includes diagnostics from the same
+attachment unless you supply another source.
 
-Connect before or after mounting a feature. The client advertises every supported request method by default.
-Use `features` to restrict methods,
-`diagnostics: false` to disable pushed diagnostics and `workspaceEdits` to enable edit support. Incoming edits and command execution have their own
-[connection policy](language-server.md#commands-and-edit-decisions).
+The provider can connect before or after attachment. Its default configuration advertises every
+supported request method. Restrict that set with `features`, disable pushed diagnostics with
+`diagnostics: false` or enable workspace edits with `workspaceEdits: true`.
+[Incoming edits and command approval](language-server.md#commands-and-edit-decisions)
 
 | Feature | Attachment option or folding client | LSP method |
 | --- | --- | --- |
@@ -48,28 +54,6 @@ Use `features` to restrict methods,
 The [provider scope](language-server.md#workspace-ownership-and-synchronization) synchronizes
 documents. When the host sends custom messages that return diagnostics in LSP format, use
 `decodeLspDiagnostics` from `sttropez/kernels` to validate the reply.
-
-Set `completion.list` to `true` for a caret-anchored list with keyboard and pointer selection.
-Pass `{ label, status, omitted, loadingDetail }` to translate its text. Style it with
-`--st-completion-background` and `--st-completion-selected`. Disposing the attachment removes the list.
-
-For custom controls, omit `list`. Keep each completion choice with the row that displays it.
-Its actions expire when another list replaces it.
-
-```ts
-import type { CompletionController } from "sttropez/browser";
-
-export function completionActions(language: CompletionController) {
-    const state = language.getSnapshot();
-    return state.choices.map((label, index) => {
-        const item = state.completionAt(index)!;
-        return { label, select: item.select, accept: () => item.accept("replace") };
-    });
-}
-```
-
-Render labels as text. Read the snapshot on change and unsubscribe on detach.
-[Attachment and teardown](language-server.md#use)
 
 ## Contract
 
@@ -127,12 +111,13 @@ pages the list, checks help links and opens related locations.
 
 ### Completion
 
-Enable `completion: {}` on the attachment. The editor handles typing, keyboard navigation and
-insertion. The host draws the list. Subscribe to `language.completion` and use its snapshot's
-`anchor` to position the list. The anchor is null when there are no suggestions.
+Use `completion: { list: true }` for a caret-anchored list with keyboard and pointer selection.
+To translate it, pass `{ label, status, omitted, loadingDetail }` as `list`. Set
+`--st-completion-background` and `--st-completion-selected` to style it.
 
-Build each visible row from the snapshot that supplied its label. Keep focus in the editor when
-the user presses a suggestion. Moving focus to the button dismisses the list before the click.
+For a custom list, use `completion: {}` and subscribe to the controller. Position the list at
+the snapshot’s `anchor` and hide it when the anchor is null. Bind each row to its captured item.
+Keep focus in the editor on pointer down so the row can accept the click.
 
 ```ts
 import type { CompletionSnapshot } from "sttropez/browser";
@@ -149,8 +134,8 @@ export function completionButton(list: CompletionSnapshot, index: number) {
 }
 ```
 
-Keep the buttons while the `choices` array is the same. Move the highlight to `choiceIndex`
-when the user presses an arrow key. Rebuild rows when the list changes. A button bound to
+Call `item.select()` to highlight a row. Keep the buttons while the `choices` array is the same.
+Move the highlight to `choiceIndex` on arrow keys and rebuild the rows when the list changes. A button bound to
 an expired item returns `false` from `accept`. When an incomplete list refreshes, its visible
 choices remain usable until the replacement arrives.
 
@@ -313,10 +298,6 @@ On a provider retrigger, signature help preserves the selected overload for the 
 and provider registration. Starting an explicit request or cancelling clears it.
 
 Render signature and parameter content with the [documentation view](#hover-and-documentation).
-
-In the examples, Up and Down cycle through overloads while signature help is visible. An open
-completion list takes those keys first. Escape dismisses one visible popup per press and keeps
-the caret in the editor.
 
 ### Navigation and target loading
 
@@ -643,8 +624,8 @@ Most features rely on the
 
 ## Host responsibilities
 
-Choose shortcuts, popup placement, Return behavior and allowed links. Page long lists so the user can
-reach every result. Release controls, clients and subscriptions on detach.
+For custom controls, position the popup, bind actions to the displayed choices and unsubscribe
+on detach. Choose which links and server commands the application can open or run.
 
 Keep Save independent of editing and report any earlier edits if a later command fails.
 When your host holds an approval dialog open, bind it to the captured preview and close it on cancellation.

@@ -48,11 +48,14 @@ The playground runs TypeScript in a browser worker, both locally and on GitHub P
 
 In either development host, edit **Primary source** and undo from **Secondary source**. Each pane keeps its selection. Edit again, then use **Toggle views** twice to detach and remount the editors.
 
-For a conflict, edit the source, choose **Simulate external source change**, save, then choose **Finish save**. Select **Review remote source** and **Finish remote review** to compare. Use **Save reviewed source** to keep your edits.
+For a conflict, edit the source, choose **Simulate external source change**, save, then choose **Finish save**.
+Select **Review remote source** and **Finish remote review** to compare. To keep your edits, choose
+**Save reviewed source**, then **Finish save** again.
 
 ### Draft checkpoints
 
-Choose **Keep recovery draft**, reload, then **Restore source draft**. The host also offers separate restores for the configuration and transfer form.
+Make an unsaved edit, choose **Keep recovery draft** and reload. Choose **Restore source draft**,
+then **Confirm draft action**. The configuration and transfer form have separate restore actions.
 
 ### Table conversion
 

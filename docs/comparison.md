@@ -262,8 +262,8 @@ bindings and pending chord. Refreshing the baseline cancels any unfinished chord
 ```ts
 import type { TextComparison, TextEditor } from "sttropez/browser";
 
-export function bindReviewNote(review: TextComparison, addNote: (pane: TextEditor) => void) {
-    return review.commands.register({
+export function bindReviewNote(comparison: TextComparison, addNote: (pane: TextEditor) => void) {
+    return comparison.commands.register({
         id: "review.note", label: "Add note", category: "Review", run: (_, pane) => addNote(pane)
     }, { keys: ["Mod+k Mod+j"] });
 }
