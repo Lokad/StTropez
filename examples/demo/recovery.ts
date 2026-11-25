@@ -50,6 +50,14 @@ function matches(capture: Capture, draft: Draft): boolean {
     return capture.every(item => matchesFile(item, draft));
 }
 
+function sameFiles(current: Capture, previous: Capture | undefined): boolean {
+    return previous !== undefined && current.length === previous.length && current.every((item, index) => {
+        const prior = previous[index]!;
+        return item.document.id === prior.document.id && item.document.buffer === prior.document.buffer
+            && item.metadata.dirty === prior.metadata.dirty && item.metadata.serverVersion === prior.metadata.serverVersion;
+    });
+}
+
 /** Multi-file demo policy. Reuses the fixture's CAS store; no alternate document/history engine. */
 export class DemoRecovery {
     private readonly workspace: Workspace;
@@ -92,9 +100,7 @@ export class DemoRecovery {
     }
     filesChanged(): void {
         const next = this.capture();
-        if (next.length === this.observed.length && next.every((item, index) => item.document.id === this.observed[index]!.document.id
-            && item.document.buffer === this.observed[index]!.document.buffer && item.metadata.dirty === this.observed[index]!.metadata.dirty
-            && item.metadata.serverVersion === this.observed[index]!.metadata.serverVersion)) return;
+        if (sameFiles(next, this.observed)) return;
         this.observed = next; this.generation++; this.schedule();
     }
     private capture(): Capture {
@@ -136,11 +142,16 @@ export class DemoRecovery {
     private schedule(): void {
         this.cancelTimer();
         if (this.disposed || !this.loaded || this.running || this.cell.get().status === "failed") return;
-        if (this.offer && !this.dirty() && !this.offer.working && this.targetsCurrent(this.offer.capture)) return;
-        if (!this.dirty() && this.token === null) return;
-        if (this.checkpointed && this.observed.length === this.checkpointed.length && this.observed.every((item, index) => item.document.id === this.checkpointed![index]!.document.id && item.document.buffer === this.checkpointed![index]!.document.buffer
-            && item.metadata.dirty === this.checkpointed![index]!.metadata.dirty && item.metadata.serverVersion === this.checkpointed![index]!.metadata.serverVersion)) {
-            if (this.offer) { this.offer = { ...this.offer, capture: this.observed }; this.publish("offer", this.offerMessage()); }
+        const dirty = this.dirty();
+        if (this.offer && !dirty && !this.offer.working && this.targetsCurrent(this.offer.capture)) return;
+        if ((!dirty && this.token === null) || sameFiles(this.observed, this.checkpointed)) {
+            if (this.offer) {
+                this.offer = { ...this.offer, capture: this.observed };
+                this.publish("offer", this.offerMessage());
+            } else if (this.cell.get().status === "pending") {
+                if (this.token === null) this.publish("idle", "No local recovery draft.");
+                else this.publish("protected", "Recovery draft captured in this browser.");
+            }
             return;
         }
         this.publish("pending", this.offer?.restoreInterrupted ? this.offerMessage()

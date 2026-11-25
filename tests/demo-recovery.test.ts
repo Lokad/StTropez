@@ -216,10 +216,22 @@ test("unsupported recovery data remains stored and cannot mutate current files",
     assert.equal(store.row, row); assert.deepEqual(f.text(), ["original a.ts", "original b.ts"]);
 });
 
-test("automatic recovery exports text after the edit notification and clears its own saved draft", { timeout: 5000 }, async t => {
+test("automatic recovery settles after Undo, reuses a protected draft and clears it on Save", { timeout: 5000 }, async t => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const store = new MemoryDraftStore(); store.row = null;
     const f = fixture(store); t.after(() => f.recovery.dispose()); await ready(f.recovery);
+    const undo = () => {
+        const document = f.workspace.document(f.files[0]!.resource.documentId);
+        assert.equal(f.workspace.undo({ documentId: document.id, expectedRevision: document.revision }).applied, true);
+    };
+    f.edit();
+    undo();
+    t.mock.timers.tick(300);
+    await setImmediate();
+    assert.equal(f.recovery.state.getSnapshot().status, "idle");
+    assert.equal(store.writes, 0);
+    assert.equal(store.row, null);
+
     f.edit();
     assert.equal(bufferReads(f.workspace.document(f.files[0]!.resource.documentId).buffer).textExports, 0);
     const protectedDraft = new Promise<void>(resolve => {
@@ -227,6 +239,14 @@ test("automatic recovery exports text after the edit notification and clears its
     });
     t.mock.timers.runAll(); await protectedDraft;
     assert.match(JSON.stringify(store.row), /newer original a.ts/);
+    assert.equal(store.writes, 1);
+    const draft = store.row;
+    f.edit();
+    undo();
+    t.mock.timers.tick(300);
+    await setImmediate();
+    assert.equal(f.recovery.state.getSnapshot().status, "protected");
+    assert.equal(store.row, draft);
     assert.equal(store.writes, 1);
     // Notices for other sample slots must not trigger repeated writes of unchanged dirty files.
     // Finish any queued read before advancing its timer, then settle promise-based writes.
