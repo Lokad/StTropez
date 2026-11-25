@@ -23,22 +23,22 @@ flowchart TD
     Protocol --> Core
 ```
 
-Suppose a user requests analysis, then edits the file before the reply arrives. Capture the view
-and its revision when the request starts. The caller can dismiss the request immediately or use
-`isCurrent()` to check a result it has kept on screen.
+A host can keep a document view when it closes a pane. Tie analysis to the mount that
+requested it so a reply from the old pane expires even if the same view reopens.
 
 ```ts
-import type { DocumentView, TabId, TextBuffer, Workspace } from "sttropez";
-import { captureViewRequest } from "sttropez/browser";
+import type { TextBuffer } from "sttropez";
+import { captureViewRequest, type TextEditor } from "sttropez/browser";
 
 export function startAnalysis(
-    workspace: Workspace,
-    tabId: TabId,
-    view: DocumentView,
+    editor: TextEditor,
     analyze: (buffer: TextBuffer, signal: AbortSignal) => Promise<string>
 ) {
-    const capture = captureViewRequest(workspace, workspace.tabs.capture(tabId), view);
+    const capture = captureViewRequest(editor.workspace, editor.tab, editor.view, {
+        available: () => !editor.signal.aborted
+    });
     if (!capture) return;
+    editor.signal.addEventListener("abort", capture.cancel, { once: true, signal: capture.signal });
     const settled = (async () => {
         try {
             const value = await analyze(capture.document.buffer, capture.signal);
@@ -47,6 +47,7 @@ export function startAnalysis(
                 documentId: capture.document.id, revision: capture.document.revision, value
             });
         } catch (error) {
+            if (!capture.isCurrent()) return undefined;
             capture.cancel();
             throw error;
         }
@@ -55,9 +56,9 @@ export function startAnalysis(
 }
 ```
 
-The caller schedules the analysis, handles a rejected `settled` promise, and calls `dispose()`
-when it dismisses or replaces the result or closes the view. To change the text, submit a
-workspace transaction with the revision the analysis read. [Transactions](workspace.md#transactions-and-history) · [When a view capture expires](host-integration.md#captured-view-requests)
+Await `settled` and check `isCurrent()` before displaying or acting on the result. Closing the
+pane cancels its analysis. Call `dispose()` when the user dismisses or replaces it. To apply
+an edit, submit the revision the analysis read. [Transactions](workspace.md#transactions-and-history) · [When a view capture expires](host-integration.md#captured-view-requests)
 
 ## Contract
 

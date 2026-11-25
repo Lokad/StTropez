@@ -126,11 +126,13 @@ export function editingActions(editor: TextEditor) {
 
 ### Captured view requests
 
-Use `workspace.tabs.capture(tabId)` to get the target for
-`captureViewRequest(workspace, target, view, options?)`. The frozen handle retains the document,
-selection set and folding snapshot. It exposes `isCurrent()`, `signal`, `cancel()` and
-`commit(operation)`. Capture rejects foreign views, mismatched tabs and unavailable documents. It
-needs no full-text read.
+Pass `editor.workspace`, `editor.tab` and `editor.view` to `captureViewRequest`. A tab mount
+supplies its tab generation. A document mount supplies `undefined`. If the request belongs to
+a pane, cancel it when `editor.signal` aborts. A host-retained view can outlive that mount.
+[Analysis example](architecture.md#use)
+
+The capture retains the document, selection set and folding snapshot without reading the full text.
+It rejects foreign views, mismatched tabs and unavailable documents.
 
 For reads, omit `editOrigin`. This works in read-only views. For edits, supplying an origin requires
 the matching capability and an unlocked resource. The later transaction checks permission again. Use
