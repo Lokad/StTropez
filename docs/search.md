@@ -41,11 +41,12 @@ Pass the mounted editor to `createFindController`. Its lease keeps the document 
 original view after focus moves. When mounted by tab, closing or replacing that tab expires Find.
 
 Pass the backend and delay in `FindControllerOptions`. Change `FindFlags` with `setFlags(flags)`.
-Set `highlightMatches: false` for navigation with a closed Find bar. The controller builds the
-index and selects on request. It skips match decorations and query previews.
+Call `setHighlightMatches(false)` when closing a Find bar to remove the marks and dismiss its
+preview. Next and Previous use the same query, flags and index. Call `setHighlightMatches(true)`
+to show the marks again. Pass `highlightMatches: false` at construction for a bar that starts closed.
 `getSnapshot()` and `subscribe()` expose an immutable `FindSnapshot` with the query, flags,
 revision, status, count, scan frontier, source length, current match index, navigation wrap, match version and
-notice.
+notice. The snapshot’s `highlightMatches` flag reports whether Find can paint and preview matches.
 
 | Option or command | Behavior |
 | --- | --- |

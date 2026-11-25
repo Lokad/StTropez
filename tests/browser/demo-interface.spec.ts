@@ -650,6 +650,39 @@ async function holdRegexReply(page: Page, operation: "regex-matches" | "regex-ed
     };
 }
 
+test("closed Find repeats a finished regex and repaints it on reopen without another lookup", async ({ page, baseURL }) => {
+    const gate = await holdRegexReply(page);
+    await page.goto(browserDemo(baseURL!));
+    await gate.setHolding(false);
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const query = page.locator("#find-query"), marks = page.locator("#editor .st-search-match");
+    await source.press("Control+a");
+    await page.keyboard.insertText("// start red one red");
+    await source.press("Control+Home");
+    await source.press("Control+f");
+    await page.locator("#find-regex").click();
+    await query.fill("red");
+    await expect(marks).toHaveCount(2);
+    await expect(page.locator("#find-status")).toHaveText("1 of 2");
+    await query.press("Escape");
+    await gate.setHolding(true);
+    await source.press("F3");
+    await expect(page.locator("#find-status")).toHaveText("2 of 2");
+    await expect(query).toBeHidden();
+    await expect(marks).toHaveCount(0);
+    await source.press("Control+f");
+    await expect(marks).toHaveCount(2);
+    expect(await gate.waiting()).toBe(0);
+    await query.press("Escape");
+    await source.press("Control+End");
+    await page.keyboard.insertText("\n// red");
+    await source.press("F3");
+    await expect.poll(gate.waiting).toBe(1);
+    await gate.release();
+    await expect(page.locator("#find-status")).toContainText("of 3");
+    await expect(marks).toHaveCount(0);
+});
+
 test("Save during Replace all keeps the saved copy until the edit is ready and Save is retried", async ({ page, context, baseURL }) => {
     const gate = await holdRegexReply(page, "regex-edits");
     await page.goto(browserDemo(baseURL!));

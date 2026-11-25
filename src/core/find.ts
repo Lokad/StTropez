@@ -1,4 +1,3 @@
-import { LiteralSearch } from "./search.ts";
 import type { SearchMatch, SearchStep } from "./search.ts";
 import type { FindIndex } from "./find-index.ts";
 import type { TextEdit } from "./changes.ts";
@@ -35,26 +34,16 @@ export function createFindReplacementPlan(positions: FindIndex, total: number, r
     };
 }
 
-/** Controller-private backend: replacement captures the existing index, without rescanning
- * the document or retaining a second index. The controller owns all cursors and commits. */
-export function createLiteralFindBackend(index: () => FindIndex, maxUnits: number, maxMatches: number) {
-    return Object.freeze({
-        search: ({ buffer, query, wholeWord, matchCase }: FindQueryCapture) => {
-            const search = new LiteralSearch(buffer, query, { wholeWord, matchCase, lineEndings: "equivalent" });
-            return { next: () => search.next(maxUnits, maxMatches), dispose: () => search.dispose() };
+/** Literal replacement reuses the captured search index and releases it on disposal. */
+export function literalReplacement(index: FindIndex, replacement: string, range?: SearchMatch): FindPlanCursor {
+    let positions = range ? undefined : index, at = 0;
+    const count = range ? 1 : index.count;
+    return {
+        next() {
+            const edits: TextEdit[] = [], end = Math.min(count, at + planStepEdits);
+            for (; at < end; at++) edits.push({ ...(range ?? positions!.at(at)), insert: replacement });
+            return { done: at === count, edits };
         },
-        replace: (_capture: FindQueryCapture, replacement: string, range?: SearchMatch) => {
-            let positions = range ? undefined : index(), at = 0;
-            const count = range ? 1 : positions!.count;
-            return {
-                next: () => {
-                    const edits: TextEdit[] = [], end = Math.min(count, at + planStepEdits);
-                    for (; at < end; at++) edits.push({ ...(range ?? positions!.at(at)), insert: replacement });
-                    return { done: at === count, edits };
-                },
-                dispose: () => { positions = undefined; at = count; },
-            };
-        },
-        dispose: () => {},
-    });
+        dispose() { positions = undefined; at = count; },
+    };
 }

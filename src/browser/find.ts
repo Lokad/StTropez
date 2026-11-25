@@ -6,7 +6,7 @@ import type { DocumentSnapshot, DocumentView, EditResult, TabTarget, Workspace }
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { FindIndex } from "../core/find-index.ts";
 import { LiteralFindRepair } from "./find-index.ts";
-import { createLiteralFindBackend, createFindReplacementPlan } from "../core/find.ts";
+import { createFindReplacementPlan, literalReplacement } from "../core/find.ts";
 import type { FindBackend, FindQueryCapture, FindSearchCursor, FindPlanCursor, FindPlanStep } from "../core/find.ts";
 import type { Observable } from "../core/observable.ts";
 import type { SearchMatch, SearchStep } from "../core/search.ts";
@@ -38,7 +38,7 @@ export type FindHost = Readonly<{
 /** Stable cause of the last published notice, independent of its display message. */
 export type FindReason = "editing-unavailable" | "composition-active" | "backend-unavailable" | "search-failed"
     | "replacement-failed" | "view-unavailable" | "cancelled" | "replaced" | Extract<EditResult, { applied: false }>["reason"];
-export type FindSnapshot = Readonly<{ query: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean; revision: number; status: "idle" | "searching" | "ready" | "replacing" | "failed" | "cancelled" | "expired" | "disposed";
+export type FindSnapshot = Readonly<{ highlightMatches: boolean; query: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean; revision: number; status: "idle" | "searching" | "ready" | "replacing" | "failed" | "cancelled" | "expired" | "disposed";
     count: number; scanned: number; length: number; retained: boolean; current: number | null; wrappedTo: "start" | "end" | null; matchesVersion: number; reason: FindReason | null; message: string }>;
 export type FindDiagnostics = Readonly<{ maxScanStepMs: number; replaceTransactionMs: number }>;
 export type FindController = Observable<FindSnapshot> & Readonly<{
@@ -46,6 +46,7 @@ export type FindController = Observable<FindSnapshot> & Readonly<{
     matchesIn: (from: number, to: number, capture?: FindSnapshot) => readonly SearchMatch[];
     setQuery: (query: string, options?: Readonly<{ preview?: boolean }>) => void;
     setFlags: (flags: FindFlags) => void;
+    setHighlightMatches: (visible: boolean) => void;
     acceptPreview: () => boolean;
     next: (direction?: 1 | -1, options?: Readonly<{ whenReady?: boolean }>) => boolean;
     replaceCurrent: (replacement: string) => boolean; replaceAll: (replacement: string, options?: Readonly<{ focusEditor?: boolean }>) => void; cancel: () => void; dispose: () => void }>;
@@ -73,7 +74,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const documentChanges = workspace.observeDocument(documentId);
     const scope = workspace.createNotificationScope(), initial = readDocument();
     const noNotice = { reason: null, message: "" };
-    const store = new Store<FindSnapshot>(Object.freeze({ query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
+    const store = new Store<FindSnapshot>(Object.freeze({ highlightMatches: options.highlightMatches !== false, query: "", wholeWord: false, matchCase: true, regularExpression: false, revision: initial.revision, status: "idle", count: 0, scanned: 0, length: initial.buffer.length,
         retained: false, current: null, wrappedTo: null, matchesVersion: 0, ...noNotice }), scope);
     const cancelledReplacement = { reason: "cancelled", message: "Replacement cancelled." } as const;
     const runner = createCooperativeRunner(win);
@@ -91,8 +92,6 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     let pendingRepair: LiteralFindRepair | undefined;
     let literal: { document: DocumentSnapshot; index: FindIndex; query: string; wholeWord: boolean; matchCase: boolean } | undefined;
     let edges: { prefix: number; suffix: number } | undefined;
-    const literalBackend = createLiteralFindBackend(() => matches, literalBudget.units, literalBudget.matches);
-    const disposeBackends = () => { literalBackend.dispose(); backend?.dispose(); };
     let scanMaximum = 0, replaceTransactionMs = 0;
     const sameOwner = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key;
     const valid = () => !disposed && lease.active() && workspace.ownsDocumentView(editor.view, target)
@@ -141,19 +140,22 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (to > state.length) throw new RangeError("Match range exceeds document length.");
         return matches.matchesIn(from, to);
     };
-    const layer = options.highlightMatches === false ? undefined : editor.decorations?.addProvider({ name: "find matches", order: 60, minimap: false, provide: line => {
+    const addHighlights = () => editor.decorations?.addProvider({ name: "find matches", order: 60, minimap: false, provide: line => {
         const state = store.get();
-        if (!state.count || state.revision !== line.revision) return [];
-        const buffer = readDocument().buffer;
+        if (!state.count || state.revision !== line.revision || !valid()) return emptyList;
+        const doc = readDocument();
+        if (doc.revision !== line.revision) return emptyList;
+        const buffer = doc.buffer;
         const next = line.line + 1 < buffer.lineCount ? buffer.offsetAt(line.line + 1) : line.to;
         // CR and LF share a painted edge. Include their raw positions only at the real end of this line.
         const ending = next > line.to && next - line.to <= 2 && /^\r?\n$/.test(buffer.slice(line.to, next));
-        const ranges = matchesIn(line.from, ending ? next : line.to);
-        const end = ending || line.from === line.to ? [] : matchesIn(line.to, line.to);
+        const ranges = matches.matchesIn(line.from, ending ? next : line.to);
+        const end = ending || line.from === line.to ? emptyList : matches.matchesIn(line.to, line.to);
         const selected = state.current === null ? undefined : matches.at(state.current);
         return [...ranges, ...end].map(range => ({ ...(ending && range.from >= line.to ? { from: line.to, to: line.to } : range), className: "st-search-match",
             ...(selected?.from === range.from && selected.to === range.to && { properties: { "--st-search-border": "var(--st-search-current-border, #ffe494)" } }) }));
     } });
+    let layer = store.get().highlightMatches ? addHighlights() : undefined;
     const canEdit = () => { const state = resource.getSnapshot(); return editor.getSnapshot().readOnlyReason === null && state.state === "ready" && state.metadata.capabilities.edit.includes("human") && state.metadata.editLock === null; };
     function cancelUnavailablePlan(reason: "composition-active" | "editing-unavailable") {
         stop();
@@ -165,7 +167,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (token !== generation || canEdit()) return;
         cancelUnavailablePlan("editing-unavailable");
     }); };
-    const capture = (query: string, wholeWord: boolean, matchCase: boolean): FindQueryCapture => {
+    const capture = ({ query, wholeWord, matchCase }: Pick<FindQueryCapture, "query" | "wholeWord" | "matchCase">): FindQueryCapture => {
         const document = readDocument(); return Object.freeze({ documentId, revision: document.revision, buffer: document.buffer, query, wholeWord, matchCase });
     };
     const failed = (error: unknown, token: number, planning = false, reason: FindReason = planning ? "replacement-failed" : "search-failed") => {
@@ -175,7 +177,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         else reset({ status: "failed", reason, message });
     };
     const expire = () => {
-        disposeBackends(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." });
+        backend?.dispose(); reset({ status: "expired", reason: "view-unavailable", message: "View is unavailable." });
     };
     function restart(query: string, wholeWord = store.get().wholeWord, matchCase = store.get().matchCase, regularExpression = store.get().regularExpression, retain = false): void {
         // A committing plan releases its cursor before the document publishes the edit.
@@ -214,14 +216,18 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         try {
             if (regularExpression && !backend) throw new Error("Regular-expression search is unavailable in this host.");
             let created: FindSearchCursor;
-            if (regularExpression) created = backend!.search(capture(query, wholeWord, matchCase));
-            else if (repair) {
-                const repairing = repair; let first = true;
-                // A nearby anchor usually settles in one small slice; ambiguous suffixes
-                // continue with the same bounded advances as a fresh literal scan.
-                nextLiteral = (units = literalBudget.units) => { const small = first; first = false; return repairing.next(units, small ? 64 : literalBudget.matches); };
-                created = { next: nextLiteral, dispose: () => repairing.dispose() };
-            } else { const literal = literalBackend.search(capture(query, wholeWord, matchCase)); created = literal; nextLiteral = literal.next; }
+            if (regularExpression) created = backend!.search(capture(patch));
+            else {
+                const search = repair ?? new LiteralSearch(document.buffer, query, { wholeWord, matchCase, lineEndings: "equivalent" });
+                // Nearby repairs first try a small slice before the next paint.
+                let matchLimit = repair ? 64 : literalBudget.matches;
+                nextLiteral = (units = literalBudget.units) => {
+                    const result = search.next(units, matchLimit);
+                    matchLimit = literalBudget.matches;
+                    return result;
+                };
+                created = { next: nextLiteral, dispose: () => search.dispose() };
+            }
             if (token !== generation) { created.dispose(); return; } cursor = created;
         } catch (error) { failed(error, token, false, regularExpression && !backend ? "backend-unavailable" : "search-failed"); return; }
         let advanced = false;
@@ -236,7 +242,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 if (token !== generation) return false;
                 if (!valid() || readDocument().revision !== document.revision) { restart(query); return false; }
                 if (result.matches.length > 8192
-                    || !Number.isSafeInteger(result.scanned) || result.scanned < scanned || result.scanned > document.buffer.length) throw new Error("Invalid search result.");
+                    || !isOffsetRange(scanned, result.scanned, document.buffer.length)) throw new Error("Invalid search result.");
                 for (const match of repair ? [] : result.matches) {
                     if (!isOffsetRange(match.from, match.to, document.buffer.length)
                         || count > 0 && (match.from < endAt(count - 1) || match.from === offsetAt(count - 1) && match.to === endAt(count - 1))) throw new Error("Invalid search range.");
@@ -363,7 +369,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         editor.viewport.revealRange(match.from, match.to, visible === undefined ? "center-if-outside" : "nearest");
     }
     function capturePreview(previousSelection?: SelectionSet): void {
-        if (options.highlightMatches === false || store.get().status !== "searching") return;
+        if (!store.get().highlightMatches || store.get().status !== "searching") return;
         const listeners = new AbortController(), events = { signal: listeners.signal, passive: true };
         const root = viewport?.element, top = root?.scrollTop, left = root?.scrollLeft;
         const scrollUnchanged = () => root?.scrollTop === top && root?.scrollLeft === left;
@@ -421,11 +427,12 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         return true;
     }
     function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch, focusEditor = false): boolean {
-        const selectedBackend = state.regularExpression ? backend : literalBackend, immediate = !!range && !state.regularExpression;
-        if (!selectedBackend || !valid() || state.revision !== readDocument().revision) return false;
+        const immediate = !!range && !state.regularExpression;
+        if (!valid() || state.revision !== readDocument().revision || (state.regularExpression && !backend)) return false;
         if (!replacementAllowed()) return false;
         advanceAfterReplace = undefined;
-        const request = capture(state.query, state.wholeWord, state.matchCase), positions = matches, total = range ? 1 : count;
+        const request = state.regularExpression ? capture(state) : undefined;
+        const positions = matches, total = range ? 1 : count;
         const selectionSet = currentSelection(), acceptPlan = createFindReplacementPlan(positions, total, range);
         // A synchronous literal replacement must leave an in-progress repair alive on a no-op.
         // Yielding plans cancel scans and retain authority until their captured commit.
@@ -434,7 +441,13 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const token = generation, focusToken = focusGeneration; let committed = false;
         if (!immediate) { observePlanAuthority(token); publish({ status: "replacing", ...noNotice }); }
         if (token !== generation) return false;
-        try { const created = selectedBackend.replace(request, replacement, range); if (token !== generation) { created.dispose(); return false; } planCursor = created; }
+        try {
+            const created = request
+                ? backend!.replace(request, replacement, range)
+                : literalReplacement(positions, replacement, range);
+            if (token !== generation) { created.dispose(); return false; }
+            planCursor = created;
+        }
         catch (error) { failed(error, token, true); return false; }
         const current = () => {
             if (token !== generation) return false;
@@ -563,7 +576,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         disposed = true;
         editor.signal?.removeEventListener("abort", dispose);
         const notice = planCursor ? cancelledReplacement : noNotice;
-        stop(); disposeBackends(); subscriptions.forEach(unsubscribe => unsubscribe());
+        stop(); backend?.dispose(); subscriptions.forEach(unsubscribe => unsubscribe());
         layer?.dispose(); lease.release();
         reset({ status: "disposed", query: "", length: 0, ...notice });
     };
@@ -576,6 +589,19 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             const refinement = !!previous && (query.startsWith(previous) || previous.startsWith(query));
             restart(query);
             if (queryOptions?.preview) capturePreview(refinement ? selected : undefined);
+        },
+        setHighlightMatches(visible) {
+            scope.assertWritable();
+            const state = store.get();
+            if (visible === state.highlightMatches || !valid()) return;
+            const current = previewed && hasResults(state) ? selectionIndex() : state.current;
+            if (!visible) {
+                cancelPreview();
+                previewed = undefined;
+                layer?.dispose();
+            }
+            layer = visible ? addHighlights() : undefined;
+            publish({ highlightMatches: visible, current });
         },
         setFlags: (flags: FindFlags) => {
             scope.assertWritable();

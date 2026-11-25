@@ -41,6 +41,7 @@ const openProvider = selectDemoProvider(pageOptions.get("provider") ?? document.
 for (const choice of sampleChoices) { const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; sample.append(option); }
 let project: DemoProject | undefined, active: DemoFile | undefined, editor: TextEditor | undefined;
 let comparison: TextComparison | undefined, find: FindController | undefined, activePane: TextEditor | undefined;
+let closedFind: ReturnType<FindController["getSnapshot"]> | undefined;
 const foldMenu = mountDemoFoldMenu(codeMenu, () => comparison?.activePane() ?? editor);
 const renderCodeMenu = mountCodeMenuCommands(codeMenu, () => activePane, () => editor, listeners.signal);
 let output: ReturnType<typeof mountDemoOutput> | undefined;
@@ -501,7 +502,9 @@ function bindPaneCommands(target: TextEditor): void {
         setActivePane(target); openFind(replace);
     }, direction => {
         if (!findQuery.value) return false;
-        setActivePane(target, true); find?.next(direction, { whenReady: true });
+        setActivePane(target, true);
+        if (findBar.hidden) closedFind = find?.getSnapshot();
+        find?.next(direction, { whenReady: true });
         return true;
     }, () => ownsFind() && document.activeElement === findQuery);
     target.commands.register({ id: "find.replaceCurrent", label: "Replace current match",
@@ -519,6 +522,7 @@ function bindPaneCommands(target: TextEditor): void {
     target.keymap.bind("Escape", "find.close", { shared: true, repeat: false });
 }
 function releaseFind(): void {
+    closedFind = undefined;
     pendingPanel = undefined;
     find?.dispose();
     stopFind?.();
@@ -548,6 +552,11 @@ function setActivePane(target: TextEditor, repeat = false): void {
     let replacing = false;
     const render = () => {
         const snapshot = current.getSnapshot();
+        const cached = closedFind;
+        if (cached && snapshot.revision !== cached.revision) {
+            // A hidden bar reuses an unchanged index. Resume searching edited text on the next F3.
+            queueMicrotask(() => { if (closedFind === cached) releaseFind(); });
+        }
         const wasReplacing = replacing;
         replacing = snapshot.status === "replacing";
         if (replacing) {
@@ -616,10 +625,11 @@ function openFind(replace = false): void {
         const selected = selectedFindQuery(activePane, findFlags().regularExpression);
         if (selected !== undefined && selected !== findQuery.value) {
             findQuery.value = selected; sizeFindField(findQuery);
-            if (!findBar.hidden) find?.setQuery(selected);
+            find?.setQuery(selected);
         }
     }
-    if (findBar.hidden) releaseFind();
+    closedFind = undefined;
+    find?.setHighlightMatches(true);
     findBar.hidden = false; showReplacement(replace);
     setActivePane(activePane);
     const target = focusReplacement && findQuery.value && activePane === editor && !active?.readOnly ? replacement : findQuery;
@@ -633,7 +643,11 @@ function revealFindCaret(): void {
 function closeFind(): void {
     if (!find?.acceptPreview()) revealFindCaret();
     findBar.hidden = true;
-    releaseFind(); activePane?.focus();
+    if (find?.getSnapshot().status === "ready") {
+        find.setHighlightMatches(false);
+        closedFind = find.getSnapshot();
+    } else releaseFind();
+    activePane?.focus();
 }
 function showReplacement(show: boolean): void {
     element("replace-controls").hidden = !show;
