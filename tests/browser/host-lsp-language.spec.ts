@@ -69,15 +69,23 @@ async function linkCaptureScene(page: Page, text: string, editedTarget: boolean)
 }
 test.describe("plain selected LSP features", () => {
     test.beforeEach(async ({ page }) => {  await page.goto(`/hosts/plain/?language=lsp`); await expect(field(page)).toBeVisible(); });
-    test("painted swatches open the clicked literal in its pane and refresh after typing", async ({ page }) => {
+    test("a failed color preview keeps swatches available for retry in another pane", async ({ page }) => {
         const raw = 'const a = "#abc";\r\nconst b = "#f008";';
         await seed(page, raw, 2);
         const source = field(page, "Secondary source"), marks = source.locator("..").locator(".st-color-swatch");
         await expect(marks).toHaveCount(2);
         await expect(field(page)).toBeFocused();
         const before = await snapshot(page);
+        const value = field(page, "Proposed color");
+        await field(page).locator("..").locator(".st-color-swatch").first().click();
+        await expect(value).toHaveValue("#abc");
+        await value.fill("#123456");
+        await page.evaluate(() => window.hostFixture.faultColorsNext("failure"));
+        await button(page, "Preview color presentations").click();
+        await expect.poll(async () => (await snapshot(page)).bindings.colors.state.status).toBe("failed");
+        await expect(marks).toHaveCount(2);
         await marks.nth(1).click();
-        const value = field(page, "Proposed color"), selected = page.getByLabel("Document color results", { exact: true }).getByRole("button");
+        const selected = page.getByLabel("Document color results", { exact: true }).getByRole("button");
         await expect(value).toBeFocused();
         await expect(value).toHaveValue("#f008"); await expect(selected.nth(1)).toContainText("#f008");
         await expect(selected.nth(1)).toHaveAttribute("aria-pressed", "true");

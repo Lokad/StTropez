@@ -85,10 +85,10 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
     function publish(status: DocumentColorSnapshot["status"], patch: Partial<Omit<DocumentColorSnapshot, "status">> = {}) {
         scope.publish(state, Object.freeze({ ...idle, status, ...patch }));
     }
-    function fail(error: unknown) {
+    function fail(error: unknown, discovery?: boolean) {
         const message = error instanceof Error ? error.message : String(error);
         release();
-        swatches?.clear();
+        if (discovery) swatches?.clear();
         publish("failed", { message });
         return failed(error);
     }
@@ -99,7 +99,7 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
         win.clearTimeout(j.timer);
         j.timer = win.setTimeout(() => {
             if (active.job === j && !j.invalid && (call === j || j.preview === call)) {
-                call.timeout = fail(new Error("Color provider request timed out."));
+                call.timeout = fail(new Error("Color provider request timed out."), call === j);
             }
         }, 30000);
     }
@@ -203,9 +203,6 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
             return fail(error);
         }
     }
-    function reference(raw: LspDocumentColor, index: number, revision: number): DocumentColorChoice {
-        const item: DocumentColorChoice = Object.freeze({ ...raw, revision, presentations: color => preview(item, index, color) }); return item;
-    }
     async function request(): Promise<Outcome<readonly DocumentColorChoice[]>> {
         scope.assertWritable();
         if (signal.aborted) return stale;
@@ -218,15 +215,16 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
                 publish("expired");
                 return refused("unavailable-view");
             }
+            const { document } = source;
             const client = colorClient(owner);
             const j: Job = { source, client, invalid: false,
                 project: retainDocuments(workspace, available, () => expire(j)) };
             pending = active.job = j;
-            j.project.include(source.document);
+            j.project.include(document);
             source.signal.addEventListener("abort", () => { if (!j.reply) expire(j); }, { once: true });
             startTimer(j, j);
             publish("discovering");
-            const reply = await client.run({ document: source.document, prepare: options.prepareRequest?.("discovery") }).result;
+            const reply = await client.run({ document, prepare: options.prepareRequest?.("discovery") }).result;
             if (!current(j) || !reply.isCurrent()) {
                 expire(j);
                 return stale;
@@ -235,8 +233,13 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
             j.registration = provider.getSnapshot().registrationVersion(colorPresentationMethod);
             source.cancel();
             win.clearTimeout(j.timer);
-            const colors = Object.freeze(reply.items.map((item, index) => reference(item, index, j.source.document.revision)));
-            swatches?.accept(j.source.document, reply.items);
+            const colors = Object.freeze(reply.items.map((raw, index) => {
+                const item: DocumentColorChoice = Object.freeze({
+                    ...raw, revision: document.revision, presentations: color => preview(item, index, color),
+                });
+                return item;
+            }));
+            swatches?.accept(document, reply.items);
             publish("ready", { colors });
             return done(colors);
         } catch (error) {
@@ -246,7 +249,7 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
                 expire(pending);
                 return stale;
             }
-            return fail(error);
+            return fail(error, true);
         }
     }
     const stop = provider.subscribe(() => {

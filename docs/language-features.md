@@ -636,7 +636,8 @@ Pass `colors: { swatches: true }` to `attachEditorLanguage` to paint provider co
 Views of the same document share one scan. Edits move the painted ranges while fresh colors
 are pending. `colorAt(offset)` returns a color only for the current revision. To open a picker
 without moving the caret, pass an activation callback as `swatches`. Use `setSwatches(false)`
-to hide the marks and `setSwatches(true)` to resume scanning.
+to hide the marks and `setSwatches(true)` to resume scanning. If a color format request fails,
+the current swatches stay available in every pane.
 
 Call a format's `select()` to apply its edits. For a picker with an Apply button, call
 `select({ review: true })` and bind the button to the returned review's `apply()`. Both edit
