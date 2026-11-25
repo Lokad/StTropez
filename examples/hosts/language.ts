@@ -129,7 +129,8 @@ export class HostLanguageTools {
     }
     private bindFind(session: Session, signal: AbortSignal): void {
         const current = () => this.active === session && this.ownsSession(session);
-        bindFindCommands(session.editor, signal, replace => {
+        const register = scopedCommands(session.editor, signal);
+        bindFindCommands(register, replace => {
             if (!this.ownsSession(session)) return;
             this.cancelFindCommand(); this.activate(session); this.ensureFind();
             const field = replace && !session.reference ? this.replacementElement : this.queryElement;
@@ -137,7 +138,6 @@ export class HostLanguageTools {
         }, direction => {
             if (this.ownsSession(session)) { this.activate(session); this.runFind(session, { kind: "navigate", direction }); }
         }, () => current() && !!this.queryElement?.matches(":focus"));
-        const register = scopedCommands(session.editor, signal);
         register({ id: "find.replaceCurrent", label: "Replace current match",
             enabled: () => current() && !!this.replacementElement?.matches(":focus:enabled"),
             run: () => this.runFind(session, { kind: "replace", text: this.cell.get().replacement }) },

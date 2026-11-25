@@ -45,7 +45,7 @@ import { CharacterWarnings } from "../core/character-warnings.ts";
 import type { CharacterWarningConfiguration, CharacterWarningOptions } from "../core/character-warnings.ts";
 import { mountCharacterWarnings } from "./character-warnings.ts";
 import type { CharacterWarningHighlights } from "./character-warnings.ts";
-import { createCommandRegistry, type EditorCommands, type EditorKeymap } from "./command-registry.ts";
+import { createCommandRegistry, type EditorCommand, type EditorCommands, type EditorKeymap } from "./command-registry.ts";
 import { defaultEditorShortcuts, editCommand, editorCommandLabels, editorKeyCommand } from "./editor-commands.ts";
 import { classifyEditingKey, commandKey, historyKey, isDeletionCommand, nativeDeletion } from "./editing-keys.ts";
 import type { DeletionCommand, KeyBinding, KeyStroke, ViewCommand } from "./editing-keys.ts";
@@ -112,7 +112,10 @@ export function mountTextEditor(host: HTMLElement, workspace: Workspace, identit
 
 /** Private pane mount; the comparison capability belongs to this exact editor lifetime. */
 export function mountEditor(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
-    options: TextEditorOptions = {}, comparison?: ComparisonPresentation): MountedTextEditor {
+    options: TextEditorOptions = {}, comparison?: ComparisonPresentation & {
+        commands: ReadonlyMap<string, EditorCommand>;
+        epoch: () => number | undefined;
+    }): MountedTextEditor & { commandScope: ReturnType<typeof createCommandRegistry>["scope"] } {
     const initial = options.settings;
     const matching = (value: boolean | BracketMatchOptions) => value === false ? false : bracketMatchLimits(value === true ? {} : value);
     const classifyWarnings = (value: boolean | CharacterWarningOptions) => value === false ? undefined : new CharacterWarnings(value === true ? {} : value);
@@ -213,12 +216,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             try { work(); } finally { maxQueuedInputTurnMs = Math.max(maxQueuedInputTurnMs, win.performance.now() - began); } },
     });
     const apple = /Mac|iPhone|iPad|iPod/.test(win.navigator.platform);
-    const registry = createCommandRegistry(apple, () => !disposed && !composing && !input.disabled && live(), () => {
-        const version = revision, selection = view.getSnapshot().selectionSet;
-        return () => version === revision && selection === view.getSnapshot().selectionSet;
-    });
-    for (const id of Object.keys(editorCommandLabels) as TextEditorCommand[]) {
-        registry.commands.register({ id, label: editorCommandLabels[id], run: () => runCommand(id), enabled: () => {
+    const registry = createCommandRegistry(apple,
+        () => !disposed && !composing && !input.disabled && live() && (!comparison || comparison.epoch() !== undefined), () => {
+            const version = revision, selection = view.getSnapshot().selectionSet, epoch = comparison?.epoch();
+            return () => version === revision && selection === view.getSnapshot().selectionSet && epoch === comparison?.epoch();
+        }, () => editor, comparison?.commands);
+    for (const [id, label] of editorCommandLabels) {
+        registry.commands.register({ id, label, owner: "editor", category: "Editing", run: () => runCommand(id), enabled: () => {
             if (id === "undo" || id === "redo") {
                 const depth = workspace.observeHistory(documentId).getSnapshot();
                 return !input.readOnly && (id === "undo" ? depth.undoDepth : depth.redoDepth) > 0;
@@ -1737,5 +1741,5 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             warningOptions = undefined; bracketOptions = false; pasteLineEndings = "local";
             if (!options.view) view.dispose();
         } });
-    return Object.freeze({ editor, input, setComparisonRows });
+    return Object.freeze({ editor, input, setComparisonRows, commandScope: registry.scope });
 }

@@ -1,6 +1,6 @@
-import { isSaveKey, isUnmodifiedShortcut } from "../shared/host-shortcuts.ts";
+import { isSaveKey, isUnmodifiedShortcut, usesAppleShortcuts } from "../shared/host-shortcuts.ts";
 import { mountTextEditor, mountTextComparison, createFindController, createRegexFindBackend, createFoldingController, diagnosticDecoration, editRefusedEvent } from "../../src/browser/index.ts";
-import type { EditRefusedDetail, TextEditor, FindController, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
+import type { EditorCommands, EditRefusedDetail, TextEditor, FindController, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
@@ -95,7 +95,8 @@ function renderOutput(): void {
         else {
             host.replaceChildren();
             output = mountDemoOutput(host, text, presentationSettings());
-            bindPaneCommands(output.editor);
+            observePane(output.editor);
+            bindCommands(output.editor.commands);
         }
     } else if (!output) {
         // Keep the last completed output for this view while the footer reports pending/failed analysis.
@@ -352,8 +353,9 @@ function mountFile(file: DemoFile, focus = false): void {
     stopFolding = foldMenu.bind(editor, folding, comparison ? "Your changes" : "Source");
     viewListeners = new AbortController();
     viewListeners.signal.addEventListener("abort", editor.subscribe(scheduleMetadata), { once: true });
-    bindPaneCommands(editor);
-    if (comparison) bindPaneCommands(comparison.panes.reference);
+    observePane(editor);
+    if (comparison) observePane(comparison.panes.reference);
+    bindCommands(comparison?.commands ?? editor.commands);
     setActivePane(editor);
     languageView = attachLanguage(project, file, editor);
     if (project.sample.id === "host") {
@@ -475,7 +477,7 @@ function setPanel(next: DemoPanel): void {
     if (samePanel && !comparison) { renderOutput(); editor?.focus(); return; }
     mountFile(active, true);
 }
-function bindPaneCommands(target: TextEditor): void {
+function observePane(target: TextEditor): void {
     target.element.addEventListener(editRefusedEvent, event => {
         if (!project || !active || target !== activePane) return;
         const { reason } = (event as CustomEvent<EditRefusedDetail>).detail;
@@ -486,40 +488,41 @@ function bindPaneCommands(target: TextEditor): void {
         project.setEditRefusal(message);
         element("status").textContent = message;
     }, { signal: target.signal });
-    const apple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
-    // Option+Left moves by word on Apple keyboards. The menu can restore a location there.
-    target.commands.register({ id: "demo.back", label: "Back to previous location",
-        enabled: from => from !== "menu" || !!project?.navigation.getSnapshot(), run: goBack },
-        { keys: apple ? [] : ["Alt+ArrowLeft"], repeat: false });
     const stop = target.view.subscribe(() => {
         if (target === editor) renderMetadata();
         else if (target === activePane) scheduleMetadata();
     });
     target.signal.addEventListener("abort", stop, { once: true });
     target.element.addEventListener("focusin", () => setActivePane(target), { signal: target.signal });
-    const ownsFind = () => activePane === target && !findBar.hidden;
-    bindFindCommands(target, target.signal, replace => {
+}
+function bindCommands(commands: EditorCommands): void {
+    // Option+Left moves by word on Apple keyboards. The menu can restore a location there.
+    commands.register({ id: "demo.back", label: "Back to previous location",
+        enabled: from => from !== "menu" || !!project?.navigation.getSnapshot(), run: goBack },
+        { keys: usesAppleShortcuts() ? [] : ["Alt+ArrowLeft"], repeat: false });
+    const ownsFind = (target: TextEditor) => activePane === target && !findBar.hidden;
+    bindFindCommands(commands.register, (replace, target) => {
         setActivePane(target); openFind(replace);
-    }, direction => {
+    }, (direction, target) => {
         if (!findQuery.value) return false;
         setActivePane(target, true);
         if (findBar.hidden) closedFind = find?.getSnapshot();
         find?.next(direction, { whenReady: true });
         return true;
-    }, () => ownsFind() && document.activeElement === findQuery);
-    target.commands.register({ id: "find.replaceCurrent", label: "Replace current match",
-        enabled: from => ownsFind() && (from === "button" ? !button("replace-current").disabled : document.activeElement === replacement),
+    }, target => ownsFind(target) && document.activeElement === findQuery);
+    commands.register({ id: "find.replaceCurrent", label: "Replace current match",
+        enabled: (from, target) => ownsFind(target) && (from === "button" ? !button("replace-current").disabled : document.activeElement === replacement),
         run: () => { if (!button("replace-current").disabled) find?.replaceCurrent(replacementText()); } },
         { keys: ["Enter"], shared: true, priority: 41, repeat: false });
-    target.commands.register({ id: "find.insertLineBreak", label: "Insert a line break in Find or Replace",
-        enabled: () => ownsFind() && (document.activeElement === findQuery || document.activeElement === replacement),
+    commands.register({ id: "find.insertLineBreak", label: "Insert a line break in Find or Replace",
+        enabled: (_, target) => ownsFind(target) && (document.activeElement === findQuery || document.activeElement === replacement),
         run: () => {
             const input = document.activeElement === findQuery ? findQuery : replacement;
             input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
             input.dispatchEvent(new Event("input", { bubbles: true }));
         } }, { keys: ["Mod+Enter"], shared: true, priority: 40, repeat: false });
-    target.commands.register({ id: "find.close", label: "Close Find", enabled: ownsFind, run: closeFind });
-    target.keymap.bind("Escape", "find.close", { shared: true, repeat: false });
+    commands.register({ id: "find.close", label: "Close Find", category: "Find", enabled: (_, pane) => ownsFind(pane), run: closeFind },
+        { keys: ["Escape"], shared: true, repeat: false });
 }
 function releaseFind(): void {
     closedFind = undefined;

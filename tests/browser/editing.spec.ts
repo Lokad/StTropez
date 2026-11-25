@@ -694,7 +694,7 @@ test("a rebound chord belongs to its editor and leaves host field editing local"
         } finally { command.dispose(); document.body.removeEventListener("keydown", forward); host.remove(); }
     });
     expect(keys).toEqual({ prefix: true, chord: true, afterBlur: false, afterMove: false, local: false, composing: false, disabled: false,
-        shiftedDigit: true, listed: { id: "sample.action", label: "Sample action", enabled: false }, retired: false, calls: 2,
+        shiftedDigit: true, listed: { id: "sample.action", label: "Sample action", owner: "host", category: "General", enabled: false }, retired: false, calls: 2,
         initial: ["Ctrl+k Ctrl+j"], frozen: true, unbound: [], rebound: ["Ctrl+k Ctrl+j"], disposed: [] });
 });
 

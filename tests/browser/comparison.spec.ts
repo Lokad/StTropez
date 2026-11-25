@@ -3,6 +3,65 @@ import { typeAfterClick } from "../helpers/editor-assertions.ts";
 
 test.beforeEach(async ({ page }) => {  await page.goto("/comparison/"); await ready(page); });
 
+test("shared commands keep the initiating pane through focus changes and expire chords on baseline refresh", async ({ page }) => {
+    const initial = await page.evaluate(() => {
+        const review = window.comparisonFixture.review;
+        const { working, reference } = review.panes;
+        const field = document.createElement("input");
+        field.id = "command-field";
+        document.body.append(field);
+        field.addEventListener("keydown", event => review.activePane().keymap.handle(event));
+        const id = "host.mark";
+        review.commands.register({ id, label: "Mark pane", owner: "annotations", category: "Review",
+            run: (_, pane) => { field.value += pane === reference ? "R" : "W"; } },
+            { keys: ["Mod+k Mod+j"], shared: true });
+        // The second pane owns this key. A failed shared registration must release the first pane's binding.
+        reference.commands.register({ id: "host.local", label: "Local", run() {} }, { keys: ["F8"] });
+        let conflict = false;
+        try {
+            review.commands.register({ id: "host.other", label: "Other", run() {} }, { keys: ["F8"] });
+        } catch (error) { conflict = String(error).includes("Key binding conflicts"); }
+        working.commands.register({ id: "host.reclaimed", label: "Reclaimed", run() {} }, { keys: ["F8"] });
+        return { info: reference.commands.get(id), count: review.commands.list().filter(row => row.id === id).length,
+            conflict, rolledBack: !working.commands.get("host.other") && !reference.commands.get("host.other") };
+    });
+    expect(initial).toEqual({ info: { id: "host.mark", label: "Mark pane", owner: "annotations", category: "Review",
+        enabled: true }, count: 1, conflict: true, rolledBack: true });
+    const working = page.getByRole("textbox", { name: "Comparison working source" });
+    const reference = page.getByRole("textbox", { name: "Comparison baseline source" });
+    const field = page.locator("#command-field");
+    await reference.press("Control+k");
+    await working.press("Control+j");
+    await expect(field).toHaveValue("");
+    await working.press("Control+k");
+    await working.press("Control+j");
+    await expect(field).toHaveValue("W");
+    await reference.focus();
+    await field.focus();
+    await field.press("Control+k");
+    await field.press("Control+j");
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue("WR");
+    await reference.press("Control+k");
+    await page.evaluate(() => {
+        const { controller } = window.comparisonFixture.review;
+        const buffer = controller.getSnapshot().baseline!.buffer;
+        controller.beginRefresh().complete({ buffer, version: "second" });
+    });
+    await reference.press("Control+j");
+    await expect(field).toHaveValue("WR");
+    await reference.press("Control+k");
+    await reference.press("Control+j");
+    await expect(field).toHaveValue("WRR");
+    const retired = await page.evaluate(() => {
+        const review = window.comparisonFixture.review;
+        review.dispose();
+        return [review.commands.run("host.mark"), review.panes.reference.commands.run("host.mark"),
+            review.panes.working.commands.run("host.mark")];
+    });
+    expect(retired).toEqual([false, false, false]);
+});
+
 test("both review panes reserve space for the longer line number through typing and undo", async ({ page }) => {
     await page.evaluate(() => window.comparisonFixture.setText("x\n".repeat(9998) + "last")); await ready(page);
     const work = page.getByRole("textbox", { name: "Comparison working source", exact: true });

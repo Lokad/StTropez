@@ -12,7 +12,7 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
     const f = clientFixture(t), tab = f.workspace.tabs.open({ kind: "text", documentId: f.source.documentId }, "source"), view = f.workspace.createDocumentView(f.source.documentId);
     const tasks = new Map<number, () => void>(); let serial = 0;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } };
-    const registry = createCommandRegistry(false, () => true, () => () => true);
+    const registry = createCommandRegistry(false, () => true, () => () => true, () => editor);
     if (kind === "folding") {
         const before = f.workspace.document(view.documentId);
         f.workspace.edit({ documentId: before.id, expectedRevision: before.revision, edits: [{ from: 0, to: 0, insert: "head\nbody\n" }], origin: "host" });

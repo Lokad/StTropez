@@ -391,10 +391,13 @@ The editor matches the configured delimiters as text. A host can reject an infer
 string or other context through `allowPair`. Explicitly selected wrappers toggle directly.
 All affected selections share one undo step.
 
-`editor.commands.list()` returns immutable entries with an ID, label and current enabled state.
+`editor.commands.list()` returns immutable entries with an ID, label, owner, category and current enabled state.
+Built-ins use owner `"editor"`. A registration can supply an owner and category for a host palette.
+They default to `"host"` and `"General"`.
 `commands.get(id, argument?)` looks up one entry and checks availability for that argument.
 An unknown ID returns `undefined`. `commands.run(id, argument?)` passes the same value to
-the registered `enabled` and `run` callbacks. Shortcuts and `list()` supply no argument.
+the registered `enabled` and `run` callbacks, followed by the editor that received the command.
+For shortcuts and `list()`, the first argument is `undefined`.
 `register({ id, label, run, enabled })` adds a command to this mount. An optional second argument
 such as `{ keys: ["Escape"], priority: 10 }` installs its shortcuts together. A conflict rolls back
 the registration. Duplicate IDs throw.

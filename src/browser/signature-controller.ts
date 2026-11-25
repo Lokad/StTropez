@@ -224,7 +224,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         armed = true; schedule(context, after);
     }
     function bind(id: string, label: string, keys: string[], enabled: () => boolean, run: () => void | boolean) {
-        const registration = editor.commands.register({ id, label, enabled, run }, { keys, priority: 10 });
+        const registration = editor.commands.register({ id, label, owner: "editor", category: "Signature help", enabled, run }, { keys, priority: 10 });
         events.signal.addEventListener("abort", registration.dispose, { once: true });
     }
     let providerState = provider.getSnapshot();

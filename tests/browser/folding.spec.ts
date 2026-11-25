@@ -356,7 +356,7 @@ test("disposing fold discovery releases its shortcuts and a conflicting remount 
         f.discoverFolds(() => [{ from: 0, to: 15, group: "blocks" }]);
         return { block, unknown: unknown?.enabled, invalid, conflict, partial, retired, hostCalls };
     });
-    expect(result).toEqual({ block: { id: "fold.collapse-all", label: "Collapse group", enabled: true }, unknown: false, invalid: false,
+    expect(result).toEqual({ block: { id: "fold.collapse-all", label: "Collapse group", owner: "editor", category: "Folding", enabled: true }, unknown: false, invalid: false,
         conflict: expect.stringContaining("Key binding conflicts"), partial: [], retired: false, hostCalls: 1 });
     await expect.poll(() => page.evaluate(() => window.editingFixture.foldStatus()?.status)).toBe("ready");
     await input(page).press("Control+Shift+[");

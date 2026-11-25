@@ -528,7 +528,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     const visible = () => !!job?.visible.length;
     const navigatingSnippet = () => !!snippet;
     function register(id: string, label: string, keys: string[], enabled: () => boolean, run: () => boolean | void, priority = 30) {
-        registrations.push(editor.commands.register({ id, label, enabled, run() {
+        registrations.push(editor.commands.register({ id, label, owner: "editor", category: "Completion", enabled, run() {
             notifications.assertWritable();
             const started = clock.performance.now();
             try { return run(); } finally { counters.lastCompletionCommandMs = clock.performance.now() - started; }

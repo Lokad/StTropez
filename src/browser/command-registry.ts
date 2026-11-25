@@ -1,5 +1,14 @@
-export type EditorCommand = Readonly<{ id: string; label: string; enabled?: (argument?: unknown) => boolean; run: (argument?: unknown) => void | boolean }>;
-type CommandInfo = Readonly<{ id: string; label: string; enabled: boolean }>;
+import type { TextEditor } from "./text-editor.ts";
+
+export type EditorCommand = Readonly<{
+    id: string;
+    label: string;
+    owner?: string;
+    category?: string;
+    enabled?: (argument: unknown, editor: TextEditor) => boolean;
+    run: (argument: unknown, editor: TextEditor) => void | boolean;
+}>;
+type CommandInfo = Readonly<{ id: string; label: string; owner: string; category: string; enabled: boolean }>;
 type BindingOptions = Readonly<{ shared?: boolean; priority?: number; repeat?: boolean }>;
 export type EditorCommands = Readonly<{
     register: (command: EditorCommand, shortcuts?: BindingOptions & { readonly keys: readonly string[] }) => { dispose(): void };
@@ -60,8 +69,39 @@ type Strokes = Map<string, readonly Binding[]>;
 // A shadow-tree key event can expose a different target after dispatch finishes.
 function chordTarget(event: KeyboardEvent): EventTarget | null { return event.composedPath()[0] ?? event.target; }
 
+type CommandScope = {
+    conflicts: (id: string) => boolean;
+    bind: EditorKeymap["bind"];
+    removeBindings: (id: string) => void;
+};
+
+export function commandRegistration(entries: Map<string, EditorCommand>, scopes: readonly CommandScope[]): EditorCommands["register"] {
+    return (command, shortcuts) => {
+        const entry = Object.freeze({ ...command });
+        if (!entry.id.trim() || !entry.label.trim() || scopes.some(scope => scope.conflicts(entry.id))) {
+            throw new Error(`Cannot register command: ${entry.id}`);
+        }
+        entries.set(entry.id, entry);
+        const registration = { dispose() {
+            if (entries.get(entry.id) !== entry) return;
+            entries.delete(entry.id);
+            for (const scope of scopes) scope.removeBindings(entry.id);
+        } };
+        try {
+            for (const keys of shortcuts?.keys ?? []) {
+                for (const scope of scopes) scope.bind(keys, entry.id, shortcuts);
+            }
+        } catch (error) {
+            registration.dispose();
+            throw error;
+        }
+        return registration;
+    };
+}
+
 /** Bindings belong to one mounted view. Only the prefix of a pending chord retains event-time state. */
-export function createCommandRegistry(apple: boolean, available: () => boolean, chordCurrent: () => () => boolean) {
+export function createCommandRegistry(apple: boolean, available: () => boolean, chordCurrent: () => () => boolean,
+    pane: () => TextEditor, shared?: ReadonlyMap<string, EditorCommand>) {
     const entries = new Map<string, EditorCommand>();
     const bindings = new Map<string, Strokes>();
     let disposed = false;
@@ -70,39 +110,37 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         if (!prefix) return;
         clearTimeout(prefix.timer); prefix.listeners.abort(); prefix = undefined;
     }
-    const enabled = (entry: EditorCommand, argument?: unknown) => available() && (entry.enabled?.(argument) ?? true);
+    const lookup = (id: string) => disposed ? undefined : entries.get(id) ?? shared?.get(id);
+    const enabled = (entry: EditorCommand, argument?: unknown) => available() && (entry.enabled?.(argument, pane()) ?? true);
     const describe = (entry: EditorCommand, argument?: unknown): CommandInfo =>
-        Object.freeze({ id: entry.id, label: entry.label, enabled: enabled(entry, argument) });
-    const commands: EditorCommands = Object.freeze({
-        register(command, shortcuts) {
-            if (disposed || !command.id.trim() || !command.label.trim() || entries.has(command.id)) throw new Error(`Cannot register command: ${command.id}`);
-            const entry = Object.freeze({ ...command });
-            entries.set(entry.id, entry);
-            const registration = { dispose() {
-                if (entries.get(entry.id) !== entry) return;
-                entries.delete(entry.id); reset();
-                for (const [first, group] of bindings) {
-                    for (const [last, choices] of group) {
-                        const kept = choices.filter(binding => binding.id !== entry.id);
-                        if (!kept.length) group.delete(last);
-                        else if (kept.length !== choices.length) group.set(last, kept);
-                    }
-                    if (!group.size) bindings.delete(first);
+        Object.freeze({ id: entry.id, label: entry.label, owner: entry.owner ?? "host",
+            category: entry.category ?? "General", enabled: enabled(entry, argument) });
+    const scope: CommandScope = {
+        conflicts: id => disposed || !!lookup(id),
+        bind: (...args) => keymap.bind(...args),
+        removeBindings(id) {
+            reset();
+            for (const [first, group] of bindings) {
+                for (const [last, choices] of group) {
+                    const kept = choices.filter(binding => binding.id !== id);
+                    if (!kept.length) group.delete(last);
+                    else if (kept.length !== choices.length) group.set(last, kept);
                 }
-            } };
-            try { for (const keys of shortcuts?.keys ?? []) keymap.bind(keys, entry.id, shortcuts); }
-            catch (error) { registration.dispose(); throw error; }
-            return registration;
+                if (!group.size) bindings.delete(first);
+            }
         },
+    };
+    const commands: EditorCommands = Object.freeze({
+        register: commandRegistration(entries, [scope]),
         run(id, argument) {
-            const entry = entries.get(id);
-            return !!entry && enabled(entry, argument) && entries.get(id) === entry && entry.run(argument) !== false;
+            const entry = lookup(id);
+            return !!entry && enabled(entry, argument) && lookup(id) === entry && entry.run(argument, pane()) !== false;
         },
         get(id, argument) {
-            const entry = entries.get(id);
+            const entry = lookup(id);
             return entry && describe(entry, argument);
         },
-        list: () => Object.freeze(Array.from(entries.values(), entry => describe(entry))),
+        list: () => Object.freeze((disposed ? [] : [...entries.values(), ...(shared?.values() ?? [])]).map(entry => describe(entry))),
     });
     function sequence(keys: string) {
         const parts = keys.trim().split(/\s+/);
@@ -135,7 +173,7 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         const accept = (group: Strokes, stroke: string) => group.get(stroke)?.some(binding => {
             if ((sharedOnly && !binding.shared) || !group.get(stroke)?.includes(binding)) return false;
             if (event.repeat && !binding.repeat) {
-                const entry = entries.get(binding.id);
+                const entry = lookup(binding.id);
                 return !!entry && enabled(entry);
             }
             return execute(binding.id);
@@ -165,7 +203,7 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
     const keymap: EditorKeymap = Object.freeze({
         bind(keys, id, options) {
             const [first, last] = sequence(keys);
-            if (!entries.has(id)) throw new Error(`Unknown command: ${id}`);
+            if (!lookup(id)) throw new Error(`Unknown command: ${id}`);
             const group: Strokes = bindings.get(first) ?? new Map(), choices = group.get(last) ?? [], priority = options?.priority ?? 0;
             if (!Number.isFinite(priority)) throw new RangeError("Key binding priority must be finite.");
             if (choices.some(binding => binding.priority === priority) || (last ? group.has("") : group.size && !group.has("")))
@@ -193,6 +231,6 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
         },
         handle: event => handle(event, true, commands.run),
     });
-    return { commands, keymap, reset, handleEditor: (event: KeyboardEvent, execute: (id: string) => boolean) => handle(event, false, execute),
+    return { commands, keymap, scope, reset, handleEditor: (event: KeyboardEvent, execute: (id: string) => boolean) => handle(event, false, execute),
         dispose() { disposed = true; reset(); bindings.clear(); entries.clear(); } };
 }

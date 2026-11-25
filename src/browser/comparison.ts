@@ -10,12 +10,13 @@ import type { DiffHunk } from "../core/diff.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { DocumentId, DocumentView, TabId, TextResourceHandle, Workspace } from "../core/workspace.ts";
 import { mountEditor } from "./text-editor.ts";
-import type { EditorSettings, MountedTextEditor, TextEditor, TextEditorOptions } from "./text-editor.ts";
+import type { EditorSettings, TextEditor, TextEditorOptions } from "./text-editor.ts";
 import type { InlineDecoration, PresentedLine } from "./viewport.ts";
 import { createComparisonScroll } from "./comparison-scroll.ts";
 import { createComparisonAlignment } from "./comparison-alignment.ts";
 import type { ComparisonAlignmentSnapshot } from "./comparison-alignment.ts";
 import { mountComparisonControls } from "./comparison-controls.ts";
+import { commandRegistration, type EditorCommand, type EditorCommands } from "./command-registry.ts";
 import { createComparisonPanes } from "./comparison-panes.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 
@@ -31,7 +32,7 @@ export type TextComparisonSnapshot = Readonly<{
 export type TextComparisonDiagnostics = Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; scrollLinked: boolean; pendingScroll: boolean; rowsAligned: boolean; alignment: ComparisonAlignmentSnapshot; disposed: boolean }>;
 export type TextComparisonHunk = ComparisonHunk & Readonly<{ select: () => boolean }>;
 export type TextComparison = Observable<TextComparisonSnapshot> & Readonly<{
-    element: HTMLDivElement; controller: ComparisonController;
+    element: HTMLDivElement; controller: ComparisonController; commands: EditorCommands;
     panes: Readonly<{ working: TextEditor; reference: TextEditor }>; activePane: () => TextEditor;
     getDiagnostics: () => TextComparisonDiagnostics;
     setScrollLinked: (linked: boolean) => void;
@@ -115,14 +116,18 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         return range && range.from < range.to ? `st-comparison-line-${side}` : undefined;
     };
     const paneOptions = { ...(options.settings ? { settings: options.settings } : {}), ...(options.requestLine ? { requestLine: options.requestLine } : {}) };
+    const sharedCommands = new Map<string, EditorCommand>();
     const presentation = (side: "baseline" | "working") => ({
+        commands: sharedCommands,
+        epoch: () => controller.getSnapshot().baseline?.epoch,
         foldContainsChange: (buffer: TextBuffer, from: number, to: number) =>
             (side === "baseline" ? referenceBuffer : state.working?.buffer) === buffer && firstHunkInLines(side, from, to) !== undefined,
         gutterLineCount: () => Math.max(state.working?.buffer.lineCount ?? 0, state.baseline?.buffer.lineCount ?? 0),
     });
-    let workingMount: MountedTextEditor;
+    let workingMount: ReturnType<typeof mountEditor>;
     try { workingMount = mountEditor(workingPane.content, workspace, identity, { view: controller.view, ...paneOptions, ariaLabel: "Comparison working source" }, presentation("working")); }
     catch (error) { root.remove(); controller.dispose(); throw error; }
+    const commandScopes = [workingMount.commandScope];
     const working = workingMount.editor, pair = createComparisonPanes(workingMount, changed), referenceEditor = () => pair.reference()?.editor, referenceViewport = () => referenceEditor()?.viewport;
     const differences = (editor: TextEditor, side: "working" | "baseline") => editor.decorations.addProvider({
         name: "comparison", order: 10, provide: decorate(side), lineClass: lineClass(side)
@@ -196,6 +201,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false }, { visibility: "internal" });
             const referenceId = typeof baseline === "string" ? baseline : display!.documentId;
             const mounted = mountEditor(referencePane.content, workspace, referenceId, { ariaLabel: "Comparison baseline source", readOnly: true, ...paneOptions }, presentation("baseline"));
+            commandScopes[1] = mounted.commandScope;
             const editor = mounted.editor;
             referenceDiff = differences(editor, "baseline");
             try { pair.setReference(mounted); } catch (error) { editor.dispose(); throw error; }
@@ -288,6 +294,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     function dispose(): void {
         if (disposed) return; stateScope.assertWritable(); disposed = true; runner.cancel(); scheduled = false;
         try {
+            sharedCommands.clear();
             unsubscribe(); stopMetadata(); scroll.dispose(); alignment.dispose();
             try { clearReference(); } finally { pair.dispose(); working.dispose(); }
         } finally {
@@ -303,13 +310,19 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             const stop = editor.view.subscribe(() => { if (activePane() === editor && !disposed) publishState(); });
             editor.signal.addEventListener("abort", stop, { once: true });
             editor.element.addEventListener("focusin", () => { lastFocused = editor; publishState(); }, { signal: editor.signal });
-            for (const [id, label, key, direction] of [
-                ["comparison.nextChange", "Next change", "F7", 1],
-                ["comparison.previousChange", "Previous change", "Shift+F7", -1],
-            ] as const) editor.commands.register({ id, label, enabled: () => stateStore.get().canNavigate,
-                run: () => navigateFrom(editor, direction) }, { keys: [key] });
         }
-        const review: TextComparison = Object.freeze({ element: root, controller, panes: editors, activePane, ...stateStore.observable, navigateHunk, revertSelectedHunk, hunkAt, setScrollLinked, setRowsAligned,
+        const commands: EditorCommands = Object.freeze({
+            register: commandRegistration(sharedCommands, commandScopes),
+            get: (id, arg) => activePane().commands.get(id, arg),
+            run: (id, arg) => activePane().commands.run(id, arg),
+            list: () => activePane().commands.list(),
+        });
+        for (const [id, label, key, direction] of [
+            ["comparison.nextChange", "Next change", "F7", 1],
+            ["comparison.previousChange", "Previous change", "Shift+F7", -1],
+        ] as const) commands.register({ id, label, owner: "editor", category: "Comparison",
+            enabled: () => stateStore.get().canNavigate, run: (_, pane) => navigateFrom(pane, direction) }, { keys: [key] });
+        const review: TextComparison = Object.freeze({ element: root, controller, commands, panes: editors, activePane, ...stateStore.observable, navigateHunk, revertSelectedHunk, hunkAt, setScrollLinked, setRowsAligned,
             getDiagnostics: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), disposed }), dispose });
         if (options.controls !== false) stopControls = mountComparisonControls(review, referencePane.section, workingPane.section);
         schedule();

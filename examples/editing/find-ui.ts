@@ -32,10 +32,11 @@ export function mountFindUI(editor: TextEditor) {
         if (!find.getSnapshot().query) return false;
         resume(); find.next(direction, { whenReady: true }); return true;
     };
-    bindFindCommands(editor, listeners.signal, replace => {
+    const register = scopedCommands(editor, listeners.signal);
+    bindFindCommands(register, replace => {
         resume(); const field = replace ? replacement : query; field.focus(); field.select();
     }, navigate, () => owner.activeElement === query);
-    const panel = query.closest("section")!, register = scopedCommands(editor, listeners.signal);
+    const panel = query.closest("section")!;
     register({ id: "find.dismiss", label: "Dismiss Find", enabled: () => panel.contains(owner.activeElement),
         run: () => { find.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, repeat: false });
     register({ id: "find.replaceCurrent", label: "Replace match", enabled: () => owner.activeElement === replacement,

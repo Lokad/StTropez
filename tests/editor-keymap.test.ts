@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { TextEditor } from "../src/browser/text-editor.ts";
 import { createCommandRegistry } from "../src/browser/command-registry.ts";
 import { defaultEditorShortcuts, editorCommandLabels } from "../src/browser/editor-commands.ts";
 
@@ -36,10 +37,11 @@ const bindings = {
 
 for (const layout of ["US International", "French AZERTY"]) {
     test(`default editing shortcuts on ${layout}`, t => {
-        const registry = createCommandRegistry(false, () => true, () => () => true);
+        const pane = {} as TextEditor;
+        const registry = createCommandRegistry(false, () => true, () => () => true, () => pane);
         t.after(() => registry.dispose());
         const dispatched: string[] = [];
-        for (const [id, label] of Object.entries(editorCommandLabels)) {
+        for (const [id, label] of editorCommandLabels) {
             registry.commands.register({ id, label, run: () => { dispatched.push(id); } });
         }
         for (const [keys, id] of defaultEditorShortcuts.standard) registry.keymap.bind(keys, id);

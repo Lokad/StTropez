@@ -251,6 +251,21 @@ and stays out of the workspace inventory. A host lease can retain it after compa
 Opening a toolbar leaves the command target intact. Pass shared settings at mount, then call
 `configure()` on either pane for per-pane changes. [Editor settings](editor.md)
 
+Register a review command once with `comparison.commands.register()`. Both pane palettes
+list it. A shortcut passes its originating editor to the handler. A toolbar calling
+`comparison.commands.run()` uses the last focused pane. Each pane keeps its own key
+bindings and pending chord. Refreshing the baseline cancels any unfinished chord.
+
+```ts
+import type { TextComparison, TextEditor } from "sttropez/browser";
+
+export function bindReviewNote(review: TextComparison, addNote: (pane: TextEditor) => void) {
+    return review.commands.register({
+        id: "review.note", label: "Add note", category: "Review", run: (_, pane) => addNote(pane)
+    }, { keys: ["Mod+k Mod+j"] });
+}
+```
+
 ### Linked scrolling and aligned rows
 
 Pass `settings: { minimap: true }` to show the [viewport minimap](viewport.md#mounting-and-presentation)

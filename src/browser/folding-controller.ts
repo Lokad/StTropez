@@ -130,7 +130,7 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
     const registrations: { dispose(): void }[] = [];
     try {
         for (const id of Object.keys(foldLabels) as FoldCommand[]) {
-            registrations.push(editor.commands.register({ id, label: foldLabels[id],
+            registrations.push(editor.commands.register({ id, label: foldLabels[id], owner: "editor", category: "Folding",
                 enabled: group => available() && !busy() && (group === undefined || typeof group === "string")
                     && !commandTargets(id, group).next().done,
                 run: group => runCommand(id, group) }));
