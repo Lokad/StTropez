@@ -21,7 +21,7 @@ import { collapseFoldRegions, createFoldRegions, foldingSnapshot, mapFoldIndex, 
     revealIndexRange, revealIndexSelection, snapshotFromIndex } from "./folding.ts";
 import { lineContentEnd } from "./newlines.ts";
 import type { DocumentFolding, FoldIndex, FoldRegion, FoldingSnapshot, FoldVersion } from "./folding.ts";
-import { plannedLineSwaps, type LineSwap } from "./line-moves.ts";
+import { lineSwaps } from "./line-moves.ts";
 import { equalValue, snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
 
@@ -197,7 +197,6 @@ export class Workspace {
     private nextAttachmentId = 0;
     private nextTransaction = 0;
     private readonly history: TextHistory;
-    private readonly lineSwaps = new WeakMap<PositionMapping, readonly LineSwap[]>();
     private readonly scope: NotificationScope;
     private readonly records = new Map<ResourceId, ResourceRecord>();
     private readonly resourceKeys = new Set<string>();
@@ -488,10 +487,6 @@ export class Workspace {
             const before = record.buffer!;
             const result = action ? this.scope.read(() => stageTextTransaction(before, action))
                 : "text" in request ? replaceDocumentBuffer(before, request.text) : before.apply(compactDocumentEdit(before, request.edits));
-            if (!action && "edits" in request && request.edits && result.buffer !== before) {
-                const swaps = plannedLineSwaps(before, request.edits);
-                if (swaps) this.lineSwaps.set(result.mapping, swaps);
-            }
             const afterSelections = request.selectionSet ? createSelectionSet(result.buffer.length, request.selectionSet.ranges, request.selectionSet.primary)
                 : request.selection ? createSelectionSet(result.buffer.length, [request.selection]) : undefined;
             const text = result.buffer !== before ? this.prepareText(record, result.buffer, result.mapping, {
@@ -545,10 +540,6 @@ export class Workspace {
             const participant = this.documents.get(change.documentId as DocumentId)!, forward = change.mapping;
             const selections = new Map(change.selections.map(view => [view.viewId, direction === "undo" ? view.before : view.after]));
             const mapping = direction === "undo" ? forward.invert() : forward;
-            const swaps = this.lineSwaps.get(forward);
-            if (direction === "undo" && swaps) {
-                this.lineSwaps.set(mapping, swaps.map(({ first, middle, end }) => ({ first, middle: first + (end - middle), end })));
-            }
             return this.prepareText(participant, direction === "undo" ? change.before : change.after, mapping,
                 { selectionFor: view => selections.get(view.handle.id), undo: direction === "undo" ? forward : undefined });
         });
@@ -567,13 +558,14 @@ export class Workspace {
         const current = record.state.get(), revision = current.revision + 1, before = record.buffer!;
         const state = readySnapshot(options.adopted ?? { ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
         const shared = record.views.size > 1 ? new Map<FoldIndex, FoldIndex>() : undefined;
+        const swaps = lineSwaps(before, buffer, mapping);
         for (const view of record.views.values()) {
             const previous = view.state.get().selectionSet;
             const selections = options.selectionFor?.(view) ?? (options.wholeText
                 ? mapWholeTextSelections(mapping, buffer, previous) : mapSelectionSet(mapping, previous));
             const prior = view.folds.get().index;
             let mapped = shared?.get(prior);
-            if (!mapped) { mapped = mapFoldIndex(buffer, mapping, before, prior, this.lineSwaps.get(mapping)); shared?.set(prior, mapped); }
+            if (!mapped) { mapped = mapFoldIndex(buffer, mapping, before, prior, swaps); shared?.set(prior, mapped); }
             const folds = replayDeletedFolds(view, prior, mapped, mapping, options.undo);
             views.push(this.prepareView(view, record.documentId!, revision, buffer, selections, folds));
         }

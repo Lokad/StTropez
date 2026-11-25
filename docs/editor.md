@@ -463,8 +463,9 @@ use the same transaction/transform path. Composition and noncancellable input us
 
 For headless planning, use `resolveLanguageConfiguration` and `planLanguageEdit`. Pass the
 view’s current fold index as the fifth argument for line commands, including indentation and line comments.
-Each collapsed block counts as one line. Apply the returned edits to the captured buffer so
-folds can follow a move. Omit the index to plan in source lines. A character
+Each collapsed block counts as one line. Pass the full edit batch to the workspace at the captured
+revision. A copy keeps the same fold behavior if it preserves the planner's `lineMove` markers.
+Omit the index to plan in source lines. A character
 command can supply `canOvertype(offset)` to identify closers the caller inserted. Without it,
 typing a closer inserts the character. Advance the lazy
 cursor with `next(workBudget?)` or inspect it with `snapshot()`. Frozen progress gives `status`

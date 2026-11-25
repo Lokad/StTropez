@@ -2,7 +2,9 @@ import { isNonNegativeInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 
 /** Offsets are UTF-16 code units in the original document. Ranges are half-open. */
-export type TextEdit = Readonly<{ from: number; to: number; insert: string }>;
+export type TextEdit = Readonly<{ from: number; to: number; insert: string;
+    /** First edit of a paired whole-line move produced by the language planner. */
+    lineMove?: true }>;
 
 /** Compare the replacement with its validated range in the source. */
 export function changesText(buffer: TextBuffer, edit: TextEdit): boolean {

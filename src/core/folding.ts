@@ -6,7 +6,7 @@ import type { SelectionSet } from "./selections.ts";
 import type { Observable } from "./observable.ts";
 import { partitionPoint } from "./bound-search.ts";
 import { appendNestedFold } from "./fold-nesting.ts";
-import { lineContentEnd } from "./newlines.ts";
+import { lineBoundary, lineContentEnd } from "./newlines.ts";
 import type { LineSwap } from "./line-moves.ts";
 
 /** Host-owned raw anchors include a visible header and at least one complete body row. */
@@ -81,14 +81,12 @@ function movedFold(buffer: TextBuffer, previous: TextBuffer, r: FoldRegion, swap
     const swap = swaps[at - 1];
     if (!swap || r.lineTo > swap.end || r.lineFrom < swap.middle && r.lineTo > swap.middle) return;
     const shift = r.lineFrom < swap.middle ? swap.end - swap.middle : swap.first - swap.middle;
-    const offset = (value: number, line: number) => {
-        const target = line + shift;
-        const oldEnd = line + 1 < previous.lineCount ? previous.offsetAt(line + 1) : previous.length;
-        const newEnd = target + 1 < buffer.lineCount ? buffer.offsetAt(target + 1) : buffer.length;
-        return value === oldEnd ? newEnd : Math.min(newEnd, buffer.offsetAt(target) + value - previous.offsetAt(line));
-    };
+    // Internal separators travel with the block. Its last row can acquire a different terminator.
+    const delta = buffer.offsetAt(r.lineFrom + shift) - previous.offsetAt(r.lineFrom);
+    const end = lineBoundary(buffer, r.lineTo + shift);
+    const to = r.to === lineBoundary(previous, r.lineTo) ? end : Math.min(end, r.to + delta);
     // An empty last source row at EOF has no character that can anchor a fold body.
-    return region(buffer, r.id, offset(r.from, r.lineFrom), offset(r.to, r.lineTo - 1), r.collapsed, r.group) ?? null;
+    return region(buffer, r.id, r.from + delta, to, r.collapsed, r.group) ?? null;
 }
 
 /** View metadata follows document mappings. Degenerate/merged headers cease to be folds. */

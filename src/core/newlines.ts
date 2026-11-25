@@ -7,6 +7,11 @@ export type ImportedText = Readonly<{ text: string; detected: LineEnding | "mixe
 
 type LineReader = Readonly<{ lineCount: number; offsetAt(line: number): number; slice(from: number, to: number): string }>;
 
+/** Start of a row, including the exclusive boundary after the last row. */
+export function lineBoundary(buffer: LineReader & { readonly length: number }, line: number): number {
+    return line < buffer.lineCount ? buffer.offsetAt(line) : buffer.length;
+}
+
 function endingBefore(buffer: LineReader, end: number): "\n" | "\r\n" {
     return end >= 2 && buffer.slice(end - 2, end) === "\r\n" ? "\r\n" : "\n";
 }

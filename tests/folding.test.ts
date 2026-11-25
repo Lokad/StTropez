@@ -2,7 +2,7 @@ import test from "node:test";
 import { nextSeed } from "../fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { FoldIndex } from "../src/core/folding.ts";
-import { TextBuffer, Workspace, createFoldRegions } from "../src/index.ts";
+import { TextBuffer, Workspace, createFoldRegions, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
 import { mapFoldRegions, revealSelectionFolds } from "../src/core/folding.ts";
 
 test("nested collapsed rows keep independent child state and index visible rows without losing raw lines", () => {
@@ -39,6 +39,58 @@ function fixture() {
     const text = () => { const b = model.document(source.documentId).buffer; return b.slice(0, b.length); };
     return { model, source, view, peer, text, finish: () => { view.dispose(); peer.dispose(); model.releaseResource(source.id, true); assert.equal(model.diagnostics().views, 0); assert.equal(model.diagnostics().leases, 0); assert.equal(model.diagnostics().subscriptions, 0); } };
 }
+
+test("copied line moves carry each view's folds through undo and redo", () => {
+    const workspace = new Workspace();
+    const source = workspace.createTextResource({ scope: "fold", resource: "move", variant: "text" }, "Move", {
+        value: "a\r\n  A\nb\n  B\r\nc\n  C\r\nd\r\n  D"
+    });
+    const documentId = source.documentId;
+    const main = workspace.createDocumentView(documentId);
+    const peer = workspace.createDocumentView(documentId);
+    const original = workspace.document(documentId);
+    const ids = ["a", "b", "c", "d"];
+    const heads = [0, original.buffer.offsetAt(4)];
+    const ranges = ids.map((id, i) => ({
+        id, from: original.buffer.offsetAt(2 * i), to: i === 3 ? original.buffer.length : original.buffer.offsetAt(2 * i + 2)
+    }));
+    const states = () => [main, peer].map(view => view.folding.getSnapshot().regions.map(r => [r.id, r.lineFrom, r.collapsed]));
+    try {
+        for (const view of [main, peer]) {
+            view.folding.setRanges(view.folding.getSnapshot(), ranges.map(r => ({ ...r, collapsed: view === main || r.id === "c" })));
+        }
+        main.setSelections(original.revision, heads.map(head => ({ head, anchor: head })), 0);
+        const before = states();
+        const planner = planLanguageEdit(original.buffer, main.getSnapshot().selectionSet, "move-line-down",
+            resolveLanguageConfiguration(), main.folding.getSnapshot().index);
+        const plan = structuredClone(planner.next(4096).result!);
+        planner.dispose();
+        const apply = (edits: typeof plan.edits) => workspace.edit({ documentId, view: main, origin: "host",
+            expectedRevision: workspace.document(documentId).revision, edits, selectionSet: plan.selectionSet });
+        const history = () => ({ documentId, expectedRevision: workspace.document(documentId).revision });
+        assert.ok(apply(plan.edits).applied);
+        const after = states();
+        assert.deepEqual(after, [main, peer].map(view => ["b", "a", "d", "c"].map((id, i) => [id, 2 * i, view === main || id === "c"])));
+        assert.ok(workspace.undo(history()).applied);
+        assert.deepEqual(states(), before);
+        assert.ok(workspace.redo(history()).applied);
+        assert.deepEqual(states(), after);
+        assert.ok(workspace.undo(history()).applied);
+        // An ordinary cut and paste has no move intent. Retaining the marker while changing
+        // the transferred text must not attach the discarded block's fold to different text.
+        const plain = plan.edits.map(({ from, to, insert }) => ({ from, to, insert }));
+        assert.ok(apply(plain).applied);
+        const ordinary = states();
+        assert.notDeepEqual(ordinary, after);
+        assert.ok(workspace.undo(history()).applied);
+        assert.ok(apply(plan.edits.map(edit => ({ ...edit, insert: edit.insert.replace("B", "X") }))).applied);
+        assert.deepEqual(states(), ordinary);
+    } finally {
+        main.dispose();
+        peer.dispose();
+        workspace.releaseResource(source.id, true);
+    }
+});
 
 test("shifted headers and hidden rows keep their revision and per-view collapse state through Undo", () => {
     const f = fixture(), id = f.source.documentId;

@@ -3,6 +3,7 @@ import type { TextBuffer } from "./text-buffer.ts";
 import type { FoldRange, FoldRegion } from "./folding.ts";
 import { prepareFoldRanges } from "./folding.ts";
 import { appendNestedFold } from "./fold-nesting.ts";
+import { lineBoundary } from "./newlines.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 
@@ -57,7 +58,7 @@ function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work:
     };
     work.phase = "scan";
     for (let line = 0; line < buffer.lineCount; line++) {
-        const from = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
+        const from = buffer.offsetAt(line), end = lineBoundary(buffer, line + 1);
         let at = from, indent = 0;
         while (at < end) {
             const chunk = read(at, Math.min(end, at + 4096)); let units = 0;

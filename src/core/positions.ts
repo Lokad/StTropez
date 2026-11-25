@@ -15,7 +15,8 @@ export type PositionMapping = Readonly<{ oldLength: number; newLength: number;
     createMapper?: () => PositionMapping["map"];
     mapRange: (range: AnchoredRange) => AnchoredRange | undefined;
     invert: () => PositionMapping }>;
-type Change = Readonly<{ from: number; to: number; insertedLength: number; unitDeletion?: boolean; inverseUnitDeletion?: boolean }>;
+type Change = Readonly<{ from: number; to: number; insertedLength: number; lineMove?: true | undefined;
+    unitDeletion?: boolean; inverseUnitDeletion?: boolean }>;
 type IndexedChange = Change & Readonly<{ deltaBefore: number; coveredTo: number }>;
 type GeometryPair = Readonly<{ forward: MappingGeometry; reverse: MappingGeometry }>;
 const compiledGeometry = Symbol("compiled position geometry");
@@ -48,17 +49,18 @@ class ChangePositionMap implements PositionMapping {
         this.oldLength = oldLength;
         let delta = 0;
         const indexed: (Change & { deltaBefore: number; coveredTo: number })[] = [];
-        const append = (from: number, to: number, insertedLength: number, change?: Change) => {
-            indexed.push({ ...change, from, to, insertedLength, deltaBefore: delta, coveredTo: to });
+        const append = (change: Change) => {
+            const { from, to, insertedLength } = change;
+            indexed.push({ ...change, deltaBefore: delta, coveredTo: to });
             delta += insertedLength - (to - from);
         };
         if ("edits" in batch) {
             validateTextEdits(oldLength, batch.edits);
-            for (const { from, to, insert } of batch.edits) {
-                if (from !== to || insert.length) append(from, to, insert.length);
+            for (const { from, to, insert, lineMove } of batch.edits) {
+                if (from !== to || insert.length) append({ from, to, insertedLength: insert.length, lineMove });
             }
         } else {
-            for (const change of batch) append(change.from, change.to, change.insertedLength, change);
+            for (const change of batch) append(change);
         }
         // Adjacent consumed intervals cover an original range even if insertions lie between them.
         for (let index = indexed.length - 1; index >= 0; index--) {
@@ -135,7 +137,7 @@ class ChangePositionMap implements PositionMapping {
         const changes = this.changes.map(change => {
             const from = change.from + delta;
             delta += change.insertedLength - (change.to - change.from);
-            return { from, to: from + change.insertedLength, insertedLength: change.to - change.from,
+            return { from, to: from + change.insertedLength, insertedLength: change.to - change.from, lineMove: change.lineMove,
                 unitDeletion: change.inverseUnitDeletion === true, inverseUnitDeletion: change.unitDeletion === true };
         });
         return new ChangePositionMap(this.newLength, changes);
@@ -213,7 +215,7 @@ export function unchangedPositionEdges(mapping: PositionMapping): UnchangedEdges
     return knownMapping(mapping) ? mapping[unchangedEdges]() : undefined;
 }
 /** Internal batch metadata only. Consumers must still prove its relationship to their buffers. */
-export function positionChanges(mapping: PositionMapping): readonly Readonly<{ from: number; to: number; insertedLength: number }>[] | undefined {
+export function positionChanges(mapping: PositionMapping): readonly Change[] | undefined {
     return knownMapping(mapping) && mapping instanceof ChangePositionMap ? mapping[batchChanges]() : undefined;
 }
 

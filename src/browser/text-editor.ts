@@ -33,7 +33,7 @@ import { mountViewport, validateRevealAlignment } from "./viewport.ts";
 import type { ComparisonPresentation, MountedViewport, RevealAlignment, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { lineColumnScanner, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
-import { exportText, lineContentEnd, lineEnding } from "../core/newlines.ts";
+import { exportText, lineBoundary, lineContentEnd, lineEnding } from "../core/newlines.ts";
 import type { EditingCommand, LanguageConfiguration, ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { captureInsertion } from "./captured-insertion.ts";
 import type { CapturedInsertion } from "./captured-insertion.ts";
@@ -521,7 +521,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (local) { done(local); return; }
         const point = (index: GraphemeIndex): GraphemePoint => Object.freeze({ offset, floor: index.floor(offset), ceil: index.ceil(offset), preceding: index.preceding(offset), following: index.following(offset) });
         const buffer = capture.buffer; let line = buffer.lineAt(offset); if (side < 0 && line > 0 && offset === buffer.offsetAt(line)) line--;
-        const from = buffer.offsetAt(line), to = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
+        const from = buffer.offsetAt(line), to = lineBoundary(buffer, line + 1);
         if (graphemeCache?.buffer === buffer && graphemeCache.from === from && graphemeCache.to === to) { done(point(graphemeCache.index)); return; }
         const job = { cursor: createGraphemeCursor(buffer, { from, to }), capture, purpose }; graphemeJob = job;
         const step = () => turn(() => commandTurn(() => {
@@ -763,7 +763,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         return shortRows(buffer, lines);
     }
     function shortRows(buffer: TextBuffer, lines: Iterable<number>): boolean {
-        for (const line of lines) if ((line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length) - buffer.offsetAt(line) > 514) return false;
+        for (const line of lines) if (lineBoundary(buffer, line + 1) - buffer.offsetAt(line) > 514) return false;
         return true;
     }
     function verticalCount(page: boolean): number {
@@ -1350,7 +1350,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function wholeLine(buffer: TextBuffer, offset: number, folds = view.folding.getSnapshot().index): Selection {
         const line = buffer.lineAt(offset), block = collapsedLineBlock(folds, line);
         const next = block?.lineTo ?? line + 1;
-        return { anchor: buffer.offsetAt(block?.lineFrom ?? line), head: next < buffer.lineCount ? buffer.offsetAt(next) : buffer.length };
+        return { anchor: buffer.offsetAt(block?.lineFrom ?? line), head: lineBoundary(buffer, next) };
     }
     function extendPointerUnit(origin: Selection, target: Selection, lineStart?: number): Selection {
         if (target.anchor === lineStart) return origin;
