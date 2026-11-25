@@ -534,7 +534,7 @@ function setPanel(next: DemoPanel): void {
         } else {
             renderOutput();
         }
-        editor?.focus();
+        activePane?.focus();
         return;
     }
     mountFile(active, true);

@@ -355,7 +355,14 @@ test("the reference app edits, reviews and saves the document while its language
     await expect(page.locator(".st-comparison-added").first()).toContainText("Review this quote");
     const baseline = page.getByRole("textbox", { name: "Comparison baseline source" });
     const quickFix = page.getByRole("button", { name: "Code actions", exact: true });
-    await baseline.press("Control+End");
+    const draft = await working.inputValue();
+    await baseline.press("Control+Home");
+    await baseline.press("Shift+ArrowRight");
+    await page.getByRole("button", { name: "Changes", exact: true }).click();
+    await page.keyboard.type("X");
+    await expect(working).toHaveValue(draft);
+    await expect(baseline).toHaveJSProperty("selectionStart", 0);
+    await expect(baseline).toHaveJSProperty("selectionEnd", 1);
     await expect(quickFix).toBeDisabled();
     await quickFix.click({ force: true });
     await expect(page.getByRole("region", { name: "Quick fixes" })).toBeHidden();

@@ -128,7 +128,7 @@ function switchView(review: boolean) {
     }
     document.querySelector("#source")!.setAttribute("aria-pressed", String(!review));
     document.querySelector("#changes")!.setAttribute("aria-pressed", String(review));
-    current.editor.focus();
+    (current.comparison?.activePane() ?? current.editor).focus();
 }
 function refreshBaseline() {
     const refresh = current.comparison?.controller.beginRefresh();

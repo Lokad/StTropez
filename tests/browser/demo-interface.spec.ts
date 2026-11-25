@@ -50,6 +50,7 @@ test("dragging across emitted JavaScript copies both lines and preserves the sel
     await expect(status).toContainText("Saved in this browser");
     await expect(reader).toBeFocused();
     const projectStatus = await status.innerText();
+    await page.getByRole("button", { name: "JavaScript", exact: true }).click();
     await page.keyboard.press("Delete");
     await expect(status).toHaveText("Generated JavaScript is read-only. Edit the TypeScript source.");
     await page.keyboard.type("X");
