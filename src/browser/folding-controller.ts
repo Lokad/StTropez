@@ -7,6 +7,8 @@ import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
 import { createFoldRegions, foldSummary, matchingFoldIds, revealSelectionFolds } from "../core/folding.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
+import { editingInProgress } from "./captured-view.ts";
+import { controllerObservable } from "./controller-observable.ts";
 import type { KernelCursor, KernelStatus } from "../core/kernel-cursor.ts";
 
 export type FoldDiscoveryBatch = Readonly<{ ranges: readonly DiscoveredFold[]; isCurrent?: () => boolean }>;
@@ -39,7 +41,7 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
     let disposed = false;
     let job: { document: DocumentSnapshot; abort: AbortController; pumping?: boolean; cursor?: FoldDiscoveryCursor } | undefined;
     const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view, target);
-    const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand; };
+    const busy = () => editingInProgress(editor.activity());
     const publish = (status: FoldingStatus["status"], message = "") => {
         const folds = view.folding.getSnapshot(), summary = foldSummary(folds.index);
         notifications.publish(cell, Object.freeze({ status, revision: folds.revision, regions: summary.count,
@@ -154,11 +156,17 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         notifications.assertWritable();
         disposed = true;
         for (const registration of registrations) registration.dispose();
-        cancel(); listeners.abort(); stopDocument(); stopTab?.(); stopFolds(); publish("disposed");
+        cancel();
+        listeners.abort();
+        stopDocument();
+        stopTab?.();
+        stopFolds();
+        publish("disposed");
+        cell.clearSnapshotListeners();
     };
     editor.signal.addEventListener("abort", dispose, { once: true, signal: listeners.signal });
     refresh();
-    return Object.freeze({ ...cell.observable,
+    return Object.freeze({ ...controllerObservable(cell, "Folding", () => disposed),
         setCollapsed: (collapsed: boolean, group?: string) => available() && !busy()
             && runCommand(collapsed ? "fold.collapse-all" : "fold.expand-all", group, false),
         refresh: () => { notifications.assertWritable(); refresh(); }, dispose });

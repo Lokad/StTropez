@@ -135,7 +135,8 @@ the controller drops the stale result. During composition or queued editing, it 
 honors the user’s latest fold choices. If a discovered block grows over a visible caret or selection
 endpoint, it opens so the user can continue typing there. On failure, existing mapped folds stay visible. Read the
 `FoldingStatus` message for the cause. Status can be `pending`, `ready`, `failed` or `disposed`.
-Snapshots also give the revision, counts and available groups.
+Snapshots also give the revision, counts and available groups. On remount, subscribe to the new
+controller. The old controller keeps its final snapshot and closes its subscriptions.
 
 ### Language-server discovery
 

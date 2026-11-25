@@ -676,7 +676,8 @@ starting another request. The range end is exclusive. An overlapping range, a se
 outside the identifier starts a fresh lookup. Edits, focus loss and provider changes clear the result.
 Style the marks with `.st-occurrence-text`, `.st-occurrence-read` and `.st-occurrence-write`.
 Use `occurrences.intersect(from, to)` to read the same ranges. Each pane owns its caret and
-requests. The host owns the provider connection.
+requests. After disposal you can read the final snapshot. Subscribe to the replacement pane’s
+controller when remounting. The host owns the provider connection.
 
 ### Folding
 

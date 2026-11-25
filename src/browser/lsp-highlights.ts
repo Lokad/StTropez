@@ -2,6 +2,8 @@ import { emptyList } from "../core/empty-list.ts";
 import { documentHighlightMethod } from "../protocol/lsp-methods.ts";
 import { Store, type Observable } from "../core/observable.ts";
 import { codeWordConstituentPattern } from "../core/word-patterns.ts";
+import { controllerObservable } from "./controller-observable.ts";
+import { editingInProgress } from "./captured-view.ts";
 import type { DocumentId } from "../core/workspace.ts";
 import { highlightClient } from "../protocol/lsp-highlights.ts";
 import type { LspDocumentHighlight } from "../protocol/lsp-highlights.ts";
@@ -37,7 +39,7 @@ export function mountOccurrences(editor: TextEditor, owner: LspDocumentOwner,
         if (result?.revision !== line.revision) return emptyList;
         return result.intersect(line.from, line.to).map(({ from, to, kind }) => ({ from, to, className: "st-occurrence-" + kind }));
     } });
-    const busy = () => { const state = editor.activity(); return state.composing || state.pendingInput || state.pendingCommand || state.pendingWord || state.pendingGrapheme; };
+    const busy = () => editingInProgress(editor.activity());
     const publish = (status: LspHighlightSnapshot["status"], revision = cell.get().revision, caret: number | null = null) => {
         const items = result?.items ?? emptyList;
         if (items !== cell.get().items) layer.invalidate();
@@ -120,5 +122,10 @@ export function mountOccurrences(editor: TextEditor, owner: LspDocumentOwner,
         cell.clearSnapshotListeners();
     };
     refresh();
-    return Object.freeze({ ...cell.observable, refresh: () => { notifications.assertWritable(); refresh(); }, intersect, dispose });
+    return Object.freeze({
+        ...controllerObservable(cell, "Occurrence", () => disposed),
+        refresh: () => { notifications.assertWritable(); refresh(); },
+        intersect,
+        dispose,
+    });
 }

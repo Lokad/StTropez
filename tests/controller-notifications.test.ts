@@ -26,8 +26,10 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
         : attachEditorLanguage(editor, f.provider, { occurrences: {} }).occurrences;
     const commands = [controller.refresh, controller.dispose];
     if (kind === "folding") commands.push(() => { editor.commands.run("fold.collapse-all"); });
-    let attempted = false, rejected = 0; const unexpected: unknown[] = [];
+    let attempted = false, rejected = 0, closed = 0;
+    const unexpected: unknown[] = [];
     const stop = controller.subscribe(() => {
+        if (controller.getSnapshot().status === "disposed") closed++;
         if (attempted) return; attempted = true;
         for (const command of commands) try { command(); } catch (error) {
             if (error instanceof Error && /Reentrant mutation/.test(error.message)) rejected++; else unexpected.push(error);
@@ -38,7 +40,10 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
         const before = controller.getSnapshot(); assert.notEqual(before.status, "disposed");
         f.edit(); assert.notEqual(controller.getSnapshot(), before);
         assert.notEqual(controller.getSnapshot().status, "disposed");
-    } finally { stop(); lifetime.abort(); layers.dispose(); view.dispose(); f.workspace.tabs.close(tab); }
+    } finally { lifetime.abort(); stop(); layers.dispose(); view.dispose(); f.workspace.tabs.close(tab); }
+    assert.equal(controller.getSnapshot().status, "disposed");
+    assert.equal(closed, 1);
+    assert.throws(() => controller.subscribe(() => {}), /disposed/);
     await Promise.resolve(); // The provider releases the document lease after observer delivery.
     assert.equal(tasks.size, 0); assert.equal(f.workspace.diagnostics().leases, 0);
 });
