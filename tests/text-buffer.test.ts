@@ -190,6 +190,8 @@ test("longest line indexing survives splits, joined lines, CRLF, empty lines and
 test("large line indexes remain exact across split backings and retained versions", () => {
     const rows = Array.from({ length: 100_000 }, (_, index) => `${index % 127 === 0 ? "👩‍💻e\u0301" : "r"}${index % 10}${index % 3 === 0 ? "\r" : ""}`);
     const text = rows.join("\n"), original = TextBuffer.from(text), versions = [original];
+    const retained = TextBuffer.retained(versions);
+    assert.ok(retained.gapEntries <= retained.lineEntries, "The longest-line index should fit within the newline index.");
     const boundaries = [0, 1, 65_535, 65_536, 99_999, 100_000];
     let buffer = original, expected = text;
     for (const row of boundaries) {

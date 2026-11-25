@@ -7,7 +7,7 @@ import { joinTrees } from "./avl.ts";
 import { partitionPoint } from "./bound-search.ts";
 
 type LineIndex = Readonly<Uint32Array | Float64Array>;
-type Backing = Readonly<{ text: string; lines: LineIndex; gaps: LineIndex; gapBase: number }>;
+type Backing = Readonly<{ text: string; lines: LineIndex; gaps: LineIndex }>;
 type LineMeasure = Readonly<{ prefix: number; suffix: number; longest: number }>;
 type Leaf = LineMeasure & Readonly<{
     kind: "leaf"; backing: Backing; from: number; length: number; firstLine: number; breaks: number; height: 1;
@@ -23,14 +23,21 @@ const smallPieceUnits = 64;
 function lowerBound(values: ArrayLike<number>, target: number): number {
     return partitionPoint(values.length, index => values[index]! < target);
 }
+/** Only internal maxima need storage. A leaf spans two consecutive newline offsets. */
+function gapAt({ lines, gaps }: Backing, index: number): number {
+    const line = index - gaps.length;
+    return line < 0 ? gaps[index]! : lines[line + 1]! - lines[line]! - 1;
+}
 function piece(backing: Backing, from: number, length: number): Leaf {
     const firstLine = lowerBound(backing.lines, from), breaks = lowerBound(backing.lines, from + length) - firstLine;
     const prefix = breaks ? backing.lines[firstLine]! - from : length;
     const suffix = breaks ? from + length - backing.lines[firstLine + breaks - 1]! - 1 : length;
-    let longest = Math.max(prefix, suffix), left = backing.gapBase + firstLine, right = left + Math.max(0, breaks - 1);
+    let longest = Math.max(prefix, suffix);
+    let left = backing.gaps.length + firstLine;
+    let right = left + breaks - 1;
     while (left < right) {
-        if (left % 2) longest = Math.max(longest, backing.gaps[left++]!);
-        if (right % 2) longest = Math.max(longest, backing.gaps[--right]!);
+        if (left % 2) longest = Math.max(longest, gapAt(backing, left++));
+        if (right % 2) longest = Math.max(longest, gapAt(backing, --right));
         left = Math.floor(left / 2); right = Math.floor(right / 2);
     }
     return { kind: "leaf", backing, from, length, firstLine, breaks, height: 1, prefix, suffix, longest };
@@ -43,12 +50,12 @@ function backing(text: string): Backing {
     const Index = text.length <= 0xffff_ffff ? Uint32Array : Float64Array, lines = new Index(count);
     let line = 0;
     for (let index = text.indexOf("\n"); index !== -1; index = text.indexOf("\n", index + 1)) lines[line++] = index;
-    let gapBase = lines.length > 1 ? 1 : 0; while (gapBase < lines.length - 1) gapBase *= 2;
-    const gaps = new Index(gapBase * 2);
-    for (let index = 0; index + 1 < lines.length; index++) gaps[gapBase + index] = lines[index + 1]! - lines[index]! - 1;
-    for (let index = gapBase - 1; index > 0; index--) gaps[index] = Math.max(gaps[index * 2]!, gaps[index * 2 + 1]!);
-    // Owned indexes never escape the private root or change after construction.
-    return { text, lines, gaps, gapBase };
+    const gaps = new Index(Math.max(0, count - 1));
+    const value = { text, lines, gaps };
+    for (let index = gaps.length - 1; index > 0; index--) {
+        gaps[index] = Math.max(gapAt(value, index * 2), gapAt(value, index * 2 + 1));
+    }
+    return value;
 }
 function original(text: string): Root { return text.length ? piece(backing(text), 0, text.length) : null; }
 function branch(left: Node, right: Node): Branch {
