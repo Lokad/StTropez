@@ -51,7 +51,8 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
     function page(items: readonly CodeActionChoice[], offset: number) {
         start = offset;
         choices.replaceChildren();
-        for (const choice of items.slice(start, start + pageSize)) {
+        const visible = items.slice(start, start + pageSize);
+        for (const choice of visible) {
             const control = node("button");
             control.type = "button";
             control.textContent = choice.title;
@@ -61,7 +62,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
             control.onclick = () => void pick(choice);
             choices.append(control);
         }
-        count.textContent = items.length <= pageSize ? "" : `${start + 1}–${Math.min(start + pageSize, items.length)} of ${items.length}`;
+        count.textContent = items.length <= pageSize ? "" : `${start + 1}–${start + visible.length} of ${items.length}`;
         paging(pages, "fixes", start, items.length, pageSize, next => {
             page(items, next);
             markChoice();
@@ -75,32 +76,33 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
     }
     function render() {
         if (!open) return;
-        const state = actions.getSnapshot(), preview = state.preview;
-        if (state.status === "idle" || state.status === "expired" || state.status === "applied" && !command) {
+        const { status: phase, message, preview, choice, choices: items } = actions.getSnapshot();
+        if (phase === "idle" || phase === "expired" || phase === "applied" && !command) {
             open = false;
             const focused = panel.matches(":focus-within");
             overlay.hide();
             if (focused) editor.focus();
         }
-        if (state.status === "ready") command = !!preview?.command;
-        status.textContent = text(state.status === "ready" && !state.choices.length ? "No quick fix at this position." : state.message);
-        if (list !== state.choices) {
-            list = state.choices;
+        if (phase === "ready") command = !!preview?.command;
+        status.textContent = text(phase === "ready" && !items.length ? "No quick fix at this position." : message);
+        if (list !== items) {
+            list = items;
             page(list, 0);
         }
         if (shown !== preview) {
             shown = preview;
             apply = button(footer, preview?.command ? "Run action" : "Apply fix", () => preview?.apply(), apply);
             showEdits(preview);
-            if (state.choice !== null && (state.choice < start || state.choice >= start + pageSize)) {
-                page(list, Math.floor(state.choice / pageSize) * pageSize);
+            if (choice !== null && (choice < start || choice >= start + pageSize)) {
+                page(list, Math.floor(choice / pageSize) * pageSize);
             }
         }
         markChoice();
         apply.disabled = !preview?.canApply || !!preview.command && !owner.provider.getSnapshot().commandAvailable;
     }
     function selectFirst(items: readonly CodeActionChoice[]) {
-        if (!open || items !== actions.getSnapshot().choices || actions.getSnapshot().choice !== null) return;
+        const state = actions.getSnapshot();
+        if (!open || items !== state.choices || state.choice !== null) return;
         const first = items.find(item => item.disabled === null);
         if (first && !first.needsResolve) void first.select({ review: true });
     }
@@ -135,7 +137,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
             void choice.select({ review: true });
             return true;
         }
-        return false;
+        return length > 0 || state.status === "pending" || state.status === "executing";
     }
     const listen = listenUntil(signal);
     listen(panel, "keydown", event => editor.keymap.handle(event));
@@ -159,11 +161,11 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
     bind("quickfix.next", "Next quick fix", "ArrowDown", () => move(1));
     bind("quickfix.apply", "Apply selected fix", "Enter", () => {
         const state = actions.getSnapshot();
-        if (state.preview && !apply.disabled) {
-            void state.preview.apply();
-            return true;
+        if (state.preview) {
+            if (!apply.disabled) void state.preview.apply();
+        } else if (state.status !== "resolving" && !move(1)) {
+            actions.cancel();
+            return false;
         }
-        if (!["pending", "resolving", "executing"].includes(state.status)) actions.cancel();
-        return false;
     });
 }

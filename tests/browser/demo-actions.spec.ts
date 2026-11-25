@@ -87,6 +87,8 @@ test("held real fixes cannot replace newer text or follow later file focus", asy
 test("explicit lazy fix activation applies once after resolution and expires with later typing", async ({ page }) => {
     // A generic delayed LSP wrapper around a real compiler fix supplies the lazy shape.
     let release: (() => void) | undefined, resolutions = 0;
+    let holdList = false;
+    let deliverList: (() => void) | undefined;
     await page.routeWebSocket("**/demo-provider/*", client => {
         const server = client.connectToServer(), requests = new Map<number, string>(); let edit: unknown;
         client.onMessage(message => {
@@ -100,18 +102,46 @@ test("explicit lazy fix activation applies once after resolution and expires wit
             if (method === "textDocument/codeAction" && Array.isArray(value.result)) {
                 edit = value.result.find((action: { edit?: unknown }) => action.edit)?.edit;
                 value.result = [{ title: "Resolve spelling fix", kind: "quickfix", data: { fixture: "lazy-spelling" } }];
+                if (holdList) {
+                    holdList = false;
+                    deliverList = () => client.send(JSON.stringify(value));
+                    return;
+                }
             }
             client.send(JSON.stringify(value));
         });
     });
-    await openDemo(page); const source = await typo(page); await source.press("Control+.");
-    const popup = page.getByRole("region", { name: "Quick fixes", exact: true }), choice = popup.getByRole("button", { name: "Resolve spelling fix", exact: true });
-    await expect(choice).toBeVisible(); expect(resolutions).toBe(0); await choice.click(); await expect.poll(() => resolutions).toBe(1);
+    await openDemo(page);
+    const source = await typo(page);
+    await expect(page.getByRole("button", { name: "Review fix: Resolve spelling fix" })).toBeVisible();
+    const original = await source.inputValue();
+    holdList = true;
+    await source.press("Control+.");
+    const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
+    const choice = popup.getByRole("button", { name: "Resolve spelling fix", exact: true });
+    await expect.poll(() => !!deliverList).toBe(true);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(source).toHaveValue(original);
+    expect(await source.evaluate((field: HTMLTextAreaElement) =>
+        field.value.slice(field.selectionStart, field.selectionEnd))).toBe("calculateTotl");
+    await expect(popup).toContainText("Requesting code actions.");
+    deliverList!();
+    await expect(choice).toBeVisible();
+    expect(resolutions).toBe(0);
+    await choice.click();
+    await expect.poll(() => resolutions).toBe(1);
+    await page.keyboard.press("Enter");
+    await expect(source).toHaveValue(original);
     await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)"); release!();
     await expect(popup).toBeHidden(); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
     await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
-    await page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2552:/ }).click(); await source.press("Control+."); await choice.click(); await expect.poll(() => resolutions).toBe(2);
+    await page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2552:/ }).click();
+    await source.press("Control+.");
+    await expect(choice).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => resolutions).toBe(2);
     await source.press("Control+End"); await page.keyboard.insertText("\n// Keep later input"); release!();
     await expect(popup).toBeHidden(); await expect(source).toBeFocused();
     await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)"); await expect(page.locator("#editor")).toContainText("// Keep later input");
