@@ -1,4 +1,5 @@
 import { build } from "esbuild";
+import { demoSample } from "../../examples/demo/samples.ts";
 import { test, expect } from "./fixtures.ts";
 
 test("the focused sample picker can move past a pending project and return to the same load", async ({ page }) => {
@@ -30,7 +31,9 @@ test("the focused sample picker can move past a pending project and return to th
     await step("ArrowDown", "shipping");
     await expect.poll(() => page.evaluate(() => (window as unknown as { shippingLoad: Probe }).shippingLoad.release !== undefined)).toBe(true);
     await step("ArrowDown", "errors");
-    await expect(page.locator("#description")).toHaveText(/error/i);
+    const description = page.locator("#description");
+    const expected = demoSample("errors").description;
+    await expect(description).toHaveText(expected);
     await step("ArrowUp", "shipping");
     await step("ArrowDown", "errors");
     await page.evaluate(async () => {
@@ -38,7 +41,7 @@ test("the focused sample picker can move past a pending project and return to th
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     });
     await expect(picker).toHaveValue("errors");
-    await expect(page.locator("#description")).toHaveText(/error/i);
+    await expect(description).toHaveText(expected);
     await step("ArrowUp", "shipping");
     await expect(page.getByRole("textbox", { name: "shipping.ts", exact: true })).toBeVisible();
     expect(await page.evaluate(() => (window as unknown as { shippingLoad: Probe }).shippingLoad.reads)).toBe(1);
