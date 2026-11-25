@@ -12,6 +12,10 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     });
     const events = new AbortController();
     let intent = 0;
+    let definitionFocus = 0;
+    const leaveSource = () => { definitionFocus = 0; };
+    editor.element.addEventListener("focusout", leaveSource, { signal: events.signal });
+    window.addEventListener("blur", leaveSource, { signal: events.signal });
     function clear() {
         choices.replaceChildren();
         result.value = "";
@@ -64,7 +68,10 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
         display(request, await language.signature.request(), help => { if (!help.signature) result.value = "No signature."; });
     });
     command("definition", async request => {
-        display(request, await language.navigation.request("definition"), locations => {
+        definitionFocus = request;
+        const outcome = await language.navigation.request("definition");
+        if (definitionFocus !== request) return;
+        display(request, outcome, locations => {
             const choice = locations.locationAt(0);
             if (!choice) result.value = "No definition.";
             else choice.open(place => {

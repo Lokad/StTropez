@@ -24,6 +24,40 @@ test("the reference Find replaces the selected word, reports wrapping and return
     await expect(page.locator(".st-viewport-row").filter({ hasText: "quote" })).toHaveCount(2);
 });
 
+test("a late definition leaves typing in the reference Find bar", async ({ page }) => {
+    let release: (() => void) | undefined;
+    await page.routeWebSocket("**/lsp-fixture", client => {
+        const server = client.connectToServer();
+        server.onMessage(packet => client.send(packet));
+        client.onMessage(packet => {
+            const request = JSON.parse(packet.toString());
+            if (request.method !== "textDocument/definition") return server.send(packet);
+            const uri = request.params.textDocument.uri;
+            const range = { start: { line: 0, character: 13 }, end: { line: 0, character: 19 } };
+            release = () => {
+                client.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { uri, range } }));
+                // The diagnostic appears after the held reply on the same connection.
+                client.send(JSON.stringify({ jsonrpc: "2.0", method: "textDocument/publishDiagnostics",
+                    params: { uri, diagnostics: [{ range, message: "Definition delivered" }] } }));
+            };
+        });
+    });
+    await page.goto("/reference/");
+    await page.getByRole("button", { name: "Connect language server" }).click();
+    const source = page.getByRole("textbox", { name: "quote.ts" });
+    await source.press("Control+End");
+    await page.getByRole("button", { name: "Definition", exact: true }).click();
+    await expect.poll(() => !!release).toBe(true);
+    await page.getByRole("button", { name: "Find", exact: true }).click();
+    const query = page.getByRole("textbox", { name: "Find text" });
+    await expect(query).toBeFocused();
+    release!();
+    await expect(page.getByRole("button", { name: "Definition delivered" })).toBeVisible();
+    await page.keyboard.type("q");
+    await expect(query).toHaveValue("q");
+    await expect(page.locator("#pane .st-viewport-row").first()).toContainText("export const accent");
+});
+
 test("the reference host highlights the completion that Enter inserts", async ({ page }) => {
     await page.goto("/reference/");
     await page.getByRole("button", { name: "Connect language server" }).click();
