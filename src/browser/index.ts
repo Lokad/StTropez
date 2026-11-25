@@ -3,8 +3,8 @@ export type { PointerDwell, PointerDwellOptions, PointerDwellPosition } from "./
 export { defaultEditorShortcuts } from "./editor-commands.ts";
 export type { EditorCommand, EditorCommands, EditorKeymap } from "./command-registry.ts";
 export type { ViewRestoreOptions, ViewRestoreResult, ViewState } from "./view-state.ts";
-export { editRefusedEvent, inputConflictEvent, typedTextEvent } from "./input-events.ts";
-export type { EditRefusedDetail, InputConflictDetail, TypedTextDetail } from "./input-events.ts";
+export { editRefusedEvent, inputConflictEvent } from "./input-events.ts";
+export type { EditRefusedDetail, InputConflictDetail } from "./input-events.ts";
 export { mountTextViewport } from "./viewport.ts";
 export type { DecorationLayer, DecorationLayerOptions, DecorationLayers, DecorationProvider } from "./decoration-layers.ts";
 export type { InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealAlignment, RevealOptions, TextViewport, TextViewportOptions, ViewportSettings, ViewportActivity, ViewportDiagnostics, ViewportSnapshot, ViewportInputBinding } from "./viewport.ts";

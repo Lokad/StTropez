@@ -230,23 +230,13 @@ local focus tree, even in nested or closed roots. Dispose dependent controllers,
 before removing their nodes. Keep project-level document and recovery services across view remounts.
 [Mounting in React](getting-started.md#host-responsibilities)
 
-### Accepted typing
+### Edit intent
 
 Use `editor.onEditIntent(listener, signal?)` to dismiss a preview when source editing begins.
 The listener receives `"beforeinput"`, `"compositionstart"`, `"paste"` or `"cut"` before that pane
 handles the native event. A single gesture can produce several events or leave the text unchanged.
 Other panes and host fields have their own input. Call the registration’s `dispose()` to unsubscribe.
 Aborting the supplied signal or disposing the editor also removes the listener.
-
-Listen for `typedTextEvent` on `editor.element` to react to character input after it succeeds.
-Its frozen `TypedTextDetail` carries the input text, document ID, revision and complete selection
-set at acceptance. An auto-pair reports the character the user typed. Typing over its closing
-character advances the caret at the same revision. A completion accepted by typing a commit
-character reports that character.
-
-Several carets produce one event. Queued text arrives when replay commits and can arrive as one
-string. Composition reports the committed text at the end. Paste, undo, editor commands and
-rejected input produce no typing event. The event bubbles within the editor's DOM root.
 
 ### Input conflict recovery
 
