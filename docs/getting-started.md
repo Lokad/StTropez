@@ -236,7 +236,7 @@ const split = mountTextEditor(second, workspace, file.documentId, {
         language: { tabSize: 2, insertSpaces: true, blockComment: { open: "<!--", close: "-->" } } }
 });
 const checklist = split.decorations.addProvider({
-    name: "checklist", order: 0,
+    order: 0,
     provide(line) {
         if (line.from >= line.lineStart + 5) return [];
         const buffer = workspace.document(line.documentId).buffer;

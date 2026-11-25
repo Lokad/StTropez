@@ -140,7 +140,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         if (to > state.length) throw new RangeError("Match range exceeds document length.");
         return matches.matchesIn(from, to);
     };
-    const addHighlights = () => editor.decorations?.addProvider({ name: "find matches", order: 60, minimap: false, provide: line => {
+    const addHighlights = () => editor.decorations?.addProvider({ order: 60, minimap: false, provide: line => {
         const state = store.get();
         if (!state.count || state.revision !== line.revision || !valid()) return emptyList;
         const doc = readDocument();

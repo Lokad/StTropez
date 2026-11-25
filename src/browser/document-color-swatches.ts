@@ -8,7 +8,7 @@ import type { TextEditor } from "./text-editor.ts";
 const css = (c: LspColor) => `rgba(${c.red * 255}, ${c.green * 255}, ${c.blue * 255}, ${c.alpha})`;
 const watch = documentRangeWatch<LspDocumentColor>(documentColorMethod, colorClient, ({ from, to, color }) => ({
     from, to, className: "st-document-color", before: "st-color-swatch", properties: { "--st-swatch-color": css(color) }
-}), { name: "document colors", order: 35 });
+}), { order: 35 });
 
 export function mountSwatches(editor: TextEditor, owner: LspDocumentOwner,
     activate?: (item: LspDocumentColor) => void) {

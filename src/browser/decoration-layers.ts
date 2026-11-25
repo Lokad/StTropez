@@ -7,7 +7,7 @@ import type { DocumentChange, DocumentSnapshot } from "../core/workspace.ts";
 import type { InlineDecoration, LineClass, LineDecorator, PresentedLine } from "./viewport.ts";
 import { validDecorationClass } from "./decoration-parts.ts";
 
-export type DecorationLayerOptions = Readonly<{ name: string; order: number; minimap?: boolean }>;
+export type DecorationLayerOptions = Readonly<{ order: number; minimap?: boolean }>;
 export type DecorationLayer = Readonly<{
     set: (revision: number, ranges: readonly InlineDecoration[]) => boolean;
     clear: () => void;
@@ -111,8 +111,7 @@ export function createDecorationLayers(current: () => DocumentSnapshot | undefin
     let disposed = false;
     function register(options: DecorationLayerOptions): Entry {
         if (disposed || !live()) throw new Error("Decoration layers require a live view.");
-        if (typeof options.name !== "string" || !options.name.trim() || !Number.isFinite(options.order))
-            throw new RangeError("A decoration layer needs a name and a finite order.");
+        if (!Number.isFinite(options.order)) throw new RangeError("Decoration layer order must be finite.");
         const entry: Entry = { order: options.order, minimap: options.minimap !== false };
         const at = partitionPoint(entries.length, i => entries[i]!.order <= entry.order);
         entries.splice(at, 0, entry);

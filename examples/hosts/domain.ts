@@ -68,7 +68,7 @@ export class HostDomainTools {
     attach(id: string, tab: TabId, editor: TextEditor): () => void {
         const token = `domain-session-${this.workspace.allocateIdentity()}`, revision = this.workspace.document(editor.view.documentId).revision;
         const data = this.data.get(editor.view) ?? { revision, owned: new Map<string, OwnedFold>(), annotations: noAnnotations };
-        const layer = editor.decorations.add({ name: "domain annotations", order: 30 });
+        const layer = editor.decorations.add({ order: 30 });
         this.data.set(editor.view, data); const session = { token, id, editor, layer, data, target: this.workspace.tabs.capture(tab) }, listeners = new AbortController(); this.sessions.set(token, session);
         const changed = () => { this.sync(session); if (this.job?.session === session && !this.current(this.job)) this.invalidate(this.job); };
         const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.folding.subscribe(changed), this.workspace.tabs.subscribe(changed), this.workspace.resourceForDocument(editor.view.documentId).metadata.subscribe(changed)];

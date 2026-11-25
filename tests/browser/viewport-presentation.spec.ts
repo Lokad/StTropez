@@ -739,7 +739,7 @@ test("current-line presentation follows the primary caret through input, folding
         style.textContent = ".host-row { background: rgb(30, 45, 65) } .host-color { color: rgb(180, 60, 160) }"; document.body.append(style, host);
 
         const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Line source" }), viewport = editor.viewport;
-        editor.decorations.addProvider({ name: "syntax", order: 0, lineClass: () => "host-row",
+        editor.decorations.addProvider({ order: 0, lineClass: () => "host-row",
             provide: line => [{ from: line.from, to: line.to, className: "host-color" }] });
         window.presentationFixture = { workspace, editor, tab, resource: resource.id, host };
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();

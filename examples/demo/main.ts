@@ -329,7 +329,7 @@ function mountFile(file: DemoFile, focus = false): void {
             tokens?.invalidate(); if (syntax?.status === "ready") refreshBrackets(reference); renderMetadata();
         }, { emit: false, folds: true });
         referencePresentation = syntax;
-        if (syntax || project.sample.id === "host") tokens = reference.decorations.addProvider({ name: "syntax", order: 0, provide: syntax?.decorate ?? hostDecorations });
+        if (syntax || project.sample.id === "host") tokens = reference.decorations.addProvider({ order: 0, provide: syntax?.decorate ?? hostDecorations });
         reference.configure({ language: editingConfiguration(syntax?.editing) });
         if (syntax) {
             const source = reference.workspace.observeDocument(reference.view.documentId);
@@ -344,8 +344,8 @@ function mountFile(file: DemoFile, focus = false): void {
             { settings, view: file.view, ariaLabel: file.name, requestLine: linePrompt(document) });
         renderProblems();
     }
-    syntaxLayer = editor.decorations.addProvider({ name: "syntax", order: 0, provide: project.sample.id === "host" ? hostDecorations : presentation.decorate });
-    diagnosticsLayer = editor.decorations.add({ name: "diagnostics", order: 40 });
+    syntaxLayer = editor.decorations.addProvider({ order: 0, provide: project.sample.id === "host" ? hostDecorations : presentation.decorate });
+    diagnosticsLayer = editor.decorations.add({ order: 40 });
     element("character-warning-details").replaceChildren();
     const saved = savedViews.get(file.view);
     if (saved) editor.restoreView(saved, { selection: "current" });

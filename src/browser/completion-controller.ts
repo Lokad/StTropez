@@ -124,7 +124,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             const captured = publishedSession = snippet;
             if (captured) {
                 const stop = captured.stops[captured.active]!;
-                fieldMarkers ??= editor.decorations.add({ name: "snippet-fields", order: 25, minimap: false });
+                fieldMarkers ??= editor.decorations.add({ order: 25, minimap: false });
                 fieldMarkers.set(captured.revision, captured.stops.flatMap(other => other === stop || other.index === 0 ? []
                     : other.ranges.map(({ from, to }) => ({ from, to, className: "st-snippet-field" }))));
                 const liveField = () => { notifications.assertWritable(); return !disposed && snippetCurrent(captured) && idle(); };

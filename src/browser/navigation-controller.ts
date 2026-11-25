@@ -202,7 +202,7 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
         if (job?.result && !job.result.isCurrent()) queueMicrotask(() => { if (hover === job) leave(); });
         if (request?.reply && !request.reply.isCurrent()) expire(request);
     });
-    const layer = editor.decorations.add({ name: "definition link", order: 110, minimap: false });
+    const layer = editor.decorations.add({ order: 110, minimap: false });
     bindDefinitionPointer(editor, inspect, leave, hit => {
         if (hit.open) {
             const current = markedLink?.source.isCurrent(); leave();

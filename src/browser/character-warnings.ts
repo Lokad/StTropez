@@ -26,7 +26,7 @@ export function mountCharacterWarnings(workspace: Workspace, target: TabTarget |
                     && workspace.document(documentId).revision === document.revision });
         },
     });
-    const layer = viewport.decorations.addProvider({ name: "character warnings", order: 110, minimap: false,
+    const layer = viewport.decorations.addProvider({ order: 110, minimap: false,
         provide: (line: PresentedLine): readonly InlineDecoration[] => {
             if (!classifier || disposed || line.documentId !== documentId) return emptyList;
             const before = rows.get(line.line);

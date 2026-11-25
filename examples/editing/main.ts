@@ -17,11 +17,11 @@ let failDecoration = false;
 const params = new URLSearchParams(location.search);
 const editors = { primary: mountTextEditor(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: params.has("readonly"), settings: { pasteLineEndings: params.get("pasteLineEndings") === "preserve" ? "preserve" : "local" } }),
     secondary: mountTextEditor(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary source" }) };
-const primarySyntax = editors.primary.decorations.addProvider({ name: "syntax", order: 0, provide: slice => {
+const primarySyntax = editors.primary.decorations.addProvider({ order: 0, provide: slice => {
     if (failDecoration) { failDecoration = false; throw new Error("Fixture decoration failure"); }
     return presentation.primary.decorate(slice);
 } });
-editors.secondary.decorations.addProvider({ name: "syntax", order: 0, provide: presentation.secondary.decorate });
+editors.secondary.decorations.addProvider({ order: 0, provide: presentation.secondary.decorate });
 const findUI = mountFindUI(editors.primary);
 const listeners = new AbortController(); let disposed = false;
 let foldingController: FoldingController | undefined;

@@ -60,7 +60,7 @@ color swatches or annotations. Publish absolute UTF-16 offsets against the revis
 import type { TextEditor } from "sttropez/browser";
 
 export function markColor(editor: TextEditor, revision: number, from: number, to: number) {
-    const layer = editor.decorations.add({ name: "colors", order: 30 });
+    const layer = editor.decorations.add({ order: 30 });
     layer.set(revision, [{ from, to, className: "color-literal", before: "color-swatch",
         properties: { "--swatch-color": "#7494ad" }, afterLine: "Accent color" }]);
     return layer;
@@ -81,12 +81,13 @@ the edited range. Points at either boundary survive. Undo restores the text. The
 the mark again against the restored revision.
 `clear()` removes its marks. `dispose()` retires the layer. The view disposes all its layers on teardown.
 
-For syntax, call `decorations.addProvider({ name, order, provide, lineClass })`.
+For syntax, call `decorations.addProvider({ order, provide, lineClass })`.
 `provide(line)` receives a bounded `PresentedLine` fragment with absolute offsets.
 The optional `lineClass(line)` styles the whole row. To repaint changed lines, call the provider's
 `invalidate(fromLine, toLine)` with zero-based lines and an exclusive end. Omit the bounds for a new
-token stream. Layers apply in ascending order, with registration order breaking ties. A later layer
-can override an earlier CSS custom property. The stylesheet controls precedence between classes.
+token stream. Give each layer a finite `order`. Layers paint in ascending order, with registration
+order breaking ties. A later layer can override an earlier CSS custom property. The stylesheet
+controls precedence between classes.
 
 ### Viewport settings
 

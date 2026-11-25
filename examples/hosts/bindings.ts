@@ -107,7 +107,7 @@ export class ViewBindings {
             this.attachTools(scope, "comparison", this.controller.viewTab("primary"), review.panes.working, presentation);
             scope.defer(() => referencePresentation.clear());
             const reference = review.panes.reference;
-            reference.decorations.addProvider({ name: "syntax", order: 0, provide: referencePresentation.decorate });
+            reference.decorations.addProvider({ order: 0, provide: referencePresentation.decorate });
             scope.defer(this.language.attachReferenceFind("reference", reference, referencePresentation, () => review.controller.getSnapshot().baseline, saveTarget));
             const state = this.states.get("comparison")?.get(view.documentId);
             if (state) review.panes.working.restoreView(state, { selection: "current" });
@@ -340,7 +340,7 @@ export class ViewBindings {
         };
     }
     private attachTools(scope: CleanupScope, id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): void {
-        editor.decorations.addProvider({ name: "syntax", order: 0, provide: presentation.decorate });
+        editor.decorations.addProvider({ order: 0, provide: presentation.decorate });
         for (const tool of this.tools) scope.defer(tool.attach(id, tab, editor, presentation));
     }
     private detach(id: string): void {

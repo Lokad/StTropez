@@ -41,7 +41,7 @@ export function mountDiagnostic(editor: TextEditor, { scope, binding }: LspDocum
     options: DiagnosticControllerOptions): DiagnosticController {
     const { workspace, view, tab } = editor;
     const source = scope.observeDiagnostics(binding);
-    const layer = editor.decorations.add({ name: "diagnostics", order: 40 });
+    const layer = editor.decorations.add({ order: 40 });
     const notifications = workspace.createNotificationScope(options.onError);
     const cell = new Store<DiagnosticSnapshot>(empty, notifications);
     let displayed: LspDiagnostics | null = null, disposed = false, stop: (() => void) | undefined;

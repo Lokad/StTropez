@@ -8,7 +8,7 @@ test("point labels at replacement boundaries survive clipping and later edits", 
     const id = workspace.createDocument({ scope: "test", resource: "labels", variant: "text" }, "Labels", "0123456789".repeat(4));
     const layers = createDecorationLayers(() => workspace.document(id), () => {}, () => true);
     workspace.onDocumentChange(id, change => { layers.advance(change); });
-    const labels = layers.handle.add({ name: "notes", order: 1 });
+    const labels = layers.handle.add({ order: 1 });
     const points = [2, 4, 6, 8, 11].map(from => ({ from, to: from, className: "note", afterLine: String(from) }));
     assert.ok(labels.set(0, points));
     function check(expected: [string, number][]) {

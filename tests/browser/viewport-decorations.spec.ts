@@ -25,7 +25,7 @@ test("decorated viewport bounds endpoint reads and preserves overlap order, sele
         const disjoint = Array.from({ length: 256 }, (_, i) => ({ get from() { reads++; return i * 2; }, get to() { reads++; return i * 2 + 1; }, className: "paint-first" }));
         const combined = [{ from: 4, to: 8, className: "paint-first" }, { from: 0, to: 6, className: "paint-second" }, { from: 4, to: 5, className: "paint-first" }, { from: 0, to: 512, className: "invalid .class" }];
         const viewport = mountTextViewport(host, workspace, tab);
-        const tokens = viewport.decorations.addProvider({ name: "tokens", order: 0, provide: () => overlap ? combined : disjoint });
+        const tokens = viewport.decorations.addProvider({ order: 0, provide: () => overlap ? combined : disjoint });
         try {
             reads = 0; viewport.flush(); const endpointReads = reads, row = host.querySelector<HTMLElement>('.st-viewport-row[data-line="0"]')!;
             const exact = row.textContent === "x".repeat(512), colored = row.querySelectorAll(".paint-first").length;
@@ -68,10 +68,10 @@ test("a retained diagnostic, swatch and point follow typing and history in a scr
         document.body.append(style, host);
         const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Layer source" });
         const visited: number[] = [];
-        editor.decorations.addProvider({ name: "tokens", order: 0, provide: line => {
+        editor.decorations.addProvider({ order: 0, provide: line => {
             visited.push(line.line); return [{ from: line.from, to: line.to, className: "test-token" }];
         } });
-        const layer = editor.decorations.add({ name: "diagnostics", order: 30 });
+        const layer = editor.decorations.add({ order: 30 });
         const buffer = workspace.document(id).buffer, start = buffer.offsetAt(target), point = buffer.offsetAt(target + 1);
         editor.view.setSelection(0, { anchor: start, head: start }); editor.viewport.revealOffset(start); editor.viewport.flush(); editor.focus();
         editor.viewport.flush(); visited.length = 0;

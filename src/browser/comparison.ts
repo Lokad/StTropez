@@ -130,7 +130,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const commandScopes = [workingMount.commandScope];
     const working = workingMount.editor, pair = createComparisonPanes(workingMount, changed), referenceEditor = () => pair.reference()?.editor, referenceViewport = () => referenceEditor()?.viewport;
     const differences = (editor: TextEditor, side: "working" | "baseline") => editor.decorations.addProvider({
-        name: "comparison", order: 10, provide: decorate(side), lineClass: lineClass(side)
+        order: 10, provide: decorate(side), lineClass: lineClass(side)
     });
     const workingDiff = differences(working, "working");
     let referenceDiff: ReturnType<typeof differences> | undefined;

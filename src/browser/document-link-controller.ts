@@ -42,7 +42,7 @@ type Job = {
 const idle: DocumentLinkSnapshot = Object.freeze({ status: "idle", links: emptyList, message: "" });
 
 const watchLinks = documentRangeWatch<LspDocumentLink>(documentLinkMethod, linkClient,
-    ({ from, to }) => ({ from, to, className: "st-document-link" }), { name: "document links", order: 30 });
+    ({ from, to }) => ({ from, to, className: "st-document-link" }), { order: 30 });
 
 /** Discover links for one editor. Only a current user action hands an opaque target to the host. */
 export function mountDocumentLinks(editor: TextEditor, owner: LspDocumentOwner, options: DocumentLinkControllerOptions): DocumentLinkController {

@@ -23,7 +23,7 @@ test("viewport maps retained source rows through newline edits without stale con
         let shade = "row-token", early = false;
         const stopEarly = workspace.observeDocument(source.documentId).subscribe(() => { if (early) viewport.flush(); });
         const { viewport, setComparisonRows } = mountViewport(host, workspace, tab);
-        viewport.decorations.addProvider({ name: "syntax", order: 0,
+        viewport.decorations.addProvider({ order: 0,
             provide: row => [{ from: row.from, to: Math.min(row.to, row.from + 5), className: shade }], lineClass: row => row.line % 2 ? "row-odd" : "row-even" });
         const doc = () => workspace.document(source.documentId), row = (line: number) => host.querySelector<HTMLElement>(`.st-viewport-row[data-line="${line}"]`)!;
         const mounted = () => [...host.querySelectorAll<HTMLElement>(".st-viewport-row")];

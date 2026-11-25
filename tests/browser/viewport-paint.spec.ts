@@ -24,7 +24,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
         const { viewport, setComparisonRows } = mountViewport(host, workspace, tab);
         let lastGeometry = viewport.getSnapshot(), geometryChanges = 0;
         const stopGeometry = viewport.subscribe(() => { lastGeometry = viewport.getSnapshot(); geometryChanges++; });
-        viewport.decorations.addProvider({ name: "syntax", order: 0, provide: line => { calls++; return [{ from: line.from, to: line.to, className: shade }]; } });
+        viewport.decorations.addProvider({ order: 0, provide: line => { calls++; return [{ from: line.from, to: line.to, className: shade }]; } });
         viewport.onRender(() => notices++);
         const input = viewport.bindInput(() => {});
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true, characterData: true });

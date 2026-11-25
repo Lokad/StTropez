@@ -28,7 +28,7 @@ export function mountBracketHighlights(workspace: Workspace, target: TabTarget |
     const stops: (() => void)[] = [];
     type Job = { cursor: BracketMatchCursor; current: () => boolean; revision: number; caret: number; running: boolean };
     let job: Job | undefined, current: (() => boolean) | undefined, decorations: readonly InlineDecoration[] = emptyList;
-    const layer = viewport.decorations.add({ name: "matching brackets", order: 100, minimap: false });
+    const layer = viewport.decorations.add({ order: 100, minimap: false });
     const focused = () => isFocused(input);
     const available = () => !disposed && !!limits && !input.disabled && workspace.ownsDocumentView(view, target) && focused();
     function cursor(buffer: TextBuffer, at: number): BracketMatchCursor {

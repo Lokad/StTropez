@@ -33,7 +33,7 @@ export function mountOccurrences(editor: TextEditor, owner: LspDocumentOwner,
     const watching = () => available() && editor.getSnapshot().focused && provider.getSnapshot().phase === "ready";
     const intersect = (from: number, to: number) => result?.isCurrent() && watching()
         ? result.intersect(from, to) : emptyList;
-    const layer = editor.decorations.addProvider({ name: "occurrences", order: 20, minimap: false, provide: line => {
+    const layer = editor.decorations.addProvider({ order: 20, minimap: false, provide: line => {
         if (result?.revision !== line.revision) return emptyList;
         return result.intersect(line.from, line.to).map(({ from, to, kind }) => ({ from, to, className: "st-occurrence-" + kind }));
     } });
