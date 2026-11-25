@@ -33,8 +33,7 @@ function fixture(count = 5000) {
         const value = { view: current, element, getSnapshot: read, activity: read,
             onRender: (listener: () => void) => { rendered.addEventListener("render", listener); return () => rendered.removeEventListener("render", listener); },
             scrollTo: ({ top: next }: { top?: number }) => { if (next !== undefined) top = next; }, flush: () => {} } as unknown as TextViewport;
-        return { value, element, setComparisonRows: (rows: ViewportComparisonRows | undefined) => { installed = rows; return true; }, installed: () => installed, render: () => rendered.dispatchEvent(new Event("render")), renderListeners: () => getEventListeners(rendered, "render").length,
-            scroll: (to: number) => { top = to; element.dispatchEvent(new Event("scroll")); } };
+        return { value, element, setComparisonRows: (rows: ViewportComparisonRows | undefined) => { installed = rows; return true; }, installed: () => installed, render: () => rendered.dispatchEvent(new Event("render")), renderListeners: () => getEventListeners(rendered, "render").length };
     }
     const working = viewport(view), reference = viewport(refView);
     const workingInput = new EventTarget() as HTMLTextAreaElement, referenceInput = new EventTarget() as HTMLTextAreaElement;
@@ -83,6 +82,11 @@ test("optional comparison listeners detach, rebind current references and cancel
         observe(element: Element) { observed.add(element); } unobserve(element: Element) { observed.delete(element); } disconnect() { observed.clear(); }
     } });
     const f = fixture(10), scroll = createComparisonScroll(f.win, f.panes, f.state, () => true);
+    const navigateBeforePaint = (top: number) => {
+        f.working.element.dispatchEvent(new Event("keydown"));
+        f.working.value.scrollTo({ top });
+        assert.ok(scroll.snapshot().pending);
+    };
     const listeners = () => [f.working, f.reference].flatMap(pane => [pane.renderListeners(), ...["scroll", "keydown", "beforeinput", "pointerdown", "compositionend"].map(type => getEventListeners(pane.element, type).length)]);
     const idle = () => {
         assert.ok(listeners().every(n => n === 0)); assert.equal(f.workspace.diagnostics().subscriptions, 0); assert.equal(observed.size, 0);
@@ -100,12 +104,12 @@ test("optional comparison listeners detach, rebind current references and cancel
             assert.equal(f.working.renderListeners(), 1);
             assert.equal(getEventListeners(f.working.element, "pointerdown").length, 1);
             assert.equal(f.workspace.diagnostics().subscriptions, 2);
-            f.working.scroll(212 + pass * 20); assert.ok(scroll.snapshot().pending); scroll.setLinked(false);
-            assert.equal(scroll.snapshot().pending, false); assert.equal(getEventListeners(f.working.element, "scroll").length, 0);
+            navigateBeforePaint(40 + pass * 20); scroll.setLinked(false);
+            assert.equal(scroll.snapshot().pending, false); assert.equal(getEventListeners(f.working.element, "keydown").length, 0);
             assert.equal(f.working.renderListeners(), 1); assert.equal(observed.size, 0);
             f.alignment.setEnabled(false); idle();
         }
-        f.alignment.setEnabled(true); scroll.setLinked(true); f.drain(); f.working.scroll(312); assert.ok(scroll.snapshot().pending);
+        f.alignment.setEnabled(true); scroll.setLinked(true); f.drain(); navigateBeforePaint(100);
         f.setReference(undefined); assert.equal(scroll.snapshot().pending, false); f.drain();
         assert.equal(f.reference.renderListeners(), 0); assert.equal(observed.size, 1);
         assert.equal(f.reference.installed(), undefined); assert.equal(f.working.installed(), undefined);
@@ -118,6 +122,6 @@ test("optional comparison listeners detach, rebind current references and cancel
         f.alignment.setEnabled(false); assert.equal(f.working.renderListeners(), 1);
         assert.equal(getEventListeners(f.working.element, "compositionend").length, 0); assert.equal(f.workspace.diagnostics().subscriptions, 2);
         f.drain();
-        f.working.scroll(412); assert.ok(scroll.snapshot().pending); scroll.dispose(); f.alignment.dispose(); idle();
+        navigateBeforePaint(140); scroll.dispose(); f.alignment.dispose(); idle();
     } finally { scroll.dispose(); f.dispose(); if (previous) Object.defineProperty(globalThis, "ResizeObserver", previous); else Reflect.deleteProperty(globalThis, "ResizeObserver"); }
 });
