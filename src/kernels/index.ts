@@ -12,3 +12,4 @@ export { JsonRpcConnection } from "../protocol/json-rpc.ts";
 export { LspSession } from "../protocol/lsp-session.ts";
 
 export { decodeLspDiagnostics } from "../protocol/lsp-features.ts";
+export { applyLspWorkspaceEdit, type LspWorkspaceEditOptions } from "../protocol/lsp-workspace-edit.ts";

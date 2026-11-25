@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { LspCommandScope, LspHostCommandContext } from "../src/protocol/index.ts";
+import { applyLspWorkspaceEdit } from "../src/kernels/index.ts";
 import { retainLspDocument } from "../src/protocol/lsp-client.ts";
 import { actionClient } from "../src/protocol/lsp-actions.ts";
 import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";
@@ -10,9 +11,8 @@ const stale = (error: unknown) => error instanceof RpcError && error.code === -3
 const scopeFor = (f: ReturnType<typeof clientFixture>): LspCommandScope => ({ snapshots: () => [f.document()], isCurrent: () => true,
     review: async (request, context) => {
         assert.ok(context.isCurrent()); assert.ok(request.edit.isCurrent());
-        if (!request.edit.documents.some(change => change.edits.length)) return { applied: true };
-        return f.workspace.editDocuments(request.edit.documents.map(change => ({ documentId: f.document().id,
-            expectedRevision: change.target.document.revision, edits: change.edits, origin: "host", history: { kind: "refactor" } })));
+        applyLspWorkspaceEdit(f.workspace, request.edit, { origin: "host", historyKind: "refactor" });
+        return { applied: true };
     } });
 const run = async (client: ReturnType<typeof actionClient>, f: ReturnType<typeof clientFixture>) => {
     const doc = f.document(); return client.run({ document: doc, from: 0, to: 0 }).result;
@@ -53,14 +53,25 @@ test("host server authority captures one immutable invocation, refuses other arg
 test("explicit server route retains captured applyEdit ownership and does not authorize unsolicited edits", async t => {
     const f = clientFixture(t), client = actionClient(f.provider, { commandPolicy: () => ({ kind: "server" }) }); t.after(client.dispose);
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "command", command: "host.allowed" }]);
-    const batch = await run(client, f), uri = (f.sent("textDocument/didOpen")[0]!.params as { textDocument: { uri: string } }).textDocument.uri;
-    const edit = { edit: { changes: { [uri]: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } }, newText: "changed" }] } } };
+    const other = f.workspace.document(f.other.documentId);
+    const snapshots = () => [f.document(), f.workspace.document(other.id)];
+    const batch = await client.run({ document: f.document(), project: snapshots(), from: 0, to: 0 }).result;
+    const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } };
+    const edit = { edit: { changes: {
+        [f.document().language!.uri]: [{ range, newText: "changed" }],
+        [other.language!.uri]: [{ range, newText: "second" }],
+    } } };
     assert.equal((await f.peer.sendRequest("workspace/applyEdit", edit) as { applied: boolean }).applied, false);
     f.peer.onRequest("workspace/executeCommand", async () => {
         assert.equal((await f.peer.sendRequest("workspace/applyEdit", edit) as { applied: boolean }).applied, true); return "done";
     });
-    const receipt = await batch.execute(batch.actions[0]!, scopeFor(f));
+    const receipt = await batch.execute(batch.actions[0]!, { ...scopeFor(f), snapshots });
     assert.equal(receipt.decision?.applied, true); assert.equal(f.document().buffer.slice(0, 7), "changed");
+    const changed = f.workspace.document(other.id);
+    assert.equal(changed.buffer.line(0).text, "second delta");
+    assert.ok(f.workspace.undo({ documentId: other.id, expectedRevision: changed.revision }).applied);
+    assert.equal(f.document().buffer.line(0).text, "alpha beta");
+    assert.equal(f.workspace.document(other.id).buffer, other.buffer);
     assert.equal((await f.peer.sendRequest("workspace/applyEdit", edit) as { applied: boolean }).applied, false);
     assert.equal(f.provider.getSnapshot().commandAvailable, true);
 });

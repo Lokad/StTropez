@@ -483,13 +483,13 @@ The bounds are zero-based edit ordinals. Each note contains a bounded excerpt an
 insertion length. `total` counts edits across all files. An empty range reads no excerpts.
 The host chooses its page size and asks for approval of the full edit.
 
-`applyLspWorkspaceEdit(workspace, edit, options)` rechecks captures and applies one atomic shared
-history transaction. `origin` is required; `requiredOrigins` adds host permission requirements;
-`view` carries the originating view; `historyKind` defaults to `"replace"`. The helper returns
-only changed document snapshots and throws on refusal. An empty or text-identical batch adds no
-revision/history entry. It owns no leases, selection/lifecycle capture or approval controls.
-When applying an edit directly, retain its documents and recheck host approval before confirmation.
-The browser controller owns these lifetimes for a mounted editor.
+A headless command's `review` callback can import `applyLspWorkspaceEdit` from `sttropez/kernels`.
+Retain the target documents and recheck approval before calling it. The helper checks every
+target and commits the changes as one shared Undo step. Pass the edit `origin` and any
+`requiredOrigins`, originating `view` or `historyKind` (default `"replace"`). It returns the
+changed document snapshots and throws on refusal. An empty or text-identical edit adds no history.
+For a mounted editor, give the browser attachment your review decision. It applies the edit and
+manages the document lifetimes.
 
 ### Code actions and commands
 

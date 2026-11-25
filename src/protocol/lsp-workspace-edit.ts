@@ -24,33 +24,35 @@ export type LspWorkspaceEditOptions = Readonly<{
  * Throws on stale identities, malformed edits or refused authority, before any mutation.
  * Returns updated snapshots only for documents whose buffers changed; an empty edit succeeds.
  */
-export function applyLspWorkspaceEdit(workspace: Workspace, edit: LspWorkspaceEdit, options: LspWorkspaceEditOptions): readonly DocumentSnapshot[] {
+export function applyLspWorkspaceEdit(workspace: Workspace, edit: LspWorkspaceEdit, {
+    origin, source, requiredOrigins, view, historyKind = "replace",
+}: LspWorkspaceEditOptions): readonly DocumentSnapshot[] {
     if (!edit.isCurrent()) throw staleRequest();
-    if (options.view && !workspace.ownsDocumentView(options.view)) throw new Error("LSP edit view does not belong to this workspace.");
-    const identities = new Set<DocumentId>(), before: DocumentSnapshot[] = [], requests: EditRequest[] = [];
-    for (const change of edit.documents) {
-        const target = change.target, captured = target.document, document = workspace.document(captured.documentId as DocumentId);
+    if (view && !workspace.ownsDocumentView(view)) throw new Error("LSP edit view does not belong to this workspace.");
+    const identities = new Set<DocumentId>();
+    const requests: EditRequest[] = [];
+    for (const { target, edits } of edit.documents) {
+        const captured = target.document;
+        const document = workspace.document(captured.documentId as DocumentId);
         if (!target.isCurrent() || target.index.buffer !== captured.buffer || document.resourceId !== captured.resourceId
             || document.revision !== captured.revision || document.buffer !== captured.buffer) {
             throw staleRequest();
         }
         if (identities.has(document.id)) throw new TypeError("An LSP edit must name each document once.");
         identities.add(document.id);
-        if (!change.edits.length) continue;
+        if (!edits.length) continue;
         const metadata = workspace.resourceForDocument(document.id).metadata.getSnapshot();
-        if (options.requiredOrigins?.some(origin => !metadata.capabilities.edit.includes(origin))) throw new Error("read-only");
-        before.push(document);
-        requests.push({ documentId: document.id, expectedRevision: document.revision, edits: change.edits, origin: options.origin,
-            ...(options.source === undefined ? {} : { source: options.source }), history: { kind: options.historyKind ?? "replace" },
-            ...(options.view?.documentId === document.id ? { view: options.view } : {}) });
+        if (requiredOrigins?.some(required => !metadata.capabilities.edit.includes(required))) throw new Error("read-only");
+        requests.push({ documentId: document.id, expectedRevision: document.revision, edits, origin,
+            ...(source === undefined ? {} : { source }), history: { kind: historyKind },
+            ...(view?.documentId === document.id ? { view } : {}) });
     }
     if (!requests.length) return emptyList;
     // The core validates every range, revision, permission, lock and view before publishing.
     const result = workspace.editDocuments(requests);
     if (!result.applied) throw new Error(result.reason);
-    return Object.freeze(before.flatMap(document => {
-        const current = workspace.document(document.id);
-        return current.buffer === document.buffer ? [] : [current];
+    return Object.freeze(result.revisions.flatMap(({ documentId, revision }, i) => {
+        return revision === requests[i]!.expectedRevision ? [] : [workspace.document(documentId)];
     }));
 }
 

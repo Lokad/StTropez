@@ -1,6 +1,7 @@
 import type { DocumentLanguage, Observable, Workspace } from "../../src/index.ts";
 import { BrowserLspWorkspace } from "../../src/browser/index.ts";
-import { type LspWorkspace, createLspFoldingClient, type LspFoldingClient, lspRangeOffsets } from "../../src/protocol/index.ts";
+import { ProtocolDecodeError, createLspFoldingClient, lspRangeOffsets } from "../../src/protocol/index.ts";
+import type { LspFoldingClient, LspWorkspace } from "../../src/protocol/index.ts";
 import { decodeLspDiagnostics } from "../../src/kernels/index.ts";
 import type { LspWorkspaceScope, RpcCall, LspScopeAccess, LspTargetResolver } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
@@ -183,7 +184,15 @@ export class DemoLanguage {
                         const related = (value.relatedInformation ?? []).map(info => {
                             const target = project.get(info.location.uri), file = this.files.find(file => file.resource.documentId === target?.document.documentId);
                             let placed: DemoDiagnostic["related"][number]["target"] = null;
-                            if (target && file) { try { placed = Object.freeze({ documentId: file.resource.documentId, revision: target.document.revision, ...lspRangeOffsets(target.index, info.location.range) }); } catch { /* Retain the message without offering an invalid location. */ } }
+                            if (target && file) {
+                                try {
+                                    const offsets = lspRangeOffsets(target.index, info.location.range);
+                                    placed = Object.freeze({ documentId: file.resource.documentId,
+                                        revision: target.document.revision, ...offsets });
+                                } catch (error) {
+                                    if (!(error instanceof ProtocolDecodeError)) throw error;
+                                }
+                            }
                             const name = Object.keys(this.config!.documents).find(name => this.config!.documents[name]!.uri === info.location.uri) ?? info.location.uri;
                             return Object.freeze({ name, message: info.message, line: info.location.range.start.line, character: info.location.range.start.character, target: placed });
                         });

@@ -315,6 +315,7 @@ lane. A competing command or a lane waiting for reconnect cannot apply a prepara
 active server command receives incoming edit requests. The runner refuses unsolicited or overlapping
 requests. Host command handlers use their captured `applyEdit` callback under the same checks. Before
 each approval, recheck the request, target identities and revisions, and host permissions.
+A headless review callback can commit the [approved workspace edit](language-features.md#rename-and-workspace-edits).
 An edit outside the command’s captured project requires host target resolution, even if another
 feature has the file open.
 
