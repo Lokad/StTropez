@@ -1,5 +1,5 @@
 import { isPositiveInteger } from "../core/bounds.ts";
-import { wireLimits, rpcCodes, cancelledRequest, closedConnection, RpcError, isRecord, isJson, immutableJson } from "./wire.ts";
+import { wireLimits, rpcCodes, cancelledRequest, closedConnection, RpcError, isRecord, isJson, freezeParsedJson } from "./wire.ts";
 import type { JsonValue } from "./wire.ts";
 export type RpcId = string | number | null;
 export type RpcTransport = Readonly<{
@@ -58,7 +58,7 @@ export class JsonRpcConnection {
     private report(error: Error): void { try { this.options.onError?.(error); } catch { /* Host diagnostics cannot interrupt protocol cleanup. */ } }
     private release(stop: () => void): void { try { stop(); } catch (error) { this.report(error instanceof Error ? error : new Error("RPC cleanup failed.")); } }
     private encode(value: unknown): string {
-        if (!isJson(value, 0, { left: this.maxJsonNodes })) throw new TypeError("RPC messages must contain bounded JSON values.");
+        if (!isJson(value, this.maxJsonNodes)) throw new TypeError("RPC messages must contain bounded JSON values.");
         const encoded = JSON.stringify(value); if (encoded.length > this.maxMessageUnits) throw new RangeError("RPC message exceeds the configured limit."); return encoded;
     }
     private emit(value: unknown): boolean {
@@ -128,12 +128,11 @@ export class JsonRpcConnection {
         let value: unknown;
         try { value = JSON.parse(text); } catch { this.emit(failure(null, rpcCodes.parseError, "Parse error")); return; }
         if (Array.isArray(value) && value.length > wireLimits.batchMessages) { this.dispose(new RpcError(rpcCodes.invalidRequest, "RPC batch exceeds the configured limit.")); return; }
-        if (!isJson(value, 0, { left: this.maxJsonNodes })) {
+        if (!freezeParsedJson(value, this.maxJsonNodes)) {
             if (Array.isArray(value)) { const replies = value.map(message => this.rejectJson(message)).filter(reply => reply !== undefined); if (replies.length) this.emit(replies); }
             else { const reply = this.rejectJson(value); if (reply !== undefined) this.emit(reply); }
             return;
         }
-        immutableJson(value);
         if (Array.isArray(value)) {
             if (!value.length) { this.emit(failure(null, rpcCodes.invalidRequest, "Invalid Request")); return; }
             void Promise.all(value.map(message => this.dispatch(message))).then(replies => {

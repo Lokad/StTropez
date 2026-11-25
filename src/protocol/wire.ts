@@ -38,26 +38,46 @@ export const isLspUri = (value: unknown): value is string => isLspIdentityPart(v
 const snapshots = new WeakMap<object, boolean>();
 /** Internal ownership proof for immutable syntax caches; it grants no snapshot-size exemption. */
 export const isCapturedJson = (value: unknown): value is object => !!value && typeof value === "object" && snapshots.has(value);
-export function isJson(value: unknown, depth = 0, budget: { left: number } = { left: wireLimits.snapshotNodes }): value is JsonValue {
-    if (depth > wireLimits.jsonDepth || --budget.left < 0) return false;
-    if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-    if (typeof value === "number") return Number.isFinite(value);
-    if (Array.isArray(value)) { for (let i = 0; i < value.length; i++) {
-        const d = Object.getOwnPropertyDescriptor(value, i); if (!d || !("value" in d) || !isJson(d.value, depth + 1, budget)) return false;
-    } return true; }
-    if (!isRecord(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return false;
-    const keys = Object.keys(value); if (keys.length > budget.left) return false;
-    return keys.every(key => { const d = Object.getOwnPropertyDescriptor(value, key)!; return "value" in d && isJson(d.value, depth + 1, budget); });
+function visitJson(root: unknown, remaining: number, parsed: boolean): boolean {
+    let signedZeros = 0;
+    function visit(value: unknown, depth: number): boolean {
+        if (depth > wireLimits.jsonDepth || --remaining < 0) return false;
+        if (typeof value === "number") {
+            if (Object.is(value, -0)) signedZeros++;
+            return Number.isFinite(value);
+        }
+        if (value === null || typeof value !== "object") {
+            return value === null || typeof value === "string" || typeof value === "boolean";
+        }
+        const array = Array.isArray(value);
+        if (!parsed && !array && ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return false;
+        const keys = array ? undefined : Object.keys(value);
+        const length = array ? value.length : keys!.length;
+        if (length > remaining) return false;
+        const beforeChildren = remaining;
+        const beforeZeros = signedZeros;
+        for (let i = 0; i < length; i++) {
+            const key = keys ? keys[i]! : i;
+            const child: unknown = parsed ? (value as Record<string, unknown>)[key]
+                : Object.getOwnPropertyDescriptor(value, key)?.value;
+            if (!visit(child, depth + 1)) return false;
+        }
+        if (parsed) {
+            Object.freeze(value);
+            // A detached JSON snapshot normalizes -0 and has its own subtree size limit.
+            const nodes = 1 + beforeChildren - remaining;
+            snapshots.set(value, signedZeros === beforeZeros && nodes <= wireLimits.snapshotNodes);
+        }
+        return true;
+    }
+    return visit(root, 0);
 }
-/** Only parsed, validated JSON reaches this walk. Each reusable subtree meets snapshot bounds. */
-function freezeJson(value: JsonValue): number {
-    // JSON.stringify normalizes -0; retaining that subtree would change snapshot semantics.
-    if (!value || typeof value !== "object") return Object.is(value, -0) ? Infinity : 1;
-    let nodes = 1; for (const child of Object.values(value)) nodes += freezeJson(child);
-    Object.freeze(value); snapshots.set(value, nodes <= wireLimits.snapshotNodes); return nodes;
+export function isJson(value: unknown, maxNodes: number = wireLimits.snapshotNodes): value is JsonValue {
+    return visitJson(value, maxNodes, false);
 }
-export function immutableJson(value: JsonValue): JsonValue {
-    freezeJson(value); return value;
+/** The caller owns the fresh JSON.parse result, including any partially visited rejected value. */
+export function freezeParsedJson(value: unknown, maxNodes: number = wireLimits.snapshotNodes): value is JsonValue {
+    return visitJson(value, maxNodes, true);
 }
 /** Internal shared validation/capture for host-supplied session options. */
 export function jsonSnapshot(value: unknown): JsonValue { return captureJson(value, false); }
@@ -65,8 +85,11 @@ export function jsonSnapshot(value: unknown): JsonValue { return captureJson(val
 export function decodeJson(value: unknown): JsonValue { return captureJson(value, true); }
 function captureJson(value: unknown, decoding: boolean): JsonValue {
     if (value && typeof value === "object" && snapshots.get(value) === true) return value as JsonValue;
-    if (!isJson(value)) throw decoding ? new ProtocolDecodeError("Expected bounded JSON values.") : new TypeError("Expected bounded JSON values.");
-    return immutableJson(JSON.parse(JSON.stringify(value)) as JsonValue);
+    if (isJson(value)) {
+        const copy: unknown = JSON.parse(JSON.stringify(value));
+        if (freezeParsedJson(copy)) return copy;
+    }
+    throw decoding ? new ProtocolDecodeError("Expected bounded JSON values.") : new TypeError("Expected bounded JSON values.");
 }
 /** Structural comparison for captured JSON; property order has no protocol meaning. */
 export function jsonEqual(a: unknown, b: unknown): boolean {

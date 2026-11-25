@@ -44,7 +44,9 @@ test("suppressed cancellation notifications still reject locally and release dea
 test("RPC JSON node limits follow the message budget and accept large bounded replies", async t => {
     const wire = raw(), timer = clock(), rpc = new JsonRpcConnection(wire.port, { schedule: timer.schedule });
     t.after(() => rpc.dispose());
-    const items = Array.from({ length: 60_000 }, (_, i) => ({ label: `item${i}` })), call = rpc.request("items");
+    // 100,001 JSON values in the result, within the pilot's 512 KB corpus.
+    const items = Array.from({ length: 50_000 }, (_, i) => [i]);
+    const call = rpc.request("items");
     let received: unknown; void call.result.then(value => { received = value; }, error => { received = error; });
     wire.receive({ jsonrpc: "2.0", id: call.id, result: items }); await flush();
     assert.equal(rpc.snapshot().pendingRequests, 0); assert.equal(timer.count(), 0);
@@ -74,6 +76,10 @@ test("over-budget response envelopes reject their known calls immediately withou
     let nested: unknown = null; for (let i = 0; i < 70; i++) nested = [nested];
     wire.receive({ jsonrpc: "2.0", id: deep.id, result: nested }); await flush();
     assert.ok(depthError instanceof RpcError); assert.equal(timer.count(), 0); assert.equal(rpc.snapshot().disposed, false);
+    const overflow = rpc.request("numeric-result");
+    const rejected = assert.rejects(overflow.result, error => error instanceof RpcError && error.code === rpcCodes.invalidRequest);
+    wire.text(`{"jsonrpc":"2.0","id":${overflow.id},"result":1e400}`);
+    await rejected;
     const sent = wire.sent.length;
     wire.receive([{ jsonrpc: "2.0", method: "note", params: Array(100).fill(0) },
         { jsonrpc: "2.0", method: "host/work", id: "incoming", params: Array(100).fill(0) }]); await flush();
