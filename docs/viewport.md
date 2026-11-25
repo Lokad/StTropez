@@ -106,8 +106,9 @@ An unchanged viewport setting schedules no paint. Configuration returns `false` 
 The gutter reserves four digits and grows for longer line numbers, up to a third of the viewport width.
 Both comparison panes size their gutters for the longer document. Hiding the gutter preserves folds and keyboard commands.
 
-Rulers and line highlights add no text or scroll range. Only a collapsed primary caret gets a line
-highlight. Each view has its own settings. Set `--st-column-ruler`, `--st-current-line` and
+Rulers and line highlights add no text or scroll range. A collapsed primary caret highlights the row
+from the gutter to the right edge, including the space below a short minimap. Each view has its own settings.
+Set `--st-column-ruler`, `--st-current-line` and
 `--st-current-line-border` in CSS to choose colors. Host `font-feature-settings` can override
 individual ligatures.
 In forced colors, a dotted outline identifies the current line.

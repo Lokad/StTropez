@@ -668,6 +668,8 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
             click: { x: guide.getBoundingClientRect().left, y: point.top + point.height / 2 } };
     });
     await info.attach("initial-ruler-geometry", { body: JSON.stringify(initial), contentType: "application/json" });
+    const gutter = page.locator(".st-viewport-gutter");
+    await expect(gutter).toHaveCSS("box-shadow", "none");
     expect(initial).toMatchObject({ defaults: [], columns: [20, 40, 1_000_000], frozen: true, invalid: true, preservedPolicy: true,
         noOp: { same: true, mutations: 0, pending: false }, sameChild: true, text: "x".repeat(200), pointer: "none", visible: 2 });
     expect(initial.afterExtent).toEqual(initial.plainExtent); expect(initial.afterPoint).toEqual(initial.point);
@@ -681,17 +683,18 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
 
     const changes = await page.evaluate(async () => {
         const f = window.presentationFixture, viewport = f.editor.viewport;
-        const rows: { name: string; error: number; columnWidth: number; inside: boolean; physicalWidth: number; textUnits: number; rows: number }[] = [];
+        const rows: { name: string; error: number; gutterOffset: number; columnWidth: number; inside: boolean; physicalWidth: number; textUnits: number; rows: number }[] = [];
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.activity().pending) return; } throw new Error("Viewport did not settle."); };
         const measure = (name: string) => {
             settle(); const s = viewport.getDiagnostics(), guide = f.host.querySelector<HTMLElement>('.st-column-ruler[data-column="40"]')!;
             const row = f.host.querySelector<HTMLElement>(`.st-viewport-row[data-line="${Math.max(0, s.firstLine)}"]`)!;
             const range = document.createRange(); range.setStart(row.firstChild!, 40); range.collapse(true); const rect = range.getClientRects()[0]!;
             rows.push({ name, error: Math.abs(guide.getBoundingClientRect().left - rect.left) / Number(f.host.style.zoom || 1), columnWidth: s.columnWidth,
+                gutterOffset: f.host.querySelector(".st-viewport-gutter")!.getBoundingClientRect().left - viewport.element.getBoundingClientRect().left,
                 inside: guide.getBoundingClientRect().top >= viewport.element.getBoundingClientRect().top - .1, physicalWidth: viewport.element.scrollWidth,
                 textUnits: s.textUnits, rows: s.rows });
         };
-        viewport.scrollTo({ left: 150, top: 300 }); measure("scroll");
+        viewport.scrollTo({ left: 150.375, top: 300 }); measure("scroll");
         f.host.style.zoom = "1.25"; measure("zoom");
         viewport.element.style.fontSize = "18px"; measure("font");
         f.host.style.width = "480px"; measure("resize");
@@ -711,6 +714,8 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
             extent, emptyExtent: [viewport.element.scrollWidth, viewport.element.scrollHeight] };
     });
     await info.attach("changed-ruler-geometry", { body: JSON.stringify(changes), contentType: "application/json" });
+    await expect(gutter).not.toHaveCSS("box-shadow", "none");
+    for (const row of changes.rows) expect(Math.abs(row.gutterOffset), row.name).toBeLessThan(.02);
     expect(changes.rows.every(row => row.error < 1.01 && row.inside && row.textUnits <= row.rows * 512)).toBe(true);
     expect(changes.rows[2]!.columnWidth).toBeGreaterThan(changes.rows[1]!.columnWidth);
     expect(changes).toMatchObject({ retainedNode: true, scaled: true, noGuides: true, samePoint: true, sameSelections: true });
@@ -755,6 +760,19 @@ test("current-line presentation follows the primary caret through input, folding
     expect(initial.extent).toEqual(initial.nextExtent); expect(initial.width).toBe(initial.viewportWidth);
     const source = page.getByRole("textbox", { name: "Line source", exact: true }), current = page.locator(".st-viewport-layer .st-current-line");
     await source.press("Control+Home"); await source.press("ArrowDown"); await expect(current).toHaveAttribute("data-line", "1");
+    const belowMap = await page.evaluate(() => {
+        const viewport = window.presentationFixture.editor.viewport;
+        viewport.configure({ minimap: true });
+        viewport.flush();
+        const map = viewport.element.querySelector(".st-minimap")!;
+        const track = map.getBoundingClientRect();
+        const highlight = viewport.element.querySelector(".st-current-line-background")!.getBoundingClientRect();
+        const hit = document.elementFromPoint(track.right - 4, track.top + 2);
+        return { below: highlight.top >= track.bottom, right: highlight.right, mapRight: track.right, mapReceivesPointer: map.contains(hit) };
+    });
+    expect(belowMap.below).toBe(true);
+    expect(belowMap.right).toBeCloseTo(belowMap.mapRight, 1);
+    expect(belowMap.mapReceivesPointer).toBe(true);
     await source.press("Enter"); await expect(current).toHaveAttribute("data-line", "2");
     await source.press("Control+z"); await expect(current).toHaveAttribute("data-line", "1");
     const projected = await page.evaluate(() => {

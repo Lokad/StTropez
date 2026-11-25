@@ -227,7 +227,7 @@ test("forced colors distinguish changed rows, characters, empty changes and the 
     expect(await empty.evaluate(node => parseFloat(getComputedStyle(node, "::after").borderLeftWidth))).toBe(2);
     await expect(sections.first().locator(".st-comparison-padding").first()).toHaveCSS("border-left-style", "dotted");
     const layer = sections.last().locator(".st-viewport-layer");
-    const top = await layer.evaluate(node => node.querySelector(".st-current-line-background")!.getBoundingClientRect().top - node.getBoundingClientRect().top);
+    const top = (await sections.last().locator(".st-current-line-background").boundingBox())!.y - (await layer.boundingBox())!.y;
     const image = await layer.screenshot({ scale: "css" });
     const paint = await page.evaluate(async ({ png, top }) => {
         const img = new Image(); img.src = "data:image/png;base64," + png; await img.decode();

@@ -207,6 +207,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     const currentFolds = view.folding.getSnapshot;
     const live = () => workspace.ownsDocumentView(view, tab);
     const root = owner.createElement("div"), spacer = owner.createElement("div"), layer = owner.createElement("div"), probeHost = owner.createElement("div"), probe = owner.createElement("span"), foldLayer = owner.createElement("div");
+    const surface = owner.createElement("div");
+    surface.className = "st-viewport-surface";
     root.className = "st-viewport"; root.tabIndex = 0; root.setAttribute("role", "region"); root.setAttribute("aria-label", options.ariaLabel ?? workspace.document(documentId).title);
     root.style.fontVariantLigatures = settings.fontLigatures ? "normal" : "none";
     spacer.className = "st-viewport-spacer"; spacer.setAttribute("aria-hidden", "true");
@@ -216,7 +218,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     gutter.className = "st-viewport-gutter"; numbers.className = "st-line-numbers"; numbers.setAttribute("aria-hidden", "true");
     gutter.append(numbers, foldLayer);
     foldLayer.className = "st-fold-controls"; const foldButtons = new Map<string, HTMLButtonElement>();
-    root.append(spacer, layer, probeHost, gutter); host.append(root);
+    surface.append(layer, gutter);
+    root.append(surface, spacer, probeHost);
+    host.append(root);
     const listeners = new AbortController(), padding = viewportPadding;
     // A private platform target preserves listener removal, reentrancy and error reporting
     // without routing editor coordination through the presentation DOM or model write guard.
@@ -636,14 +640,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         gutterWidth = document && settings.gutter ? Math.min(Math.floor(clientWidth / 3), Math.ceil(columnWidth * gutterDigits) + 26) : 0;
         width = clientWidth - mapWidth - gutterWidth;
         if (!document) {
-            lineNumbers.clear(); numbers.replaceChildren(); gutter.style.width = "0px";
+            lineNumbers.clear(); numbers.replaceChildren();
             dirtyRows.clear(); visibleItems = [];
             minimap?.dispose(); minimap = undefined;
             rulers.clear();
             clearCurrentLine();
             painted = undefined; commandGeometry = undefined;
             layer.replaceChildren(); rows.clear(); rowSources.clear(); rowSourceRevision = null; geometries.clear(); measuredWidth = 0; measuredRevision = null; spacerWidth = 0; spacer.style.width = "0px"; spacer.style.height = "0px";
-            layer.style.transform = "none"; layer.style.width = "0px"; layer.style.height = "0px";
             root.setAttribute("aria-disabled", "true");
             previous = undefined; anchor = undefined; renderedRevision = null; renderedSelection = null; renderedSelectionSet = null; partialRows = 0; textUnits = 0; readUnits = 0; firstLine = 0; lastLine = 0;
             renderedIndex = emptyIndex; renderedFoldGeneration = -1; renderedAlignmentId = null; comparisonRows = undefined; paddingRows.clear(); foldButtons.clear(); foldLayer.replaceChildren();
@@ -770,19 +773,21 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         // A fitting document must not fill rounded client metrics: a fractional viewport can be
         // slightly smaller, making classic scrollbars repeatedly add/remove each other.
         spacer.style.height = `${Math.min(y.extent, y.physicalExtent)}px`;
-        const physicalLeft = x.toPhysical(left), physicalTop = y.toPhysical(top);
         if (requested && scrollbarPressed) settleScrollbarReveal();
-        root.scrollLeft = physicalLeft; root.scrollTop = physicalTop;
-        layer.style.width = `calc(100% - ${mapWidth + gutterWidth}px)`; layer.style.height = "100%";
+        root.scrollLeft = x.toPhysical(left);
+        const physicalTop = y.toPhysical(top);
+        root.scrollTop = physicalTop;
+        // Keep old rows at their document Y until the next render replaces them.
+        surface.style.transform = `translateY(${physicalTop}px)`;
+        surface.style.setProperty("--st-gutter-width", `${gutterWidth}px`);
+        layer.style.right = `${mapWidth}px`;
         layer.style.setProperty("--st-text-area-width", `${width}px`);
-        layer.style.transform = `translate(${physicalLeft + gutterWidth}px, ${physicalTop}px)`;
-        gutter.style.transform = `translate(${physicalLeft}px, ${physicalTop}px)`;
-        gutter.style.width = `${gutterWidth}px`; gutter.style.height = `${height}px`;
+        gutter.toggleAttribute("data-scrolled", left > 0);
         const highlightedTop = highlightedLine === undefined ? undefined : padding + index.rowAt(highlightedLine) * lineHeight - top;
         if (highlightedTop === undefined || highlightedTop + lineHeight <= 0 || highlightedTop >= height) clearCurrentLine();
         else {
             if (!currentLineBackground) { currentLineBackground = owner.createElement("div"); currentLineBackground.className = "st-current-line-background";
-                currentLineBackground.setAttribute("aria-hidden", "true"); layer.append(currentLineBackground); }
+                currentLineBackground.setAttribute("aria-hidden", "true"); surface.append(currentLineBackground); }
             currentLineBackground.style.top = `${highlightedTop}px`; currentLineBackground.style.height = `${lineHeight}px`;
         }
         textUnits = 0;

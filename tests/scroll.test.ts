@@ -13,4 +13,7 @@ test("logical scroll ranges remain reachable beyond physical browser extents", (
         assert.equal(axis.toLogical(-1), 0); assert.equal(axis.toPhysical(Infinity), axis.physicalMaximum);
     }
     assert.throws(() => scrollAxis(Number.NaN, 100), RangeError);
+    const ordinary = scrollAxis(76_824, 653);
+    assert.equal(ordinary.toPhysical(38_448), 38_448);
+    assert.equal(ordinary.toLogical(38_448), 38_448);
 });
