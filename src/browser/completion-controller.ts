@@ -26,7 +26,8 @@ import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 
 type Job = { id: number; revision: number; buffer: TextBuffer; caret: number; selections: SelectionSet; indentation: ReturnType<TextEditor["settings"]>["language"]; authority: ResourceMetadata; folding: FoldingSnapshot; lease: ResourceLease;
-    call?: LspCall<LspCompletionBatch>; batch?: LspCompletionBatch; choices?: LspCompletions; visible: readonly LspCompletion[]; choice: number; pendingList: boolean; requestGeneration: number;
+    call?: LspCall<LspCompletionBatch>; batch?: LspCompletionBatch; choices?: LspCompletions;
+    visible: readonly LspCompletion[]; choice: number; listStatus: "pending" | "ready" | "cancelled";
     acceptance?: Readonly<{ id: number; item: LspCompletion; mode: "insert" | "replace" }> | undefined;
     resolution?: { item: LspCompletion; revision: number; call?: LspCall<LspCompletionResolution> } | undefined };
 type AutomaticInput = { target: DocumentViewSnapshot; text: string; word: boolean; backspace: boolean };
@@ -138,7 +139,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             }
         }
         const selected = job?.visible[job.choice];
-        const snapshot: CompletionSnapshot = Object.freeze({ message, connected: scope.getSnapshot().phase === "ready", pending: !!job && (job.pendingList || !!job.resolution || !!selected?.resolve),
+        const snapshot: CompletionSnapshot = Object.freeze({ message, connected: scope.getSnapshot().phase === "ready", pending: !!job && (job.listStatus === "pending" || !!job.resolution || !!selected?.resolve),
         anchor: selected && job ? Object.freeze({ revision: job.revision, from: Math.min(selected.primary.from, job.caret), to: job.caret }) : null,
         offerText: selected?.label ?? null, choices: labels, choiceIndex: job?.choice ?? 0, completionAt: (index: number) => completionAt(generation, index),
         completionIncomplete: job?.choices?.incomplete ?? false, completionDetail: selected ? [selected.detail, selected.documentation].filter(Boolean).join("\n") : "", resolving: !!job?.resolution,
@@ -210,10 +211,12 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             const previous = invocation.automatic && job?.choices && current(job) && bindingCurrent(job) ? job : undefined;
             release(!!previous);
             const captured: Job = {
-                id: workspace.allocateIdentity(), revision: document.revision, buffer: document.buffer, caret, selections,
+                // A refresh keeps the displayed choices and their handles until it replaces the list.
+                id: previous?.id ?? workspace.allocateIdentity(), revision: document.revision, buffer: document.buffer,
+                caret, selections,
                 indentation: editor.settings().language, authority: authority(), folding: view.folding.getSnapshot(),
-                lease: workspace.acquire(resource.id), choice: previous?.choice ?? 0, pendingList: true,
-                requestGeneration: 0, visible: previous?.visible ?? emptyList,
+                lease: workspace.acquire(resource.id), choice: previous?.choice ?? 0, listStatus: "pending",
+                visible: previous?.visible ?? emptyList,
                 ...(previous?.choices ? { choices: previous.choices } : {}), ...(previous?.batch ? { batch: previous.batch } : {}),
             };
             owned = job = captured;
@@ -231,14 +234,14 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
                 ...(previous?.batch ? { retain: previous.batch } : {}),
                 prepare: async scope => {
                     if (options.prepareCompletion) await options.prepareCompletion(scope);
-                    if (captured.requestGeneration !== 0 || !current(captured)) throw staleRequest();
+                    if (captured.listStatus === "cancelled" || !current(captured)) throw staleRequest();
                 },
             });
             const choices = await captured.call.result;
-            if (job !== captured || captured.requestGeneration !== 0) return stale;
+            if (job !== captured || captured.listStatus === "cancelled") return stale;
             if (!current(captured) || !choices.isCurrent()) throw staleRequest();
             captured.batch = captured.choices = choices;
-            captured.pendingList = false;
+            captured.listStatus = "ready";
             filter(captured, invocation.automatic === true || options.filterManualCompletions === true);
             if (!captured.visible.length) {
                 const omitted = choices.omitted.length;
@@ -249,7 +252,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             resolveSelected(captured);
             return done(snapshot);
         } catch (error) {
-            if (owned && (job !== owned || owned.requestGeneration !== 0)) return stale;
+            if (owned && (job !== owned || owned.listStatus === "cancelled")) return stale;
             release();
             if (isStaleRequest(error)) {
                 counters.stale++;
@@ -268,7 +271,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     };
     const resolveSelected = (captured: Job) => {
         const item = captured.visible[captured.choice];
-        if (!item?.resolve || captured.pendingList || captured.resolution?.item === item || !current(captured) || !bindingCurrent(captured)) return;
+        if (!item?.resolve || captured.listStatus === "pending" || captured.resolution?.item === item || !current(captured) || !bindingCurrent(captured)) return;
         cancelResolution(captured); const resolution: NonNullable<Job["resolution"]> = { item, revision: captured.revision }; captured.resolution = resolution;
         publish("Resolving the selected completion.");
         void (async () => {
@@ -293,16 +296,17 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             publish("LSP completion ready.");
             if (acceptance?.item === item) queueMicrotask(() => {
                 if (job === captured && captured.acceptance === acceptance && captured.id === acceptance.id && captured.visible[captured.choice] === resolved && editor.getSnapshot().focused) {
-                    captured.acceptance = undefined; apply(acceptance.mode, acceptance.id);
+                    captured.acceptance = undefined;
+                    apply(captured, acceptance.mode);
                 }
             });
         })().catch(error => { if (job !== captured || captured.resolution !== resolution) return;
             if (error instanceof ProtocolDecodeError) counters.invalid++; else if (error instanceof RpcError && error.code === rpcCodes.contentModified) counters.stale++; else counters.failed++;
             release(); publish("Completion resolution failed or expired; request fresh choices."); });
     };
-    const apply = (mode: "insert" | "replace", completionId?: number, character?: string): boolean => {
-        if (completionId !== undefined && job?.id !== completionId) return false;
-        const captured = job, completion = captured?.visible[captured.choice]; if (!captured || !completion) return false;
+    const apply = (captured: Job, mode: "insert" | "replace", character?: string): boolean => {
+        const completion = captured.visible[captured.choice];
+        if (!completion) return false;
         if (!current(captured) || !bindingCurrent(captured) || editor.getSnapshot().readOnlyReason) { expire("Stale or unauthorized LSP completion rejected."); return false; }
         if (completion.resolve || captured.resolution) { resolveSelected(captured); publish("Wait for the selected completion to finish resolving."); return false; }
         const parent = snippet;
@@ -333,16 +337,30 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         if (character && available() && after.revision === result.revision) dispatchTypedText(editor.element, after, character);
         return true;
     };
+    function stopListRefresh(captured: Job) {
+        if (captured.listStatus !== "pending") return;
+        captured.listStatus = "cancelled";
+        captured.call?.cancel();
+    }
     const accept = (mode: "insert" | "replace", id?: number): boolean => {
         const captured = job, item = captured?.visible[captured.choice];
         if (!captured || !item || id !== undefined && captured.id !== id) return false;
         if (!current(captured) || !bindingCurrent(captured) || editor.getSnapshot().readOnlyReason) { expire("Stale or unauthorized LSP completion rejected."); return false; }
-        if (!item.resolve && !captured.resolution) return apply(mode, id);
+        stopListRefresh(captured);
+        if (!item.resolve && !captured.resolution) return apply(captured, mode);
         captured.acceptance = Object.freeze({ id: captured.id, item, mode }); resolveSelected(captured); publish("Accepting the selected completion after resolution."); return true;
     };
     const chooseCompletion = (index: number, completionId?: number): boolean => {
-        if (!job?.choices || completionId !== undefined && completionId !== job.id || !isIndex(index, job.visible.length) || !current(job)) return false;
-        job.acceptance = undefined; cancelResolution(job); job.choice = index; if (job.pendingList) { job.requestGeneration++; job.call?.cancel(); job.pendingList = false; } publish("LSP completion selected."); resolveSelected(job); return true;
+        const captured = job;
+        if (!captured?.choices || completionId !== undefined && completionId !== captured.id
+            || !isIndex(index, captured.visible.length) || !current(captured)) return false;
+        captured.acceptance = undefined;
+        cancelResolution(captured);
+        captured.choice = index;
+        stopListRefresh(captured);
+        publish("LSP completion selected.");
+        resolveSelected(captured);
+        return true;
     };
     const cancel = () => { cancelAuto(); if (job) counters.cancelled++; release();
         if (snippet) { snippet = undefined; if (available() && !editor.activity().composing) view.setSelection(workspace.document(documentId).revision, view.getSnapshot().selection); }
@@ -445,7 +463,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             || event.inputType !== "insertText" || event.data?.length !== 1) return;
         const captured = job, choice = captured?.visible[captured.choice];
         if (!captured || !choice?.commitCharacters.includes(event.data)) return;
-        if (apply("replace", captured.id, event.data)) {
+        if (apply(captured, "replace", event.data)) {
             event.preventDefault();
             if (!triggers().has(event.data)) cancelAuto();
         } else expire("Completion dismissed while resolution was pending.");
@@ -480,7 +498,8 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
                 captured.acceptance = undefined; cancelResolution(captured);
                 captured.batch = rebased; captured.choices = rebased; captured.revision = document.revision; captured.buffer = document.buffer;
                 captured.caret = caret.head; captured.selections = selected; captured.folding = view.folding.getSnapshot();
-                captured.pendingList = false; captured.requestGeneration++; captured.call?.cancel(); filter(captured, true);
+                stopListRefresh(captured);
+                filter(captured, true);
                 const choice = selectedIndex < 0 ? -1 : captured.visible.indexOf(rebased.items[selectedIndex]!); if (choice >= 0) captured.choice = choice;
                 publish("LSP completion follows the typed prefix."); return;
             }

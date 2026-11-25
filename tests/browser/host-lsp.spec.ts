@@ -63,6 +63,32 @@ test("numeric typing and an erased prefix leave automatic completion closed", as
     await expect(page.getByRole("option")).toHaveCount(0); expect(await source(page)).toBe("");
 });
 
+test("a visible completion can be accepted while its incomplete list refreshes", async ({ page }) => {
+    const refresh = await holdLspReplies(page, "textDocument/completion");
+    await page.clock.install();
+    await page.goto("/hosts/plain/?language=lsp");
+    await seed(page, "const sampleMORE = 1;", "const sample".length);
+    await expect.poll(async () => (await provider(page)).connected).toBe(true);
+    await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "incomplete" }));
+    await offer(page);
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
+    refresh.hold();
+    await field(page).pressSequentially("V");
+    // A menu binds the filtered row before the next frame requests more candidates.
+    const shown = await page.evaluateHandle(() => window.hostFixture.providerState()!.completionAt(0)!);
+    expect(await shown.evaluate(choice => choice.label)).toBe("sampleWithImport");
+    await page.clock.resume();
+    await expect.poll(refresh.waiting).toBe(true);
+    expect(await shown.evaluate(choice => choice.accept("replace"))).toBe(true);
+    const edited = "// resolved import\r\nconst sampleValue = 1;";
+    await expect.poll(() => source(page)).toBe(edited);
+    await refresh.release();
+    expect(await source(page)).toBe(edited);
+    expect(await shown.evaluate(choice => choice.accept("replace"))).toBe(false);
+    await field(page).press("Control+z");
+    expect(await source(page)).toBe("const sampleVMORE = 1;");
+});
+
 test.describe(`plain LSP editor host`, () => {
     test.beforeEach(async ({ page }) => {
          await page.goto("/hosts/plain/?language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);

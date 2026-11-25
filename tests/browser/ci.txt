@@ -34,6 +34,7 @@ owner-activity.spec.ts
 demo-language-lifecycle.spec.ts
 protocol-websocket.spec.ts
 host-completion-indentation.spec.ts
+host-lsp.spec.ts > a visible completion can be accepted while its incomplete list refreshes
 host-popup.spec.ts
 host-hover.spec.ts
 host-lsp-review.spec.ts

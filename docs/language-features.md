@@ -122,120 +122,80 @@ pages the list, checks help links and opens related locations.
 
 ### Completion
 
-Enable `completion` on the attachment for suggestions and snippets in that view.
-The controller handles input, selection checks and acceptance. The host renders choices and status.
-When the shared provider disconnects, completion clears its choices and reports the loss of service.
-Local editing stays available. Reconnecting from another feature updates completion in the same view.
-`request()` invokes completion. Set `automatic: false` to require explicit requests. Supply
-`canCapture` for additional readiness checks. `getDiagnostics()` reports completion counts,
-`lastCompletionBeforeInputMs` for the input listener and `lastCompletionCommandMs` for the most
-recent registered completion or snippet command. Both clocks stop on return.
+Enable `completion: {}` on the attachment. The editor handles typing, keyboard navigation and
+insertion. The host draws the list. Subscribe to `language.completion` and use its snapshot's
+`anchor` to position the list. The anchor is null when there are no suggestions.
 
-`prepareCompletion` receives request-scoped access after the document synchronizes. Cancelling
-completion leaves diagnostic updates active. Dispose the attachment, editor and provider separately.
+Build each visible row from the snapshot that supplied its label. Keep focus in the editor when
+the user presses a suggestion. Moving focus to the button dismisses the list before the click.
 
-Automatic completion uses the text the editor accepted, including committed composition and advertised trigger characters. It waits for input to settle at the resulting revision and selection. Moving the caret cancels that request, even if you move back before the next frame.
-The controller registers `completion.request`, `completion.dismiss`, `completion.previous`,
-`completion.next`, `completion.page-previous`, `completion.page-next`, `completion.insert` and
-`completion.replace` on the owning editor at shortcut priority 30. Snippet choice commands
-(`snippet.choice-previous` and `snippet.choice-next`) also use 30. Placeholder navigation
-(`snippet.previous` and `snippet.next`) uses 40 so Tab advances an active snippet first.
-Automatic completion follows one caret or the linked carets in a snippet field. Ctrl/Cmd+Space also
-works with a single-line selection or multiple collapsed carets. For a selection, the request uses
-its higher offset in either direction. Accepting uses the provider's edit range when supplied and
-otherwise replaces the selected text. Undo restores the original selection.
+```ts
+import type { CompletionSnapshot } from "sttropez/browser";
 
-`await completion.request()` returns `done` with the list snapshot, including an empty list.
-Choosing an item can trigger a separate request for its details. A cancelled or superseded list returns `stale`.
-An unavailable view, unsupported selection or disconnected provider returns `refused`.
-A provider or preparation error returns `failed`.
-Typing decimal digits alone keeps automatic completion closed. Digits in an identifier can
-request suggestions, and a provider's advertised trigger character always takes precedence.
-Up and Down select one choice. PageUp and PageDown move a page and stop at the first or last choice.
-Supply `getPageSize` to report the number of visible rows, or zero while the list is hidden.
-The default is ten rows. Home and End dismiss the list and navigate the source.
-Enter replaces and Tab inserts. Escape dismisses the list. Outside a snippet, Escape on an
-invisible request also reaches the editor. Escape then Tab or Shift+Tab leaves the view.
+export function completionButton(list: CompletionSnapshot, index: number) {
+    const item = list.completionAt(index);
+    if (!item) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = item.label;
+    button.onpointerdown = event => event.preventDefault();
+    button.onclick = () => item.accept("replace");
+    return button;
+}
+```
 
-Inside a snippet, Tab and Shift+Tab move between fields even with the list open. Enter accepts
-a suggestion in all mirrors. An import or other disjoint edit applies once in the same undo step.
-A suggestion that expands to a template inserts its default text and keeps the outer Tab order.
-Escape dismisses a field's suggestions first. With no request or list, Escape ends the snippet.
-Other editable fields have a dotted outline,
-including a small marker for an empty field. The final caret stop has no marker. Set
-`--st-snippet-field-border` to change the outline color.
+Keep the buttons while the `choices` array is the same. Move the highlight to `choiceIndex`
+when the user presses an arrow key. Rebuild rows when the list changes. A button bound to
+an expired item returns `false` from `accept`. When an incomplete list refreshes, its visible
+choices remain usable until the replacement arrives. [Scrollable list example](../examples/demo/completion-list.ts)
 
-Position a completion list with the snapshot's `anchor`. It spans the selected item's edit prefix
-up to the caret at that revision and is `null` when the list is empty.
-Read `completionAt(index)` from the snapshot that supplied the labels. Only rendered choices
-need handles. `select()` and `accept(mode)` act on that item. Filtering the list expires its
-handles. Diagnostics, selection and detail updates retain the same `choices` array.
+**Requesting suggestions.** Ctrl/Cmd+Space or `await completion.request()` requests a list.
+A `done` outcome carries the snapshot, including an empty result. Superseded requests return
+`stale`, unavailable views or connections return `refused`, and provider errors return `failed`.
+Set `automatic: false` for manual requests only. `prepareCompletion` runs after the captured
+document synchronizes. Use `canCapture` for host readiness checks.
 
-Completion accepts arrays, CompletionList or null, including defaults for edit ranges,
-insertion format/mode, commit characters and opaque data. It checks the primary and additional
-same-document edits. A server-supplied range overrides the browser’s bounded Unicode word range.
-Choices sort stably by `sortText` and filter by case-insensitive `filterText` prefix. If the prior
-choice disappears, `preselect` applies. Manual requests initially show all choices. Set
-`filterManualCompletions: true` to filter them by the captured prefix too.
+Typing in a word or entering an advertised trigger character can open the list. Decimal digits
+on their own leave it closed unless the provider advertises a matching trigger. Typing or
+backspacing within a prefix filters the choices and keeps the selected item when it matches.
+Erasing the prefix dismisses the list. Backspacing past the original query requests suggestions
+for the shorter word. Undo, unrelated edits, blur or moving the caret dismiss the offer.
 
-An open completion follows a typed insertion or backward deletion inside its primary insert range.
-With automatic completion enabled, Backspace
-refilters an open list and keeps the selected item when it matches the shorter word. Erasing the word
-prefix dismisses the list. Deleting past the provider's original request position with a word prefix
-remaining requests fresh choices. The browser requires matching selections, fold
-generation, authority, URI, binding and language configuration. Mapped primary/additional ranges
-are validated again.
-Undo, replacements, host edits, unknown/composed changes or incompatible navigation expire the
-offer. When the editor input loses focus, it dismisses the list and cancels pending completion work.
-Keep focus in the editor on pointer-down in a suggestion so its click can accept the item.
-Incomplete lists retrigger with context kind 3 while compatible choices stay visible.
-`completionIncomplete` preserves provider partial-list status independently of client filtering.
+The provider controls sorting with `sortText`, case-insensitive prefix matching with `filterText`,
+and the initial choice with `preselect`. Manual requests show all candidates unless
+`filterManualCompletions` is true. `completionIncomplete` reports the provider’s partial-list
+flag. Render details and documentation as text. Unsupported snippets
+and items requiring a follow-up command are listed in `omittedCompletions`.
 
-When the provider advertises resolution, the selected item can resolve `detail`, `documentation`,
-`additionalTextEdits`, `insertText` and `textEdit`. Resolution requires the exact
-captured snapshot and preserves label, filtering/sorting fields, format and opaque identity.
-Primary content may change only within the captured insertion/replacement ranges. Additional
-ranges belong to the resolve request's snapshot. Failed or malformed resolution dismisses the
-offer. Completion documentation is literal text.
+**Accepting a choice.** Enter replaces the provider's replacement range. Tab inserts using
+its narrower insert range, preserving any suffix. Without an explicit range, completion uses
+the selected text or the word at the caret. Up/Down selects a row. PageUp/PageDown uses
+`getPageSize` (default ten rows). Escape dismisses the list. Home and End return to the source.
 
-Use `item.accept(mode)` when the user chooses an item that may be resolving. A `true`
-return means the controller accepted the request. Typing, selection changes, blur, cancellation or lost permission
-clears queued acceptance. If the editor is busy or the host declines the capture when a resolve
-reply arrives, the list closes. The user can request completions again once the editor is ready.
-Typing an advertised commit character while the item is unresolved inserts
-the character normally and closes the list. Once ready, the item and its commit character form one
-transaction. If the provider also advertises the character as a completion trigger, automatic
-completion requests the next list at the resulting caret. Commit characters must be one UTF-16 unit.
+Acceptance can wait for item resolution. A `true` return means the controller took the request.
+Typing, a selection change or a loss of edit permission cancels queued acceptance. A commit
+character typed before resolution enters ordinary text. Once the choice is ready, the character,
+completion and additional edits such as an import share one Undo step. Resolution can fill in
+details or edits. The primary edit must stay within its captured ranges. Additional edits use
+the revision sent for resolution. Changing the item’s label or identity invalidates the reply.
 
-For multiple carets, each selection must be collapsed and ordered. The primary must
-match the captured offset. Each mapped replacement must fit its caret’s line and cover the same text
-as the primary. Insertions use local line context, and additional edits apply once. Overlap or one
-incompatible caret rejects the batch. Request completion explicitly for multiple carets. Automatic
-completion and rebasing need one. A rejected acceptance consumes the key, so Enter or Tab cannot
-insert a newline or indent.
+Explicit completion also accepts one single-line selection or several collapsed carets. For
+multiple carets each replacement must fit on its line and cover the same text. Additional edits
+apply once. An overlap or incompatible caret refuses the batch. Automatic completion works with
+one caret or the linked fields of an active snippet.
 
-Primary and additional edits share one undo step. Edits before the primary insertion shift its final
-caret. A zero-width edit on a replacement boundary goes first. Two insertions at the same offset or
-intersecting replacements invalidate the completion. Other views’ selections follow the edit.
+**Snippets.** Tab and Shift+Tab move between numbered fields, including when the list is open.
+Typing or accepting a suggestion updates all occurrences of that field. Alt+Up/Down cycles
+field choices. Escape closes suggestions first, then ends the snippet. Tab navigation ends at
+the final `$0` caret position. Undo and Redo restore text and selections. Use
+`--st-snippet-field-border` for the inactive field outline. Multiline inserts use the insertion
+line’s indentation and newline style by default. `insertTextMode: 1` preserves the supplied text.
+[Snippet grammar and planning](text-model.md#snippet-planning)
 
-Completion uses the [snippet grammar and planners](text-model.md#snippet-planning). Unsupported
-snippet choices and choices requiring a follow-up command are omitted individually, with reasons
-in `omittedCompletions`. This includes snippets whose unsupported syntax becomes known during resolution.
-The controller validates edits and command data before omitting a choice.
-
-`insertTextMode: 1` preserves supplied text; mode 2 adjusts subsequent lines to the insertion
-line's indentation and newline convention. Mode 2 is the default. Decoder indentation defaults
-to tab size 4 and spaces; the browser captures the editor's `settings().language`. Additional
-edits keep their supplied text. Resolution, rebasing and commit characters rebuild from raw
-provider text, so indentation is applied once. A configuration change expires pending acceptance.
-
-Snippet acceptance selects every occurrence of the first numbered field. Typing, deletion, paste
-and composition commit use the existing input/history paths to mirror fields. Tab/Shift+Tab
-traverse fields; Alt+Up/Down cycles choices. The current field exposes `move(direction)`, `choose(index)` and
-`finish()`. An expired field rejects all three actions. Escape ends the session while keeping text and the primary selection; `$0` ends it
-at the final carets. Focus loss, selections outside the field, changed authority, external edits,
-undo or redo end the session. Undo/redo restore text/selections without recreating it. Ready
-commit-character acceptance inserts expanded text plus the character without starting a session.
+**Timing.** `completion.getDiagnostics()` exposes `lastCompletionBeforeInputMs` for the input
+listener and `lastCompletionCommandMs` for a registered completion or snippet command. Both
+stop when the handler returns. Provider replies and visible rendering have separate clocks.
+[Measurement boundaries](README.md#measuring-an-interaction)
 
 ### Hover and documentation
 
