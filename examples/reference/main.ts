@@ -59,7 +59,7 @@ function mount(review: boolean) {
             createWorker: () => new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" }),
         }),
     });
-    const result = document.querySelector<HTMLOutputElement>("#matches")!;
+    const result = document.querySelector<HTMLOutputElement>("#match-count")!;
     function renderFind() {
         const state = find.getSnapshot();
         result.value = state.query ? state.status === "ready" ? `${state.count} matches` : state.message : "";

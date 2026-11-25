@@ -95,7 +95,7 @@ async function smoke() {
             await expect(page.locator(".st-viewport")).toHaveCSS("background-color", "rgb(19, 27, 39)");
             await page.getByRole("checkbox", { name: "Regex" }).check();
             await page.getByRole("searchbox", { name: "Find" }).fill("qu.te");
-            await expect(page.locator("#matches")).toHaveText("2 matches");
+            await expect(page.locator("#match-count")).toHaveText("2 matches");
             await page.getByRole("textbox", { name: "quote.ts" }).press("Control+Home");
             await page.keyboard.type("// ");
             await expect(page.locator(".st-viewport-row").first()).toHaveText(/^(\/\/ )export const accent/);

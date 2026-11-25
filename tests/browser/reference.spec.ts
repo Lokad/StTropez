@@ -17,6 +17,7 @@ test("the reference app edits, reviews and saves the document while its language
     const working = page.getByRole("textbox", { name: "Comparison working source" });
     await expect(working).toBeFocused();
     await expect(page.locator(".st-comparison")).toHaveAttribute("data-status", "ready");
+    await expect(page.locator(".st-comparison-controls output")).toHaveText(/1 change|Change 1 of 1/);
     await expect(page.locator(".st-comparison-added").first()).toContainText("Review this quote");
     await page.getByRole("button", { name: "Hover", exact: true }).click();
     await expect(page.locator("#result")).toContainText("file:///reference/quote.ts");
