@@ -3,6 +3,7 @@ import { emptyList } from "../core/empty-list.ts";
 import { refused } from "../core/outcome.ts";
 import { mountAnchoredOverlay, type OverlayPosition } from "./anchored-overlay.ts";
 import { mountDocumentation, type DocumentationOptions } from "./documentation.ts";
+import { revealCaretInPage } from "./input-caret.ts";
 import { editorElement } from "./editor-element.ts";
 import type { HoverController } from "./hover-controller.ts";
 import { observePointerDwell } from "./pointer-dwell.ts";
@@ -59,8 +60,7 @@ export function mountHoverPopup(editor: TextEditor, hover: HoverController, opti
         const target = point ?? { revision: selected.revision, offset: selected.selection.head, affinity: selected.selection.headAffinity ?? "after" };
         if (!point) {
             viewport.revealOffset(target.offset, { vertical: "nearest", horizontal: "nearest", affinity: target.affinity ?? "after" });
-            viewport.flush();
-            element.scrollIntoView({ block: "nearest", inline: "nearest" });
+            revealCaretInPage(element);
         }
         anchor = target;
         pointer = byPointer;

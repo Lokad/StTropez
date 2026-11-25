@@ -726,27 +726,40 @@ test.describe("plain selected LSP features", () => {
         await expect.poll(replies.cancelled).toBe(true); await replies.release();
         await expect(popup).toBeHidden(); await expect(source).toBeFocused();
     });
-    test("manual signature help scrolls the page only far enough to show the caret", async ({ page }) => {
-        await page.setViewportSize({ width: 1080, height: 550 });
-        const text = 'first\nsecond\nthird\nfourth\nlookup("key", )\n';
-        await seed(page, text, text.indexOf(")")); await ready(page);
-        const source = field(page), caret = page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-input-caret');
-        const popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
-        await expect(caret).toBeVisible();
-        await source.evaluate(input => window.scrollBy(0, input.parentElement!.getBoundingClientRect().top + 40));
-        const before = await caret.evaluate(node => ({ scroll: scrollY, top: node.getBoundingClientRect().top }));
-        expect(before.top).toBeGreaterThan(0); expect(before.top).toBeLessThan(500);
-        await page.keyboard.press("Control+Shift+Space"); await expect(popup).toBeVisible();
-        expect(await page.evaluate(() => scrollY)).toBe(before.scroll);
+    for (const [feature, keys, content] of [
+        ["signature help", ["Control+Shift+Space"], "lookup("],
+        ["hover", ["Control+k", "Control+i"], "Symbol in this source."],
+    ] as const) {
+        test(`manual ${feature} scrolls the page only far enough to show the caret`, async ({ page }) => {
+            await page.setViewportSize({ width: 1080, height: 550 });
+            const text = 'first\nsecond\nthird\nfourth\nlookup("key", value)\n';
+            await seed(page, text, text.indexOf("value") + 1);
+            await ready(page);
+            const source = field(page);
+            const caret = source.locator("..").locator(".st-input-caret");
+            const popup = page.getByRole("tooltip").filter({ hasText: content });
+            const inspect = async () => {
+                for (const key of keys) await page.keyboard.press(key);
+                await expect(popup).toBeVisible();
+            };
+            await expect(caret).toBeVisible();
+            await source.evaluate(input => window.scrollBy(0, input.parentElement!.getBoundingClientRect().top + 40));
+            const before = await caret.evaluate(node => ({ scroll: scrollY, top: node.getBoundingClientRect().top }));
+            expect(before.top).toBeGreaterThan(0);
+            expect(before.top).toBeLessThan(500);
+            await inspect();
+            expect(await page.evaluate(() => scrollY)).toBe(before.scroll);
 
-        await page.keyboard.press("Escape"); await expect(popup).toBeHidden();
-        await caret.evaluate(node => window.scrollBy(0, node.getBoundingClientRect().bottom + 30));
-        expect(await caret.evaluate(node => node.getBoundingClientRect().bottom)).toBeLessThan(0);
-        await page.keyboard.press("Control+Shift+Space"); await expect(popup).toBeVisible();
-        const top = await caret.evaluate(node => node.getBoundingClientRect().top);
-        expect(Math.abs(top)).toBeLessThanOrEqual(1);
-        await expect(source).toBeFocused();
-    });
+            await page.keyboard.press("Escape");
+            await expect(popup).toBeHidden();
+            await caret.evaluate(node => window.scrollBy(0, node.getBoundingClientRect().bottom + 30));
+            expect(await caret.evaluate(node => node.getBoundingClientRect().bottom)).toBeLessThan(0);
+            await inspect();
+            const top = await caret.evaluate(node => node.getBoundingClientRect().top);
+            expect(Math.abs(top)).toBeLessThanOrEqual(1);
+            await expect(source).toBeFocused();
+        });
+    }
 
     test("read-only manual signature help keeps complete selections and yields only to explicit hover", async ({ page }) => {
         const replies = await holdLspReplies(page, "textDocument/hover");

@@ -192,7 +192,8 @@ stop when the handler returns. Provider replies and visible rendering have separ
 
 Enable `hover: { popup: true }` on the language attachment. Hold the pointer over source text
 for 300 ms or press Ctrl+K Ctrl+I (Cmd+K Cmd+I on macOS) to inspect the caret. The card opens
-at the source without moving focus. Escape dismisses it. A toolbar can call `hover.request()`.
+at the source without moving focus. Keyboard inspection scrolls only far enough to reveal
+the caret. Escape dismisses the card. A toolbar can call `hover.request()`.
 Pass a popup options object to set `closeHint`, control links or decline a pointer or keyboard
 lookup through `beforeInspect`.
 

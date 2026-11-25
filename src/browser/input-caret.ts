@@ -126,7 +126,9 @@ export function mountInputCaret(root: HTMLDivElement, input: HTMLTextAreaElement
         viewport.flush();
         if (frame !== undefined) win.cancelAnimationFrame(frame);
         positionCaret();
-        if (!caret.hidden) caret.scrollIntoView({ block: "nearest", inline: "nearest" });
+        // When a toolbar has focus, the source input still marks the selection head.
+        const anchor = caret.hidden ? input : caret;
+        anchor.scrollIntoView({ block: "nearest", inline: "nearest" });
     });
     return Object.freeze({ schedule, pending: () => frame !== undefined,
         showComposingText(text: string) { caret.textContent = text; schedule(); },
