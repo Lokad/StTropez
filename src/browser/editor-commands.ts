@@ -3,48 +3,48 @@ import { commandKey, historyKey, type CaretDirection, type KeyBinding, type View
 import type { TextEditorCommand } from "./text-editor.ts";
 
 type Shortcut = readonly [keys: string, command: TextEditorCommand];
-type Definition = readonly [label: string, ...keys: string[]];
+type Shortcuts = readonly string[];
 type Movement = CaretDirection | `word-${"backward" | "forward"}` | `to-${"line" | "document"}-${"start" | "end"}`;
 const edits = {
-    "move-line-up": ["Move line up", "Alt+ArrowUp"],
-    "move-line-down": ["Move line down", "Alt+ArrowDown"],
-    "copy-line-up": ["Copy line up", "Alt+Shift+ArrowUp"],
-    "copy-line-down": ["Copy line down", "Alt+Shift+ArrowDown"],
-    "insert-line-above": ["Insert line above", "Mod+Shift+Enter"],
-    "insert-line-below": ["Insert line below", "Mod+Enter"],
-    "delete-lines": ["Delete lines", "Mod+Shift+k"],
-    "indent": ["Indent", "Tab"],
-    "indent-lines": ["Indent lines", "Mod+]"],
-    "outdent": ["Outdent", "Shift+Tab", "Mod+["],
-    "line-comment": ["Toggle line comment", "Mod+/"],
-    "add-line-comment": ["Add line comment", "Mod+k Mod+c"],
-    "remove-line-comment": ["Remove line comment", "Mod+k Mod+u"],
-    "block-comment": ["Toggle block comment", "Alt+Shift+a"],
-    "newline": ["Newline", "Enter", "Shift+Enter"],
-} satisfies Record<EditingCommand, Definition>;
+    "move-line-up": ["Alt+ArrowUp"],
+    "move-line-down": ["Alt+ArrowDown"],
+    "copy-line-up": ["Alt+Shift+ArrowUp"],
+    "copy-line-down": ["Alt+Shift+ArrowDown"],
+    "insert-line-above": ["Mod+Shift+Enter"],
+    "insert-line-below": ["Mod+Enter"],
+    "delete-lines": ["Mod+Shift+k"],
+    "indent": ["Tab"],
+    "indent-lines": ["Mod+]"],
+    "outdent": ["Shift+Tab", "Mod+["],
+    "line-comment": ["Mod+/"],
+    "add-line-comment": ["Mod+k Mod+c"],
+    "remove-line-comment": ["Mod+k Mod+u"],
+    "block-comment": ["Alt+Shift+a"],
+    "newline": ["Enter", "Shift+Enter"],
+} satisfies Record<EditingCommand, Shortcuts>;
 
 const definitions = {
     ...edits,
-    "select-all": ["Select all", "Mod+a"],
-    "go-to-line": ["Go to line", "Mod+g"],
-    "select-line": ["Select line", "Mod+l"],
-    "jump-to-bracket": ["Go to matching bracket", "Mod+Shift+\\"],
-    "add-caret-above": ["Add caret above", "Mod+Alt+ArrowUp"],
-    "add-caret-below": ["Add caret below", "Mod+Alt+ArrowDown"],
-    "undo-caret": ["Undo caret change", "Mod+u"],
-    "select-next-occurrence": ["Select next occurrence", "Mod+d"],
-    "select-all-occurrences": ["Select all occurrences", "Mod+Shift+l"],
-    "scroll-line-up": ["Scroll line up", "Ctrl+ArrowUp"],
-    "scroll-line-down": ["Scroll line down", "Ctrl+ArrowDown"],
-    "scroll-page-up": ["Scroll page up", "Alt+PageUp"],
-    "scroll-page-down": ["Scroll page down", "Alt+PageDown"],
-    "delete-word-backward": ["Delete previous word"],
-    "delete-word-forward": ["Delete next word"],
-    "delete-backward": ["Delete backward", "Backspace", "Shift+Backspace"],
-    "delete-forward": ["Delete forward", "Delete"],
-    "undo": ["Undo", "Mod+z"],
-    "redo": ["Redo", "Mod+Shift+z", "Ctrl+y"],
-} satisfies Record<Exclude<TextEditorCommand, `move-${Movement}` | `select-${Movement}`>, Definition>;
+    "select-all": ["Mod+a"],
+    "go-to-line": ["Mod+g"],
+    "select-line": ["Mod+l"],
+    "jump-to-bracket": ["Mod+Shift+\\"],
+    "add-caret-above": ["Mod+Alt+ArrowUp"],
+    "add-caret-below": ["Mod+Alt+ArrowDown"],
+    "undo-caret": ["Mod+u"],
+    "select-next-occurrence": ["Mod+d"],
+    "select-all-occurrences": ["Mod+Shift+l"],
+    "scroll-line-up": ["Ctrl+ArrowUp"],
+    "scroll-line-down": ["Ctrl+ArrowDown"],
+    "scroll-page-up": ["Alt+PageUp"],
+    "scroll-page-down": ["Alt+PageDown"],
+    "delete-word-backward": [],
+    "delete-word-forward": [],
+    "delete-backward": ["Backspace", "Shift+Backspace"],
+    "delete-forward": ["Delete"],
+    "undo": ["Mod+z"],
+    "redo": ["Mod+Shift+z", "Ctrl+y"],
+} satisfies Record<Exclude<TextEditorCommand, `move-${Movement}` | `select-${Movement}`>, Shortcuts>;
 
 const movements = {
     left: ["left", "ArrowLeft"],
@@ -61,13 +61,21 @@ const movements = {
     "word-forward": ["to next word", "Ctrl+ArrowRight", "Alt+ArrowRight"],
 } satisfies Record<Movement, [label: string, keys: string, appleKeys?: string]>;
 
+const captions: Partial<Record<TextEditorCommand, string>> = {
+    "line-comment": "Toggle line comment",
+    "block-comment": "Toggle block comment",
+    "jump-to-bracket": "Go to matching bracket",
+    "undo-caret": "Undo caret change",
+    "delete-word-backward": "Delete previous word",
+    "delete-word-forward": "Delete next word",
+};
+
 const labels = new Map<TextEditorCommand, string>();
 const common: Shortcut[] = [];
 const apple: Shortcut[] = [["Alt+Shift+Code:KeyA", "block-comment"]];
 for (const id of Object.keys(definitions) as (keyof typeof definitions)[]) {
-    const [label, ...keys] = definitions[id];
-    labels.set(id, label);
-    for (const key of keys) common.push([key, id]);
+    labels.set(id, captions[id] ?? id[0]!.toUpperCase() + id.slice(1).replaceAll("-", " "));
+    for (const key of definitions[id]) common.push([key, id]);
 }
 for (const direction of Object.keys(movements) as Movement[]) {
     const [label, keys, appleKeys] = movements[direction];

@@ -102,7 +102,7 @@ export function commandRegistration(entries: Map<string, EditorCommand>, scopes:
 
 /** Bindings belong to one mounted view. Only the prefix of a pending chord retains event-time state. */
 export function createCommandRegistry(apple: boolean, available: () => boolean, chordCurrent: () => () => boolean,
-    pane: () => TextEditor, shared?: ReadonlyMap<string, EditorCommand>) {
+    pane: () => TextEditor, shared?: ReadonlyMap<string, EditorCommand>, label?: (id: string, fallback: string) => string | undefined) {
     const entries = new Map<string, EditorCommand>();
     const bindings = new Map<string, Strokes>();
     let disposed = false;
@@ -114,7 +114,8 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
     const lookup = (id: string) => disposed ? undefined : entries.get(id) ?? shared?.get(id);
     const enabled = (entry: EditorCommand, argument?: unknown) => available() && (entry.enabled?.(argument, pane()) ?? true);
     const describe = (entry: EditorCommand, argument?: unknown): CommandInfo =>
-        Object.freeze({ id: entry.id, label: entry.label, owner: entry.owner ?? "host",
+        Object.freeze({ id: entry.id, owner: entry.owner ?? "host",
+            label: entry.owner === "editor" ? label?.(entry.id, entry.label) ?? entry.label : entry.label,
             category: entry.category ?? "General", enabled: enabled(entry, argument) });
     const scope: CommandScope = {
         conflicts: id => disposed || !!lookup(id),

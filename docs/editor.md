@@ -371,6 +371,11 @@ export function undoMenuItem(editor: TextEditor) {
 }
 ```
 
+Set `settings.commandLabel(id, fallback)` to translate editor-owned command labels in
+`commands.get()` and `commands.list()`. Return `undefined` to use the supplied label.
+`editor.configure({ commandLabel: null })` restores the original labels. Bind menus and
+shortcuts by command ID.
+
 Navigation, selection and scrolling work in read-only panes. Undo and Redo need an editable
 pane and an entry in the document’s shared history. Editing commands return `false` during
 composition, after disposal or when the required comment rule is missing. A long edit can

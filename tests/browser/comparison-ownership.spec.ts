@@ -86,6 +86,7 @@ test("a translated review toolbar shares navigation labels with both panes", asy
         const host = document.body.appendChild(document.createElement("section"));
         host.id = "translated-review";
         const review = mountTextComparison(host, workspace, id, { buffer: TextBuffer.from("a\nB\nc"), version: "1" }, {
+            settings: { commandLabel: id => id === "select-all" ? "Tout sélectionner" : undefined },
             strings: {
                 previousChange: "Précédente", nextChange: "Suivante", useBaseline: "Rétablir",
                 linkScrolling: "Lier le défilement", alignRows: "Aligner les lignes",
@@ -104,10 +105,23 @@ test("a translated review toolbar shares navigation labels with both panes", asy
             },
         });
         host.addEventListener("release", () => review.dispose(), { once: true });
-        return Object.values(review.panes).map(pane => ["comparison.previousChange", "comparison.nextChange"]
-            .map(id => pane.commands.list().find(command => command.category === "Révision" && command.id === id)?.label));
+        const commands = (pane: typeof review.panes.working) => ({
+            stock: pane.commands.get("select-all")?.label,
+            undo: pane.commands.get("undo")?.label,
+            navigation: ["comparison.previousChange", "comparison.nextChange"].map(id =>
+                pane.commands.list().find(item => item.category === "Révision" && item.id === id)?.label),
+            keys: pane.keymap.getShortcuts("select-all"),
+        });
+        const before = Object.values(review.panes).map(commands);
+        review.panes.working.configure({ commandLabel: id => id === "undo" ? "Annuler" : undefined });
+        const after = commands(review.panes.working);
+        review.panes.working.configure({ commandLabel: null });
+        return { before, after, restored: review.panes.working.commands.get("undo")?.label };
     });
-    expect(labels).toEqual([["Précédente", "Suivante"], ["Précédente", "Suivante"]]);
+    const original = { stock: "Tout sélectionner", undo: "Undo", navigation: ["Précédente", "Suivante"], keys: ["Mod+a"] };
+    expect(labels.before).toEqual([original, original]);
+    expect(labels.after).toEqual({ ...original, stock: "Select all", undo: "Annuler" });
+    expect(labels.restored).toBe("Undo");
     const host = page.locator("#translated-review");
     const status = host.locator(".st-comparison-controls output");
     await expect(status).toHaveText("1 différence");

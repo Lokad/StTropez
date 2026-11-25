@@ -9,16 +9,18 @@ export type ViewCommand = "select-all" | "select-line" | "jump-to-bracket" | "ad
     | "move-word-backward" | "move-word-forward" | "select-word-backward" | "select-word-forward"
     | "select-next-occurrence" | "select-all-occurrences" | "go-to-line" | "scroll-line-up" | "scroll-line-down" | "scroll-page-up" | "scroll-page-down";
 export type DeletionCommand = "delete-backward" | "delete-forward" | "delete-word-backward" | "delete-word-forward";
+const deletionByInput = new Map<string, DeletionCommand>([
+    ["deleteContentBackward", "delete-backward"],
+    ["deleteContentForward", "delete-forward"],
+    ["deleteWordBackward", "delete-word-backward"],
+    ["deleteWordForward", "delete-word-forward"],
+]);
+const deletions: ReadonlySet<string> = new Set(deletionByInput.values());
 export function isDeletionCommand(id: string): id is DeletionCommand {
-    return id === "delete-backward" || id === "delete-forward" || id === "delete-word-backward" || id === "delete-word-forward";
+    return deletions.has(id);
 }
 export function nativeDeletion(type: string): DeletionCommand | undefined {
-    switch (type) {
-        case "deleteContentBackward": return "delete-backward";
-        case "deleteContentForward": return "delete-forward";
-        case "deleteWordBackward": return "delete-word-backward";
-        case "deleteWordForward": return "delete-word-forward";
-    }
+    return deletionByInput.get(type);
 }
 type KeyCommand = Readonly<{ kind: "history"; direction: "undo" | "redo" }>
     | Readonly<{ kind: "command"; command: ViewCommand | DeletionCommand }>
