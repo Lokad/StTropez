@@ -6,22 +6,51 @@ import { compareText } from "../core/comparison.ts";
 import type { ComparisonBaseline, ComparisonController, ComparisonHunk, ComparisonSnapshot } from "../core/comparison.ts";
 import { lineContentEnd } from "../core/newlines.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
-import type { DiffHunk } from "../core/diff.ts";
+import type { DiffHunk, DiffRange } from "../core/diff.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { DocumentId, DocumentView, TabId, TextResourceHandle, Workspace } from "../core/workspace.ts";
 import { mountEditor } from "./text-editor.ts";
 import type { EditorSettings, TextEditor, TextEditorOptions } from "./text-editor.ts";
-import type { InlineDecoration, PresentedLine } from "./viewport.ts";
+import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
 import { createComparisonScroll } from "./comparison-scroll.ts";
 import { createComparisonAlignment } from "./comparison-alignment.ts";
 import type { ComparisonAlignmentSnapshot } from "./comparison-alignment.ts";
-import { mountComparisonControls } from "./comparison-controls.ts";
+import { mountComparisonControls, sameControlState } from "./comparison-controls.ts";
 import { commandRegistration, type EditorCommand, type EditorCommands } from "./command-registry.ts";
 import { createComparisonPanes } from "./comparison-panes.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 
-export type TextComparisonOptions = Readonly<{ ariaLabel?: string; workBudget?: number; view?: DocumentView; controls?: boolean; scrollLinked?: boolean; rowsAligned?: boolean; settings?: EditorSettings;
-    requestLine?: NonNullable<TextEditorOptions["requestLine"]> }>;
+export type TextComparisonStrings = Readonly<{
+    baselineInput?: string;
+    workingInput?: string;
+    commandCategory?: string;
+    previousChange?: string;
+    nextChange?: string;
+    useBaseline?: string;
+    linkScrolling?: string;
+    alignRows?: string;
+    updating?: string;
+    preparingRows?: string;
+    shortcutSeparator?: string;
+    previewLabel?: string;
+    selectChange?: string;
+    lastCompleted?: string;
+    heading?: (side: "baseline" | "working", state: TextComparisonSnapshot) => string | undefined;
+    excerpt?: (side: "baseline" | "working", range: DiffRange, visibleText: string) => string | undefined;
+    statusText?: (state: TextComparisonSnapshot) => string | undefined;
+    restoreHint?: (state: TextComparisonSnapshot) => string | undefined;
+}>;
+export type TextComparisonOptions = Readonly<{
+    ariaLabel?: string;
+    workBudget?: number;
+    view?: DocumentView;
+    controls?: boolean;
+    strings?: TextComparisonStrings;
+    scrollLinked?: boolean;
+    rowsAligned?: boolean;
+    settings?: EditorSettings;
+    requestLine?: NonNullable<TextEditorOptions["requestLine"]>;
+}>;
 export type TextComparisonSnapshot = Readonly<{
     comparison: ComparisonSnapshot;
     /** Ready hunk at the active caret, including an explicitly selected hunk. */
@@ -69,6 +98,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const requestedBudget = options.workBudget ?? 4096;
     validateWorkBudget(requestedBudget, "Comparison");
     const budget = Math.min(requestedBudget, 4096);
+    const strings = { ...options.strings };
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
     let display: TextResourceHandle | undefined;
@@ -125,7 +155,11 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         gutterLineCount: () => Math.max(state.working?.buffer.lineCount ?? 0, state.baseline?.buffer.lineCount ?? 0),
     });
     let workingMount: ReturnType<typeof mountEditor>;
-    try { workingMount = mountEditor(workingPane.content, workspace, identity, { view: controller.view, ...paneOptions, ariaLabel: "Comparison working source" }, presentation("working")); }
+    try {
+        workingMount = mountEditor(workingPane.content, workspace, identity, {
+            view: controller.view, ...paneOptions, ariaLabel: strings.workingInput ?? "Comparison working source",
+        }, presentation("working"));
+    }
     catch (error) { root.remove(); controller.dispose(); throw error; }
     const commandScopes = [workingMount.commandScope];
     const working = workingMount.editor, pair = createComparisonPanes(workingMount, changed), referenceEditor = () => pair.reference()?.editor, referenceViewport = () => referenceEditor()?.viewport;
@@ -134,13 +168,14 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     });
     const workingDiff = differences(working, "working");
     let referenceDiff: ReturnType<typeof differences> | undefined;
-    const busy = (editor: TextEditor | undefined) => { const input = editor?.activity(); return !!input && (input.composing || input.pendingInput || input.pendingCommand); };
+    const busy = (editor: TextEditor | undefined, includeDrag: boolean) => {
+        const input = editor?.activity();
+        return input && (input.composing || input.pendingInput || input.pendingCommand || includeDrag && input.pendingDragScroll);
+    };
+    const panesIdle = (includeDrag: boolean) => !busy(working, includeDrag) && !busy(referenceEditor(), includeDrag);
     const composing = () => working.activity().composing || referenceEditor()?.activity().composing === true;
-    const alignment = createComparisonAlignment(win, pair, controller.getSnapshot, changed,
-        () => busy(referenceEditor()) || referenceEditor()?.activity().pendingDragScroll === true);
-    const scroll = createComparisonScroll(win, pair, controller.getSnapshot, () => {
-        return !busy(working) && !busy(referenceEditor()) && !alignment.snapshot().pending;
-    });
+    const alignment = createComparisonAlignment(win, pair, controller.getSnapshot, changed, () => panesIdle(true));
+    const scroll = createComparisonScroll(win, pair, controller.getSnapshot, () => panesIdle(false) && !alignment.snapshot().pending);
     let lastFocused: TextEditor | undefined;
     const activePane = () => lastFocused ?? working;
     function caretPosition(comparison: ComparisonSnapshot, pane: TextEditor) {
@@ -177,9 +212,8 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     }
     function publishState(): void {
         const next = captureState(), old = stateStore.get(), a = old.alignment, b = next.alignment;
-        const sameAlignment = a.enabled === b.enabled && a.status === b.status && a.pending === b.pending && a.work === b.work && a.runs === b.runs && a.failure === b.failure;
-        if (old.comparison === next.comparison && old.selectedHunk === next.selectedHunk && old.canNavigate === next.canNavigate
-            && old.canRevert === next.canRevert && old.scrollLinked === next.scrollLinked && old.disposed === next.disposed && sameAlignment) return;
+        if (old.comparison === next.comparison && sameControlState(old, next)
+            && a.work === b.work && a.runs === b.runs && a.failure === b.failure) return;
         stateScope.publish(stateStore, next);
     }
     function changed(): void { publishState(); schedule(); }
@@ -200,7 +234,9 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             if (typeof baseline !== "string") display = workspace.createTextResourceFromBuffer(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false }, { visibility: "internal" });
             const referenceId = typeof baseline === "string" ? baseline : display!.documentId;
-            const mounted = mountEditor(referencePane.content, workspace, referenceId, { ariaLabel: "Comparison baseline source", readOnly: true, ...paneOptions }, presentation("baseline"));
+            const mounted = mountEditor(referencePane.content, workspace, referenceId, {
+                ariaLabel: strings.baselineInput ?? "Comparison baseline source", readOnly: true, ...paneOptions,
+            }, presentation("baseline"));
             commandScopes[1] = mounted.commandScope;
             const editor = mounted.editor;
             referenceDiff = differences(editor, "baseline");
@@ -242,20 +278,27 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         const current = controller.getSnapshot(), reference = referenceViewport();
         if (disposed || composing() || current.status !== "ready" || current.generation !== generation || !Number.isSafeInteger(index)) return false;
         const hunk = current.hunks[index]; if (!hunk || !current.working || !current.baseline || !reference || epoch !== current.baseline.epoch) return false;
-        const document = reference.view.getSnapshot();
-        const revision = current.working.revision;
-        const baselineStart = selectRange || hunk.baseline.from === hunk.baseline.to
-            ? hunk.baseline.from : current.baseline.buffer.offsetAt(hunk.baseline.lineFrom);
-        const workingStart = selectRange || hunk.working.from === hunk.working.to
-            ? hunk.working.from : current.working.buffer.offsetAt(hunk.working.lineFrom);
+        const target = (pane: TextViewport, range: DiffRange, buffer: TextBuffer, revision: number) => ({
+            pane, range, revision,
+            start: selectRange || range.from === range.to ? range.from : buffer.offsetAt(range.lineFrom),
+        });
+        const targets = [
+            target(reference, hunk.baseline, current.baseline.buffer, reference.view.getSnapshot().revision),
+            target(working.viewport, hunk.working, current.working.buffer, current.working.revision),
+        ];
         lastFocused ??= working;
         stateScope.batch(() => {
-            reference.view.setSelection(document.revision, { anchor: baselineStart, head: selectRange ? hunk.baseline.to : baselineStart });
-            controller.view.setSelection(revision, { anchor: workingStart, head: selectRange ? hunk.working.to : workingStart });
-            reference.view.folding.reveal(reference.view.folding.getSnapshot(), hunk.baseline.from, hunk.baseline.to);
-            working.view.folding.reveal(working.view.folding.getSnapshot(), hunk.working.from, hunk.working.to);
+            for (const { pane, range, revision, start } of targets) {
+                pane.view.setSelection(revision, { anchor: start, head: selectRange ? range.to : start });
+            }
+            for (const { pane, range } of targets) {
+                const folds = pane.view.folding;
+                folds.reveal(folds.getSnapshot(), range.from, range.to);
+            }
         });
-        reference.revealOffset(baselineStart); working.viewport.revealOffset(workingStart); render(); return true;
+        for (const { pane, start } of targets) pane.revealOffset(start);
+        render();
+        return true;
     }
     function navigateFrom(pane: TextEditor, direction: -1 | 1): boolean {
         stateScope.assertWritable();
@@ -318,13 +361,20 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             list: () => activePane().commands.list(),
         });
         for (const [id, label, key, direction] of [
-            ["comparison.nextChange", "Next change", "F7", 1],
-            ["comparison.previousChange", "Previous change", "Shift+F7", -1],
-        ] as const) commands.register({ id, label, owner: "editor", category: "Comparison",
+            ["comparison.nextChange", strings.nextChange ?? "Next change", "F7", 1],
+            ["comparison.previousChange", strings.previousChange ?? "Previous change", "Shift+F7", -1],
+        ] as const) commands.register({ id, label, owner: "editor", category: strings.commandCategory ?? "Comparison",
             enabled: () => stateStore.get().canNavigate, run: (_, pane) => navigateFrom(pane, direction) }, { keys: [key] });
         const review: TextComparison = Object.freeze({ element: root, controller, commands, panes: editors, activePane, ...stateStore.observable, navigateHunk, revertSelectedHunk, hunkAt, setScrollLinked, setRowsAligned,
-            getDiagnostics: () => Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs, scrollLinked: scroll.snapshot().linked, pendingScroll: scroll.snapshot().pending, rowsAligned: alignment.snapshot().enabled, alignment: alignment.snapshot(), disposed }), dispose });
-        if (options.controls !== false) stopControls = mountComparisonControls(review, referencePane.section, workingPane.section);
+            getDiagnostics: () => {
+                const { linked, pending } = scroll.snapshot();
+                const rows = alignment.snapshot();
+                return Object.freeze({ generation: measuredGeneration, steps, advances, maxStepMs, totalStepMs,
+                    scrollLinked: linked, pendingScroll: pending, rowsAligned: rows.enabled, alignment: rows, disposed });
+            }, dispose });
+        if (options.controls !== false) {
+            stopControls = mountComparisonControls(review, referencePane.section, workingPane.section, strings);
+        }
         schedule();
         return review;
     } catch (error) { dispose(); throw error; }

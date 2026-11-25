@@ -10,14 +10,14 @@ export type ComparisonAlignmentSnapshot = Readonly<{ enabled: boolean; status: "
 
 /** Cooperative, view-only publication against one immutable comparison/fold capture. */
 export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
-    getComparison: () => ComparisonSnapshot, changed: () => void, referenceBusy: () => boolean) {
+    getComparison: () => ComparisonSnapshot, changed: () => void, panesIdle: () => boolean) {
     let serial = 0;
     const workingMount = panes.working, working = workingMount.editor, reference = panes.reference, runner = createCooperativeRunner(win);
     let enabled = false, disposed = false, scheduled = false, cursor: ComparisonRowsCursor | undefined, capture: Capture | undefined, result: ComparisonRows | undefined;
     let status: "idle" | "building" | "waiting" | "ready" | "failed" = "idle", failure: string | undefined, work = 0, installedPitch = 0;
     let events: AbortController | undefined, stopObserving: (() => void) | undefined, stopReference: (() => void) | undefined;
     const pointers = new Set<number>();
-    const stableInput = () => { const s = working.activity(); return !s.composing && !s.pendingCommand && !s.pendingInput && !s.pendingDragScroll && !pointers.size && !referenceBusy(); };
+    const stableInput = () => !pointers.size && panesIdle();
     const cancel = () => { runner.cancel(); scheduled = false; cursor?.dispose(); cursor = undefined; };
     const schedule = () => { if (!disposed && enabled && !scheduled) { runner.schedule(step); scheduled = true; } };
     let installed: Capture | undefined;

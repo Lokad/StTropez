@@ -25,8 +25,15 @@ export function showChanges(
     host: HTMLElement, workspace: Workspace, documentId: DocumentId, baseline: ComparisonBaseline
 ) {
     const options: TextComparisonOptions = {
-        ariaLabel: "Review changes",
-        rowsAligned: true
+        ariaLabel: "Révision",
+        rowsAligned: true,
+        strings: {
+            previousChange: "Précédente",
+            nextChange: "Suivante",
+            useBaseline: "Rétablir",
+            statusText: ({ selectedHunk, comparison }) => selectedHunk === null
+                ? undefined : `Différence ${selectedHunk + 1} sur ${comparison.hunks.length}`,
+        },
     };
     return mountTextComparison(host, workspace, documentId, baseline, options); // Call dispose() when the review attachment ends.
 }
@@ -36,6 +43,13 @@ The toolbar lets you navigate changes, revert one, link scrolling and align rows
 current change and total using the browser’s number format. The `ariaLabel` option defaults to
 `"Text comparison"`. Pass your working `DocumentView` through `view` to keep
 its selection and folds when you close the comparison. The mount disposes only views it creates.
+
+Pass a partial `TextComparisonStrings` in `strings` when mounting a translated review.
+Both panes use the same navigation labels in their command lists, including with `controls: false`.
+The table also covers pane input names, headings, control hints and the change preview. Omitted
+entries use the English defaults. Formatters run synchronously and return plain text. Return
+`undefined` to keep the default for a particular state. The excerpt formatter receives the side,
+the original hunk range and its bounded text with whitespace marks.
 
 For a custom toolbar, set `controls: false` and mount your buttons outside the two panes.
 The host example returns pointer users to their active pane and leaves keyboard users on the

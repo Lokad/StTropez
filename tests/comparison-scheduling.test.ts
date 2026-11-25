@@ -42,7 +42,7 @@ function fixture(count = 5000) {
     const baselineEditor = { view: refView, viewport: reference.value, focus: () => { focuses++; } } as unknown as TextEditor;
     const baselineMount = { editor: baselineEditor, input: referenceInput, setComparisonRows: reference.setComparisonRows };
     const panes = createComparisonPanes({ editor, input: workingInput, setComparisonRows: working.setComparisonRows }, () => { compositions++; }); panes.setReference(baselineMount);
-    const alignment = createComparisonAlignment(win, panes, () => state, () => notifications++, () => false);
+    const alignment = createComparisonAlignment(win, panes, () => state, () => notifications++, () => !composing);
     const step = () => { const entry = tasks.entries().next().value; assert.ok(entry, "Expected scheduled work"); tasks.delete(entry[0]); entry[1](); };
     const drain = () => { let turns = 0; while (tasks.size) { assert.ok(++turns < 1000, "Scheduler failed to settle"); step(); } return turns; };
     return { workspace, view, refView, win, working, reference, editor, referenceInput, panes, alignment, tasks, step, drain, state: () => state,

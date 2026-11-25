@@ -76,6 +76,55 @@ test("independent comparison modules share workspace identity and release retain
         afterRelease: { resources: 1, retained: ["released", "released"] }, leases: 0 });
 });
 
+test("a translated review toolbar shares navigation labels with both panes", async ({ page }) => {
+    const labels = await page.evaluate(async () => {
+        const path = "/comparison-ownership/";
+        const { Workspace, TextBuffer } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextComparison } = await import(path + "tools.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const id = workspace.createDocument({ scope: "review", resource: "test", variant: "working" }, "Test", "a\nb\nc");
+        const host = document.body.appendChild(document.createElement("section"));
+        host.id = "translated-review";
+        const review = mountTextComparison(host, workspace, id, { buffer: TextBuffer.from("a\nB\nc"), version: "1" }, {
+            strings: {
+                previousChange: "Précédente", nextChange: "Suivante", useBaseline: "Rétablir",
+                linkScrolling: "Lier le défilement", alignRows: "Aligner les lignes",
+                baselineInput: "Texte de référence", workingInput: "Texte modifié", commandCategory: "Révision",
+                previewLabel: "Aperçu", selectChange: "Choisir une ligne modifiée",
+                heading: side => side === "baseline" ? "Référence" : "Version de travail",
+                excerpt: (side, _range, text) => `<${side === "baseline" ? "Avant" : "Après"}> ${text}`,
+                statusText: ({ selectedHunk, comparison }) => {
+                    if (comparison.status !== "ready") return undefined;
+                    const total = comparison.hunks.length;
+                    if (selectedHunk !== null) return `Différence ${selectedHunk + 1} sur ${total}`;
+                    return total ? `${total} différence${total > 1 ? "s" : ""}` : "Aucune différence";
+                },
+                restoreHint: ({ selectedHunk }) => selectedHunk === null
+                    ? "Choisir une différence" : "Rétablir cette différence",
+            },
+        });
+        host.addEventListener("release", () => review.dispose(), { once: true });
+        return Object.values(review.panes).map(pane => ["comparison.previousChange", "comparison.nextChange"]
+            .map(id => pane.commands.list().find(command => command.category === "Révision" && command.id === id)?.label));
+    });
+    expect(labels).toEqual([["Précédente", "Suivante"], ["Précédente", "Suivante"]]);
+    const host = page.locator("#translated-review");
+    const status = host.locator(".st-comparison-controls output");
+    await expect(status).toHaveText("1 différence");
+    await expect(host.getByRole("checkbox", { name: "Aligner les lignes" })).toBeVisible();
+    await expect(host.getByRole("textbox", { name: "Texte de référence" })).toHaveAttribute("readonly", "");
+    await expect(host.getByRole("heading")).toHaveText(["Référence", "Version de travail"]);
+    await host.getByRole("button", { name: "Suivante" }).click();
+    await expect(status).toHaveText("Différence 1 sur 1");
+    await expect(host.getByLabel("Aperçu").locator("pre")).toHaveText([/^<Avant> B/, /^<Après> b/]);
+    const restore = host.getByRole("button", { name: "Rétablir" });
+    await expect(restore).toHaveAttribute("title", "Rétablir cette différence");
+    await restore.click();
+    await expect(status).toHaveText("Aucune différence");
+    await expect(page.locator("#comparison").getByRole("button", { name: "Next change" })).toBeVisible();
+    await host.dispatchEvent("release");
+});
+
 test("a document reference follows edits in its source editor and stays read-only in review", async ({ page }) => {
     const ids = await page.evaluate(async () => {
         const path = "/comparison-ownership/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
