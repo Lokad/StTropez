@@ -14,29 +14,14 @@ import { closePackageResources, closePackageServer, listenPackageServer, sendAss
  */
 export async function startServer(port, { watch = true, serverProvider = false } = {}) {
     const attachDemoProvider = serverProvider ? (await import("../tests/fixtures/demo/provider-server.ts")).attachDemoProvider : undefined;
-    const routes = {
-        "/": "examples/demo/index.html",
-        "/reference/": "examples/reference/index.html",
-        "/viewport/": "tests/fixtures/viewport/index.html",
-        "/editing/": "tests/fixtures/editing/index.html",
-        "/comparison/": "tests/fixtures/comparison/index.html",
-        "/protocol/": "tests/fixtures/protocol/index.html",
-        "/hosts/plain/": "tests/fixtures/hosts/plain.html",
-        "/hosts/react/": "tests/fixtures/hosts/react.html",
-    };
     /** @type {Map<string, Buffer>} */
-    const pages = new Map();
-    for (const [path, file] of Object.entries(routes)) {
-        const bytes = await readFile(file);
-        pages.set(path, bytes);
-        pages.set(path + "index.html", bytes);
-    }
+    const assets = new Map();
     const site = resolve("artifacts/site");
-    pages.set("/typescript-libs.json", Buffer.from(await demoLibraries()));
-    pages.set("/presentation-fixture/", Buffer.from("<!doctype html>"));
-    for (const name of demoFontFiles) pages.set("/" + name, await readFile(demoFontSource(name)));
+    assets.set("/typescript-libs.json", Buffer.from(await demoLibraries()));
+    assets.set("/presentation-fixture/", Buffer.from("<!doctype html>"));
+    for (const name of demoFontFiles) assets.set("/" + name, await readFile(demoFontSource(name)));
     /** @type {Map<string, Uint8Array>} */
-    let modules = new Map();
+    let outputs = new Map();
     let failed = false;
     /** @type {() => void} */
     let firstBuild;
@@ -48,6 +33,14 @@ export async function startServer(port, { watch = true, serverProvider = false }
         ...demoBundle,
         entryPoints: {
             ...demoBundle.entryPoints,
+            index: "examples/demo/index.html",
+            "reference/index": "examples/reference/index.html",
+            "viewport/index": "tests/fixtures/viewport/index.html",
+            "editing/index": "tests/fixtures/editing/index.html",
+            "comparison/index": "tests/fixtures/comparison/index.html",
+            "protocol/index": "tests/fixtures/protocol/index.html",
+            "hosts/plain/index": "tests/fixtures/hosts/plain.html",
+            "hosts/react/index": "tests/fixtures/hosts/react.html",
             app: serverProvider ? "tests/fixtures/demo/main.ts" : demoBundle.entryPoints.app,
             comparison: "tests/fixtures/comparison/main.ts",
             editing: "tests/fixtures/editing/main.ts",
@@ -60,6 +53,7 @@ export async function startServer(port, { watch = true, serverProvider = false }
             "reference/style": "examples/reference/style.css",
         },
         outdir: site,
+        loader: { ".html": "copy" },
         write: false,
         sourcemap: true,
         alias: { [libraryCss.specifier]: resolve(libraryCss.source) },
@@ -71,7 +65,7 @@ export async function startServer(port, { watch = true, serverProvider = false }
                     if (!failed) {
                         // A successful in-memory build supplies all output files.
                         const files = /** @type {import("esbuild").OutputFile[]} */ (result.outputFiles);
-                        modules = new Map(files.map(file =>
+                        outputs = new Map(files.map(file =>
                             ["/" + relative(site, file.path).replaceAll("\\", "/"), file.contents]));
                     }
                     firstBuild();
@@ -93,7 +87,8 @@ export async function startServer(port, { watch = true, serverProvider = false }
         try { path = decodeURIComponent(new URL(/** @type {string} */ (request.url), "http://localhost").pathname); }
         catch { response.writeHead(400).end(); return; }
         if (failed) { response.writeHead(503).end("Development build failed."); return; }
-        const bytes = pages.get(path) ?? modules.get(path === "/reference/regex-worker.js" ? "/regex-worker.js" : path);
+        if (path === "/reference/regex-worker.js") path = "/regex-worker.js";
+        const bytes = assets.get(path) ?? outputs.get(path.endsWith("/") ? path + "index.html" : path);
         if (!bytes) { response.writeHead(404).end(); return; }
         response.setHeader("Cache-Control", "no-store");
         sendAsset(request, response, path, bytes);
