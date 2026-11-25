@@ -576,8 +576,7 @@ test(`plain Find follows current reference and source views while Save retains o
     await p.getByRole("textbox", { name: "Primary source", exact: true }).press("Control+f");
     await query(p).fill("needle");
     await found(p, 4000);
-    const meta = await flag(p, "Whole word").evaluate(node => { const event = new KeyboardEvent("keydown", { key: "s", metaKey: true, bubbles: true, cancelable: true }); node.dispatchEvent(event); return event.defaultPrevented; });
-    expect(meta).toBe(true);
+    await flag(p, "Whole word").press("ControlOrMeta+s");
     s = await snapshot(p);
     expect(s.pendingSaves).toHaveLength(1);
     expect(s.pendingSaves[0]!.revision).toBe(s.source.revision);
