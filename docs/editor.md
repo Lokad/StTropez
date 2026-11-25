@@ -173,8 +173,10 @@ from either editable view. [Shared history and save boundaries](workspace.md#tra
 ### Selecting lines in the gutter
 
 Click or double-click a line number to select the line and its line break. On a folded header,
-the selection includes the hidden lines. Drag across numbers to select several
-lines, or Shift+click a number to extend to that line. The editor keeps keyboard focus. The
+the selection includes the hidden lines. Drag across numbers to select several lines.
+Shift+click extends from the original caret to the clicked line's far edge. Returning to the
+starting line restores the caret. If you started by selecting a whole line, it stays selected.
+The editor keeps keyboard focus. The
 gutter scrolls with the wheel and stays in place horizontally. Both comparison panes use their
 own source line numbers. Alignment gaps have no number.
 

@@ -183,10 +183,11 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; tail: ReturnType<typeof typingRun> | "spaces" | undefined; key: string }> | undefined;
     type ColumnDrag = { kind: "column"; middle: boolean; originRow: number; anchorColumn: number;
         projection?: { layout: string; column: number; direction: -1 | 1; count: number; ranges: (Selection & { reaches: boolean })[] } };
-    type DragUnit = ColumnDrag | (({ kind: "line"; range: Selection } | { kind: "word"; origin: number; range?: Selection }) & { lastHit?: number });
+    type DragUnit = ColumnDrag | (({ kind: "line"; range: Selection; lineStart: number }
+        | { kind: "word"; origin: number; range?: Selection }) & { lastHit?: number });
     let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[]; padding: boolean; unit?: DragUnit }> | undefined;
     let dragCaretRecorded = false;
-    let clickedWord: { range: Selection; selections: SelectionSet } | undefined;
+    let pointerOrigin: Selection | undefined;
     const commandRunner = createCooperativeRunner(win);
     let wordJob: Readonly<{ cursor: Pick<WordCursor, "next" | "dispose">; revision: number }> | undefined, cancelWordTask: (() => void) | undefined;
     type CommandCapture = Readonly<{ buffer: TextBuffer; revision: number; selection: Selection; selectionSet: SelectionSet; deleting: boolean }>;
@@ -678,7 +679,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 if (!range) return true;
                 if (add) view.setSelections(capture.revision, [...capture.selectionSet.ranges, range], capture.selectionSet.ranges.length);
                 else view.setSelection(capture.revision, range);
-                clickedWord = { range, selections: view.getSnapshot().selectionSet };
+                pointerOrigin = range;
                 refresh(); return true;
             });
         });
@@ -1351,7 +1352,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const next = block?.lineTo ?? line + 1;
         return { anchor: buffer.offsetAt(block?.lineFrom ?? line), head: next < buffer.lineCount ? buffer.offsetAt(next) : buffer.length };
     }
-    function lineSelection(origin: Selection, target: Selection): Selection {
+    function extendPointerUnit(origin: Selection, target: Selection, lineStart?: number): Selection {
+        if (target.anchor === lineStart) return origin;
         return target.anchor < origin.anchor ? { anchor: origin.head, head: target.anchor } : { anchor: origin.anchor, head: target.head };
     }
     function beginPointer(event: PointerEvent, clicks: number, native: MouseEvent, gutter = false): void {
@@ -1387,14 +1389,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 return;
             }
         }
-        const word = !gutter && extending && clickedWord?.selections === state.selectionSet ? clickedWord.range : undefined;
+        let origin = extending ? pointerOrigin : undefined;
         let anchor = extending ? state.selection.anchor : point.offset, head = point.offset;
         let anchorAffinity = extending ? state.selection.anchorAffinity ?? "after" : point.affinity;
-        if (word) {
-            const backward = point.offset < word.anchor;
-            anchor = backward ? word.head : word.anchor;
+        if (origin && !gutter) {
+            const backward = point.offset < origin.anchor;
+            anchor = backward ? origin.head : origin.anchor;
             anchorAffinity = backward ? "before" : "after";
-            if (!backward) head = Math.max(head, word.head);
+            if (!backward) head = Math.max(head, origin.head);
         }
         const baseRanges = additive ? state.selectionSet.ranges : extending ? state.selectionSet.ranges.filter((_, index) => index !== state.selectionSet.primary) : [];
         let unit: DragUnit | undefined;
@@ -1406,18 +1408,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             view.setSelection(revision, { anchor: 0, head: workspace.document(documentId).buffer.length }); refresh(); return;
         } else if (gutter || clicks === 3) {
             const buffer = workspace.document(documentId).buffer, target = wholeLine(buffer, point.offset);
-            let range = target;
-            if (gutter && extending) {
-                const { anchor, head } = state.selection;
-                const atLineStart = buffer.offsetAt(buffer.lineAt(anchor)) === anchor;
-                range = wholeLine(buffer, head < anchor && atLineStart ? anchor - 1 : anchor);
-            }
-            unit = { kind: "line", range };
-            ({ anchor, head } = lineSelection(range, target));
+            origin = gutter && extending ? origin ?? { anchor, head: anchor } : target;
+            const lineStart = origin === target ? target.anchor : wholeLine(buffer, origin.anchor).anchor;
+            unit = { kind: "line", range: origin, lineStart };
+            ({ anchor, head } = extendPointerUnit(origin, target, lineStart));
         } else if (clicks === 2) unit = { kind: "word", origin: point.offset };
         if (!keepSelection) view.setSelections(revision, [...baseRanges, { anchor, head, anchorAffinity, headAffinity: point.affinity }], baseRanges.length);
         refresh();
-        if (word) clickedWord = { range: word, selections: view.getSnapshot().selectionSet };
+        pointerOrigin = origin;
         dragCaretRecorded = state.selectionSet !== view.getSnapshot().selectionSet;
         const padding = point.padding === true && !columns;
         if (padding) viewport.revealOffset(point.offset, { horizontal: "nearest", vertical: "nearest", affinity: point.affinity });
@@ -1506,10 +1504,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (unit.lastHit === point.offset) return;
             unit.lastHit = point.offset;
             const applyUnits = (origin: Selection, target: Selection) => {
-                const range = lineSelection(origin, target);
+                const range = extendPointerUnit(origin, target, unit.kind === "line" ? unit.lineStart : undefined);
                 view.setSelections(current.revision, [...current.baseRanges, range], current.baseRanges.length);
                 if (drag?.unit === unit) drag = { ...drag, selectionSet: view.getSnapshot().selectionSet, padding: point.padding === true };
-                if (unit.kind === "word") clickedWord = { range: origin, selections: view.getSnapshot().selectionSet };
+                pointerOrigin = origin;
                 refresh();
             };
             if (unit.kind === "line") { applyUnits(unit.range, wholeLine(workspace.document(documentId).buffer, point.offset)); return; }
@@ -1612,7 +1610,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let lastCaret = view.getSnapshot(), skipCaretHistory = false;
     const observeCaret = () => {
         const next = view.getSnapshot();
-        clickedWord = undefined;
+        pointerOrigin = undefined;
         inferredOccurrence = undefined;
         if (next.revision !== lastCaret.revision) caretHistory.length = 0;
         else if (!skipCaretHistory && (!drag || !dragCaretRecorded) && next.selectionSet !== lastCaret.selectionSet) {
@@ -1729,7 +1727,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             cancelLineRequest();
             registry.dispose(); brackets!.dispose(); paired.clear(); automaticIndent.clear();
             caretHistory.length = 0;
-            clickedWord = undefined; mousePress = undefined;
+            pointerOrigin = undefined; mousePress = undefined;
             warnings!.dispose();
             hostInsertion?.cancel();
             pasteOwner = undefined;
