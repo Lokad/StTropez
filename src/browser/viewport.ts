@@ -1,3 +1,4 @@
+import { listenUntil } from "./listen.ts";
 import { editorElement } from "./editor-element.ts";
 import { isIndex, isNonNegativeInteger, isOffset, isPositiveInteger } from "../core/bounds.ts";
 import { clientBox, cssZoom, minimapWidth } from "./dom-coordinates.ts";
@@ -250,6 +251,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     root.append(surface, spacer, probeHost);
     host.append(root);
     const listeners = new AbortController(), padding = viewportPadding;
+    const listen = listenUntil(listeners.signal);
     // A private platform target preserves listener removal, reentrancy and error reporting
     // without routing editor coordination through the presentation DOM or model write guard.
     const events = new win.EventTarget(), observationStops = new Set<() => void>();
@@ -953,7 +955,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         return true;
     };
     let pressedSummary: { marker: Element; id: string; version: FoldVersion } | undefined;
-    layer.addEventListener("pointerdown", event => {
+    listen(layer, "pointerdown", event => {
         pressedSummary = undefined;
         const marker = event.target as HTMLElement;
         if (!event.isPrimary || event.button !== 0 || marker.dataset?.ornament !== "fold") return;
@@ -961,38 +963,38 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const fold = renderedIndex.headerAt(Number(marker.parentElement?.dataset.line));
         if (fold?.collapsed && renderedRevision !== null && !inputOwner?.composing)
             pressedSummary = { marker, id: fold.id, version: { revision: renderedRevision, generation: renderedFoldGeneration } };
-    }, { signal: listeners.signal });
-    layer.addEventListener("pointercancel", () => { pressedSummary = undefined; }, { signal: listeners.signal });
-    layer.addEventListener("click", event => {
+    });
+    listen(layer, "pointercancel", () => { pressedSummary = undefined; });
+    listen(layer, "click", event => {
         const pressed = pressedSummary; pressedSummary = undefined;
         if (!pressed || event.target !== pressed.marker) return;
         event.stopPropagation();
         if (activateFold(pressed.version, pressed.id, false, true) && !inputOwner && !disposed) root.focus({ preventScroll: true });
-    }, { signal: listeners.signal });
-    foldLayer.addEventListener("pointerdown", event => { if (foldButton(event.target)) event.stopPropagation(); }, { signal: listeners.signal });
-    foldLayer.addEventListener("dblclick", event => { if (foldButton(event.target)) event.stopPropagation(); }, { signal: listeners.signal });
-    foldLayer.addEventListener("click", event => {
+    });
+    listen(foldLayer, "pointerdown", event => { if (foldButton(event.target)) event.stopPropagation(); });
+    listen(foldLayer, "dblclick", event => { if (foldButton(event.target)) event.stopPropagation(); });
+    listen(foldLayer, "click", event => {
         const button = foldButton(event.target); if (!button) return; event.stopPropagation();
         activateFold({ revision: Number(button.dataset.revision), generation: Number(button.dataset.generation) }, button.dataset.fold!,
             button.getAttribute("aria-expanded") === "true", event.detail > 0);
-    }, { signal: listeners.signal });
-    foldLayer.addEventListener("keydown", event => { if (event.key === "Escape" && foldButton(event.target)) {
+    });
+    listen(foldLayer, "keydown", event => { if (event.key === "Escape" && foldButton(event.target)) {
         event.preventDefault(); if (!disposed && live()) notify("focus");
-    } }, { signal: listeners.signal });
+    } });
     // A native scrollbar press can focus the scroll container despite its negative tab index.
     // Moving focus during a native selection drag cancels dragstart in Chromium.
-    root.addEventListener("focus", () => { if (inputOwner && !root.draggable) notify("focus"); }, { signal: listeners.signal });
-    root.addEventListener("pointerdown", event => {
+    listen(root, "focus", () => { if (inputOwner && !root.draggable) notify("focus"); });
+    listen(root, "pointerdown", event => {
         releaseScrollbar();
         if (event.target !== root || event.button !== 0) return;
         const box = clientBox(root);
         scrollbarPressed = event.clientX >= box.right || event.clientY >= box.bottom;
-    }, { capture: true, signal: listeners.signal });
-    root.addEventListener("mousedown", event => {
+    }, { capture: true });
+    listen(root, "mousedown", event => {
         // The native track scrolls independently of mousedown's focus default.
         if (inputOwner && scrollbarPressed && event.target === root && event.button === 0) event.preventDefault();
-    }, { signal: listeners.signal });
-    root.addEventListener("scroll", () => {
+    });
+    listen(root, "scroll", () => {
         if (revealSettling !== undefined) {
             if (correctScrollbarReveal()) settleScrollbarReveal();
             return;
@@ -1000,23 +1002,23 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const newTop = y.toLogical(root.scrollTop), newLeft = x.toLogical(root.scrollLeft);
         // Ignore quantization from writes to native fractional/scaled scroll offsets.
         if (Math.abs(root.scrollTop - y.toPhysical(top)) > 1 || Math.abs(root.scrollLeft - x.toPhysical(left)) > 1) { top = newTop; left = newLeft; anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; schedule(); }
-    }, { signal: listeners.signal });
-    root.addEventListener("wheel", event => {
+    });
+    listen(root, "wheel", event => {
         if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
         releaseScrollbar();
         const factor = event.deltaMode === 1 ? lineHeight : event.deltaMode === 2 ? height : 1;
         const nextTop = position(y, top + (event.shiftKey ? 0 : event.deltaY) * factor), nextLeft = position(x, left + (event.shiftKey ? event.deltaY : event.deltaX) * factor);
         if (nextTop !== top || nextLeft !== left) { event.preventDefault(); top = nextTop; left = nextLeft; anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; schedule(); }
-    }, { passive: false, signal: listeners.signal });
-    root.addEventListener("keydown", event => {
+    }, { passive: false });
+    listen(root, "keydown", event => {
         if (event.target !== root || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
         const delta = { ArrowUp: [0, -lineHeight], ArrowDown: [0, lineHeight], ArrowLeft: [-columnWidth, 0], ArrowRight: [columnWidth, 0],
             PageUp: [0, -height * .9], PageDown: [0, height * .9] }[event.key];
         if (delta) { event.preventDefault(); setScroll({ left: position(x, left + delta[0]!), top: position(y, top + delta[1]!) }); }
-    }, { signal: listeners.signal });
+    });
     const observer = new ResizeObserver(schedule); observer.observe(root); observer.observe(probe);
-    owner.fonts.addEventListener("loadingdone", invalidate, { signal: listeners.signal });
-    owner.fonts.addEventListener("loadingerror", invalidate, { signal: listeners.signal });
+    listen(owner.fonts, "loadingdone", invalidate);
+    listen(owner.fonts, "loadingerror", invalidate);
     const subscriptions = [workspace.onDocumentChange(documentId, change => {
         // A host can flush inside an earlier listener, even before a batch has delivered all its maps.
         if (decorations.advance(change) && renderedRevision === change.revision) {

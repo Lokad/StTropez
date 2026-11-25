@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { Store, type Observable, type NotificationScope } from "../core/observable.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
@@ -50,7 +51,7 @@ export function captureEditCommand(editor: TextEditor, options: LanguageCommandO
     }
     function watch(next: typeof source) {
         source = next;
-        next.signal.addEventListener("abort", () => { if (source === next) invalidate(); }, { once: true });
+        onAbort(next.signal, () => { if (source === next) invalidate(); });
     }
     const project = retainEditProject(editor, available, invalidate);
     function dispose() {

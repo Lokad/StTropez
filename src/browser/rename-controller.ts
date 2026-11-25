@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { languageReview } from "./language-review.ts";
 import { changedTextEdits, changesText } from "../core/changes.ts";
@@ -120,7 +121,7 @@ export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options
             active.job = pending = j;
             j.project.include(source.document);
             for (const doc of options.documents?.() ?? []) j.project.include(doc);
-            source.signal.addEventListener("abort", () => expire(j), { once: true });
+            onAbort(source.signal, () => expire(j));
             j.timer = win.setTimeout(() => {
                 timedOut = true;
                 client.cancel();

@@ -1,3 +1,4 @@
+import { listenUntil } from "./listen.ts";
 import { mountCompletionList, type CompletionListStrings } from "./completion-list.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { emptyList } from "../core/empty-list.ts";
@@ -71,6 +72,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     const input = editorInput(editor);
     const { workspace, tab: target, view } = editor, documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
     const listeners = new AbortController();
+    const listen = listenUntil(listeners.signal);
     const { scope, binding, provider } = ownerConnection;
     const custom = scope[beginReadRequest](() => {}, () => [binding]);
     const currentDocument = () => workspace.document(documentId);
@@ -531,25 +533,25 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     }),
     resource.metadata.subscribe(() => { if (snippet && !authorityCurrent(snippet.authority)) { snippet = undefined; publish("Snippet ended after authority changed."); } if (job && !authorityCurrent(job.authority)) expire("LSP completion expired after authority changed."); })];
     if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) { snippet = undefined; expire("Captured LSP view is unavailable."); } }));
-    input.addEventListener("blur", () => {
+    listen(input, "blur", () => {
         cancelAuto();
         if (job) { counters.cancelled++; release(); publish("Completion dismissed after focus changed."); }
         if (snippet && !editor.activity().composing) { snippet = undefined; publish("Snippet ended after focus changed."); }
-    }, { signal: listeners.signal });
-    input.addEventListener("compositionstart", () => { cancelAuto(); expire("Finish composition before completion."); }, { signal: listeners.signal });
-    input.addEventListener("beforeinput", event => { const started = clock.performance.now();
+    });
+    listen(input, "compositionstart", () => { cancelAuto(); expire("Finish composition before completion."); });
+    listen(input, "beforeinput", event => { const started = clock.performance.now();
         try { beforeInput(event); } finally { counters.lastCompletionBeforeInputMs = clock.performance.now() - started; }
-    }, { capture: true, signal: listeners.signal });
-    editor.element.addEventListener(typedTextEvent, acceptedText, { signal: listeners.signal });
-    input.addEventListener("compositionend", () => {
+    }, { capture: true });
+    listen(editor.element, typedTextEvent, acceptedText);
+    listen(input, "compositionend", () => {
         if (snippet && !editor.getSnapshot().focused) { snippet = undefined; publish("Snippet ended after composition lost focus."); }
-    }, { signal: listeners.signal });
+    });
     // Home and End dismiss the list even when the caret is already at the boundary.
-    input.addEventListener("keydown", event => {
+    listen(input, "keydown", event => {
         if (!event.isComposing && !editor.activity().composing && job?.visible.length && (event.key === "Home" || event.key === "End")) {
             cancelAuto(); counters.cancelled++; release(); publish("Completion dismissed.");
         }
-    }, { signal: listeners.signal });
+    });
     const registrations: { dispose(): void }[] = [];
     const visible = () => !!job?.visible.length;
     const navigatingSnippet = () => !!snippet;

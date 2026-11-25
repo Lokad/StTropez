@@ -1,3 +1,4 @@
+import { listenUntil } from "./listen.ts";
 import { isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
 import { mountInputCaret } from "./input-caret.ts";
 import { autoClosedPairs } from "./auto-closed-pairs.ts";
@@ -150,6 +151,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     root.style.tabSize = String(language.tabSize);
     const owner = host.ownerDocument, win = owner.defaultView!, input = owner.createElement("textarea");
     const scope = workspace.allocateIdentity(), listeners = new AbortController();
+    const listen = listenUntil(listeners.signal);
     root.classList.add("st-editor");
     input.className = "st-input-context"; input.wrap = "off"; input.spellcheck = false; input.autocomplete = "off";
     // The native projection belongs to the editor, independently of enclosing host forms.
@@ -1222,7 +1224,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }
     }
     for (const type of ["beforeinput", "input"]) {
-        input.addEventListener(type, guardNativeHistory, { capture: true, signal: listeners.signal });
+        listen(input, type, guardNativeHistory, { capture: true });
     }
     function beforeInput(event: InputEvent): void {
         hostInsertion?.cancel();
@@ -1260,10 +1262,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             insertion = captureInput(event.inputType, event.data, event.inputType === "insertFromPaste" && copiedLines(event.dataTransfer));
         }
     }
-    input.addEventListener("beforeinput", event => { const began = win.performance.now();
+    listen(input, "beforeinput", event => { const began = win.performance.now();
         try { beforeInput(event); } finally { beforeInputEvents++; lastBeforeInputMs = win.performance.now() - began; }
-    }, { signal: listeners.signal });
-    input.addEventListener("input", event => {
+    });
+    listen(input, "input", event => {
         const start = win.performance.now(), type = (event as InputEvent).inputType;
         const captured = pendingDeletion; pendingDeletion = undefined;
         if (commitOrderedInput(event as InputEvent)) { lastInputMs = win.performance.now() - start; inputEvents++; return; }
@@ -1277,7 +1279,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             else { refresh(); runCommand(deletion); }
         } else commit(type);
         lastInputMs = win.performance.now() - start; inputEvents++;
-    }, { signal: listeners.signal });
+    });
     function startComposition(): void {
         cancelLineRequest();
         registry.reset();
@@ -1308,25 +1310,25 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (event.data === "" && target && (input.value === target.before || resolveNativeInsertion(target, input, target.type)?.insert === "")) refresh();
         else commit("insertCompositionText", captured);
     }
-    input.addEventListener("compositionstart", startComposition, { signal: listeners.signal });
-    input.addEventListener("compositionupdate", event => { if (composing) caretLayer.showComposingText(event.data); }, { signal: listeners.signal });
-    input.addEventListener("compositionend", endComposition, { signal: listeners.signal });
-    input.addEventListener("select", syncSelection, { signal: listeners.signal });
+    listen(input, "compositionstart", startComposition);
+    listen(input, "compositionupdate", event => { if (composing) caretLayer.showComposingText(event.data); });
+    listen(input, "compositionend", endComposition);
+    listen(input, "select", syncSelection);
     // Tab can reset the browser range after focus dispatch. It changes focus, not model selection.
-    input.addEventListener("keyup", event => {
+    listen(input, "keyup", event => {
         // A held Shift qualifies the next Tab. Releasing Shift alone consumes the escape.
         if (event.key === "Shift") escapeState(false);
         if (event.key === "Tab") refresh(); else syncSelection();
-    }, { signal: listeners.signal });
-    input.addEventListener("focus", () => {
+    });
+    listen(input, "focus", () => {
         // Dialog dismissal can reset the caret to the start of the textarea. A native select()
         // sets a nonempty range before focusing and must keep that range for the next input.
         if (!composing && !committing && input.selectionEnd === 0 && input.value === context.text) projectSelection();
         publishState(); scheduleCaret();
-    }, { signal: listeners.signal });
-    input.addEventListener("blur", () => { publishState(); syncSelection(); group = undefined; registry.reset(); scheduleCaret();
+    });
+    listen(input, "blur", () => { publishState(); syncSelection(); group = undefined; registry.reset(); scheduleCaret();
         // Clear the Escape prefix after the browser completes focus traversal.
-        if (escapeSelection) queueMicrotask(() => { if (!disposed) escapeState(false); }); }, { signal: listeners.signal });
+        if (escapeSelection) queueMicrotask(() => { if (!disposed) escapeState(false); }); });
     function keydown(event: KeyboardEvent, captured?: KeyBinding): void {
         const repeatedEscape = event.key === "Escape" && event.repeat;
         if (escapeSelection && event.key !== "Tab" && event.key !== "Shift" && !repeatedEscape) escapeState(false);
@@ -1372,14 +1374,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         preferred = undefined;
         if (command?.kind === "language" && languageCommand(command.command)) event.preventDefault();
     }
-    input.addEventListener("keydown", event => {
+    listen(input, "keydown", event => {
         const started = win.performance.now(); keydownEvents++;
         try { keydown(event); } finally { lastKeydownMs = win.performance.now() - started; }
-    }, { signal: listeners.signal });
-    root.addEventListener("keydown", event => {
+    });
+    listen(root, "keydown", event => {
         if (event.target !== input && event.target instanceof win.Element && event.target.closest(".st-editor") === root)
             registry.keymap.handle(event);
-    }, { signal: listeners.signal });
+    });
     function pointerHit(event: MouseEvent, gutterInset = 0) {
         // Pointer capture can retarget a gutter double-click to the root. Scrollbars also target the root.
         if (event.target === root) {
@@ -1393,23 +1395,23 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     }
     let draggedWord = false, foldSummaryClick = false;
     // Expansion removes the label before the next press in the browser's click sequence.
-    root.addEventListener("click", event => {
+    listen(root, "click", event => {
         if (event.detail === 1) foldSummaryClick = (event.target as HTMLElement).dataset?.ornament === "fold";
-    }, { capture: true, signal: listeners.signal });
-    root.addEventListener("dblclick", event => {
+    }, { capture: true });
+    listen(root, "dblclick", event => {
         if (event.button !== 0 || disposed || composing || input.disabled || !live()
             || (event.target as Element | null)?.closest(".st-viewport-gutter")) return;
         const point = pointerHit(event, viewport.getSnapshot().gutterWidth); if (!point) return;
         event.preventDefault(); if (!draggedWord && !foldSummaryClick) selectWord(point.offset, event.altKey);
-    }, { signal: listeners.signal });
+    });
     const textDrag = mountTextDragDrop({ workspace, tab: target, view, viewport, input,
         available: () => !disposed && !composing && !input.disabled,
         beforeStart: () => { stopDrag(); cancelPendingCommand(); commandRunner.cancel(); preferred = undefined; group = undefined; },
         afterDrop: () => { commits++; revealCaret(); focus(); refresh(); },
         rejected: reason => { conflict(reason); refresh(); } });
     let mousePress: { event: PointerEvent; armed: boolean; revision: number; selectionSet: SelectionSet } | undefined;
-    root.addEventListener("pointerdown", () => { mousePress = undefined; draggedWord = false; registry.reset(); escapeState(false); }, { capture: true, signal: listeners.signal });
-    root.addEventListener("pointerdown", event => {
+    listen(root, "pointerdown", () => { mousePress = undefined; draggedWord = false; registry.reset(); escapeState(false); }, { capture: true });
+    listen(root, "pointerdown", event => {
         if (event.button < 0 || event.button > 2 || disposed || composing || input.disabled || !live()) return;
         const target = event.target as Element | null;
         if (target?.closest(".st-viewport-gutter")) {
@@ -1424,8 +1426,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             return;
         }
         if (!armed) beginPointer(event, 1, event);
-    }, { signal: listeners.signal });
-    root.addEventListener("mousedown", event => {
+    });
+    listen(root, "mousedown", event => {
         const press = mousePress; mousePress = undefined;
         if (!press || event.button !== 0 || event.defaultPrevented) return;
         if (foldSummaryClick && event.detail > 1) { textDrag.disarm(); event.preventDefault(); return; }
@@ -1433,7 +1435,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (press.armed && event.detail < 2) return;
         if (press.armed) textDrag.disarm();
         beginPointer(press.event, event.detail, event);
-    }, { signal: listeners.signal });
+    });
     function wholeLine(buffer: TextBuffer, offset: number, folds = currentFolds()): Selection {
         const line = buffer.lineAt(offset), block = collapsedLineBlock(folds, line);
         const next = block?.lineTo ?? line + 1;
@@ -1510,12 +1512,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             selectionSet: currentSelections(), baseRanges, padding, ...(unit ? { unit } : {}) };
         root.setPointerCapture(event.pointerId);
     }
-    root.addEventListener("pointermove", event => {
+    listen(root, "pointermove", event => {
         if (drag?.pointer !== event.pointerId) return;
         const buttonMask = drag.unit?.kind === "column" && drag.unit.middle ? 4 : 1;
         if (!(event.buttons & buttonMask) || !validDrag()) { stopDrag(); return; }
         drag = { ...drag, x: event.clientX, y: event.clientY }; updateDragHead(); dragScrolling.schedule();
-    }, { signal: listeners.signal });
+    });
     function validDrag(): boolean {
         return !!drag && !disposed && !composing && !input.disabled && root.isConnected && root.clientWidth > 0 && root.clientHeight > 0
             && drag.revision === revision && drag.selectionSet === currentSelections() && live() && root.hasPointerCapture(drag.pointer);
@@ -1641,13 +1643,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             viewport.revealOffset(selected.head, { horizontal: "nearest", vertical: "nearest", affinity: selected.headAffinity ?? "after" });
         }
     };
-    root.addEventListener("pointerup", stopDrag, { signal: listeners.signal }); root.addEventListener("pointercancel", stopDrag, { signal: listeners.signal });
-    root.addEventListener("lostpointercapture", stopDrag, { signal: listeners.signal });
+    listen(root, "pointerup", stopDrag); listen(root, "pointercancel", stopDrag);
+    listen(root, "lostpointercapture", stopDrag);
     function canCaptureInsertion(): boolean {
         return !disposed && root.isConnected && !readOnly && !input.disabled && !input.readOnly && !composing
             && !inputQueue.pending && !inputQueue.executing && !rangeCommand && !wordCursor && !graphemeJob && !insertion && !drag;
     }
-    for (const type of ["copy", "cut", "paste"] as const) input.addEventListener(type, event => {
+    for (const type of ["copy", "cut", "paste"] as const) listen(input, type, event => {
         if (event.defaultPrevented) { cancelPendingCommand(); group = undefined; if (type !== "copy") stopDrag(); return; }
         if (input.disabled || composing || !event.clipboardData) return;
         if (type === "paste" && !event.cancelable) return;
@@ -1691,7 +1693,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 .map(range => buffer.slice(Math.min(range.anchor, range.head), Math.max(range.anchor, range.head))).join("\n"));
             if (type === "cut") replaceSelection("", "delete");
         }
-    }, { signal: listeners.signal });
+    });
     let observedFoldRevision = currentFolding().revision;
     const caretHistory: DocumentViewSnapshot[] = [];
     let lastCaret = currentView(), skipCaretHistory = false;

@@ -1,3 +1,4 @@
+import { listenUntil, onAbort } from "./listen.ts";
 import { codeWordConstituentPattern } from "../core/word-patterns.ts";
 import { hitTestRoot, onPaintedSelection } from "./dom-coordinates.ts";
 import { editorInput } from "./editor-input.ts";
@@ -11,6 +12,7 @@ const modified = (event: MouseEvent | KeyboardEvent) => event.ctrlKey !== event.
 /** The viewport supplies the painted glyph edge, including its affinity in bidi text. */
 export function bindDefinitionPointer(editor: TextEditor, inspect: (hit: DefinitionHit) => void, leave: () => void,
     activate: (hit: DefinitionHit) => void, signal: AbortSignal, linkAt?: (offset: number) => NavigationPointerLink | undefined) {
+    const listen = listenUntil(signal);
     const root = editor.element, owner = root.ownerDocument, win = owner.defaultView!, input = editorInput(editor);
     let pointer: { x: number; y: number } | undefined, press: { hit: DefinitionHit; id: number; x: number; y: number } | undefined;
     let timer: number | undefined;
@@ -44,19 +46,19 @@ export function bindDefinitionPointer(editor: TextEditor, inspect: (hit: Definit
         const { x, y } = pointer;
         timer = win.setTimeout(() => { const hit = hitAt(x, y); if (hit) inspect(hit); else leave(); }, 75);
     };
-    root.addEventListener("pointermove", event => {
+    listen(root, "pointermove", event => {
         if (event.pointerType === "touch") return;
         pointer = { x: event.clientX, y: event.clientY };
         if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 4) clear();
         if (!event.buttons && modified(event)) hover(); else if (!press) clear();
-    }, { signal });
-    root.addEventListener("pointerleave", () => { pointer = undefined; clear(); }, { signal });
-    win.addEventListener("keydown", event => {
+    });
+    listen(root, "pointerleave", () => { pointer = undefined; clear(); });
+    listen(win, "keydown", event => {
         if (!pointer || event.repeat) return;
         if ((event.key === "Control" || event.key === "Meta") && modified(event)) hover(); else clear();
-    }, { signal, capture: true });
-    win.addEventListener("keyup", event => { if (!modified(event)) clear(); }, { signal, capture: true });
-    root.addEventListener("pointerdown", event => {
+    }, { capture: true });
+    listen(win, "keyup", event => { if (!modified(event)) clear(); }, { capture: true });
+    listen(root, "pointerdown", event => {
         if (event.button !== 0 || !event.isPrimary || !modified(event)) { clear(); return; }
         const hit = hitAt(event.clientX, event.clientY); if (!hit) { clear(); return; }
         stopTimer(); press = { hit, id: event.pointerId, x: event.clientX, y: event.clientY };
@@ -65,8 +67,8 @@ export function bindDefinitionPointer(editor: TextEditor, inspect: (hit: Definit
             event.preventDefault(); event.stopPropagation();
         }
         inspect(hit);
-    }, { signal, capture: true });
-    root.addEventListener("pointerup", event => {
+    }, { capture: true });
+    listen(root, "pointerup", event => {
         const pressed = press; press = undefined;
         if (!pressed || pressed.id !== event.pointerId || event.button !== 0 || !modified(event)) return;
         const hit = hitAt(event.clientX, event.clientY);
@@ -75,9 +77,9 @@ export function bindDefinitionPointer(editor: TextEditor, inspect: (hit: Definit
         event.preventDefault();
         if (!root.draggable) event.stopPropagation();
         activate(pressed.hit.open ? pressed.hit : hit);
-    }, { signal, capture: true });
-    root.addEventListener("pointercancel", clear, { signal });
-    editor.viewport.element.addEventListener("scroll", clear, { signal });
-    win.addEventListener("blur", () => { pointer = undefined; clear(); }, { signal });
-    signal.addEventListener("abort", stopTimer, { once: true });
+    }, { capture: true });
+    listen(root, "pointercancel", clear);
+    listen(editor.viewport.element, "scroll", clear);
+    listen(win, "blur", () => { pointer = undefined; clear(); });
+    onAbort(signal, stopTimer);
 }

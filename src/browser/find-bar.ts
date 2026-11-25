@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { editorElement } from "./editor-element.ts";
 import { NotificationScope, Store, type Observable } from "../core/observable.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -285,7 +286,7 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
                 if (reason !== next && target === editor && find) render();
                 reason = next;
             });
-            signal.addEventListener("abort", stop, { once: true });
+            onAbort(signal, stop);
             if (!target) setTarget(editor);
         } catch (error) {
             detach();

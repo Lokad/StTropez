@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { requireLanguageView } from "./captured-view.ts";
 import { retainLspDocument, type LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspWorkspace } from "../protocol/lsp-workspace.ts";
@@ -94,7 +95,7 @@ export function attachEditorLanguage<O extends Options>(editor: TextEditor, prov
     }
     try {
         for (const key of Object.keys(mounts) as (keyof Features)[]) mount(key);
-        editor.signal.addEventListener("abort", dispose, { once: true });
+        onAbort(editor.signal, dispose);
         return Object.freeze({ ...features, dispose }) as Attachment<O>;
     } catch (error) {
         dispose();

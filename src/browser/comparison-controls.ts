@@ -1,3 +1,4 @@
+import { listenUntil } from "./listen.ts";
 import type { TextComparison, TextComparisonSnapshot, TextComparisonStrings } from "./comparison.ts";
 import { textExcerpt } from "../core/utf16.ts";
 
@@ -17,7 +18,7 @@ export function mountComparisonControls(
     const element = <K extends keyof HTMLElementTagNameMap>(tag: K) => owner.createElement(tag);
     const controls = element("div");
     const listeners = new AbortController();
-    const options = { signal: listeners.signal };
+    const listen = listenUntil(listeners.signal);
     controls.className = "st-comparison-controls";
     const button = (label: string) => {
         const result = element("button");
@@ -29,19 +30,19 @@ export function mountComparisonControls(
     const previous = navigationButton("comparison.previousChange");
     const next = navigationButton("comparison.nextChange");
     const revert = button(strings.useBaseline ?? "Use baseline");
-    controls.addEventListener("pointerdown", event => {
+    listen(controls, "pointerdown", event => {
         if (event.pointerType === "mouse" && event.button === 0
             && (event.target === previous || event.target === next || event.target === revert)) event.preventDefault();
-    }, { capture: true, ...options });
+    }, { capture: true });
     function navigationButton(id: string): HTMLButtonElement {
         const control = button(comparison.activePane().commands.get(id)!.label);
         const hint = () => { control.title = comparison.activePane().keymap.getShortcuts(id).join(strings.shortcutSeparator ?? " or "); };
-        control.addEventListener("pointerenter", hint, options);
-        control.addEventListener("focus", hint, options);
-        control.addEventListener("click", event => {
+        listen(control, "pointerenter", hint);
+        listen(control, "focus", hint);
+        listen(control, "click", event => {
             const pane = comparison.activePane();
             if (pane.commands.run(id) && event.detail > 0) pane.focus();
-        }, options);
+        });
         hint();
         return control;
     }
@@ -138,18 +139,18 @@ export function mountComparisonControls(
         }
     }
     let press: TextComparisonSnapshot | null | undefined;
-    revert.addEventListener("pointerdown", () => { press = comparison.getSnapshot(); }, options);
-    revert.addEventListener("keydown", event => {
+    listen(revert, "pointerdown", () => { press = comparison.getSnapshot(); });
+    listen(revert, "keydown", event => {
         if (!event.repeat && (event.key === " " || event.key === "Enter")) press = comparison.getSnapshot();
-    }, options);
-    revert.addEventListener("pointercancel", () => { press = undefined; }, options);
-    revert.addEventListener("blur", () => { if (press) press = null; }, options);
-    revert.addEventListener("click", event => {
+    });
+    listen(revert, "pointercancel", () => { press = undefined; });
+    listen(revert, "blur", () => { if (press) press = null; });
+    listen(revert, "click", event => {
         const shown = event.isTrusted ? press : undefined; press = undefined;
         if (shown !== null) comparison.revertSelectedHunk(shown);
-    }, options);
-    link.addEventListener("change", () => comparison.setScrollLinked(link.checked), options);
-    align.addEventListener("change", () => comparison.setRowsAligned(align.checked), options);
+    });
+    listen(link, "change", () => comparison.setScrollLinked(link.checked));
+    listen(align, "change", () => comparison.setRowsAligned(align.checked));
     render();
     const stop = comparison.subscribe(render);
     return () => {

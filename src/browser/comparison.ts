@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { editorElement } from "./editor-element.ts";
 import { Store } from "../core/observable.ts";
 import { validateWorkBudget } from "../core/kernel-cursor.ts";
@@ -356,7 +357,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         const editors = Object.freeze({ working, reference });
         for (const editor of Object.values(editors)) {
             const stop = editor.view.subscribe(() => { if (activePane() === editor && !disposed) publishState(); });
-            editor.signal.addEventListener("abort", stop, { once: true });
+            onAbort(editor.signal, stop);
             editor.element.addEventListener("focusin", () => { lastFocused = editor; publishState(); }, { signal: editor.signal });
         }
         const commands: EditorCommands = Object.freeze({

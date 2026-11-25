@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { planSelectionEdits } from "../core/selections.ts";
 import type { SelectionEditPlan, SelectionSet } from "../core/selections.ts";
 import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
@@ -14,7 +15,7 @@ export function captureInsertion(workspace: Workspace, target: TabTarget | undef
     let done = false;
     const finish = () => { if (done) return; done = true; ended(); };
     const cancel = () => { try { capture.cancel(); } finally { finish(); } };
-    capture.signal.addEventListener("abort", finish, { once: true });
+    onAbort(capture.signal, finish);
     return Object.freeze({ documentId: document.id, revision: document.revision, length: document.buffer.length, selectionSet,
         signal: capture.signal, isCurrent: capture.isCurrent, cancel, insert: text => {
             if (!capture.isCurrent()) { cancel(); return false; }

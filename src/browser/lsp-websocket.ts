@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { isPositiveInteger } from "../core/bounds.ts";
 import type { RpcTransport } from "../protocol/json-rpc.ts";
 
@@ -66,7 +67,7 @@ export function openWebSocketTransport(url: string, options: WebSocketTransportO
         const abort = () => end(new DOMException("Language connection cancelled.", "AbortError"));
         const timer = setTimeout(() => end(new Error("Language WebSocket opening timed out.")), timeout);
         socket.addEventListener("open", open); socket.addEventListener("message", message); socket.addEventListener("error", error); socket.addEventListener("close", close);
-        options.signal?.addEventListener("abort", abort, { once: true });
+        onAbort(options.signal, abort);
         if (options.signal?.aborted) abort(); else if (socket.readyState === 1) open(); else if (socket.readyState >= 2) end(reason);
     });
 }

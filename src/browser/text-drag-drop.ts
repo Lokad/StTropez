@@ -1,3 +1,4 @@
+import { listenUntil } from "./listen.ts";
 import { clientBox, hitTestRoot, onPaintedSelection } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import type { Affinity } from "../core/positions.ts";
@@ -16,7 +17,7 @@ const activeDrags = new WeakMap<Document, ActiveDrag>();
 function beginDrag(root: HTMLElement, owner: symbol, source: TextTransferCapture): ActiveDrag {
     const document = root.ownerDocument, win = document.defaultView!;
     activeDrags.get(document)?.end();
-    const events = new AbortController(), options = { signal: events.signal };
+    const events = new AbortController(), listen = listenUntil(events.signal);
     function end(): void {
         events.abort();
         if (activeDrags.get(document) === drag) activeDrags.delete(document);
@@ -25,10 +26,10 @@ function beginDrag(root: HTMLElement, owner: symbol, source: TextTransferCapture
     const drag: ActiveDrag = { token: win.crypto.randomUUID(), owner, source, end };
     activeDrags.set(document, drag);
     // The browser can deliver dragend directly to a detached source after its editor is gone.
-    root.addEventListener("dragend", drag.end, options);
-    document.addEventListener("drop", drag.end, options);
-    document.addEventListener("dragstart", drag.end, { ...options, capture: true });
-    win.addEventListener("pagehide", drag.end, options);
+    listen(root, "dragend", drag.end);
+    listen(document, "drop", drag.end);
+    listen(document, "dragstart", drag.end, { capture: true });
+    listen(win, "pagehide", drag.end);
     return drag;
 }
 
@@ -38,6 +39,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     afterDrop: (offset: number) => void; rejected: (reason: string) => void }>) {
     const { workspace, tab, view, viewport, input } = options, root = viewport.element;
     const document = root.ownerDocument, win = document.defaultView!, owner = Symbol(), listeners = new AbortController();
+    const listen = listenUntil(listeners.signal);
     const apple = /Mac|iPhone|iPad|iPod/.test(win.navigator.platform);
     const marker = document.createElement("div"), preview = document.createElement("div");
     marker.className = "st-text-drop-caret"; marker.setAttribute("aria-hidden", "true");
@@ -107,7 +109,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         },
         cancel: clearAim, updateAtRest: true, recheckAfterUpdate: true,
     });
-    root.addEventListener("dragstart", event => {
+    listen(root, "dragstart", event => {
         const intent = armed;
         if (!intent || event.target === input || !event.dataTransfer || current()?.revision !== intent.revision || view.getSnapshot().selectionSet !== intent.selectionSet) {
             event.preventDefault(); clearArm(); return;
@@ -123,11 +125,11 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         event.dataTransfer.setDragImage(preview, 8, 8);
         // The browser captures the drag image after dragstart; its source need not stay painted.
         previewFrame = win.requestAnimationFrame(clearPreview);
-    }, { signal: listeners.signal });
-    root.addEventListener("dragenter", event => {
+    });
+    listen(root, "dragenter", event => {
         if (accepts(event.dataTransfer) && current() && !input.readOnly && !expired) event.preventDefault();
-    }, { signal: listeners.signal });
-    root.addEventListener("dragover", event => {
+    });
+    listen(root, "dragover", event => {
         const data = event.dataTransfer, state = current(); invalidateSource();
         if (!accepts(data) || !state || input.readOnly || expired) { clearAim(); return; }
         const internal = data.types.includes(transferType), active = activeDrags.get(document);
@@ -143,11 +145,11 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         event.preventDefault(); data.dropEffect = copy ? "copy" : "move";
         aim = { revision: state.revision, offset: point.offset, affinity: point.affinity, token: active?.token ?? null, copy, x: event.clientX, y: event.clientY };
         paint(); scrolling.schedule();
-    }, { signal: listeners.signal });
-    root.addEventListener("dragleave", event => {
+    });
+    listen(root, "dragleave", event => {
         if (!(event.relatedTarget instanceof win.Node) || !root.contains(event.relatedTarget)) clearAim();
-    }, { signal: listeners.signal });
-    root.addEventListener("drop", event => {
+    });
+    listen(root, "drop", event => {
         // Refuse default text-control insertion and file/URL navigation, even for unsupported data.
         event.preventDefault(); const captured = aim, data = event.dataTransfer, state = current();
         const active = activeDrags.get(document);
@@ -167,17 +169,17 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
             active?.end(); finish();
             document.dispatchEvent(new Event("sttropez-text-drag-end"));
         }
-    }, { signal: listeners.signal });
-    document.addEventListener("pointerup", event => {
+    });
+    listen(document, "pointerup", event => {
         const intent = armed; if (!intent || intent.pointer !== event.pointerId) return; clearArm();
         if (event.defaultPrevented || current()?.revision !== intent.revision || view.getSnapshot().selectionSet !== intent.selectionSet) return;
         options.beforeStart(); view.setSelection(intent.revision, { anchor: intent.offset, head: intent.offset, anchorAffinity: intent.affinity, headAffinity: intent.affinity }); input.focus({ preventScroll: true });
-    }, { signal: listeners.signal });
-    document.addEventListener("pointercancel", event => { if (armed?.pointer === event.pointerId) clearArm(); }, { signal: listeners.signal });
-    document.addEventListener("dragend", finish, { signal: listeners.signal });
-    document.addEventListener("sttropez-text-drag-end", finish, { signal: listeners.signal });
-    document.addEventListener("keydown", event => { if (event.key === "Escape") finish(); }, { signal: listeners.signal });
-    win.addEventListener("pagehide", finish, { signal: listeners.signal });
+    });
+    listen(document, "pointercancel", event => { if (armed?.pointer === event.pointerId) clearArm(); });
+    listen(document, "dragend", finish);
+    listen(document, "sttropez-text-drag-end", finish);
+    listen(document, "keydown", event => { if (event.key === "Escape") finish(); });
+    listen(win, "pagehide", finish);
     const resource = workspace.resourceForDocument(view.documentId);
     const subscriptions = [workspace.observeDocument(view.documentId).subscribe(changed), view.subscribe(changed), resource.metadata.subscribe(changed)];
     if (tab) subscriptions.push(workspace.tabs.subscribe(changed));

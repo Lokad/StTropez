@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { isOffsetRange } from "../core/bounds.ts";
 import { LiteralSearch } from "../core/search.ts";
@@ -620,7 +621,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         reset({ status: "disposed", query: "", length: 0, ...notice });
         store.clearSnapshotListeners();
     };
-    editor.signal?.addEventListener("abort", dispose, { once: true });
+    onAbort(editor.signal, dispose);
     return Object.freeze({ getSnapshot: store.observable.getSnapshot,
         subscribe: (listener: () => void) => disposed ? () => {} : store.observable.subscribe(listener),
         getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn,

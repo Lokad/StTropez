@@ -1,3 +1,4 @@
+import { listenUntil, onAbort } from "./listen.ts";
 import type { DocumentId } from "../core/workspace.ts";
 import type { Affinity } from "../core/positions.ts";
 import { clientBox } from "./dom-coordinates.ts";
@@ -15,6 +16,7 @@ export function observePointerDwell(editor: TextEditor, listener: (position: Poi
     if (!Number.isFinite(delay) || delay < 0 || delay > 2147483647) throw new RangeError("Invalid pointer dwell delay.");
     if (editor.signal.aborted) throw new Error("Pointer dwell needs a live editor.");
     const events = new AbortController(), signal = events.signal;
+    const listen = listenUntil(signal);
     let timer: number | undefined, last: PointerDwellPosition | undefined;
     let pending: { x: number; y: number; offset?: number; revision: number; folds: number; alignment: number | null; scrolled: boolean } | undefined;
     function cancel(): void {
@@ -27,7 +29,7 @@ export function observePointerDwell(editor: TextEditor, listener: (position: Poi
         if (point && !point.padding && Math.abs(point.left - x) <= state.columnWidth * box.zoom * 1.5
             && Math.abs(point.top + point.height / 2 - y) <= point.height) return point;
     }
-    element.addEventListener("pointermove", event => {
+    listen(element, "pointermove", event => {
         if (options.enabled?.() === false) { cancel(); return; }
         if (event.buttons || event.pointerType === "touch" || event.ctrlKey || event.metaKey || editor.getSnapshot().composing) {
             cancel(); options.onMiss?.(); return;
@@ -53,18 +55,18 @@ export function observePointerDwell(editor: TextEditor, listener: (position: Poi
             last = Object.freeze({ documentId: view.documentId, revision, offset: point.offset, affinity: point.affinity });
             listener(last);
         }, delay);
-    }, { signal });
-    for (const type of ["pointerleave", "pointercancel", "pointerdown", "compositionstart", "beforeinput"]) element.addEventListener(type, cancel, { signal });
-    win.addEventListener("scroll", event => {
+    });
+    for (const type of ["pointerleave", "pointercancel", "pointerdown", "compositionstart", "beforeinput"]) listen(element, type, cancel);
+    listen(win, "scroll", event => {
         const target = event.target;
         if (target === win || target instanceof win.Node && (element.contains(target) || target.contains(element))) {
             if (pending) pending.scrolled = true;
             last = undefined;
         }
-    }, { capture: true, passive: true, signal });
-    win.addEventListener("keydown", event => { if (event.ctrlKey || event.metaKey || event.isComposing) cancel(); }, { capture: true, signal });
-    win.addEventListener("blur", cancel, { signal }); win.addEventListener("resize", cancel, { signal });
+    }, { capture: true, passive: true });
+    listen(win, "keydown", event => { if (event.ctrlKey || event.metaKey || event.isComposing) cancel(); }, { capture: true });
+    listen(win, "blur", cancel); listen(win, "resize", cancel);
     function dispose(): void { cancel(); events.abort(); editor.signal.removeEventListener("abort", dispose); }
-    editor.signal.addEventListener("abort", dispose, { once: true });
+    onAbort(editor.signal, dispose);
     return Object.freeze({ isPending: () => timer !== undefined, cancel, dispose });
 }

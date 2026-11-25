@@ -1,3 +1,4 @@
+import { listenUntil, onAbort } from "./listen.ts";
 import { isOffsetRange } from "../core/bounds.ts";
 import type { Affinity } from "../core/positions.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
@@ -193,10 +194,11 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
             peers.add(placement);
             events = new AbortController();
             const signal = events.signal;
+            const listen = listenUntil(signal);
             if (scoped) {
                 // Popup controls own their native editing, pointer and drag gestures.
                 for (const type of ["keydown", "pointerdown", "pointermove", "dblclick", "wheel", "dragstart", "dragenter", "dragover", "drop"]) {
-                    element.addEventListener(type, event => event.stopPropagation(), { signal });
+                    listen(element, type, event => event.stopPropagation());
                 }
             }
             if (dismissOn.has("focus-leave")) {
@@ -208,21 +210,21 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
                         if (!signal.aborted && !editor.element.matches(":focus-within") && !element.matches(":focus-within")) hide("focus-leave");
                     });
                 };
-                editor.element.addEventListener("focusout", left, { signal });
-                if (!scoped) element.addEventListener("focusout", left, { signal });
+                listen(editor.element, "focusout", left);
+                if (!scoped) listen(element, "focusout", left);
             }
-            if (dismissOn.has("outside-pointerdown")) owner.addEventListener("pointerdown", event => {
+            if (dismissOn.has("outside-pointerdown")) listen(owner, "pointerdown", event => {
                 const path = event.composedPath();
                 if (!path.includes(element) && !path.includes(editor.element)) hide("outside-pointerdown");
-            }, { capture: true, signal });
-            signal.addEventListener("abort", viewport.onRender(schedule), { once: true });
+            }, { capture: true });
+            onAbort(signal, viewport.onRender(schedule));
             resize.observe(element);
-            signal.addEventListener("abort", source.subscribe(schedule), { once: true });
-            if (editor.tab) signal.addEventListener("abort", workspace.tabs.subscribe(schedule), { once: true });
-            win.addEventListener("scroll", schedule, { capture: true, passive: true, signal });
-            win.addEventListener("resize", reconsider, { signal });
-            win.visualViewport?.addEventListener("scroll", schedule, { signal });
-            win.visualViewport?.addEventListener("resize", reconsider, { signal });
+            onAbort(signal, source.subscribe(schedule));
+            if (editor.tab) onAbort(signal, workspace.tabs.subscribe(schedule));
+            listen(win, "scroll", schedule, { capture: true, passive: true });
+            listen(win, "resize", reconsider);
+            listen(win.visualViewport, "scroll", schedule);
+            listen(win.visualViewport, "resize", reconsider);
         }
         schedule();
     }
@@ -241,6 +243,6 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
             editor.signal.removeEventListener("abort", dispose);
         }
     }
-    editor.signal.addEventListener("abort", dispose, { once: true });
+    onAbort(editor.signal, dispose);
     return Object.freeze({ show, hide, dispose });
 }

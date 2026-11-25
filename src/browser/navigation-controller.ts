@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
@@ -95,7 +96,7 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
             leave();
             const source = capture(); if (!source) return;
             markedLink = { hit, source };
-            source.signal.addEventListener("abort", () => { if (markedLink?.source === source) leave(); }, { once: true });
+            onAbort(source.signal, () => { if (markedLink?.source === source) leave(); });
             layer.set(hit.revision, [{ from: hit.from, to: hit.to, className: "st-definition-link" }]);
             return;
         }
@@ -107,7 +108,7 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
             client ??= navigationClient(owner);
             const reply = client.prepareDefinition({ document: source.document, project: project(source), offset: hit.offset, prepare: options.prepareRequest?.("definition") }).result;
             const job: Hover = { hit, client, source, reply }; hover = job;
-            source.signal.addEventListener("abort", () => { if (hover === job) leave(); }, { once: true });
+            onAbort(source.signal, () => { if (hover === job) leave(); });
             void reply.then(result => {
                 if (hover !== job || !source.isCurrent() || !result.isCurrent()) return;
                 job.result = result;
@@ -146,7 +147,7 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
         leave(client); clearExplicit(client);
         const job: Request = { client, source, stops: [], expired: false }; explicit = job;
         const abort = () => { if (job.source) expire(job); };
-        source.signal.addEventListener("abort", abort, { once: true });
+        onAbort(source.signal, abort);
         job.stops.push(() => source.signal.removeEventListener("abort", abort));
         try {
             const documents = project(source);

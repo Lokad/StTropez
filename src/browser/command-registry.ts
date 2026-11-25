@@ -1,3 +1,4 @@
+import { listenUntil } from "./listen.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type EditorCommand = Readonly<{
@@ -191,11 +192,11 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
             if (!accept(group, "")) return false;
         } else {
             if (sharedOnly && ![...group.values()].some(choices => choices.some(binding => binding.shared))) return false;
-            const listeners = new AbortController(), options = { signal: listeners.signal };
+            const listeners = new AbortController(), listen = listenUntil(listeners.signal);
             const target = chordTarget(event);
-            target?.addEventListener("focusout", reset, options);
-            target?.addEventListener("compositionstart", reset, options);
-            event.view?.addEventListener("blur", reset, options);
+            listen(target, "focusout", reset);
+            listen(target, "compositionstart", reset);
+            listen(event.view, "blur", reset);
             prefix = { keys: group, event, target, current: chordCurrent(), listeners, timer: window.setTimeout(reset, 1500) };
         }
         event.preventDefault(); return true;

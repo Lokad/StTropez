@@ -1,3 +1,4 @@
+import { listenUntil } from "./listen.ts";
 import { editorElement } from "./editor-element.ts";
 import type { ComparisonRowIndex } from "../core/comparison-rows.ts";
 import type { FoldIndex } from "../core/folding.ts";
@@ -92,7 +93,7 @@ export function mountMinimap(root: HTMLElement, scroll: (top: number) => void, d
     palette.append(probe);
     anchor.setAttribute("aria-hidden", "true");
     track.append(canvas, marker); anchor.append(track, palette, preview); root.prepend(anchor);
-    const listeners = new AbortController(), options = { signal: listeners.signal };
+    const listeners = new AbortController(), listen = listenUntil(listeners.signal);
     let view: Overview | undefined, previous: readonly unknown[] | undefined, cancel: (() => void) | undefined;
     let maximum = 0, travel = 0, markerTop = 0, markerHeight = 0, paneHeight = 0, scrollTop = 0;
     let drag: { id: number; pointer: number; scrollFraction: number } | undefined;
@@ -132,7 +133,7 @@ export function mountMinimap(root: HTMLElement, scroll: (top: number) => void, d
         if (event.pointerId !== drag.id) return;
         scroll(maximum * Math.min(1, Math.max(0, drag.scrollFraction + (y - drag.pointer) / travel)));
     };
-    track.addEventListener("pointerdown", event => {
+    listen(track, "pointerdown", event => {
         event.stopPropagation();
         if (event.button !== 0 || !event.isPrimary || drag) return;
         event.preventDefault(); hidePreview();
@@ -142,18 +143,18 @@ export function mountMinimap(root: HTMLElement, scroll: (top: number) => void, d
         drag = { id: event.pointerId, pointer: y, scrollFraction: destination / maximum };
         track.setPointerCapture(event.pointerId);
         if (!grabbed) scroll(destination);
-    }, options);
-    track.addEventListener("pointermove", move, options);
-    track.addEventListener("pointerleave", hidePreview, options);
-    root.addEventListener("keydown", hidePreview, options);
+    });
+    listen(track, "pointermove", move);
+    listen(track, "pointerleave", hidePreview);
+    listen(root, "keydown", hidePreview);
     const end = (event: PointerEvent) => {
         if (drag?.id !== event.pointerId) return;
         if (event.type === "pointerup") move(event);
         drag = undefined;
         if (track.hasPointerCapture(event.pointerId)) track.releasePointerCapture(event.pointerId);
     };
-    for (const type of ["pointerup", "pointercancel", "lostpointercapture"] as const) track.addEventListener(type, end, options);
-    track.addEventListener("dblclick", event => { event.preventDefault(); event.stopPropagation(); }, options);
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"] as const) listen(track, type, end);
+    listen(track, "dblclick", event => { event.preventDefault(); event.stopPropagation(); });
     return {
         paint(document: DocumentSnapshot, index: Overview["index"], width: number, height: number, top: number, extent: number,
             lineHeight: number, padding: number, color: string, tabSize: number, pixelRatio: number, epoch: number,

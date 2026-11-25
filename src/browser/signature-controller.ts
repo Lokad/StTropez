@@ -1,3 +1,4 @@
+import { listenUntil, onAbort } from "./listen.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
 import { signatureHelpMethod } from "../protocol/lsp-methods.ts";
@@ -47,7 +48,8 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     const client = signatureClient(owner);
     const events = new AbortController(), notifications = workspace.createNotificationScope(), cell = new Store(idle, notifications);
     const { signal } = events;
-    const onDispose = (release: () => void) => signal.addEventListener("abort", release, { once: true });
+    const listen = listenUntil(signal);
+    const onDispose = (release: () => void) => onAbort(signal, release);
     const currentView = view.getSnapshot;
     const focused = () => editor.getSnapshot().focused;
     const liveHelp = (current: Request) => current.capture.isCurrent() && (!current.help || current.help.isCurrent());
@@ -114,7 +116,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         const capture = captureViewRequest(workspace, tab, view, { available });
         if (!capture) return;
         const current: Request = { capture }; job = current; armed = true;
-        capture.signal.addEventListener("abort", () => expire(current), { once: true });
+        onAbort(capture.signal, () => expire(current));
         return current;
     }
     async function request(context: LspSignatureContext = manual): Promise<Outcome<SignatureSnapshot>> {
@@ -261,16 +263,16 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         client.dispose();
         throw error;
     }
-    element.addEventListener(typedTextEvent, typed, { signal });
-    element.addEventListener("keydown", event => {
+    listen(element, typedTextEvent, typed);
+    listen(element, "keydown", event => {
         if (!job) return;
         delete job.argumentKey;
         if (!event.isComposing && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
             && ["Backspace", "Delete", "ArrowLeft", "ArrowRight"].includes(event.key) && cell.get().signature
             && liveHelp(job)) job.argumentKey = event.key;
-    }, { capture: true, signal });
-    element.addEventListener("keyup", () => { if (job) delete job.argumentKey; }, { signal });
-    element.addEventListener("focusout", () => dismiss(true), { signal });
+    }, { capture: true });
+    listen(element, "keyup", () => { if (job) delete job.argumentKey; });
+    listen(element, "focusout", () => dismiss(true));
     editor.onEditIntent(kind => {
         if (kind !== "beforeinput") cancel();
         else if (job) job.typing = liveHelp(job);

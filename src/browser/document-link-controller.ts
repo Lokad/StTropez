@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { documentLinkMethod } from "../protocol/lsp-methods.ts";
 import { languageReview } from "./language-review.ts";
@@ -86,7 +87,7 @@ export function mountDocumentLinks(editor: TextEditor, owner: LspDocumentOwner, 
     }
     function bindCapture(j: Job, source: NonNullable<Job["source"]>) {
         j.source = source;
-        source.signal.addEventListener("abort", () => { if (j.source === source) expire(j); }, { once: true });
+        onAbort(source.signal, () => { if (j.source === source) expire(j); });
         j.timer = win.setTimeout(() => fail(j, new Error("Document link request timed out.")), 30000);
     }
     function finishCapture(j: Job) {

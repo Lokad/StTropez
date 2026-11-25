@@ -1,3 +1,4 @@
+import { onAbort } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { colorPresentationMethod } from "../protocol/lsp-methods.ts";
 import { languageReview } from "./language-review.ts";
@@ -170,14 +171,14 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
                 return refused("unavailable-view");
             }
             p = j.preview = { capture: source, reference, proposed };
-            source.signal.addEventListener("abort", () => {
+            onAbort(source.signal, () => {
                 queueMicrotask(() => { if (active.job === j && j.preview === p && !j.invalid) dismissPreview(); });
-            }, { once: true });
+            });
             startTimer(j, p);
             publish("previewing", { colors });
             p.result = await j.reply.presentations(j.reply.items[index]!, proposed, options.prepareRequest?.("presentation"), cancel => {
                 if (source.signal.aborted) cancel();
-                else source.signal.addEventListener("abort", cancel, { once: true });
+                else onAbort(source.signal, cancel);
                 return () => source.signal.removeEventListener("abort", cancel);
             });
             if (j.preview !== p) return stale;
@@ -221,7 +222,7 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
                 project: retainDocuments(workspace, available, () => expire(j)) };
             pending = active.job = j;
             j.project.include(document);
-            source.signal.addEventListener("abort", () => { if (!j.reply) expire(j); }, { once: true });
+            onAbort(source.signal, () => { if (!j.reply) expire(j); });
             startTimer(j, j);
             publish("discovering");
             const reply = await client.run({ document, prepare: options.prepareRequest?.("discovery") }).result;
