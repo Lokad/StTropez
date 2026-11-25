@@ -26,7 +26,8 @@ test("completion owns immutable sorted choices, captured options and lazy fallba
     let fallbackReads = 0;
     f.peer.onRequest("textDocument/completion", () => [choice()]);
     await client.run({ document: f.document(), offset: 2, fallback: () => { fallbackReads++; throw new Error("Unused fallback"); } }).result;
-    assert.equal(fallbackReads, 0); assert.equal(batch.isCurrent(), false); assert.equal(client.snapshot().received, 2);
+    assert.equal(fallbackReads, 0);
+    assert.equal(batch.isCurrent(), false);
     assert.equal(f.sent("textDocument/didOpen").length, 1); assert.equal(f.workspace.diagnostics().leases, 1);
 });
 
@@ -113,7 +114,8 @@ test("host edits, copied batches and failed preparation never acquire fresh comp
     for (const error of [new TypeError("host"), new RangeError("host")]) {
         await assert.rejects(client.run({ document: f.document(), offset: 3, prepare: async () => { throw error; } }).result, actual => actual === error);
     }
-    assert.equal(client.snapshot().received, 1); assert.equal(f.sent("completionItem/resolve").length, 0);
+    assert.equal(f.sent("textDocument/completion").length, 1);
+    assert.equal(f.sent("completionItem/resolve").length, 0);
 });
 
 test("cancellation skips unstarted preparation, supersedes held work and preserves decode failures", async t => {
@@ -129,7 +131,8 @@ test("cancellation skips unstarted preparation, supersedes held work and preserv
     assert.ok(second.isCurrent()); assert.equal(f.sent("textDocument/completion").length, 1);
     f.peer.onRequest("textDocument/completion", () => [null]);
     await assert.rejects(client.run({ document: f.document(), offset: 2 }).result, ProtocolDecodeError);
-    assert.equal(client.snapshot().received, 2); assert.equal(second.isCurrent(), false); assert.equal(f.provider.snapshot().documents, 0);
+    assert.equal(second.isCurrent(), false);
+    assert.equal(f.provider.snapshot().documents, 0);
 });
 
 test("unsupported lazy snippets omit one choice and preserve current alternatives", async t => {

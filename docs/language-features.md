@@ -182,7 +182,8 @@ the final `$0` caret position. Undo and Redo restore text and selections. Use
 line’s indentation and newline style by default. `insertTextMode: 1` preserves the supplied text.
 [Snippet grammar and planning](text-model.md#snippet-planning)
 
-**Timing.** `completion.getDiagnostics()` exposes `lastCompletionBeforeInputMs` for the input
+Read `connected`, `pending` and the current `choices` from `completion.getSnapshot()`.
+`completion.getDiagnostics()` exposes `lastCompletionBeforeInputMs` for the input
 listener and `lastCompletionCommandMs` for a registered completion or snippet command. Both
 stop when the handler returns. Provider replies and visible rendering have separate clocks.
 [Measurement boundaries](README.md#measuring-an-interaction)

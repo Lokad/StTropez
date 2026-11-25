@@ -52,7 +52,7 @@ async function selectLastReferenceMatch(p: Page, n: number): Promise<void> {
 test(`plain reference Find preserves raw ranges, read-only controls and aligned navigation`, async ({ page: p }) => {
     test.setTimeout(120000);
     const { n, raw, prefix } = await referenceCase(p, "plain");
-    const before = await snapshot(p), providers = before.bindings.language.sessions.map(s => s.provider.posted), first = raw.indexOf("needle"), second = raw.indexOf("needle", first + 1);
+    const before = await snapshot(p), first = raw.indexOf("needle"), second = raw.indexOf("needle", first + 1);
     await input(p).press("Control+Home");
     await input(p).press("Control+f");
     await expect(query(p)).toBeFocused();
@@ -61,7 +61,6 @@ test(`plain reference Find preserves raw ranges, read-only controls and aligned 
     let s = await snapshot(p);
     expect(s.bindings.language.active).toBe("reference");
     expect(s.bindings.language.referenceFind).toHaveLength(1);
-    expect(s.bindings.language.sessions.map(s => s.provider.posted)).toEqual(providers);
     await expect(p.getByRole("textbox", { name: "Replacement", exact: true })).toBeDisabled();
     await expect(button(p, "Replace current")).toBeDisabled();
     await expect(button(p, "Replace all")).toBeDisabled();

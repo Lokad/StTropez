@@ -126,7 +126,7 @@ test("completion distinguishes host preparation failures from malformed provider
     const input = await mount(page, true);
     try {
         await expect.poll(async () => (await completion(page)).connected).toBe(true);
-        for (const [failure, failed, invalid] of [["type", 1, 0], ["range", 2, 0], ["none", 2, 1]] as const) {
+        for (const failure of ["type", "range", "none"] as const) {
             await page.evaluate(async failure => {
                 window.shadowFocus.prepareCompletion = async () => {
                     if (failure === "type") throw new TypeError("Host preparation failed.");
@@ -135,10 +135,9 @@ test("completion distinguishes host preparation failures from malformed provider
             }, failure);
             await input.focus();
             expect(await page.evaluate(async () => (await window.shadowFocus.completion!.request()).status)).toBe("failed");
-            await expect.poll(() => page.evaluate(() => {
-                const { failed, invalid, received } = window.shadowFocus.completion!.getDiagnostics(); return { failed, invalid, received };
-            })).toEqual({ failed, invalid, received: invalid });
-            expect((await completion(page)).choices).toEqual([]);
+            const state = await completion(page);
+            expect(state.message).toContain(failure === "none" ? "Malformed" : "provider unavailable");
+            expect(state.choices).toEqual([]);
         }
         reply = null;
         expect(await page.evaluate(async () => {

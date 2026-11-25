@@ -691,9 +691,10 @@ test.describe("plain selected LSP features", () => {
         await expect(popup.locator("pre")).toHaveText(priorLabel); await expect(parameter).toBeHidden();
         await replies.release(); await expect(parameter).toHaveText("fallback?: string");
         expect(contexts.at(-1)).toMatchObject({ triggerKind: 2, triggerCharacter: ",", isRetrigger: true }); expect(contexts.at(-1)!.activeSignatureHelp).toBeTruthy();
-        const before = await snapshot(page), posted = before.bindings.language.sessions.find(session => session.id === "primary")!.provider.posted;
+        const before = await snapshot(page);
         await field(page).press("Control+Shift+Space"); await expect.poll(async () => (await snapshot(page)).bindings.signature.applied).toBe(before.bindings.signature.applied + 1); await expect(parameter).toHaveText("fallback?: string");
-        expect(contexts.at(-1)).toMatchObject({ triggerKind: 1, isRetrigger: false }); expect((await snapshot(page)).bindings.language.sessions.find(session => session.id === "primary")!.provider.posted).toBe(posted);
+        expect(contexts.at(-1)).toMatchObject({ triggerKind: 1, isRetrigger: false });
+        await expect(page.getByRole("option")).toHaveCount(0);
         expect((await snapshot(page)).history).toEqual(before.history);
         await field(page).press("Escape"); await expect(popup).not.toBeVisible();
         await seed(page, "lookup(saMORE)", 9); await field(page).press("Control+Shift+Space"); await expect(popup).toBeVisible();

@@ -27,10 +27,5 @@ export function createLspProviderController(editor: TextEditor, options: LspProv
     return Object.freeze({ ...controller, ...cell.observable,
         disconnect: () => { controller.cancel(); options.provider.disconnect(); },
         setDelay: fixture.setDelay, faultNext: fixture.faultNext,
-        getDiagnostics: () => {
-            const completion = controller.getDiagnostics(), counts = diagnostics.getDiagnostics(), state = diagnostics.getSnapshot();
-            return Object.freeze({ ...completion, stale: completion.stale + counts.stale, invalid: completion.invalid + counts.invalid,
-                diagnostics: state.diagnostics.length, diagnosticRevision: state.diagnosticRevision, diagnosticsPending: state.diagnosticsPending });
-        },
         dispose: () => { stopCompletion(); stopDiagnostics(); language.dispose(); } });
 }

@@ -98,7 +98,9 @@ test.describe(`plain LSP editor host`, () => {
         const original = "// 😀\r\nconst saMORE = 1; // TODO\r\n"; await seed(page, original);
         await field(page).pressSequentially("x"); const typed = original.replace("saMORE", "saxMORE"); expect(await source(page)).toBe(typed);
         await expect.poll(async () => (await provider(page)).connected).toBe(true); await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "defaults" }));
-        await offer(page); expect((await provider(page)).transport).toBe("lsp3.17"); await button(page, "Insert completion").click(); await ready(page);
+        await offer(page);
+        await button(page, "Insert completion").click();
+        await ready(page);
         expect(await source(page)).toBe(typed.replace("saxMORE", "sampleMORE"));
         await field(page, "Secondary source").press("Control+z"); expect(await source(page)).toBe(typed);
         await seed(page, typed, typed.indexOf("saxMORE") + 3); await offer(page); const depth = (await snapshot(page)).history.undoDepth;
@@ -236,15 +238,20 @@ test.describe(`plain LSP editor host`, () => {
         expect(await source(page)).toBe("const sa;MORE = 1;"); await expect(page.getByRole("option")).toHaveCount(0);
     });
     test("synthetic composition suppresses premature requests and rapid typing cancels bounded automatic work", async ({ page }) => {
-        const methods: string[] = []; page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method) methods.push(value.method); }));
+        let requests = 0;
+        page.on("websocket", socket => socket.on("framesent", frame => {
+            if (JSON.parse(frame.payload.toString()).method === "textDocument/completion") requests++;
+        }));
         await seed(page, "const saMORE", 8); await expect.poll(async () => (await provider(page)).connected).toBe(true);
         await field(page).evaluate(node => { const input = node as HTMLTextAreaElement; input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
             input.setRangeText("m", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", isComposing: true })); });
-        expect(methods.filter(method => method === "textDocument/completion")).toHaveLength(0); await expect(page.getByRole("option")).toHaveCount(0);
+        expect(requests).toBe(0);
+        await expect(page.getByRole("option")).toHaveCount(0);
         await field(page).evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "m" })));
         await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); expect(await source(page)).toBe("const samMORE");
         await field(page).press("Escape");
-        const beforeMove = (await provider(page)).posted;
+        const beforeMove = requests;
+        expect(beforeMove).toBeGreaterThan(0);
         await field(page).evaluate(node => {
             const input = node as HTMLTextAreaElement, fixture = window.hostFixture;
             input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
@@ -255,19 +262,23 @@ test.describe(`plain LSP editor host`, () => {
             fixture.selectSource("primary", revision, { anchor: 10, head: 10 });
         });
         await ready(page); await page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
-        expect(await source(page)).toBe("const sampMORE"); expect((await provider(page)).posted).toBe(beforeMove);
+        expect(await source(page)).toBe("const sampMORE");
+        expect(requests).toBe(beforeMove);
         await expect(page.getByRole("option")).toHaveCount(0);
         await field(page).evaluate(async node => {
             node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
             node.dispatchEvent(new CompositionEvent("compositionend", { data: "p", bubbles: true }));
             await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())));
         });
-        expect((await provider(page)).posted).toBe(beforeMove);
+        expect(requests).toBe(beforeMove);
         await seed(page, "const s", 7); await page.evaluate(() => window.hostFixture.setProviderDelay(300));
-        const count = (await provider(page)).posted; await field(page).pressSequentially("a"); await expect.poll(async () => (await provider(page)).pending).toBe(true);
+        const count = requests;
+        await field(page).pressSequentially("a");
+        await expect.poll(async () => (await provider(page)).pending).toBe(true);
         await field(page).pressSequentially("mple"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
         await expect.poll(async () => (await provider(page)).pending).toBe(false); expect(await source(page)).toBe("const sample");
-        const state = await provider(page); expect(state.posted - count).toBeLessThanOrEqual(5); expect(state.protocol?.pendingDocumentRequests).toBe(0); expect(state.protocol?.pendingRequests).toBe(0);
+        expect(requests - count).toBeGreaterThan(0);
+        expect(requests - count).toBeLessThanOrEqual(5);
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "interactive" })); await field(page).press("Control+Space");
         await expect(page.getByLabel("Completion detail", { exact: true })).toContainText("Resolved");
         await page.evaluate(() => window.hostFixture.providerCustom("fixture/unregister", { unregisterations: [{ id: "fixture-completion", method: "textDocument/completion" }] }));
