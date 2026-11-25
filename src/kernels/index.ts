@@ -4,7 +4,6 @@ export { BufferChangeCursor } from "../core/buffer-change.ts";
 export { LiteralSearch } from "../core/search.ts";
 export { WordCursor } from "../core/words.ts";
 export { GraphemeIndex, GraphemeLimitError, createGraphemeCursor, graphemeBoundaries } from "../core/graphemes.ts";
-export { unicodeGraphemeVersion } from "../core/grapheme-data.ts";
 export { TextDiff } from "../core/diff.ts";
 export { mapSelectionSet, planSelectionEdits } from "../core/selections.ts";
 export { parseSnippet, offsetSnippetStops, planSnippetEdit, snippetChoiceText, planSnippetChoice } from "../core/snippets.ts";

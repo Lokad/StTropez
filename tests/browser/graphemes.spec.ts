@@ -11,21 +11,27 @@ async function setup(page: Page, text: string, head: number) {
 }
 
 test("compare the browser's grapheme boundaries with the Unicode 18 corpus", async ({ page, browser }, info) => {
+    await page.goto("/editing/");
+    await ready(page);
     const lines = gunzipSync(await readFile("tests/fixtures/graphemes/GraphemeBreakTest.txt.gz")).toString("utf8").trim().split(/\r?\n/);
     const cases = lines.map(line => { let text = ""; const boundaries: number[] = []; for (const token of line.split(/\s+/)) { if (token === "÷") boundaries.push(text.length); else if (token !== "×") text += String.fromCodePoint(parseInt(token, 16)); } return { text, boundaries }; });
     const observed = await page.evaluate(cases => {
         const native = new Intl.Segmenter(undefined, { granularity: "grapheme" });
         const rows = cases.map((c, row) => ({
             row, text: c.text, gold: c.boundaries,
+            actual: window.editingFixture.graphemeBoundaries(c.text),
             native: [...native.segment(c.text)].map(segment => segment.index).concat(c.text.length)
         }));
         return {
+            mismatches: rows.filter(r => JSON.stringify(r.actual) !== JSON.stringify(r.native)),
             rows: rows.length, markers: cases.reduce((n, c) => n + c.boundaries.length, 0),
             nativeDifferences: rows.filter(r => JSON.stringify(r.gold) !== JSON.stringify(r.native))
+                .map(({ row, text, gold, native }) => ({ row, text, gold, native }))
         };
     }, cases);
     const nativeSha256 = createHash("sha256").update(JSON.stringify(observed.nativeDifferences)).digest("hex");
     await mkdir("artifacts/graphemes", { recursive: true }); await writeFile(`artifacts/graphemes/native-${info.project.name}.json`, JSON.stringify({ created: new Date().toISOString(), browser: browser.version(), unicode: "18.0.0", nativeSha256, ...observed }, null, 2));
+    expect(observed.mismatches).toEqual([]);
     expect(observed.rows).toBe(853);
     expect(observed.markers).toBe(2400);
     // Preserve versioned observations as browsers update their own Unicode data.
@@ -36,12 +42,17 @@ test("editing deletes whole long, emoji, Indic and CRLF clusters and restores th
     await page.goto("/editing/"); await ready(page);
     for (const cluster of ["x" + "\u0301".repeat(90_000), "👩" + "\u0301".repeat(20_000) + "\u200d💻", "\u094d" + "\u0301".repeat(20_000) + "क", "\r\n"]) {
         const text = "a\n" + cluster + "!";
+        const expected = await page.evaluate(cluster => {
+            const parts = [...new Intl.Segmenter().segment(cluster)];
+            return { back: "a\n" + cluster.slice(0, parts.at(-1)!.index) + "!",
+                forward: "a\n" + cluster.slice(parts[0]!.segment.length) + "!" };
+        }, cluster);
         await setup(page, text, 2 + cluster.length); const before = await state(page);
-        await page.keyboard.press("Backspace"); await ready(page); expect(await page.evaluate(() => window.editingFixture.range(0, 3))).toBe("a\n!");
+        await page.keyboard.press("Backspace"); await ready(page); expect(await page.evaluate(n => window.editingFixture.range(0, n), expected.back.length)).toBe(expected.back);
         expect((await state(page)).document!.revision).toBe(before.document!.revision + 1);
         await page.keyboard.press("ControlOrMeta+z"); await ready(page); expect(await page.evaluate(n => window.editingFixture.range(0, n), text.length)).toBe(text);
         await page.evaluate(() => window.editingFixture.select("primary", { anchor: 2, head: 2 }));
-        await page.keyboard.press("Delete"); await ready(page); expect((await state(page)).document!.length).toBe(3);
+        await page.keyboard.press("Delete"); await ready(page); expect(await page.evaluate(n => window.editingFixture.range(0, n), expected.forward.length)).toBe(expected.forward);
     }
     await setup(page, "a" + "\u0301".repeat(5000) + "!", 2300); await page.keyboard.press("Delete"); await ready(page);
     expect(await page.evaluate(() => window.editingFixture.range(0, 1))).toBe("!");

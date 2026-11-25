@@ -12,11 +12,6 @@
       "sha256": "b0ea442f29dee90584aacd3665a6e1ce87ffc917a4d31f34e1916d2d6f7f9205"
     },
     {
-      "name": "GraphemeBreakProperty",
-      "url": "https://www.unicode.org/Public/18.0.0/ucd/auxiliary/GraphemeBreakProperty.txt",
-      "sha256": "0839dcb79e4ac639ecd538b1abf7c9d22e3f9dd265b7e182d33627aa4d75b45a"
-    },
-    {
       "name": "GraphemeBreakTest",
       "url": "https://www.unicode.org/Public/18.0.0/ucd/auxiliary/GraphemeBreakTest.txt",
       "sha256": "b0cf047ee94485bbdc846de2b902f5f8a815f6b674f9d04223cddadd91c9df31"
@@ -25,11 +20,6 @@
       "name": "DerivedCoreProperties",
       "url": "https://www.unicode.org/Public/18.0.0/ucd/DerivedCoreProperties.txt",
       "sha256": "09c928886a178fcafd93c29e4bd59073a058e5a100b716d425cb563ab50f68c9"
-    },
-    {
-      "name": "emoji-data",
-      "url": "https://www.unicode.org/Public/18.0.0/ucd/emoji/emoji-data.txt",
-      "sha256": "80d00f8e616a0ef27fd6b8de3b758c06383b5d917e2977709578e68baf733bf1"
     }
   ]
 }

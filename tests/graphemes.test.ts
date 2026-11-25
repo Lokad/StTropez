@@ -4,38 +4,43 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { TextBuffer } from "../src/index.ts";
-import { createGraphemeCursor, graphemeBoundaries, GraphemeLimitError, unicodeGraphemeVersion } from "../src/kernels/index.ts";
-import { graphemeBreakProperty, indicConjunctBreak, extendedPictographic, defaultIgnorable } from "../src/core/grapheme-data.ts";
+import { createGraphemeCursor, graphemeBoundaries, GraphemeLimitError } from "../src/kernels/index.ts";
+import { defaultIgnorable } from "../src/core/default-ignorable.ts";
 import type { GraphemeCursor } from "../src/index.ts";
 import type { GraphemeIndex } from "../src/kernels/index.ts";
 const fixture = async (name: string) => gunzipSync(await readFile(new URL(`fixtures/graphemes/${name}.txt.gz`, import.meta.url))).toString("utf8");
 function finish(cursor: GraphemeCursor, budget = 256): GraphemeIndex { let previous = cursor.snapshot(); while (true) { const step = cursor.next(budget); assert.ok(Object.isFrozen(step)); assert.ok(step.workUnits - previous.workUnits <= budget + 256); if (step.status === "ready") return step.result!; assert.equal(step.status, "running"); assert.equal(step.result, null); previous = step; } }
 const records = (text: string) => text.trim().split(/\r?\n/).map(line => line.split(";").map(v => v.trim()));
 const interval = (text: string) => { const values = text.split("..").map(v => parseInt(v, 16)); return [values[0]!, values[1] ?? values[0]!] as const; };
-test("Unicode18 grapheme, conjunct, pictographic and default-ignorable properties match every reviewed code point", async () => {
-    const data = await Promise.allSettled(["GraphemeBreakProperty", "DerivedCoreProperties", "emoji-data"].map(fixture)); for (const r of data) if (r.status === "rejected") throw r.reason;
-    const files = data.map(r => (r as PromiseFulfilledResult<string>).value), gcb = Array<string>(0x110000).fill("Other"), incb = Array<string>(0x110000).fill("None"), ep = new Uint8Array(0x110000), di = new Uint8Array(0x110000);
-    for (const [text, property] of records(files[0]!)) { const [from, to] = interval(text!); gcb.fill(property!, from, to + 1); }
-    for (const [text, property, value] of records(files[1]!)) if (property === "InCB") { const [from, to] = interval(text!); incb.fill(value!, from, to + 1); }
-    for (const [text, property] of records(files[2]!)) if (property === "Extended_Pictographic") { const [from, to] = interval(text!); ep.fill(1, from, to + 1); }
-    for (const [text, property] of records(files[1]!)) if (property === "Default_Ignorable_Code_Point") { const [from, to] = interval(text!); di.fill(1, from, to + 1); }
-    assert.equal(unicodeGraphemeVersion, "18.0.0"); for (let cp = 0; cp <= 0x10ffff; cp++) { assert.equal(graphemeBreakProperty(cp), gcb[cp], `GCB ${cp}`); assert.equal(indicConjunctBreak(cp), incb[cp], `InCB ${cp}`); assert.equal(extendedPictographic(cp), !!ep[cp], `EP ${cp}`); assert.equal(defaultIgnorable(cp), !!di[cp], `DI ${cp}`); }
-    for (const cp of [-1, NaN, .5, 0x110000]) { assert.throws(() => graphemeBreakProperty(cp)); assert.throws(() => indicConjunctBreak(cp)); assert.throws(() => extendedPictographic(cp)); assert.throws(() => defaultIgnorable(cp)); }
-    console.log("Grapheme facts: 1114112 code points /4 properties.");
-});
-test("complete Unicode18 extended-grapheme corpus agrees for strings and ropes", async () => {
-    let rows = 0, boundaries = 0; for (const line of (await fixture("GraphemeBreakTest")).trim().split(/\r?\n/)) {
-        const tokens = line.trim().split(/\s+/), units: number[] = [], points: number[] = [], cps: number[] = []; let utf16 = 0;
-        for (const token of tokens) { if (token === "÷") { units.push(utf16); points.push(cps.length); } else if (token !== "×") { const cp = parseInt(token, 16); cps.push(cp); utf16 += cp > 0xffff ? 2 : 1; } }
-        const text = String.fromCodePoint(...cps), buffer = TextBuffer.from(text), cursor = createGraphemeCursor(buffer), result = finish(cursor, [256, 777, 4096][rows % 3]); assert.deepEqual(result.boundaries(), units, `${rows}:rope:${line}`); assert.deepEqual(graphemeBoundaries(text), units, `${rows}:string`);
-        assert.equal(bufferReads(buffer).textExports, 0); assert.equal(cursor.snapshot().readUnits, bufferReads(buffer).sliceUnits); cursor.dispose();
-        boundaries += units.length; rows++;
+test("warning characters retain the reviewed default-ignorable property", async () => {
+    const expected = new Uint8Array(0x110000);
+    for (const [range, property] of records(await fixture("DerivedCoreProperties"))) {
+        if (property !== "Default_Ignorable_Code_Point") continue;
+        const [from, to] = interval(range!);
+        expected.fill(1, from, to + 1);
     }
-    assert.ok(rows > 700); console.log(`Grapheme conformance: ${rows} rows /${boundaries} boundaries /2 input kinds.`);
+    for (let cp = 0; cp < expected.length; cp++) assert.equal(defaultIgnorable(cp), !!expected[cp], String(cp));
+});
+test("strings and ropes match native segmentation across the Unicode 18 corpus", async () => {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    const lines = (await fixture("GraphemeBreakTest")).trim().split(/\r?\n/);
+    assert.equal(lines.length, 853);
+    for (const [row, line] of lines.entries()) {
+        const points = line.split(/\s+/).filter(token => token !== "÷" && token !== "×");
+        const text = String.fromCodePoint(...points.map(point => parseInt(point, 16)));
+        const expected = [...segmenter.segment(text)].map(part => part.index).concat(text.length);
+        const buffer = TextBuffer.from(text);
+        const cursor = createGraphemeCursor(buffer);
+        assert.deepEqual(finish(cursor, [256, 777, 4096][row % 3]).boundaries(), expected, line);
+        assert.deepEqual(graphemeBoundaries(text), expected, line);
+        assert.equal(bufferReads(buffer).textExports, 0);
+        assert.equal(cursor.snapshot().readUnits, bufferReads(buffer).sliceUnits);
+        cursor.dispose();
+    }
 });
 test("emoji sequences, RI parity and Unicode18 conjuncts use full left context", () => {
     for (const text of ["👩🏽‍💻", "🇫🇷🇬🇷🇯", "\u094dक", "क्\u0308क", "\u1cf5क", "\u0600A", "각", "\u{16d63}\u{16d67}"]) { const cursor = createGraphemeCursor(text), index = finish(cursor); assert.equal(index.to, text.length); assert.equal(index.boundaryAt(0), 0); assert.equal(index.boundaryAt(index.boundaryCount - 1), text.length); cursor.dispose(); }
-    assert.deepEqual(graphemeBoundaries("👩🏽‍💻"), [0, 7]); assert.deepEqual(graphemeBoundaries("🇫🇷🇬🇷🇯"), [0, 4, 8, 10]); assert.deepEqual(graphemeBoundaries("\u094dक"), [0, 2]); assert.deepEqual(graphemeBoundaries("\u0600A"), [0, 2]);
+    assert.deepEqual(graphemeBoundaries("👩🏽‍💻"), [0, 7]); assert.deepEqual(graphemeBoundaries("🇫🇷🇬🇷🇯"), [0, 4, 8, 10]); assert.deepEqual(graphemeBoundaries("\u0600A"), [0, 2]);
 });
 test("raw surrogate seams, CRLF and independent ranges preserve absolute UTF16 coordinates", () => {
     const text = "a".repeat(255) + "😀\u0301\r\n\ud800\u0300x\udc00", original = TextBuffer.from(text), source = original.replace(256, 257, "").replace(256, 256, text.slice(256, 257)), cursor = createGraphemeCursor(source), index = finish(cursor);

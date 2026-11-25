@@ -1,6 +1,6 @@
 # Unicode
 
-StTropez preserves UTF-16 source text, uses Unicode 18 rules for grapheme boundaries and can flag
+StTropez preserves UTF-16 source text, uses the runtime’s grapheme boundaries and can flag
 unusual characters. The browser shapes and measures the text.
 
 ## Use
@@ -71,9 +71,9 @@ available.
 cursor segments the supplied range on its own. For whole-document boundaries, start where you know the
 segmentation state. For example, starting between two regional indicators can change how flags are
 paired. Rules also cover CRLF, Hangul, combining marks, prepend characters, emoji joiners and Indic
-conjuncts. Read `unicodeGraphemeVersion` for the data version.
+conjuncts. The runtime supplies `Intl.Segmenter`. Its Unicode version can affect caret movement and deletion.
 
-The immutable index records its source, range, Unicode version, cluster count and boundary
+The immutable index records its source, range, cluster count and boundary
 count. `boundaryAt` and `clusterAt` query it without materializing all boundaries. `floor`
 and `ceil` include an exact boundary; `preceding` and `following` are strict and return `null`
 at the corresponding end. `isBoundary` tests a position, and `clusterIndexAt` requires an

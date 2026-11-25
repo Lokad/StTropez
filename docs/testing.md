@@ -160,7 +160,7 @@ Use the exact Unicode inputs and SHA-256 hashes in
 [unicode-inputs.json](../scripts/unicode-inputs.json). Put `<name>.txt` and `license.txt` in the
 input directory. Review data and license changes explicitly.
 
-Run from the repository root to verify the generated tables and compressed fixtures:
+Run from the repository root to verify the default-ignorable character ranges and compressed fixtures.
 
 ```sh
 node scripts/generate-grapheme-data.mjs /path/to/reviewed/grapheme --check

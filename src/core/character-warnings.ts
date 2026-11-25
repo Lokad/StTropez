@@ -1,5 +1,5 @@
 import { isNonNegativeInteger, isOffsetRange, isPositiveInteger } from "./bounds.ts";
-import { defaultIgnorable } from "./grapheme-data.ts";
+import { defaultIgnorable } from "./default-ignorable.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { highSurrogate, lowSurrogate } from "./utf16.ts";
 

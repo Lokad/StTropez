@@ -1,3 +1,4 @@
+import { graphemeBoundaries } from "../../../src/kernels/index.ts";
 import { Workspace } from "../../../src/index.ts";
 import type { FoldRange, Selection, TextEdit } from "../../../src/index.ts";
 import { inputConflictEvent, mountAnchoredOverlay, mountTextEditor, observePointerDwell, createFoldingController } from "../../../src/browser/index.ts";
@@ -41,7 +42,7 @@ pane("end").addEventListener("click", () => { const length = workspace.document(
 pane("undo").addEventListener("click", () => history("undo"), { signal: listeners.signal }); pane("redo").addEventListener("click", () => history("redo"), { signal: listeners.signal });
 const status = () => { const current = workspace.document(source.documentId); pane("status").textContent = `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}`; };
 const unsubscribe = workspace.observeDocument(source.documentId).subscribe(status); status();
-const fixture = { ready: true, setText, edit, select, history,
+const fixture = { ready: true, graphemeBoundaries, setText, edit, select, history,
     get settled() { return !disposed && editorSettled(editors.primary) && editorSettled(editors.secondary); },
     failNextDecoration: () => { failDecoration = true; primarySyntax.invalidate(); },
     captureInsertion: () => editors.primary.captureInsertion(),
