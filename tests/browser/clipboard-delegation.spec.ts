@@ -58,7 +58,7 @@ test("host-cancelled copy/cut/paste preserve captured text, clipboard ownership 
     await page.evaluate(() => window.editingFixture.dispose()); expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
 });
 
-test("a line copied from the unterminated final row pastes above a delayed navigation target", async ({ page }) => {
+test("a line copied from the unterminated final row pastes above the new caret after word navigation", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => {
         const f = window.editingFixture, end = 200_000;
@@ -68,7 +68,7 @@ test("a line copied from the unterminated final row pastes above a delayed navig
         input.dispatchEvent(copy);
         f.selections([{ anchor: 0, head: 0 }]);
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
-        if (!f.snapshot().primary.pendingWord) throw new Error("Expected pending word navigation.");
+        if (f.snapshot().primary.selection.head !== end) throw new Error("Word navigation did not reach the target.");
         const paste = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
         for (const format of copy.clipboardData!.types) paste.clipboardData!.setData(format, copy.clipboardData!.getData(format));
         input.dispatchEvent(paste);
@@ -92,25 +92,5 @@ test("empty or nontext clipboard payloads cannot turn a selected range into a de
         return { text: f.range(0, f.snapshot().document!.length), revisionBefore: before.document!.revision, revisionAfter: f.snapshot().document!.revision, before: before.primary.selection, after: f.snapshot().primary.selection };
     });
     expect(result.text).toBe("before\r\nend"); expect(result.revisionAfter).toBe(result.revisionBefore); expect(result.after).toEqual(result.before);
-    const delayed = await page.evaluate(() => {
-        const f = window.editingFixture, text = "a".repeat(200_001) + ";end";
-        f.setText(text); f.select("primary", { anchor: 0, head: 0 }); f.focus("primary");
-        const input = document.querySelector('textarea[aria-label="Primary source"]')!;
-        input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
-        if (!f.snapshot().primary.pendingWord) throw new Error("Word command did not yield.");
-        for (const kind of ["empty", "html", "file"] as const) {
-            const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }), data = event.clipboardData!;
-            if (kind === "empty") data.setData("text/plain", "");
-            if (kind === "html") data.setData("text/html", "<b>no plain text</b>");
-            if (kind === "file") data.items.add(new File(["bytes"], "sample.bin", { type: "application/octet-stream" }));
-            input.dispatchEvent(event);
-            if (!f.snapshot().primary.pendingWord) throw new Error("Empty paste cancelled navigation.");
-        }
-        return f.snapshot().document!.revision;
-    });
-    await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.pendingWord)).toBe(false);
-    const after = await page.evaluate(() => window.editingFixture.snapshot());
-    expect(after.document).toMatchObject({ revision: delayed, length: 200_005 });
-    expect(after.primary.selection).toMatchObject({ anchor: 200_001, head: 200_001 });
     await page.evaluate(() => window.editingFixture.dispose());
 });
