@@ -116,8 +116,8 @@ selection and scroll together. A closed mount or other document returns `null`. 
 `"captured"` for saved ranges, `"current"` for retained edits or an explicit current selection, `"mapped"`
 for a fresh view after one edit, or `"clamped"` for older endpoints brought into bounds.
 
-`horizontalAnchorRestored` and `verticalAnchorRestored` report surviving anchors. Otherwise the saved scroll
-position applies. `foldsRestored` reports same-revision fold restoration in a fresh view.
+If the primary caret is visible at capture, a narrower pane keeps it in view. Check `horizontalAnchorRestored`,
+`verticalAnchorRestored` and `foldsRestored` to see which anchors and folds survived.
 [Aligned panes](comparison.md#linked-scrolling-and-aligned-rows)
 
 ### Geometry and readiness

@@ -379,6 +379,14 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         return { revision: previous.revision, offset, topRemainder: top - renderedIndex.rowAt(previous.buffer.lineAt(offset)) * lineHeight,
             ...(renderedAlignmentId !== null ? { aligned: true } : {}) };
     }
+    function visibleCaretAnchor(selection: Selection): ViewState["horizontalAnchor"] {
+        const affinity = selection.headAffinity ?? "after";
+        const caret = coordinates(selection.head, affinity);
+        if (!caret || !previous) return;
+        const box = clientBox(root, !!minimap, gutterWidth);
+        if (caret.left < box.left || caret.left >= box.right || caret.top >= box.bottom || caret.top + caret.height <= box.top) return;
+        return { revision: previous.revision, offset: selection.head, affinity, left: (caret.left - box.left) / box.zoom };
+    }
     function setComparisonRows(value: ViewportComparisonRows | undefined): boolean {
         if (disposed || !live()) return false;
         const document = currentDocument(), folds = currentFolds();
@@ -670,6 +678,12 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             const line = document.buffer.lineAt(anchor.offset);
             top = index.rowAt(line) * lineHeight + anchor.topRemainder; left = (anchor.offset - document.buffer.offsetAt(line)) * columnWidth + anchor.leftRemainder;
         } else if (previous && previous.revision !== document.revision && document.change === null) { top = 0; left = 0; }
+        if (horizontalAnchor?.revision === document.revision && width > 0 && horizontalAnchor.left >= width && !deferAnchor) {
+            // The caret was visible in a wider pane. Keep it inside this pane without moving vertically.
+            const fitted = horizontalPosition(horizontalAnchor.left);
+            left += horizontalAnchor.left - fitted;
+            horizontalAnchor = { ...horizontalAnchor, left: fitted };
+        }
         let horizontalEnd: number | undefined;
         if (reveal?.revision === document.revision && reveal.foldGeneration === folds.generation) {
             const line = document.buffer.lineAt(reveal.offset);
@@ -878,7 +892,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         // fragment to expose the requested native caret; keep the logical scroll map intact.
         if (horizontalAnchor?.revision === document.revision) {
             const at = horizontalAnchor, line = document.buffer.lineAt(at.offset), item = next.find(item => item.line === line), element = rows.get(line);
-            if (item && !item.complete && element && at.offset >= item.from && at.offset <= item.to) {
+            if (item?.complete) horizontalAnchor = undefined;
+            else if (item && element && at.offset >= item.from && at.offset <= item.to) {
                 const caret = coordinates(at.offset, at.affinity), rectangle = clientBox(root, false, gutterWidth);
                 if (caret) {
                     const desired = horizontalPosition(at.left), delta = desired - (caret.left - rectangle.left) / rectangle.zoom;
@@ -1082,10 +1097,11 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             const folds = currentFolds(), vertical = anchor && anchor.revision === currentDocument()?.revision
                 ? { revision: anchor.revision, offset: anchor.offset, topRemainder: anchor.topRemainder, ...(anchor.aligned || renderedAlignmentId !== null ? { aligned: true as const } : {}) }
                 : verticalAnchor();
+            const horizontal = horizontalAnchor ?? visibleCaretAnchor(selection);
             return Object.freeze({ ...selection, selectionSet, scrollTop: top, scrollLeft: left,
                 ...(vertical ? { verticalAnchor: Object.freeze(vertical) } : {}),
                 folding: Object.freeze({ documentId, viewId: view.id, revision: folds.revision, generation: folds.generation, get regions() { return folds.regions; } }),
-                ...(horizontalAnchor ? { horizontalAnchor: Object.freeze({ ...horizontalAnchor }) } : {}) }); },
+                ...(horizontal ? { horizontalAnchor: Object.freeze({ ...horizontal }) } : {}) }); },
         restoreView: (state, options = {}) => {
             if (disposed || !live() || resource.getSnapshot().state !== "ready") return null;
             const document = workspace.document(documentId), saved = state.folding;

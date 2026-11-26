@@ -296,6 +296,49 @@ test("cancelling a refresh makes the same selection editable before the stale re
     await fixture.evaluate(f => f.dispose()); await fixture.dispose();
 });
 
+test("a narrower pane keeps a previously visible caret in view and preserves deliberate scrolling away", async ({ page }) => {
+    const result = await page.evaluate(async () => {
+        const path = "/presentation-fixture/";
+        const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const id = workspace.createDocument({ scope: "test", resource: "wide", variant: "working" }, "line", "a".repeat(800));
+        const host = document.createElement("div");
+        host.style.cssText = "width:800px;height:180px";
+        document.body.append(host);
+        const editor = mountTextEditor(host, workspace, id);
+        try {
+            const viewport = editor.viewport;
+            editor.view.setSelection(0, { anchor: 310, head: 300 });
+            viewport.revealOffset(300, { horizontal: "nearest", vertical: "nearest" });
+            viewport.flush();
+            viewport.flush();
+            const visible = editor.captureView();
+            viewport.scrollTo({ left: 300 });
+            viewport.flush();
+            const away = editor.captureView();
+            host.style.width = "350px";
+            editor.restoreView(visible);
+            viewport.flush();
+            const edge = viewport.element.getBoundingClientRect().right;
+            const caret = viewport.coordsAt(300)!.left;
+            const fitted = editor.captureView();
+            editor.restoreView(away);
+            viewport.flush();
+            return {
+                inside: caret < edge && caret > viewport.element.querySelector(".st-viewport-gutter")!.getBoundingClientRect().right,
+                moved: fitted.scrollLeft > visible.scrollLeft,
+                stable: fitted.scrollTop === visible.scrollTop && fitted.head === visible.head && fitted.anchor === visible.anchor,
+                browse: editor.captureView().scrollLeft === away.scrollLeft,
+            };
+        } finally {
+            editor.dispose();
+            host.remove();
+        }
+    });
+    expect(result).toEqual({ inside: true, moved: true, stable: true, browse: true });
+});
+
 test("remounting after edits uses the retained selection, maps a fresh view or clamps older captures", async ({ page }) => {
     const result = await page.evaluate(async () => {
         const path = "/presentation-fixture/";
