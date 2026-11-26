@@ -21,7 +21,7 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [core/language-configuration.ts](../src/core/language-configuration.ts) | `EditingPair`, `EnterIndent`, `LanguageConfiguration`, `LanguageEditContext`, `PairingContext`, `ResolvedLanguageConfiguration`, `resolveLanguageConfiguration` |
 | [core/language-edits.ts](../src/core/language-edits.ts) | `EditingCommand`, `LanguageEditCursor`, `LanguageEditProgress`, `planLanguageEdit` |
 | [core/newlines.ts](../src/core/newlines.ts) | `ImportedText`, `LineEnding`, `exportText`, `importText` |
-| [core/observable.ts](../src/core/observable.ts) | `Observable` |
+| [core/observable.ts](../src/core/observable.ts) | `AfterDelivery`, `Observable`, `ObservableListener` |
 | [core/positions.ts](../src/core/positions.ts) | `Affinity`, `AnchoredRange`, `MappedPosition`, `PositionMapping`, `anchoredRange` |
 | [core/search.ts](../src/core/search.ts) | `LiteralSearchOptions`, `SearchMatch`, `SearchStep` |
 | [core/selections.ts](../src/core/selections.ts) | `Selection`, `SelectionEditPlan`, `SelectionSet` |

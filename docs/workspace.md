@@ -295,8 +295,8 @@ export function forwardEdits(workspace: Workspace, uri: string,
 }
 ```
 
-The listener’s second argument schedules a write after delivery. Unsubscribing drops queued work. Release
-callbacks get the same scheduler and run once. Follow-up chains allow 256 callbacks.
+`subscribe(after => …)` and document change and release listeners can call `after(work)` to write after
+delivery. Unsubscribe to cancel queued work. Follow-up chains allow 256 callbacks.
 
 `createNotificationScope().batch(action)` groups notifications. Writes survive exceptions. Captured
 callbacks run once in order. For atomic writes use `editDocuments`.

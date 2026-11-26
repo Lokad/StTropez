@@ -2,6 +2,40 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { NotificationScope, Store } from "../src/core/observable.ts";
 import { Workspace } from "../src/index.ts";
+import type { AfterDelivery, ObservableListener } from "../src/index.ts";
+
+test("a coalesced snapshot follow-up can write after delivery while any captured subscription survives", async () => {
+    const errors: unknown[] = [];
+    const scope = new NotificationScope(error => errors.push(error));
+    const a = new Store(0, scope), b = new Store(0, scope);
+    let deliveries = 0, writes = 0;
+    let saved: AfterDelivery | undefined;
+    const listener: ObservableListener = after => {
+        deliveries++;
+        saved = after;
+        assert.throws(() => scope.assertWritable(), /Reentrant mutation/);
+        after(() => { scope.assertWritable(); writes++; });
+    };
+    const first = a.observable.subscribe(listener);
+    const second = b.observable.subscribe(listener);
+    scope.batch(() => { scope.publish(a, 1); scope.publish(b, 2); });
+    first();
+    assert.equal(deliveries, 1);
+    assert.equal(writes, 0);
+    assert.throws(() => saved!(() => {}), /active listener/);
+    await Promise.resolve();
+    assert.equal(writes, 1);
+    scope.publish(b, 3);
+    second();
+    const replacement = b.observable.subscribe(listener);
+    await Promise.resolve();
+    assert.equal(writes, 1);
+    scope.read(() => scope.publish(b, 4));
+    await Promise.resolve();
+    assert.equal(writes, 2);
+    assert.deepEqual(errors, []);
+    replacement();
+});
 
 test("a workspace reports listener exceptions by default and finishes delivery", t => {
     const report = t.mock.method(console, "error", () => {});

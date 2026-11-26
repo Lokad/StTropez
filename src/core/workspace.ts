@@ -213,7 +213,7 @@ export class Workspace {
     readonly #state: Store<number>;
     #snapshot: WorkspaceSnapshot | undefined;
     readonly getSnapshot: () => WorkspaceSnapshot;
-    readonly subscribe: (listener: () => void) => () => void;
+    readonly subscribe: Observable<WorkspaceSnapshot>["subscribe"];
     get operations(): WorkspaceOperations {
         return this.#requests ??= createWorkspaceOperations(this, this.#scope, handle => this.#load(handle));
     }

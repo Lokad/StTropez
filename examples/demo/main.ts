@@ -59,7 +59,7 @@ let replacingPane: TextEditor | undefined;
 let replacementLabel = "";
 let previousFind = find.getSnapshot();
 find.element.addEventListener("input", () => { replaceResult.hidden = true; });
-find.subscribe(() => {
+find.subscribe(afterDelivery => {
     const state = find.getSnapshot();
     const previous = previousFind;
     previousFind = state;
@@ -76,7 +76,7 @@ find.subscribe(() => {
         const target = replacingPane;
         replacingPane = undefined;
         if (reason !== "replaced") pendingPanel = undefined;
-        else if (requested) queueMicrotask(() => {
+        else if (requested) afterDelivery(() => {
             if (activePane === target && pendingPanel === requested) setPanel(requested);
         });
     }

@@ -1,5 +1,5 @@
 import { rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
-import type { Observable } from "../core/observable.ts";
+import { NotificationScope, Store, type Observable, type ObservableListener } from "../core/observable.ts";
 import type { DocumentId, DocumentSnapshot } from "../core/workspace.ts";
 import type { JsonValue } from "./wire.ts";
 import type { LspCall, LspConnectContext, LspDocument, LspDocumentCapture, LspDocumentFeature, LspDocumentSnapshot } from "./lsp-session.ts";
@@ -58,7 +58,9 @@ export function retainLspDocument(provider: LspWorkspace, id: DocumentId) {
 export function createLspClient<Method extends LspDocumentFeature>(owner: LspWorkspace | LspDocumentOwner, ...methods: [Method, ...Method[]]) {
     const shared = "createScope" in owner ? undefined : owner;
     const provider = "createScope" in owner ? owner : owner.provider;
-    const scope = shared?.scope ?? provider.createScope(), listeners = new Set<() => void>();
+    const scope = shared?.scope ?? provider.createScope();
+    const notifications = new NotificationScope(() => {});
+    const updates = new Store(0, notifications);
     let disposed = false, latest: Request | undefined, notificationQueued = false;
     let documents: ReadonlyMap<string, LspDocument> = new Map();
     function setDocuments(snapshots: readonly DocumentSnapshot[]) {
@@ -67,9 +69,7 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
     }
     const notify = () => {
         notificationQueued = false;
-        for (const listener of [...listeners]) {
-            try { listener(); } catch { /* An observer cannot change the completed operation. */ }
-        }
+        notifications.publish(updates, updates.get() + 1);
     };
     // Publish only after the call and its rejection handlers exist. A listener may cancel
     // or replace the intent; an already-delivered state change absorbs the queued update.
@@ -237,10 +237,9 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
         } });
     }
     return Object.freeze({ methods, scope, request, notify, setDocuments, getSnapshot: scope.getSnapshot,
-        subscribe: (listener: () => void) => {
+        subscribe: (listener: ObservableListener) => {
             if (disposed) throw new Error("LSP feature client is disposed.");
-            listeners.add(listener);
-            return () => { listeners.delete(listener); };
+            return updates.observable.subscribe(listener);
         },
         options: (document: DocumentSnapshot, method: LspDocumentFeature) => {
             if (disposed) throw new Error("LSP feature client is disposed.");
@@ -255,7 +254,7 @@ export function createLspClient<Method extends LspDocumentFeature>(owner: LspWor
             invalidate(true);
             stop();
             if (!shared) scope.dispose();
-            listeners.clear();
+            updates.clearSnapshotListeners();
         } });
 }
 

@@ -1,4 +1,4 @@
-import type { Observable } from "../../src/index.ts";
+import type { Observable, ObservableListener } from "../../src/index.ts";
 
 /** Development host's stand-in for its own cell scheduler, never exported by the package. */
 export class HostCell<T> {
@@ -8,8 +8,11 @@ export class HostCell<T> {
     readonly observable: Observable<T>;
     constructor(initial: T) {
         this.value = freezeHost(initial);
-        this.observable = Object.freeze({ getSnapshot: () => this.value, subscribe: (listener: () => void) => {
-            const subscription = () => listener(); this.listeners.add(subscription);
+        this.observable = Object.freeze({ getSnapshot: () => this.value, subscribe: (listener: ObservableListener) => {
+            const subscription = () => listener(work => queueMicrotask(() => {
+                if (this.listeners.has(subscription)) work();
+            }));
+            this.listeners.add(subscription);
             return () => { this.listeners.delete(subscription); };
         } });
     }

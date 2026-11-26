@@ -1,5 +1,5 @@
 import { TextBuffer } from "../../../src/index.ts";
-import type { ComparisonBaseline, Observable, Operation, SaveReview, SaveSubmission, TabTarget, TextResourceHandle, Workspace } from "../../../src/index.ts";
+import type { ComparisonBaseline, Observable, ObservableListener, Operation, SaveReview, SaveSubmission, TabTarget, TextResourceHandle, Workspace } from "../../../src/index.ts";
 import type { SavePort, HostSaveQueue } from "../save-queue.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 import { ReviewVariants } from "./variants.ts";
@@ -37,7 +37,7 @@ export class HostSourceReview {
         this.workspace = workspace; this.saves = saves; this.source = source; this.ports = ports;
         this.savedReference = Object.freeze({ buffer: workspace.document(source.documentId).buffer, version: "reference:saved-v0" });
         this.referenceCell = new HostCell<Reference>({ generation: 0, baseline: this.savedReference }); this.comparisonReference = this.referenceCell.observable;
-        this.saveConflictPresentation = Object.freeze({ getSnapshot: () => this.presentationSnapshot(), subscribe: (listener: () => void) => {
+        this.saveConflictPresentation = Object.freeze({ getSnapshot: () => this.presentationSnapshot(), subscribe: (listener: ObservableListener) => {
             const stops: (() => void)[] = [];
             try { for (const store of [this.saveConflict, this.comparisonReference, this.source.metadata, this.workspace.tabs]) stops.push(store.subscribe(listener)); }
             catch (error) { stops.reverse().forEach(stop => stop()); throw error; }

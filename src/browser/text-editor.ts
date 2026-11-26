@@ -5,7 +5,7 @@ import { autoClosedPairs } from "./auto-closed-pairs.ts";
 import { automaticIndentation } from "./automatic-indentation.ts";
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
-import { Store, type Observable } from "../core/observable.ts";
+import { Store, type Observable, type ObservableListener } from "../core/observable.ts";
 import { textDifference } from "../core/changes.ts";
 import { copyCaretLines, planClipboardPaste } from "../core/clipboard-edits.ts";
 import { collapsedLineBlock } from "../core/folding.ts";
@@ -1765,7 +1765,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     };
     const editor: TextEditor = Object.freeze({ element: root, workspace, tab: target, signal: listeners.signal, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
         getSnapshot: editorState.observable.getSnapshot,
-        subscribe(listener: () => void) {
+        subscribe(listener: ObservableListener) {
             if (disposed) throw new Error("Editor is disposed.");
             const unsubscribe = editorState.observable.subscribe(listener);
             const stop = () => { unsubscribe(); stateSubscriptions.delete(stop); };

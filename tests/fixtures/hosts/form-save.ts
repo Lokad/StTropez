@@ -1,5 +1,5 @@
 import { HostCell } from "../../../examples/shared/observable.ts";
-import type { Immutable, Observable, ResourceHandle, ResourceSnapshot, ResourceTarget, SaveReview, SaveSubmission, SnapshotValue, Workspace } from "../../../src/index.ts";
+import type { Immutable, Observable, ObservableListener, ResourceHandle, ResourceSnapshot, ResourceTarget, SaveReview, SaveSubmission, SnapshotValue, Workspace } from "../../../src/index.ts";
 import type { SaveResponse, HostSaveQueue } from "../save-queue.ts";
 
 type State<T> = Readonly<{ pending: boolean; message: string; conflict: Readonly<{ version: string; value: Immutable<T> | null }> | null; preview: string | null }>;
@@ -32,7 +32,7 @@ export class FormSave<T extends SnapshotValue> {
         const initial = resource.getSnapshot(); if (initial.state !== "ready") throw new Error(`${policy.title} fixture must start ready.`);
         this.serverValue = initial.value(); this.serverVersion = initial.metadata.serverVersion;
         this.cell = new HostCell<State<T>>({ pending: false, message: `${policy.title} is saved independently of source and Run.`, conflict: null, preview: null }); this.state = this.cell.observable;
-        this.presentation = Object.freeze({ getSnapshot: () => this.presentationSnapshot(), subscribe: (listener: () => void) => {
+        this.presentation = Object.freeze({ getSnapshot: () => this.presentationSnapshot(), subscribe: (listener: ObservableListener) => {
             const stopState = this.state.subscribe(listener);
             try { const stopResource = this.resource.subscribe(listener); return () => { stopResource(); stopState(); }; }
             catch (error) { stopState(); throw error; }
