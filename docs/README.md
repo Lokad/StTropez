@@ -2,6 +2,7 @@
 
 Build a two-file editor in [Getting started](getting-started.md). You can run the first snippet
 as soon as you serve the page, then add the features you need.
+To find which module exports a name, use the [public API index](api.md).
 
 ## Choose a task
 

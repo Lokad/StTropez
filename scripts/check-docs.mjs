@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { moduleSpecifiers } from "./module-specifiers.mjs";
+import { apiIndexPath, renderApiIndex } from "./api-index.mjs";
 import { apiPages, subjectPages, documentationPages, publicEntries as entries, exampleExtensions, parseDocumentation, auditPage, auditLinks } from "./documentation-audit.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -84,7 +85,15 @@ export async function compileDocumentation(examples) {
 }
 
 async function main() {
+    const expectedIndex = renderApiIndex(root);
+    const indexFile = resolve(root, apiIndexPath);
+    if (process.argv.includes("--write-api-index")) {
+        await writeFile(indexFile, expectedIndex);
+    }
     const actual = (await readdir(resolve(root, "docs"))).map(name => `docs/${name}`).sort();
+    if (!actual.includes(apiIndexPath) || (await readFile(indexFile, "utf8")).replaceAll("\r\n", "\n") !== expectedIndex) {
+        throw new Error(`${apiIndexPath} is stale. Run npm run check:docs -- --write-api-index.`);
+    }
     if (JSON.stringify(actual) !== JSON.stringify([...subjectPages].sort())) throw new Error("docs/: Update the subject-page inventory when adding or removing a page.");
     /** @param {string} path */
     const read = path => readFile(resolve(root, path), "utf8");

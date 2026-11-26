@@ -4,6 +4,7 @@ import { gfmFromMarkdown } from "mdast-util-gfm";
 import GithubSlugger from "github-slugger";
 import { posix } from "node:path";
 import { libraryModules } from "./library-entries.mjs";
+import { apiIndexPath } from "./api-index.mjs";
 
 /** @typedef {import("mdast").Nodes} MarkdownNode */
 /** @typedef {{path: string, line: number, language: string, code: string, file?: string}} DocumentationExample */
@@ -12,8 +13,29 @@ import { libraryModules } from "./library-entries.mjs";
  * links: {url: string, node: MarkdownNode}[], anchors: Set<string>,
  * prose: {text: string, node: MarkdownNode}[], diagnostics: DocumentationIssue[]}} DocumentationPage */
 
-export const apiPages = ["getting-started", "editor", "viewport", "folding", "search", "comparison", "text-model", "workspace", "language-server", "language-features", "unicode", "host-integration", "packaging", "architecture"].map(name => `docs/${name}.md`);
-export const subjectPages = [...apiPages, "docs/README.md", "docs/testing.md", "docs/examples.md"];
+/** UTF-8 bytes with LF line endings. @type {Record<string, number>} */
+const pageBudgets = {
+    "docs/architecture.md": 12_000,
+    "docs/comparison.md": 20_000,
+    "docs/editor.md": 40_000,
+    "docs/examples.md": 5_000,
+    "docs/folding.md": 13_000,
+    "docs/getting-started.md": 21_000,
+    "docs/host-integration.md": 18_000,
+    "docs/language-features.md": 31_000,
+    "docs/language-server.md": 26_000,
+    "docs/packaging.md": 9_000,
+    "docs/README.md": 11_000,
+    "docs/search.md": 19_000,
+    "docs/testing.md": 20_000,
+    "docs/text-model.md": 16_000,
+    "docs/unicode.md": 9_000,
+    "docs/viewport.md": 18_000,
+    "docs/workspace.md": 31_000,
+};
+export const subjectPages = [...Object.keys(pageBudgets), apiIndexPath];
+const guides = ["docs/README.md", "docs/testing.md", "docs/examples.md"];
+export const apiPages = Object.keys(pageBudgets).filter(path => !guides.includes(path));
 export const documentationPages = [...subjectPages, "README.md", "packaging/README.md", "AGENTS.md"];
 export const publicEntries = Object.fromEntries(libraryModules.map(entry => [entry.specifier, entry.source]));
 export const exampleExtensions = new Map([["js", "js"], ["javascript", "js"], ["ts", "ts"], ["typescript", "ts"], ["tsx", "tsx"]]);
@@ -37,6 +59,13 @@ export function parseDocumentation(path, markdown) {
     const tree = fromMarkdown(markdown, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
     /** @type {DocumentationPage} */
     const page = { path, tree, examples: [], links: [], anchors: new Set(), prose: [], diagnostics: [] };
+    const budget = pageBudgets[path];
+    if (budget !== undefined) {
+        const bytes = Buffer.byteLength(markdown.replaceAll("\r\n", "\n"));
+        if (bytes > budget) {
+            page.diagnostics.push(diagnostic(page, undefined, "size", `Page uses ${bytes} of ${budget} UTF-8 bytes.`));
+        }
+    }
     const slugger = new GithubSlugger();
     /** @type {Map<string, DocumentationExample>} */
     const modules = new Map();

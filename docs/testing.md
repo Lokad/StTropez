@@ -19,7 +19,7 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 | Command | Scope |
 | --- | --- |
 | `npm run typecheck` | Strict TypeScript checks for core, protocol, browser and development tools |
-| `npm run check:docs` | Page structure, links, anchors, prose and compilation of JavaScript, TypeScript and TSX examples. |
+| `npm run check:docs` | Public API index, page sizes, links, anchors, prose and example compilation. |
 | `npm test` | All model, host-policy, tooling and server/process integration tests |
 | `npm run test:models` | Headless model, host-policy and tooling checks without live servers or provider/compiler processes |
 | `npm run test:integration` | Real HTTP/WebSocket, provider, compiler and child-process lifecycle checks |
@@ -49,6 +49,10 @@ workflows and the built demo in Chromium. Use `npm run test:browsers` for the th
 <a id="documentation-gate"></a>
 
 ### What the documentation check catches
+
+`npm run check:docs -- --write-api-index` rebuilds the [public API index](api.md) after an export changes.
+The regular check rejects a stale index. Each handwritten page under `docs/` has a UTF-8 byte limit,
+measured with LF line endings.
 
 `scripts/check-docs.mjs` checks subject pages, both READMEs and contributor instructions. Relative
 links, images and reference definitions must resolve to non-ignored paths. The checker recognizes
