@@ -1,11 +1,12 @@
 # Workspace
 
-`Workspace` owns resources, document revisions and Undo history. Panes can share a document
-while keeping their own selections and folds.
+`Workspace` owns resource lifetimes, document revisions and Undo. Panes sharing a document keep
+separate selections and folds.
 
 ## Use
 
-Open a text file and a settings panel in separate panes.
+Open a file and a settings panel. Mount the text tab with the
+[editor](getting-started.md#open-the-first-editor) and write panel values with `updateResource`.
 
 ```ts
 import { Workspace } from "sttropez";
@@ -31,36 +32,20 @@ export function createWorkset() {
 }
 ```
 
-Mount the text tab in the [editor](getting-started.md). Render the panel from its handle and call
-`updateResource` with its revision, edit origin and new value. Retain both handles across remounts.
-
 ## Contract
 
 ### Identities and snapshots
 
-| Handle or value | What it identifies |
+| Target | Identity and lifetime |
 | --- | --- |
-| `ResourceKey` | Host scope, resource and variant |
-| `ResourceId`, `ResourceHandle<T>` | One workspace resource lifetime and its stable observable |
-| `DocumentId`, `TextResourceHandle.documentId` | The text model associated with a text resource |
-| Document/resource revision | A content version, independent of the saved server version |
-| `TabId`, `TabTarget` | A presentation slot and its captured workspace/generation |
-| `DocumentView`, `ViewId` | The selections and folds in one view |
-| `ResourceTarget` | A captured resource identity in a particular workspace |
+| Resource | A host key groups scope, resource and variant. Reopening a released key gives it a new `ResourceId`. Capture and resolve a `ResourceTarget` across awaits. |
+| Document | Views with the same `DocumentId` share text and history. The local revision tracks edits, the server version tracks the saved baseline. |
+| Tab | Capture its ID and generation with `tabs.capture(id)`. `tabs.resolve(target)` follows moves and expires on replacement or close. |
+| View | One pane’s selections and folds. `ownsDocumentView(view, target?)` checks the workspace and optional tab. |
 
-`workspace.tabs.getSnapshot()` lists visible tabs. Capture a tab with `tabs.capture(id)` before
-awaiting. `tabs.resolve(target)` follows moves and expires on close or replacement.
-`captureResource` and `resolveResource` follow the resource across tab closes. Releasing and
-reopening the same key creates a new ID. Use `createResourceKey` for a unique variant.
-
-An editor can mount a `DocumentId` directly. `ownsDocumentView(view, target?)` checks workspace
-membership and, given a tab target, its document. `allocateIdentity()` gives a request a unique
-workspace-local token. Check the view and revision before applying its result.
-
-Observe a handle with `getSnapshot` and `subscribe`. Use `metadata` for status alone.
-`document(id)` requires a ready document. `observeDocument(id).getSnapshot()` can return
-`undefined`. Read ranges from `buffer`. For serialization call `text()` or the ready resource’s
-`value()` explicitly. Both share a lazy full-string export and retain their revision after release.
+Read a resource handle with `getSnapshot()` and `subscribe()`, or observe `metadata` alone.
+`document(id)` requires ready text. `observeDocument(id).getSnapshot()` can return `undefined`. Read
+slices from `buffer`. Export whole values on demand.
 
 ```ts
 import type { DocumentSnapshot, ResourceSnapshot } from "sttropez";
@@ -74,18 +59,17 @@ export function serializeCapturedInputs(
 }
 ```
 
-`SnapshotValue` accepts null, booleans, finite numbers, strings, dense arrays and acyclic plain
-objects. It copies and deeply freezes their data as `Immutable<T>`. Accessors, functions, class
-instances, undefined and inherited array elements are invalid. The host validates its schema.
+A snapshot retains its revision after release. Panel values are deeply frozen copies of null,
+booleans, finite numbers, strings, dense arrays or acyclic plain objects. The host validates its
+schema.
 
-Set a text resource’s `language` to its URI and language ID. `setDocumentLanguage(id, pair)`
-changes the binding and accepts `null` to remove it. Text, revision, views and history survive.
-`documentForUri(uri)` returns a document only for one exact, ready, workspace-visible match.
+`setDocumentLanguage(id, pair)` binds a URI and language ID. Pass `null` to remove it.
+`documentForUri(uri)` resolves one exact, ready, workspace-visible match.
 
 ### Inventory visibility
 
-Resources default to `visibility: "workspace"`. For a private comparison or attachment, pass
-`"internal"` in the creation options. Tabs inherit visibility from their current resource.
+Resources and their tabs appear in the public inventory by default. Use `"internal"` for a private
+reference. Captures, leases, direct lookup and diagnostics include it. Its creator owns cleanup.
 
 ```ts
 import { TextBuffer } from "sttropez";
@@ -100,50 +84,22 @@ export function createReference(workspace: Workspace, buffer: TextBuffer) {
 }
 ```
 
-Internal entries stay out of visible inventories. Direct lookup, captures, leases and
-`diagnostics()` include them. The creator closes their tabs and releases their resources. A tab
-change can notify observers even when the visible array keeps its identity.
-
 ### Document views
 
-Create one view per pane with `createDocumentView(documentId, initialSelection?)`. It retains the
-resource until disposal and tracks selections and folds through edits while detached. Its
-`selection` is the primary range. The browser editor captures scroll separately.
-[Editor view state](editor.md#view-state-activity-and-limits)
-
-`setSelection` replaces every range with one. `setSelections` accepts several ranges and a primary
-index. Both require the current revision, normalize ranges and reveal hidden targets. They return
-`false` for a stale revision or unavailable view. Changing selection or visible folds seals the
-history group and notifies observers. [Selection direction and affinity](text-model.md#selection-sets)
-
-Pass the initiating view with an edit’s `selection` or `selectionSet`. Undo and Redo restore
-the selections of surviving views and map the selections of newer views through the edit.
+`createDocumentView` retains its resource and maps selections and folds while detached.
+`setSelection` replaces all ranges. `setSelections` takes several and a primary index. Both check
+the revision, reveal hidden targets and return `false` for a stale revision or unavailable view.
+Pass the initiating view with an edit’s selection. Undo restores surviving views and maps newer
+selections. [Scroll and view state](viewport.md#scrolling-and-saved-views)
 
 ### Transactions and history
 
-| Call | Coordinates and commit |
+| Call | Commit |
 | --- | --- |
-| `edit(request)` | Sorted, non-overlapping UTF-16 ranges in one starting revision. |
-| `editDocuments(requests)` | One request per document, with a common origin and history policy. All commit together. |
-| `replaceText(id, text, options)` | Whole document as a string or `TextBuffer`. Supply `origin` and `history` (`"record"` or `"reset"`). For linked replacements use `text` in each `editDocuments` request. |
-| `transact(id, revision, callback, options)` | Each `tx.edit` addresses the current staged `tx.buffer`. Refusal skips the callback. A throw or invalid step discards the edits. A successful change publishes once. |
-
-Capture `expectedRevision` for delayed writes. Malformed arguments can throw. A refused write
-returns `applied: false` with a reason.
-
-| Reason | Host action |
-| --- | --- |
-| `missing-document`, `missing-resource` | Drop the command. |
-| `stale-revision` | Recompute the offsets or obtain a fresh review. |
-| `not-ready` | Wait for loading or an outstanding save or reload to finish. |
-| `read-only` | Check the initiating origin’s edit permission. |
-| `edit-locked` | Supply the matching origin and lease or wait for release. Adopting saved text requires release. |
-| `history-empty` | Disable Undo or Redo for that direction. |
-| `history-blocked` | Undo intervening edits in the other participating file first. Redo also requires matching history order. |
-
-Content changes, including Undo and Redo, advance the revision. Equal text keeps its buffer and
-revision and can move the initiating selection. `replaceText` reports `changed` and `revision`.
-An equal panel value also keeps its revision. Typed panels have no text Undo stack.
+| `edit` | Sorted, non-overlapping UTF-16 ranges in one starting revision. |
+| `editDocuments` | One request per document. A shared origin and history policy. All commit together. |
+| `replaceText` | A whole string or `TextBuffer` with `"record"` or `"reset"` history. |
+| `transact` | Each step addresses the staged buffer. A throw or invalid step discards the changes. |
 
 ```ts
 import type { DocumentId, TextEdit, Workspace } from "sttropez";
@@ -157,20 +113,22 @@ export function applyPeerBatches(
 }
 ```
 
+Pass `expectedRevision` on delayed writes. The origin (`human`, `agent` or `host`) selects edit
+permission. For `applied: false`, check the reason. Recompute stale offsets, drop missing targets
+and wait for a conflicting lease. Equal text keeps its revision and buffer but can move the
+initiating selection. Typed panels keep their own revisions and have no text Undo.
+
 #### Selections across replacements
 
-Selections and folds map before listeners run. Whole-text replacement preserves selection
-direction and keeps file endpoints at their respective ends (zero for an empty source).
-Endpoints follow unchanged text. Inside a replacement they keep their relative UTF-16 offset,
-clamped to the span and backed up at a split surrogate pair or CRLF. An explicit initiating
-selection takes precedence. These rules include canonical saves, Undo and Redo. Range edits use
-endpoint affinity. Use `change.mapSelections` and `change.mapViewOffset` for stored anchors.
+Whole-text replacements map views before notification. Endpoints follow unchanged text. Within a
+replacement they keep their relative UTF-16 offset, clamped to the span and backed up at a split
+surrogate or CRLF. Range edits follow affinity. Use `change.mapSelections` and
+`change.mapViewOffset` for stored positions.
 
 #### Linked Undo
 
-Changes to several documents share a transaction ID and form one undo unit. Undo
-or Redo from any participant checks permissions and history order in every file. `observeHistory`
-depths include blocked entries. Closing a tab or view preserves that history.
+Undo or Redo of a shared transaction checks permissions and history order in all participating
+files. `observeHistory` includes blocked units. Closing a tab preserves history.
 
 ```ts
 import type { DocumentId, Workspace } from "sttropez";
@@ -193,17 +151,14 @@ export function undoFrom(workspace: Workspace, documentId: DocumentId) {
 }
 ```
 
-Origin selects the permission (`human`, `agent` or `host`). An explicit group joins consecutive
-edits on one document with the same origin, kind, group, initiating view and open views. Selection
-movement, Undo, Redo, save capture and acceptance seal the group. Use `sealHistory(id)` to end
-one explicitly. Groups have no timer.
+A group joins consecutive edits with matching origin, kind, group and views. Moving selections,
+changing visible folds, Undo, Redo and save capture or acceptance seal it. Use `sealHistory(id)` for
+an explicit boundary.
 
 #### Reset a draft
 
-Pass `history: { kind: "replace", reset: true }` without a group for every request in the batch.
-Reset clears both stacks in the targets and every file connected by retained shared history.
-Only requested text changes. Dirty state reflects the restored text against its saved baseline.
-An empty edit list can reset history at the same revision.
+A confirmed reset clears both history stacks in the targets and files linked by shared history. Only
+requested text changes. An empty edit list can reset history at the same revision.
 
 ```ts
 import { textDifference, type DocumentId, type Workspace } from "sttropez";
@@ -218,52 +173,34 @@ export function reviewRollback(workspace: Workspace, id: DocumentId, draft: stri
 }
 ```
 
-Invoke the returned function on approval. Refusal preserves text and history for all participants.
-Editing after Undo drops dependent redo entries. Reloading or releasing a document clears its history
-and linked boundaries. A permission change preserves history. To replace the baseline as well as the
-draft, use [saved-text adoption](#install-an-existing-saved-version).
+The callback checks the reviewed revision on approval. Reset keeps the saved baseline. To replace
+both draft and baseline, [adopt a saved version](#install-an-existing-saved-version).
 
 ### History limits
 
-Set per-document limits in `WorkspaceOptions.history` using nonnegative safe integers.
-A linked edit charges each file one group and its own changed text and selections.
-
-| Option | Default | Bound |
-| --- | ---: | --- |
-| `maxGroups` | Unlimited | Retained history units per document |
-| `maxChanges` | Unlimited | Recorded transactions per document |
-| `maxChangedUnits` | 8,388,608 | Inserted plus removed UTF-16 units after no-op filtering |
-| `maxSelectionRanges` | 1,000,000 | Captured before/after selection ranges |
-
-Groups split before exceeding a limit. Eviction removes the oldest groups through the evicted
-edit in each participant. An oversized edit applies and creates an Undo boundary.
-`maxGroups: 0` disables history. `diagnostics().history` counts each shared group once.
+`WorkspaceOptions.history` takes nonnegative safe integers. `maxGroups` and `maxChanges` default to
+unlimited, `maxChangedUnits` to 8,388,608 UTF-16 units and `maxSelectionRanges` to 1,000,000 ranges
+per document. Zero groups disables Undo. Evicting a shared edit removes history through that edit in
+each file. An oversized edit applies and creates an Undo boundary.
 
 ### Loading and resource lifetime
 
-Omit the initial value to create a loading resource. Start with `workspace.operations.beginLoad(handle)`,
-settle with `accept({ value, serverVersion })` or `fail(message)`, and call `finish()` when the work
-ends, including after cancellation. A newer load supersedes an older one.
+For a resource created without a value, use `operations.beginLoad(handle)`,
+`accept({ value, serverVersion })` or `fail(message)`, then `finish()`. A new load supersedes its
+predecessor. Accepted text resets selections, folds and linked history. Cancelling a refresh
+restores the prior revision.
 
-- An accepted text load advances the revision, clears linked history and folds, and resets live
-  selections to zero. A refresh requires clean, unlocked content with no reserved save or reload-preventing lease.
-- A cancelled or unfinished refresh restores prior content at its revision with current permissions.
-  An initial load without a result enters `failed` and can be retried.
-- Tabs, views, operations and explicit leases retain resources. `releaseResource` requires zero
-  owners and permission to discard dirty data. `releaseResourceWhenUnowned` checks again after
-  delivery. An unsaved edit cancels release when discard was forbidden.
-
-`ownership(id)` counts leases, tabs and reserved saves. Use `acquire(id, { preventReload: true })`
-to keep a resource loaded. For exclusive editing use `acquireEditLease(id, owner, origin)` and
-supply its lease and origin on writes. Releasing it preserves permission changes.
+Tabs, views, operations and leases retain resources. `acquire(id, { preventReload: true })` prevents
+refresh. An exclusive writer passes the origin and lease from `acquireEditLease`. Release an unowned
+resource with `releaseResource`, or request release on last use with `releaseResourceWhenUnowned`. A
+dirty edit cancels a release that forbids discard.
 
 <a id="delayed-work-and-presentation"></a>
 
 ### Keep a delayed reply on the right tab
 
-Start an operation before awaiting. It retains its resource and captures the generation and
-revision. A newer request on the same lane cancels its predecessor. Check `isCurrent()` for a
-resource result, `presentationCurrent()` for a tab result, and the revision for text-dependent work.
+Capture the tab and buffer before awaiting. A new request on the same lane supersedes its
+predecessor. Check the operation, tab generation and revision before publishing.
 
 ```ts
 import type { TabId, TabTarget, TextBuffer, Workspace } from "sttropez";
@@ -291,15 +228,15 @@ export async function computeForTab<T>(
 }
 ```
 
-For a dirty-close prompt, `tabs.beginClose(id)` holds a lease until `complete("close" | "keep-open")`
-or `finish()`. Moving the tab preserves the prompt. Closing, replacing or editing the target expires
-it. Use `tabs.close` for an immediate close and `tabs.captureClose` for an intent without a lease.
+`tabs.beginClose(id)` retains the resource through a close prompt. Complete with `"close"` or
+`"keep-open"`, or call `finish()`. Moving the tab preserves the prompt. Editing, replacing or
+closing its target expires it.
 
 ### Save and conflicts
 
-Create one saver per resource and share it across panes. Capture a ticket when the user presses
-Save. Call `start()` when the preceding write finishes. This sends the chosen text with the
-last acknowledged server version, even if the user typed again or closed the tab.
+Share one saver per resource. Capture the text at each Save press. Call `start()` when the previous
+write finishes to pair that text with the last acknowledged version. The storage provider checks
+that version inside the write.
 
 ```ts
 import type { SaveReview, SaveSubmission, TextResourceHandle, Workspace } from "sttropez";
@@ -331,47 +268,37 @@ export function createFileSaver(
 }
 ```
 
-Capture and submission both require save permission and an unlocked resource. Each caller gets its
-own receipt, conflict or error. Failure before submission leaves save status unchanged. After
-submission, a failure or conflict preserves both working text and saved baseline.
+Capture and submission require save permission and an unlocked resource. Each press gets its own
+result. A failure or conflict preserves the draft and saved baseline. `finish()` releases the
+reservation.
 
 #### Retry after review
 
-Show the remote and working copies. After the user chooses to overwrite, pass `save(review)` the
-captured resource target, local revision and reviewed remote version. Capture refuses a stale
-target or revision and any pending save. Submission checks the acknowledged version again.
-The service must condition its write on the reviewed remote version. A further conflict needs
-another review.
+Show the competing and working copies. On confirmation, pass `save(review)` the resource target,
+local revision and remote version the user reviewed. Capture refuses a stale target or revision or
+an outstanding save. If storage rejects the reviewed version, show the newer copy before trying
+again.
 
-A receipt records the submission, saved value, server version and whether the working copy
-adopted canonical text. Success advances the baseline. Applying canonical text requires the
-captured revision, host edit permission and no edit lease. It creates an Undo step. To keep the
-working text, pass `{ applyCanonical: false }` to `accept`. Returning to the saved text clears dirty state.
+Success advances the baseline. The receipt records the submission, saved value, version and whether
+canonical text was applied. Applying canonical text requires the captured revision, host edit
+permission and no edit lock. It creates an Undo step. Use `{ applyCanonical: false }` to keep
+working text. Later edits stay dirty until they match the saved value.
 
 #### Install an existing saved version
 
-Use `adoptSaved` for one file or `adoptSavedDocuments` for an atomic batch. Supply text (a string
-or `TextBuffer`), server version and history policy. For a delayed read, include each reviewed
-local revision. Adoption refuses a stale revision, unready document, pending save or reload,
-or edit lock. A dirty document also needs host edit permission.
+Use `adoptSaved` for one file or `adoptSavedDocuments` for an atomic batch. Pass text, server
+version, history policy and, after a delayed read, the reviewed local revision. A pending save or
+load, stale revision or edit lock blocks adoption. Dirty text requires host edit permission.
 
-Observers see text, server version, clean state and mapped views together. With `"record"`, equal
-text keeps its buffer, revision and views. One Undo restores the changed working copies against
-their new baselines. After a confirmed discard, `"reset"` clears linked history even for equal text.
-[History reset](#reset-a-draft) · [Reload](#loading-and-resource-lifetime)
+Observers see baseline, text, clean state and mapped views together. With `"record"`, equal text
+keeps its revision and buffer. Undo restores changed working copies against their new baselines. A
+confirmed `"reset"` clears linked history even for equal text.
 
 ### Observables
 
-Subscribe to the handle you display, or to the workspace for its inventory. All changed snapshots
-are readable before delivery. Unchanged snapshots keep their identity.
-
-`onDocumentChange` delivers every committed revision, including those in a batch. Its edits use
-previous-revision offsets. They reconstruct the new text, preserve surrogate pairs and CRLF,
-and read insertions lazily. Use `mapping` for positions and `source` to avoid echoing a peer’s edits.
-
-Schedule follow-ups with the listener’s second argument. They run in order in a microtask after
-the command and its notifications. Unsubscribing drops pending changes and follow-ups. The
-optional release callback gets the same scheduler and runs once, including for unfinished loads.
+All changed snapshots are readable before delivery. Unchanged ones keep their identity.
+`onDocumentChange` supplies every revision, including batched ones, with edits in previous-revision
+coordinates. Use `source` to avoid echoing a peer.
 
 ```ts
 import type { TextEdit, Workspace } from "sttropez";
@@ -387,15 +314,12 @@ export function forwardEdits(workspace: Workspace, uri: string,
 }
 ```
 
-Each initial follow-up can schedule 255 more through subsequent changes. Overflow drops excess
-callbacks from that chain and reports one `RangeError` to `onListenerError`. Other chains continue.
+Schedule writes with the listener’s second argument. Unsubscribing drops queued follow-ups. A
+release callback gets the same scheduler and runs once. Follow-up chains allow 256 callbacks.
 
-For snapshot subscribers, `createNotificationScope(onListenerError?)` shares the workspace write
-guard. During `batch(action)`, writes take effect immediately. When the outer synchronous call
-returns or throws, each captured callback runs once in first-capture order, even after unsubscribe.
-The first capturing scope reports listener errors (default `WorkspaceOptions.onListenerError`,
-then `console.error`). Listener failures leave other deliveries intact. Committed writes and Undo
-entries survive a thrown action. Use `editDocuments` for an atomic change across files.
+`createNotificationScope().batch(action)` groups notifications. Writes take effect immediately and
+survive a thrown action. Captured callbacks run once in order. Use `editDocuments` for atomic
+writes.
 
 ```ts
 import type { ResourceId, Workspace } from "sttropez";
@@ -411,18 +335,11 @@ export function restrictPair(workspace: Workspace, first: ResourceId, second: Re
 }
 ```
 
-During delivery you may subscribe, create views and dispose them. Start batches and change text,
-selection or history after delivery. Recheck the captured target first.
-
 ## Host responsibilities
 
-- Choose schemas, permissions and storage. Enforce version preconditions, atomicity and retry
-  policy in the service.
-- Capture the resource, revision and any presentation target before awaiting. Drop expired results.
-- On close, unsubscribe, dispose views, close tabs and release leases. Confirm before discarding
-  dirty data. [Host teardown](getting-started.md#host-responsibilities)
+Choose schemas, permissions and persistence. Enforce write preconditions in storage. Unsubscribe,
+dispose views, close tabs and release leases on close. Confirm before discarding dirty data.
 
 ## Not covered
 
-Undo history lasts for the workspace session. See the [support matrix](README.md#support-matrix) for
-cross-session recovery and durability limits.
+Undo lasts for the workspace session. [Recovery and durability limits](README.md#support-matrix)

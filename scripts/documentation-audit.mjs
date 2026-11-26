@@ -21,7 +21,7 @@ const pageBudgets = {
     "docs/examples.md": 5_000,
     "docs/folding.md": 10_900,
     "docs/getting-started.md": 17_000,
-    "docs/host-integration.md": 14_000,
+    "docs/host-integration.md": 9_000,
     "docs/language-features.md": 18_000,
     "docs/language-server.md": 19_000,
     "docs/packaging.md": 9_000,
@@ -31,7 +31,7 @@ const pageBudgets = {
     "docs/text-model.md": 16_000,
     "docs/unicode.md": 9_000,
     "docs/viewport.md": 10_400,
-    "docs/workspace.md": 21_500,
+    "docs/workspace.md": 15_200,
 };
 export const subjectPages = [...Object.keys(pageBudgets), apiIndexPath];
 const guides = ["docs/README.md", "docs/testing.md", "docs/examples.md"];

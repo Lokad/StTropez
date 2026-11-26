@@ -1,26 +1,12 @@
 # Host integration
 
-A host can add syntax colors, notes, structured paste and source-backed forms to an editor.
-Keep metadata in the host. Apply text changes through the workspace so users can undo them.
+Capture the editor that receives an action. Its paste, dialog or toolbar callback can then finish
+against the original pane after focus moves.
 
 ## Use
 
-Mark each `TODO` in the visible fragment with a decoration.
-
-```ts
-import type { InlineDecoration, LineDecorator } from "sttropez/browser";
-
-export const markTodo: LineDecorator = line => {
-    const decorations: InlineDecoration[] = [];
-    for (let at = line.text.indexOf("TODO"); at >= 0; at = line.text.indexOf("TODO", at + 4)) {
-        decorations.push({ from: line.from + at, to: line.from + at + 4, className: "host-todo" });
-    }
-    return decorations;
-};
-```
-
-Read clipboard formats during the paste event. This handler converts HTML and lets the editor
-handle plain text. It bounds the output across all selected ranges before insertion.
+Read clipboard data during the paste event. Return a callback for formats you handle. Here HTML goes
+to a converter and plain text goes to the editor.
 
 ```ts
 import type { TextEditor } from "sttropez/browser";
@@ -59,8 +45,55 @@ export function attachConvertedPaste(
 }
 ```
 
-Map a note through every document change, including edits delivered together. Drop it if the
-text it refers to is deleted or the document closes. Draw it when its revision matches the editor.
+## Contract
+
+### Captured view requests
+
+Call `captureViewRequest(editor.workspace, editor.tab, editor.view, options)` before awaiting a
+pane-local result. Omit `editOrigin` for reads. Edits require permission and an unlocked resource.
+The capture expires on a change to its revision, selections, visible folds, edit authority or tab
+target.
+
+Keep it while showing the result. `commit(operation)` consumes it once or returns `false` if stale.
+Use `available` for host-specific checks. Cancel on dismissal, pane disposal or expiry of a host
+condition. Release outside workspace notification delivery. [Analysis example](architecture.md#use)
+
+### Captured insertion and structured paste
+
+In `registerPasteHandler`, preparation is read-only. A read-only pane refuses paste. Queued editing
+and navigation use literal paste at the eventual selection. Removing the handler cancels its
+conversion. [HTML paste example](#use)
+
+For toolbar insertions, `editor.captureInsertion()` returns one target or `undefined` for a busy,
+composing or read-only pane. Typing, selection changes, a replacement capture or teardown can expire
+it. Pass `signal` to the converter. Check `pendingInput` in `editor.activity()` before acting on
+settled text.
+
+Call `insert(text)` for all selections or pass one string per range in selection order. Edit
+transforms and Undo apply to the whole change. An empty entry deletes its selection if another
+contains text. An all-empty result consumes the target and returns `false`. Call `cancel()` to
+discard it. [Table conversion](examples.md#table-conversion)
+
+### Tokenization, annotations and forms
+
+Register `markTodo` with `editor.decorations.addProvider({ order: 0, provide: markTodo })`. A
+fragment can start mid-line. For multiline syntax, cache lexical state by revision and invalidate
+changed rows. Color each comparison pane from its own buffer.
+[Decoration layers](viewport.md#decoration-layers)
+
+```ts
+import type { InlineDecoration, LineDecorator } from "sttropez/browser";
+
+export const markTodo: LineDecorator = line => {
+    const decorations: InlineDecoration[] = [];
+    for (let at = line.text.indexOf("TODO"); at >= 0; at = line.text.indexOf("TODO", at + 4)) {
+        decorations.push({ from: line.from + at, to: line.from + at + 4, className: "host-todo" });
+    }
+    return decorations;
+};
+```
+
+Map notes through each edit. Retain deleted notes in the host if Undo should restore them.
 
 ```ts
 import { anchoredRange, type AnchoredRange, type DocumentId, type Workspace } from "sttropez";
@@ -78,7 +111,40 @@ export function trackNote(workspace: Workspace, documentId: DocumentId, from: nu
 }
 ```
 
-Keep the input-conflict listener through disposal so it can recover uncommitted composition text.
+Use `afterLine` for a label or position a host control at the rendered row. Forms that edit source
+use workspace history. Capture both resources when copying to separately versioned settings.
+[Geometry](viewport.md#geometry-and-readiness) ·
+[Form example](examples.md#source-backed-transfer-form)
+
+### Navigation, commands and lifecycle
+
+Bind controls to the pane that owns them. For Back, retain its selections, folds and scroll.
+[View state](viewport.md#scrolling-and-saved-views)
+
+```ts
+import type { TextEditor } from "sttropez/browser";
+
+export function editingActions(editor: TextEditor) {
+    return editor.commands.list()
+        .filter(entry => entry.id === "line-comment" || entry.id === "indent")
+        .map(entry => ({ ...entry, run: () => editor.commands.run(entry.id) }));
+}
+```
+
+Consume a shortcut when its command applies. Leave composition, AltGraph and host fields to their
+handlers. Mount shadow-DOM editors with their CSS in the same root. Dispose the controls and editor
+before removing the nodes. [React mounting](getting-started.md#mount-an-editor-in-react)
+
+### Edit intent
+
+`editor.onEditIntent(listener, signal?)` reports `beforeinput`, `compositionstart`, `paste` and
+`cut` before handling. Use it to dismiss a preview. One gesture can send several events or leave the
+text untouched. Dispose the registration or abort its signal.
+
+### Input conflict recovery
+
+Listen on `editor.element` through disposal to capture uncommitted input. The events bubble within
+the DOM root.
 
 ```ts
 import { inputConflictEvent } from "sttropez/browser";
@@ -101,155 +167,38 @@ export function ownInputRecovery(
 }
 ```
 
-Bind toolbar actions to the editor they belong to. Remove the controls on unmount.
+`editRefusedEvent` explains a blocked gesture with `documentId` and `"read-only"` or
+`"edit-locked"`. `inputConflictEvent` carries `documentId`, `expectedRevision`, `reason` and
+`attemptedText`. Use `attemptedEdit` when available for the UTF-16 replacement span. `contextFrom`
+alone can be zero for a pending insertion.
 
-```ts
-import type { TextEditor } from "sttropez/browser";
-
-export function editingActions(editor: TextEditor) {
-    return editor.commands.list()
-        .filter(entry => entry.id === "line-comment" || entry.id === "indent")
-        .map(entry => ({ ...entry, run: () => editor.commands.run(entry.id) }));
-}
-```
-
-## Contract
-
-### Captured view requests
-
-Pass `editor.workspace`, `editor.tab` and `editor.view` to `captureViewRequest`. A tab mount supplies
-its tab generation. A document mount supplies `undefined`. The capture retains the document,
-directed selections and folding snapshot. Foreign views, mismatched tabs and unavailable documents
-are refused. For a pane-owned request, cancel on `editor.signal`. [Analysis example](architecture.md#use)
-
-Omit `editOrigin` for reads, including in a read-only pane. For edits, the origin needs permission
-and an unlocked resource. A change to the revision, selection, visible folds or edit authority
-expires the capture immediately. Changes to focus, expanded fold metadata or save permission alone
-preserve it. Use `available` for a synchronous, read-only host check. Cancel when an unobserved host
-condition changes.
-
-Keep the capture while showing a result. On acceptance, `commit(operation)` consumes it once or
-returns `false` if it expired. The callback runs synchronously, returns a boolean and applies any
-transaction under the usual revision, permission and history checks. Its lease lasts until the
-callback returns or throws. On dismissal call `cancel()` outside workspace notification delivery.
-Invalidation from an observer releases the lease and aborts the signal in a microtask.
-
-### Captured insertion and structured paste
-
-`editor.registerPasteHandler(prepare)` installs a handler for the mount. In `prepare(data)`,
-read the clipboard while the event is live. Workspace state is read-only here. Return `undefined`
-for literal paste or a callback that receives a single-use insertion. Removing the handler cancels
-its pending insertion. Read-only panes reject paste before preparation. During ordered input or
-navigation the editor queues literal paste at the eventual selection. Composition and cancelled
-paste bypass conversion.
-
-For a toolbar insertion, use `editor.captureInsertion(kind)`. The default history kind is `paste`,
-with `replace` also available. An unavailable, read-only, composing or busy view returns `undefined`.
-The handle captures the document ID, revision, length, selections and visible folds. It exposes
-`isCurrent()` and an abort signal. Only one insertion can be pending in a pane.
-
-| Action | Effect |
-| --- | --- |
-| `insert(text)` | Inserts one string at every selection. Edit transforms, snippet mirrors and Undo apply to the whole change. |
-| `insert(strings)` | Replaces each range in `selectionSet.ranges` order. Supply one string per range. An empty entry deletes that range if another entry has text. An entirely empty result consumes the capture and returns `false`. |
-| `cancel()` | Discards the insertion. Repeated calls are safe. |
-
-A toolbar click preserves the target. Editing, navigation input, composition, changed selections,
-visible folds or permissions, language reconfiguration, a replacement capture or disposal expire it.
-Later typing cancels conversion and proceeds. Check `editor.activity().pendingInput` before a
-command that needs settled text. Completion or cancellation aborts the signal. Observer-triggered
-cleanup runs in a microtask.
-
-Limit source size, parsed structure, aggregate replacement size and final document length.
-Cooperative conversion can yield between steps. Clipboard reads, native HTML parsing, final
-string assembly and the edit commit run synchronously. [Table conversion](examples.md#table-conversion)
-
-### Tokenization, annotations and forms
-
-A visible fragment can start inside a string or comment. Cache lexical context by document and
-revision, bound source reads and invalidate the provider when tokens are ready. Tokenize the saved
-side of a comparison from its own buffer. A failed attachment releases its subscriptions and leases.
-Offer Retry with the same limits while the user edits, reviews or searches.
-[Decoration layers](viewport.md#decoration-layers) · [Editing rules](editor.md) · [Folding](folding.md) · [Character warnings](unicode.md#character-warnings)
-
-Use `onDocumentChange` for anchored metadata that must follow each edit. Map surviving ranges on
-Undo and Redo. To restore a deleted note with Undo, the host must retain it. Use `afterLine` for
-a text annotation. Place interactive controls in host UI and update their geometry after scrolling,
-folding, layout or resize. A folded range can project to its header. Hide or label a control if
-`rowBounds` has no rendered row. [Anchored ranges](text-model.md#position-maps-and-anchors) · [Viewport geometry](viewport.md#geometry-and-readiness)
-
-For a source-backed form, parse the captured range and write the field through workspace history.
-To copy into separately versioned settings, capture the destination too. [Source-backed form](examples.md#source-backed-transfer-form)
-
-### Navigation, commands and lifecycle
-
-Before following a delayed result, recheck its resource, tab, revision and view. For Back, save the
-selections with their affinities, scroll position and folds. Use the mapped selections after edits.
-[Retaining a loaded resource](workspace.md#loading-and-resource-lifetime)
-
-Route shortcuts to the intended pane and check whether its command applied. Leave composition,
-AltGraph text and editable host fields to their own handlers. Prevent the browser default only for
-handled shortcuts.
-
-Mount shadow-DOM editors and their CSS in the same root. Dispose dependent controllers, then the
-editor, before removing their nodes. Document and recovery services can outlive a remount.
-[Mounting in React](getting-started.md#mount-an-editor-in-react)
-
-### Edit intent
-
-`editor.onEditIntent(listener, signal?)` reports `beforeinput`, `compositionstart`, `paste` or
-`cut` before the pane handles it. Use it to dismiss a preview. One gesture can send several events
-or leave the text unchanged. Dispose the registration or abort its signal to unsubscribe.
-Editor disposal also removes it.
-
-### Input conflict recovery
-
-Listen on `editor.element`. Both events bubble within the DOM root, including a closed shadow root.
-
-| Event | Host action |
-| --- | --- |
-| `editRefusedEvent` | Explain a blocked keystroke, cut or paste. `EditRefusedDetail` gives the document ID and reason. A read-only mount or missing human edit permission reports `"read-only"`. An edit lease on an otherwise editable view reports `"edit-locked"`. |
-| `inputConflictEvent` (`sttropez-conflict`) | Retain input that could not be applied, including input pending when permission changed. `InputConflictDetail` gives `documentId`, `expectedRevision`, `reason` and `attemptedText`. It can also carry `contextFrom`, `attemptedEdit` and `cause`. |
-
-Offsets count UTF-16 units at the captured revision. Attempted text can be a native value, a context
-slice or pending insertion text. Insertion recovery can report `contextFrom: 0`. Use `attemptedEdit`
-when available to locate the change. The detail and edit are frozen. A cause can be mutable or
-unsuitable for storage.
-
-Scripts can dispatch events with the same name. Validate the fields and document identity before
-storing recovery data. Preserve source and history until the user chooses to recover, then check the
-current revision.
+Validate event data and identity before storage. The optional `cause` may be unsuitable for
+persistence. Recheck the revision when the user chooses to recover.
 
 ### Save, Run and draft recovery
 
-Write the captured save ticket through the host's storage service. Enforce its version precondition
-at the write and let the user review a competing save. Run uses the inputs and permissions the host
-chooses. A local recovery checkpoint only stores the draft. [Save and conflicts](workspace.md#save-and-conflicts) · [Retry after review](workspace.md#retry-after-review)
+Use a shared [save queue and reviewed retry](workspace.md#save-and-conflicts) for persistence. Run
+uses host-selected inputs. A recovery draft needs its own storage policy.
 
-| Draft operation | Host responsibility |
-| --- | --- |
-| Checkpoint | Use a persistent resource key. Capture the version before serializing and mark it covered only after the write commits. A failed write, later edit or peer change requires a fresh coverage check. |
-| Write or discard | Compare the storage token inside the write. Preserve a newer peer draft and notify other open pages when their cached coverage expires. |
-| Restore | Validate record format, identity, bounds and value. Show the stored draft alongside the freshly loaded file. After the read, recheck destination revision, server version, generation and permissions. Restore the confirmed draft in one Undo step, retaining the current saved baseline and server precondition. |
-| Close or reload | Check for edits missing from the checkpoint, active composition, pending input and unfinished services. Wait for composition before checkpoint or restore. Keep rejected input and preedit separate from committed text. |
-
-Use fresh history and service requests for the new session. Close storage, observers and navigation
-listeners when the host closes. [Draft example](examples.md#draft-checkpoints)
+- Capture the persistent resource key and revision. Mark the draft covered after storage commits.
+- Compare the storage token inside a write or discard. Preserve a newer peer draft and notify other
+  pages.
+- Show the validated draft alongside the newly loaded file. On confirmation, recheck resource,
+  revision, server version and permissions. Restore in one Undo step against the saved baseline.
+- Before closing, check for uncovered edits, composition, pending input and unfinished services.
+  Keep rejected input separate from committed text. [Draft example](examples.md#draft-checkpoints)
 
 ### Bounds and validation
 
-Hosts set parser, annotation and storage budgets. Cap note count and text length, validate imported
-structures before constructing output, and choose a recovery schema, storage partition and retention
-policy. The clipboard example caps both input and output across selections.
+Limit input, parsed structure, aggregate output across selections and final document size. Choose an
+annotation budget, storage partition, schema and retention period.
 
 ## Host responsibilities
 
-Keep workspace observers read-only and schedule mutations after delivery. Dispose captures and controls
-with their view and release resource services with the resource. Parsers, routing, persistence and
-application state belong to the host. Measure presentation separately from input handling and provider
-time. [Measurement glossary](README.md#glossary)
+Own parsers, routing and persistence. Schedule writes after observer delivery. Dispose pane captures
+and controls with the view and release document services with their resource.
 
 ## Not covered
 
-Check OS clipboard formats, permissions and physical input in the target application.
+Verify OS clipboard formats, permissions and native input in the target application.
 [Support matrix](README.md#support-matrix)
