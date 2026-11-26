@@ -24,7 +24,7 @@ export function bindPopupCommands(scope: CleanupScope, editor: TextEditor, popup
 
 /** Keep one explicit request at its original caret while the project starts TypeScript. */
 export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, output: HTMLElement,
-    execute: (command: Command, menu: boolean) => void, reportError: (error: unknown) => void) {
+    execute: (command: Command) => void, reportError: (error: unknown) => void) {
     type Feedback = (command: "complete" | "signature", message: string, finished: boolean) => void;
     let pending: CapturedViewRequest<TextEditor["tab"]> | undefined;
     let phase: "starting" | "ready" | "failed" = "starting";
@@ -59,7 +59,7 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
         cancel();
         if (menu) editor.focus();
         if (phase === "failed" || !editor.getSnapshot().focused) return;
-        if (phase === "ready" && command !== "complete" && command !== "signature") { execute(command, menu); return; }
+        if (phase === "ready" && command !== "complete" && command !== "signature") { execute(command); return; }
         const source = capture();
         if (!source) return;
         const dispatch = () => {
@@ -76,7 +76,7 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
                     }
                 };
             } else cancel();
-            try { execute(command, menu); }
+            try { execute(command); }
             catch (error) { if (pending === source) cancel(); reportError(error); }
         };
         if (phase === "starting") {

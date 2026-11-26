@@ -1,3 +1,4 @@
+import { transientSurface } from "./transient-surface.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
 import type { CodeActionChoice, CodeActionController, CodeActionPreview } from "./code-action-controller.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
@@ -36,6 +37,12 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
     let open = false, command = false, start = 0;
     let shown: CodeActionPreview | null = null;
     let list: readonly CodeActionChoice[] | undefined;
+    const surface = transientSurface(editor, () => {
+        open = false;
+        overlay.hide();
+        actions.cancel();
+    });
+    onAbort(signal, surface.release);
     function close() {
         actions.cancel();
         editor.focus();
@@ -80,6 +87,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
         const { status: phase, message, preview, choice, choices: items } = actions.getSnapshot();
         if (phase === "idle" || phase === "expired" || phase === "applied" && !command) {
             open = false;
+            surface.release();
             const focused = panel.matches(":focus-within");
             overlay.hide();
             if (focused) editor.focus();
@@ -111,6 +119,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
         const state = actions.getSnapshot();
         if (items !== undefined && (state.status !== "ready" || items !== state.choices)) return false;
         if (options.beforeOpen?.() === false || items !== undefined && actions.getSnapshot() !== state) return false;
+        if (!surface.claim()) return false;
         editor.focus();
         revealSelectionHead(editor);
         command = false;

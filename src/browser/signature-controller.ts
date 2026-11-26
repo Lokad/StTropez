@@ -1,3 +1,4 @@
+import { transientSurface } from "./transient-surface.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
 import { listenUntil, onAbort } from "./listen.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
@@ -67,7 +68,9 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     function release() {
         const previous = job; job = undefined; releaseRequest(previous);
     }
+    const surface = options.popup ? transientSurface(editor, cancel) : undefined;
     function end(afterBlur = false) {
+        surface?.release();
         const previous = job;
         armed = false; stopTimer(); job = undefined;
         const close = () => {
@@ -132,6 +135,10 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
             if (context === manual) revealSelectionHead(editor, focused());
             current = retained ?? captureRequest();
             if (!current) {
+                cancel();
+                return refused("unavailable-view");
+            }
+            if (surface && !surface.claim(context === manual ? "explicit" : "signature")) {
                 cancel();
                 return refused("unavailable-view");
             }

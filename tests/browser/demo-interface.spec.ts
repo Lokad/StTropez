@@ -1371,7 +1371,7 @@ test("reset names its sample and recovery follows the stored draft across sample
     await expect(page.locator("#editor")).not.toContainText("My previous large-file edits");
 });
 
-test("completion holds its prefix and side while filtering and makes room for signature help", async ({ page, baseURL }) => {
+test("completion holds its prefix and side while filtering", async ({ page, baseURL }) => {
     await page.setViewportSize({ width: 1280, height: 800 }); await page.goto(browserDemo(baseURL!));
     const source = page.locator("#editor textarea"), list = page.locator(".st-completion");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
@@ -1389,27 +1389,6 @@ test("completion holds its prefix and side while filtering and makes room for si
     await page.setViewportSize({ width: 1280, height: 1400 });
     await expect.poll(placement).toMatchObject({ above: false });
     await source.press("Escape"); await expect(list).toBeHidden(); await expect(source).toBeFocused();
-
-    await page.setViewportSize({ width: 1280, height: 800 }); await page.locator("#sample").selectOption("documentation");
-    await expect(source).toHaveAttribute("aria-label", "documentation.ts");
-    await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
-    await source.press("Control+End"); await source.pressSequentially("applyDiscount");
-    await expect(list).toBeVisible(); await source.press("Escape"); await source.pressSequentially("(");
-    const signature = page.getByRole("tooltip", { name: "Signature help", exact: true });
-    await expect(signature).toContainText("applyDiscount"); await source.pressSequentially("5, di");
-    await expect(list).toBeVisible(); await expect(signature).toBeVisible();
-    await expect(list.locator(".st-completion-count")).toContainText("of 2 ·");
-    await expect(signature).toContainText("applyDiscount");
-    await expect.poll(() => signature.evaluate(el => {
-        const box = el.getBoundingClientRect(), other = document.querySelector(".st-completion")!.getBoundingClientRect();
-        const preferred = el.cloneNode(true) as HTMLElement;
-        preferred.style.visibility = "hidden"; preferred.style.maxHeight = ""; el.after(preferred);
-        const height = preferred.getBoundingClientRect().height; preferred.remove();
-        return { inside: box.top >= 0 && box.bottom <= innerHeight, clear: box.bottom <= other.top || box.top >= other.bottom,
-            clippedPixels: Math.max(0, Math.round(height - box.height)) };
-    })).toEqual({ inside: true, clear: true, clippedPixels: 0 });
-    await source.press("Escape"); await expect(list).toBeHidden(); await expect(signature).toBeVisible();
-    await source.press("Escape"); await expect(signature).toBeHidden(); await expect(source).toBeFocused();
 });
 
 test("browser global completion filters its catalogue after a typed prefix", async ({ page, baseURL }) => {

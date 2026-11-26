@@ -248,17 +248,14 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     expect(await signature.evaluate(node => { const box = node.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight; })).toBe(true);
     await source.pressSequentially("M");
     const completions = page.getByRole("listbox", { name: "Completions", exact: true });
-    await expect(completions.getByRole("option").first()).toBeVisible();
     await expect(signature.getByLabel("Active signature parameter")).toContainText("rate");
-    await expect.poll(async () => {
-        const list = await completions.boundingBox(), help = await signature.boundingBox();
-        return !!list && !!help && list.height > 0 && help.height > 0
-            && (list.y + list.height <= help.y || help.y + help.height <= list.y);
-    }, { message: "Completion and signature help stay readable while typing an argument" }).toBe(true);
+    await source.press("Control+Space");
+    await expect(completions.getByRole("option").first()).toBeVisible();
+    await expect(signature).toBeHidden();
     await expect(source).toBeFocused();
     const chosen = completions.getByRole("option", { selected: true });
     const first = await chosen.textContent();
-    await source.press("ArrowDown"); await expect(chosen).not.toHaveText(first!); await expect(overload).toContainText("rate");
+    await source.press("ArrowDown"); await expect(chosen).not.toHaveText(first!);
     await source.press("Escape"); await expect(completions).toBeHidden();
     await source.press("Control+z");
     await source.press("Escape"); await expect(signature).toBeHidden(); await expect(page.locator("#files")).not.toContainText("●");

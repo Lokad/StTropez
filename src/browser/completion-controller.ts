@@ -1,3 +1,4 @@
+import { transientSurface } from "./transient-surface.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
 import { listenUntil } from "./listen.ts";
 import { mountCompletionList, type CompletionListStrings } from "./completion-list.ts";
@@ -150,7 +151,12 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         notifications.publish(cell, snapshot);
         return snapshot;
     };
+    const surface = options.list ? transientSurface(editor, () => {
+        cancelAuto();
+        closeList("Completion dismissed.");
+    }) : undefined;
     const release = (retain = false) => {
+        if (!retain) surface?.release();
         const old = job; job = undefined; if (!old) return; old.call?.cancel(); old.resolution?.call?.cancel(); old.resolution = undefined;
         if (!retain) completion.cancel();
         // Workspace observers run during commit delivery; retention cleanup must follow that delivery.
@@ -217,6 +223,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             }
             const previous = invocation.automatic && job?.choices && current(job) && bindingCurrent(job) ? job : undefined;
             release(!!previous);
+            if (surface && !surface.claim(invocation.automatic ? "completion" : "explicit")) return refused("unavailable-view");
             const captured: Job = {
                 // A refresh keeps the displayed choices and their handles until it replaces the list.
                 id: previous?.id ?? workspace.allocateIdentity(), revision: document.revision, buffer: document.buffer,

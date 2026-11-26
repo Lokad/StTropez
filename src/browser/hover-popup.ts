@@ -1,3 +1,4 @@
+import { transientSurface } from "./transient-surface.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
 import { listenUntil } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
@@ -37,11 +38,12 @@ export function mountHoverPopup(editor: TextEditor, hover: HoverController, opti
         dismissOn: ["focus-leave"],
         onHide: reason => { if (reason === "focus-leave" || reason === "expired") cancel(); },
     });
+    const surface = transientSurface(editor, cancel);
     function render() {
         const state = hover.getSnapshot();
         const visible = state.status === "ready" || state.status === "failed" || (!pointer && state.status === "pending");
         if (!anchor || !visible) {
-            if (state.status !== "pending") anchor = undefined;
+            if (state.status !== "pending") { anchor = undefined; surface.release(); }
             content.setContent(emptyList);
             overlay.hide();
             return;
@@ -50,6 +52,7 @@ export function mountHoverPopup(editor: TextEditor, hover: HoverController, opti
         overlay.show(!pointer && state.range ? { revision: anchor.revision, ...state.range } : anchor);
     }
     function cancel() {
+        surface.release();
         win.clearTimeout(leaveTimer);
         anchor = undefined;
         dwell.cancel();
@@ -57,6 +60,7 @@ export function mountHoverPopup(editor: TextEditor, hover: HoverController, opti
     }
     async function inspect(point?: OverlayPosition, mode?: "refresh" | "reuse", byPointer = false) {
         if (signal.aborted || options.beforeInspect?.(byPointer ? "pointer" : "keyboard") === false) return refused("unavailable-view");
+        if (!surface.claim(byPointer ? "hover" : "explicit")) return refused("unavailable-view");
         const selected = view.getSnapshot();
         const target = point ?? { revision: selected.revision, offset: selected.selection.head, affinity: selected.selection.headAffinity ?? "after" };
         if (!point) revealSelectionHead(editor);
@@ -75,6 +79,7 @@ export function mountHoverPopup(editor: TextEditor, hover: HoverController, opti
     });
     const stops = [dwell.dispose, hover.subscribe(render)];
     function dispose() {
+        surface.release();
         events.abort();
         win.clearTimeout(leaveTimer);
         for (const stop of stops) stop();

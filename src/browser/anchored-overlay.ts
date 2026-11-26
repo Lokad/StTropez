@@ -1,3 +1,4 @@
+import { transientSurface } from "./transient-surface.ts";
 import { listenUntil, onAbort, stopPopupPropagation } from "./listen.ts";
 import { isOffsetRange } from "../core/bounds.ts";
 import type { Affinity } from "../core/positions.ts";
@@ -9,10 +10,11 @@ import type { TextEditor } from "./text-editor.ts";
 export type OverlayPosition = Readonly<{ revision: number; offset: number; affinity?: Affinity }>;
 export type OverlayAnchor = OverlayPosition | Readonly<{ revision: number; from: number; to: number }>;
 type DismissEvent = "focus-leave" | "outside-pointerdown";
-export type OverlayHideReason = DismissEvent | "clipped" | "expired" | "hide" | "disposed";
+export type OverlayHideReason = DismissEvent | "clipped" | "expired" | "hide" | "disposed" | "superseded";
 export type AnchoredOverlayOptions = Readonly<{
     prefer?: "above" | "below";
     priority?: number;
+    transient?: boolean;
     dismissOn?: readonly DismissEvent[];
     onHide?: (reason: OverlayHideReason, hadFocus: boolean) => void;
 }>;
@@ -172,12 +174,14 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     }
     function reconsider(): void { previousSlot = undefined; schedule(); }
     const resize = new win.ResizeObserver(schedule);
+    const surface = options.transient ? transientSurface(editor, () => hide("superseded")) : undefined;
     function hide(reason: OverlayHideReason = "hide"): void {
         if (!anchor) return;
         focusTarget = undefined;
         const notify = reason !== "clipped" || !!placement.rectangle;
         const hadFocus = element.matches(":focus-within");
         if (reason !== "clipped") {
+            surface?.release();
             anchor = undefined;
             previousSlot = undefined;
             peers.delete(placement);
@@ -197,6 +201,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         const from = "offset" in next ? next.offset : next.from, to = "offset" in next ? next.offset : next.to;
         if (!isOffsetRange(from, to)) throw new RangeError("Invalid overlay anchor.");
         if (target && !element.contains(target)) throw new RangeError("Focus target must belong to the overlay.");
+        if (surface && !surface.claim()) return;
         focusTarget = target;
         anchor = Object.freeze({ ...next });
         if (!events) {

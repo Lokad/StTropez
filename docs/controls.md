@@ -35,6 +35,10 @@ export function addControls(toolbar: HTMLElement, editor: TextEditor, provider: 
 
 ## Contract
 
+Each editor shows one language popup. A keyboard or menu command replaces the active popup.
+While typing, signature help takes precedence over automatic completion. Pointer hover waits until
+the editor has no active popup. Escape dismisses the current popup. The Find bar has its own lifetime.
+
 Borders, secondary text, fields and hovered rows derive from the surface and text colors. The selected
 row uses the selection color. In forced colors, the current completion, quick fix and pressed Find
 toggle use the system highlight and an outline.

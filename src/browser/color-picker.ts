@@ -1,3 +1,4 @@
+import { transientSurface } from "./transient-surface.ts";
 import type { LspColor, LspDocumentColor } from "../protocol/lsp-features.ts";
 import { mountAnchoredOverlay } from "./anchored-overlay.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
@@ -56,9 +57,11 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
             if (source === target) close(focus ?? panel.matches(":focus-within"));
         });
     }
+    const surface = transientSurface(editor, () => close());
     function close(focus = false) {
         if (!source) return;
         const previous = source;
+        surface.release();
         source = undefined;
         choice = undefined;
         win.clearTimeout(timer);
@@ -110,6 +113,7 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
         close();
         const target = capture();
         if (!target) return false;
+        if (!surface.claim()) { target.cancel(); return false; }
         source = target;
         proposed = mark.color;
         rgb.value = hex(proposed);

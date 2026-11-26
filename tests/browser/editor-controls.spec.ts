@@ -176,11 +176,23 @@ test("clicking the rename status or disabled Apply keeps the next keystroke in t
     await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);');
 });
 
-test("Escape dismisses the picker after clicking its edit preview", async ({ page }) => {
+test("pointer inspection yields to the picker and one Escape closes it", async ({ page }) => {
     await page.goto("/controls/");
     const source = page.getByRole("textbox", { name: "colors.ts" });
-    await page.locator(".st-color-swatch").click();
+    const row = page.locator(".st-viewport-row").first();
+    const dwell = () => row.hover({ position: { x: 20, y: 5 } });
+    const swatch = page.locator(".st-color-swatch");
+    await expect(swatch).toBeVisible();
+    await dwell();
+    const hover = page.locator(".st-hover");
+    await expect(hover).toContainText("Fixture");
+    await swatch.click();
     const dialog = page.getByRole("dialog", { name: "Color picker" });
+    await expect(dialog.locator("li").first()).toBeVisible();
+    await page.clock.install();
+    await dwell();
+    await page.clock.runFor(1200);
+    await expect(hover).toBeHidden();
     await dialog.locator("li").first().click();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();

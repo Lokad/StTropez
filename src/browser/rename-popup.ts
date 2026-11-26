@@ -1,3 +1,4 @@
+import { transientSurface } from "./transient-surface.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
 import { identifierAt } from "../core/identifier.ts";
 import { reviewPanel } from "./review-controls.ts";
@@ -76,9 +77,11 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     const preview = button(controls, "Preview rename", () => { name.focus(); prepare(); });
     let apply = button(controls, "Apply rename", () => {});
     button(controls, "Cancel rename", () => close(true));
+    const surface = transientSurface(editor, () => close(false));
     function hide(focus: boolean) {
         if (!source) return;
         const previous = source;
+        surface.release();
         source = undefined;
         checking = false;
         panel.hidden = true;
@@ -118,6 +121,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         options.beforeOpen?.();
         const target = capture();
         if (!target) return false;
+        if (!surface.claim()) { target.cancel(); return false; }
         source = target;
         const caret = target.selectionSet.ranges[target.selectionSet.primary]!;
         const offset = caret.head;

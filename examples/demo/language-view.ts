@@ -1,5 +1,5 @@
 import { attachEditorLanguage } from "../../src/browser/index.ts";
-import type { TextEditor, CompletionController, CompletionSnippet, HoverController, SignatureController, NavigationOrigin } from "../../src/browser/index.ts";
+import type { TextEditor, CompletionController, CompletionSnippet, NavigationOrigin } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
 import type { DemoLanguage } from "./language.ts";
@@ -24,18 +24,13 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
         snippetPanel.setAttribute("role", "region"); snippetPanel.setAttribute("aria-label", "Snippet controls"); snippetHost.append(snippetPanel);
         let controller: CompletionController | undefined;
         let renderedSnippet: CompletionSnippet | undefined;
-        let hover: HoverController | undefined;
-        let signature: SignatureController | undefined;
-        const dismissInspection = () => { hover?.cancel(); signature?.cancel(); };
         let symbols: ReturnType<typeof mountDemoSymbols> | undefined;
         let actions: ReturnType<typeof mountDemoActions> | undefined;
-        const commands = mountLanguageCommands(scope, editor, feedback, (command, menu) => {
+        const commands = mountLanguageCommands(scope, editor, feedback, command => {
             switch (command) {
                 case "complete":
-                    if (menu) { actions?.dismiss(); symbols?.dismiss(); dismissInspection(); }
                     editor.commands.run("completion.request"); break;
                 case "signature":
-                    if (menu) controller?.cancel();
                     editor.commands.run("signature.request"); break;
                 case "inspect": editor.focus(); editor.commands.run("hover.inspect"); break;
                 case "rename": symbols?.rename(); break;
@@ -70,30 +65,15 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
         const attach = (provider: LspWorkspace) => {
             if (!valid()) return;
             try {
-                const closeProjectPopups = () => { symbols?.dismiss(); actions?.dismiss(); };
                 const idle = () => {
                     const activity = editor.activity();
                     return valid() && !activity.composing && !activity.pendingInput && !activity.pendingCommand;
                 };
                 const tools = attachEditorLanguage(editor, provider, {
-                    codeActions: demoActionPolicy(workspace, file, language, idle, () => {
-                        if (!idle()) return false;
-                        controller?.cancel(); dismissInspection(); symbols?.dismiss();
-                        return true;
-                    }), occurrences: {},
+                    codeActions: demoActionPolicy(workspace, file, language, idle), occurrences: {},
                     completion: { autoConnect: false, filterManualCompletions: true, canCapture: valid, list: true },
-                    signature: { popup: links, canCapture: valid, beforeRequest: () => {
-                        hover?.cancel();
-                        closeProjectPopups();
-                    } },
-                    hover: { canCapture: valid, popup: { ...links, beforeInspect(kind) {
-                        if (kind === "pointer") return idle() && !controller?.getSnapshot().anchor
-                            && !signature?.getSnapshot().anchor && !symbols?.isOpen() && !actions?.isOpen();
-                        controller?.cancel();
-                        signature?.cancel();
-                        closeProjectPopups();
-                        return idle();
-                    } }, diagnostics: { subscribe: language.state.subscribe, getSnapshot() {
+                    signature: { popup: links, canCapture: valid },
+                    hover: { canCapture: idle, popup: links, diagnostics: { subscribe: language.state.subscribe, getSnapshot() {
                         const state = language.state.getSnapshot(), doc = workspace.document(file.resource.documentId);
                         return { diagnosticRevision: doc.revision, diagnosticsPending: state.checking,
                             diagnostics: state.diagnostics.filter(item => item.documentId === doc.id && item.revision === doc.revision) };
@@ -101,14 +81,12 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                 });
                 controller = tools.completion;
                 scope.defer(tools.dispose);
-                hover = tools.hover;
-                signature = tools.signature;
                 scope.defer(tools.signature.subscribe(() => {
                     const state = tools.signature.getSnapshot();
                     if (state.status === "empty" || state.status === "failed") commands.feedback("signature", state.message, true);
                     else if (state.status === "ready") commands.feedback("signature", "", true);
                 }));
-                symbols = mountDemoSymbols(scope, project, editor, provider, valid, () => { controller?.cancel(); dismissInspection(); actions?.dismiss(); }, open, commands.notice);
+                symbols = mountDemoSymbols(scope, project, editor, provider, valid, open, commands.notice);
                 actions = mountDemoActions(scope, editor, tools.codeActions, idle);
                 scope.defer(controller.subscribe(render));
                 const ready = () => { if (valid()) { controller!.connect(); render(); commands.ready(); } };

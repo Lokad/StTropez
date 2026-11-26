@@ -21,7 +21,7 @@ function locationButton(file: DemoFile, location: NavigationChoice): HTMLButtonE
 
 /** Host presentation around validated public results. Navigation may replace this editor view. */
 export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, editor: TextEditor,
-    provider: LspWorkspace, valid: () => boolean, dismissOther: () => void, open: (target: DemoSymbolTarget, origin: NavigationOrigin) => void,
+    provider: LspWorkspace, valid: () => boolean, open: (target: DemoSymbolTarget, origin: NavigationOrigin) => void,
     notice: (message: string, signal: AbortSignal) => void) {
     const { workspace } = project;
     const events = new AbortController(); let disposed = false;
@@ -30,10 +30,11 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, edit
     popup.className = "demo-symbols"; popup.hidden = true; popup.setAttribute("aria-label", "Symbol locations");
     document.body.append(popup);
     const locationsOverlay = mountAnchoredOverlay(editor, popup, {
+        transient: true,
         dismissOn: ["focus-leave"],
         onHide(reason, hadFocus) {
             if (hadFocus && (reason === "clipped" || reason === "expired")) editor.focus();
-            if (reason === "focus-leave" || reason === "expired") cancelNavigation();
+            if (reason === "focus-leave" || reason === "expired" || reason === "superseded") cancelNavigation();
         },
     });
     scope.defer(locationsOverlay.dispose);
@@ -43,8 +44,7 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, edit
     const idle = () => { const s = editor.activity(); return !disposed && valid() && !s.composing && !s.pendingInput && !s.pendingCommand; };
     const language = attachEditorLanguage(editor, provider, { navigation: { canCapture: idle, resultLifetime: "view", documents: () => project.files.map(file => workspace.document(file.resource.documentId)),
         onDefinition: offset => request("definition", offset) }, rename: {
-            canCapture: idle, popup: { beforeOpen() { dismissOther(); cancelNavigation(); },
-                onNotice: message => notice(message, events.signal) },
+            canCapture: idle, popup: { onNotice: message => notice(message, events.signal) },
         } });
     const { navigation } = language;
     scope.defer(language.dispose);
@@ -93,7 +93,9 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, edit
         if (focused) editor.focus();
     };
     function request(kind: Query["kind"], pointed?: number) {
-        if (!idle()) return; dismissOther(); editor.commands.run("rename.dismiss", false); cancelNavigation(); editor.focus();
+        if (!idle()) return;
+        cancelNavigation();
+        editor.focus();
         const caret = editor.view.getSnapshot().selection;
         if (pointed === undefined) editor.viewport.revealOffset(caret.head, {
             affinity: caret.headAffinity ?? "after", vertical: "center-if-outside", horizontal: "nearest",
@@ -149,6 +151,5 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, edit
         const status = navigation.getSnapshot().status;
         if (query && (status === "expired" || status === "idle")) hideLocations();
     }));
-    return Object.freeze({ definition: () => request("definition"), references: () => request("references"), rename: () => editor.commands.run("rename.start"),
-        dismiss: () => { cancelNavigation(); editor.commands.run("rename.dismiss", false); }, isOpen: () => !!query || editor.commands.get("rename.dismiss")?.enabled === true });
+    return Object.freeze({ definition: () => request("definition"), references: () => request("references"), rename: () => editor.commands.run("rename.start") });
 }

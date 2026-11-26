@@ -7,9 +7,9 @@ import type { DemoLanguage } from "./language.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 
 export function demoActionPolicy(workspace: Workspace, file: DemoFile, language: DemoLanguage,
-    valid: () => boolean, beforeOpen: () => boolean): CodeActionControllerOptions {
+    valid: () => boolean): CodeActionControllerOptions {
     return {
-        popup: { beforeOpen, quickApply(choice, preview) {
+        popup: { beforeOpen: valid, quickApply(choice, preview) {
             if (choice.kind !== "quickfix" && !choice.kind?.startsWith("quickfix.")) return false;
             const edits = preview.readEdits(0, 4);
             return !!edits && edits.total > 0 && edits.total <= 4 && edits.notes.every(edit => edit.document === file.resource.documentId)
@@ -56,5 +56,5 @@ export function mountDemoActions(scope: CleanupScope, editor: TextEditor, tools:
     scope.defer(tools.subscribe(() => {
         if (offered && tools.getSnapshot().choices !== offered.choices) clearOffer();
     }));
-    return { offerFixes, dismiss: tools.cancel, isOpen: () => !!editor.commands.get("quickfix.dismiss")?.enabled };
+    return { offerFixes };
 }
