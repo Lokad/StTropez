@@ -175,8 +175,9 @@ export function mountRename(editor: TextEditor, owner: LspDocumentOwner, options
     const controls = mount(stop);
     try {
         if (options.popup) {
-            hidePopup = mountRenamePopup(editor, owner, { ...controls, preview: name => { void prepare(name, true); } },
-                capture, signal, options.popup === true ? {} : options.popup);
+            hidePopup = mountRenamePopup(editor, owner, {
+                ...controls, submit: async (name, review) => (await prepare(name, review)).status === "done",
+            }, capture, signal, options.popup === true ? {} : options.popup);
         }
         return Object.freeze({ ...controls, request, cancel() {
             scope.assertWritable();

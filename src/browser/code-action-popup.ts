@@ -53,8 +53,9 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
     }
     async function pick(choice: CodeActionChoice) {
         const result = await choice.select({ review: true });
-        if (result.status === "done" && result.value.canApply && !result.value.command
-            && options.quickApply?.(choice, result.value)) await result.value.apply();
+        if (result.status === "done" && result.value.canApply && options.quickApply?.(choice, result.value) !== false) {
+            await result.value.apply();
+        }
     }
     function page(items: readonly CodeActionChoice[], offset: number) {
         start = offset;
@@ -173,6 +174,9 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
         const state = actions.getSnapshot();
         if (state.preview) {
             if (!apply.disabled) void state.preview.apply();
-        } else if (state.status !== "resolving") move(1);
+        } else if (state.status === "ready") {
+            const first = state.choices.find(item => item.disabled === null);
+            if (first) void pick(first);
+        }
     });
 }

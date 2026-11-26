@@ -10,7 +10,7 @@ export function demoActionPolicy(workspace: Workspace, file: DemoFile, language:
     valid: () => boolean): CodeActionControllerOptions {
     return {
         popup: { beforeOpen: valid, quickApply(choice, preview) {
-            if (choice.kind !== "quickfix" && !choice.kind?.startsWith("quickfix.")) return false;
+            if (preview.command || choice.kind !== "quickfix" && !choice.kind?.startsWith("quickfix.")) return false;
             const edits = preview.readEdits(0, 4);
             return !!edits && edits.total > 0 && edits.total <= 4 && edits.notes.every(edit => edit.document === file.resource.documentId)
                 && edits.notes.reduce((units, edit) => units + edit.to - edit.from + edit.insertUnits, 0) <= 256;

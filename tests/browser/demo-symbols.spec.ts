@@ -69,10 +69,10 @@ test("real rename previews a captured name, rejects an old name and shares one u
     await cancel.press("Escape");
     await expect(dialog).toBeHidden(); await expect(pricing).toBeFocused(); await expect(page.locator("#files")).not.toContainText("●");
     await pricing.press("F2"); await expect(name).toHaveValue("calculateTotal"); await expect(apply).toBeDisabled();
-    await name.fill("cartTotal"); await name.press("Enter"); await expect(apply).toBeEnabled();
+    await name.fill("cartTotal"); await name.press("Control+Enter"); await expect(apply).toBeEnabled();
     const oldApply = await apply.elementHandle();
     await name.fill("basketTotal"); await expect(apply).toBeDisabled();
-    await name.press("Enter"); await expect(apply).toBeEnabled(); await expect(dialog.getByLabel("Rename edits")).toContainText("basketTotal");
+    await name.press("Control+Enter"); await expect(apply).toBeEnabled(); await expect(dialog.getByLabel("Rename edits")).toContainText("basketTotal");
     await oldApply!.evaluate(node => (node as HTMLButtonElement).click());
     await oldApply!.dispose();
     await expect(name).toBeFocused();
@@ -202,7 +202,7 @@ test("F2 accepts immediate typing and retires a pending rename when focus leaves
     await expect(dialog).toBeHidden();
     await source.press("F2");
     await page.keyboard.type("cartTotal");
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("Control+Enter");
     await expect.poll(() => !!release).toBe(true);
     // The held provider placeholder must not replace the submitted name.
     releaseHeld();

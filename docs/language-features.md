@@ -141,8 +141,8 @@ selection and scroll. `focus: true` resumes typing.
 
 ### Rename and workspace edits
 
-`rename: { popup: true }` binds F2. Enter previews, then applies. Escape returns to the editor. Enable
-custom Apply only while `preview.canApply`. Supply `rename.documents` for other files.
+`rename: { popup: true }` opens at the symbol with F2. Enter applies. Ctrl/Cmd+Enter previews. Set
+`popup.review` to preview on Enter. Enable custom Apply while `preview.canApply`. Supply `rename.documents` for other files.
 `rename.request(name)` applies directly.
 
 ```ts
@@ -187,8 +187,8 @@ export async function chooseFix(
 
 `choice.select()` approves an action. For review, `select({ review: true })`, page
 `preview.readEdits(first, end)` and bind Apply to `preview.apply()`. New choices supersede pending
-resolution. `popup.quickApply` can approve edit-only fixes. Confirm commands separately. Custom toolbars may
-explicitly refocus the editor.
+resolution. Clicking a choice applies it. Return false from `popup.quickApply` to require review.
+Commands follow host policy.
 
 Supply `documents()` for cross-file edits. Edits commit in one Undo before the command runs. Review each
 incoming edit via `reviewCommandEdit(request, context, writable)` and close approval on `context.onCancel`.

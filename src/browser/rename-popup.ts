@@ -1,19 +1,21 @@
-import { transientSurface } from "./transient-surface.ts";
+import { mountAnchoredOverlay } from "./anchored-overlay.ts";
+import { revealSelectionHead } from "./input-caret.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
 import { identifierAt } from "../core/identifier.ts";
 import { reviewPanel } from "./review-controls.ts";
-import { isFocused, revealInPage } from "./dom-focus.ts";
+import { isFocused } from "./dom-focus.ts";
 import { lspRangeOffsets } from "../protocol/lsp-features.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { renameMethod } from "../protocol/lsp-methods.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
-import { listenUntil, onAbort, stopPopupPropagation } from "./listen.ts";
+import { listenUntil, onAbort } from "./listen.ts";
 import type { RenamePreview, RenameSnapshot } from "./rename-controller.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { Observable } from "../core/observable.ts";
 
 export type RenamePopupOptions = Readonly<{
     text?: (label: string) => string;
+    review?: boolean;
     beforeOpen?: () => void;
     onNotice?: (message: string) => void;
 }>;
@@ -21,7 +23,7 @@ export type RenamePopupOptions = Readonly<{
 type Source = CapturedViewRequest<TextEditor["tab"]>;
 type Review = Observable<RenameSnapshot> & {
     cancel(): void;
-    preview(name: string): void;
+    submit(name: string, review: boolean): Promise<boolean>;
 };
 const nameLimit = 256;
 
@@ -48,7 +50,6 @@ async function preparedName(owner: LspDocumentOwner, source: Source, offset: num
     }
 }
 
-/** The field stays in the pane while the captured line scrolls out of view. */
 export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, review: Review,
     capture: () => Source | undefined, signal: AbortSignal, options: RenamePopupOptions) {
     const { element, commands } = editor;
@@ -72,19 +73,28 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     let source: Source | undefined;
     let checking = false;
     let edited = false;
-    let submitted = false;
+    let pendingSubmit: "preview" | "apply" | undefined;
     let shown: RenamePreview | null = null;
-    const preview = button(controls, "Preview rename", () => { name.focus(); prepare(); });
+    const preview = button(controls, "Preview rename", () => { name.focus(); submit("preview"); });
     let apply = button(controls, "Apply rename", () => {});
     button(controls, "Cancel rename", () => close(true));
-    const surface = transientSurface(editor, () => close(false));
+    const overlay = mountAnchoredOverlay(editor, panel, {
+        transient: true,
+        onHide(reason, focused) {
+            if (reason === "superseded") close(false);
+            else if ((reason === "clipped" || reason === "expired") && source) {
+                const target = source;
+                queueMicrotask(() => { if (source === target) close(focused); });
+            }
+        },
+    });
+    onAbort(signal, overlay.dispose);
     function hide(focus: boolean) {
         if (!source) return;
         const previous = source;
-        surface.release();
         source = undefined;
         checking = false;
-        panel.hidden = true;
+        overlay.hide();
         previous.cancel();
         if (focus && !signal.aborted && element.isConnected) editor.focus();
     }
@@ -102,7 +112,8 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         const state = review.getSnapshot();
         const result = state.preview;
         preview.disabled = checking || state.status === "pending" || !name.value.trim();
-        status.textContent = text(checking ? "Checking rename target…" : state.message || "Enter a name, then preview its changes.");
+        const hint = options.review ? "Enter to preview." : "Enter to rename. Ctrl/Cmd+Enter to preview.";
+        status.textContent = text(checking ? "Checking rename target…" : state.message || hint);
         if (shown !== result) {
             shown = result;
             apply = button(controls, "Apply rename", () => accept(result), apply);
@@ -111,30 +122,31 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         }
         apply.disabled = !result?.canApply;
     }
-    function prepare() {
-        if (!source?.isCurrent() || name.readOnly || !name.value.trim()) return;
-        if (checking) submitted = true;
-        else review.preview(name.value);
+    function submit(mode: "preview" | "apply") {
+        const target = source;
+        if (!target?.isCurrent() || name.readOnly || !name.value.trim() || review.getSnapshot().status === "pending") return;
+        if (checking) { pendingSubmit = mode; return; }
+        void review.submit(name.value, mode === "preview").then(applied => {
+            if (mode === "apply" && applied && source === target) hide(panel.matches(":focus-within"));
+        });
     }
     function open() {
         close(false);
         options.beforeOpen?.();
         const target = capture();
         if (!target) return false;
-        if (!surface.claim()) { target.cancel(); return false; }
         source = target;
         const caret = target.selectionSet.ranges[target.selectionSet.primary]!;
         const offset = caret.head;
-        editor.viewport.revealOffset(offset, { vertical: "center-if-outside", horizontal: "nearest", affinity: caret.headAffinity ?? "after" });
+        revealSelectionHead(editor);
         name.readOnly = false;
         name.value = identifierAt(target.document.buffer, offset, nameLimit) ?? "";
-        edited = submitted = false;
+        edited = false;
+        pendingSubmit = undefined;
         checking = owner.provider.queryFeatureOptions(renameMethod, target.document).some(o => o.prepareProvider === true);
-        panel.hidden = false;
         render();
-        revealInPage(panel);
-        name.focus();
-        name.select();
+        name.setSelectionRange(0, name.value.length);
+        overlay.show({ revision: target.document.revision, offset, affinity: caret.headAffinity ?? "after" }, name);
         onAbort(target.signal, () => queueMicrotask(() => {
             if (source === target) close(panel.matches(":focus-within"));
         }));
@@ -160,20 +172,19 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
                     if (isFocused(name)) name.select();
                 }
                 render();
-                if (submitted) prepare();
+                if (pendingSubmit) submit(pendingSubmit);
             }, () => reject("The language provider could not prepare a rename here."));
         }
         return true;
     }
     listen(name, "input", () => {
         edited = true;
-        submitted = false;
+        pendingSubmit = undefined;
         review.cancel();
     });
     listen(panel, "keydown", event => {
         if (event.target === name || event.key === "Escape") editor.keymap.handle(event);
     });
-    stopPopupPropagation(panel, listen);
     listen(panel, "focusout", event => {
         if (checking && !panel.contains(event.relatedTarget as Node | null)) close(false);
     });
@@ -187,10 +198,11 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     }
     bind("rename.start", "Rename symbol", "F2", () => editor.getSnapshot().readOnlyReason === null, open, builtinKeyPriority.open);
     bind("rename.dismiss", "Dismiss rename", "Escape", () => !!source, arg => close(arg !== false), builtinKeyPriority.renameDismiss);
-    bind("rename.submit", "Preview or apply rename", "Enter", () => isFocused(name), () => {
+    bind("rename.submit", "Rename symbol", "Enter", () => isFocused(name), () => {
         if (shown) accept(shown);
-        else if (review.getSnapshot().status !== "pending") prepare();
+        else submit(options.review ? "preview" : "apply");
     }, builtinKeyPriority.renameSubmit);
-    element.querySelector(".st-viewport-surface")!.append(panel);
+    bind("rename.preview", "Preview rename", "Mod+Enter", () => isFocused(name),
+        () => submit("preview"), builtinKeyPriority.renameSubmit);
     return () => hide(false);
 }

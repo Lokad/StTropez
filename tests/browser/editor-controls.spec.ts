@@ -77,7 +77,7 @@ test("a host palette keeps Find, completion and review text legible", async ({ p
         await source.press("F2");
         const name = page.getByRole("textbox", { name: "New name" });
         await name.fill("palette");
-        await name.press("Enter");
+        await name.press("Control+Enter");
         const edits = page.getByLabel("Rename edits");
         for (const tag of ["del", "ins"]) {
             const excerpt = edits.locator(tag).filter({ hasText: /\S/ }).first();
@@ -171,7 +171,7 @@ test("clicking the rename status or disabled Apply keeps the next keystroke in t
     const apply = dialog.getByRole("button", { name: "Apply rename" });
     await expect(apply).toBeDisabled();
     await apply.click({ force: true });
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("Control+Enter");
     await expect(dialog.getByLabel("Rename edits")).toContainText("palettes");
     await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);');
 });
@@ -197,6 +197,26 @@ test("pointer inspection yields to the picker and one Escape closes it", async (
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(source).toBeFocused();
+    await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);');
+});
+
+test("clicking an allowed command action runs it once", async ({ page }) => {
+    const executed: string[] = [];
+    page.on("websocket", socket => socket.on("framesent", frame => {
+        const request = JSON.parse(frame.payload.toString());
+        if (request.method === "workspace/executeCommand") executed.push(request.params.command);
+    }));
+    await page.goto("/controls/");
+    await expect(page.locator(".st-color-swatch")).toBeVisible();
+    const source = page.getByRole("textbox", { name: "colors.ts" });
+    await source.press("Control+.");
+    const panel = page.getByRole("region", { name: "Quick fixes" });
+    const action = panel.getByRole("button", { name: "Provider status command", exact: true });
+    await expect(action).toBeEnabled();
+    expect(executed).toEqual([]);
+    await action.click();
+    await expect(panel.getByLabel("Quick-fix status")).toHaveText("Command completed.");
+    expect(executed).toEqual(["fixture.status"]);
     await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);');
 });
 

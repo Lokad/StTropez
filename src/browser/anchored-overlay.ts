@@ -235,7 +235,12 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
             listen(win.visualViewport, "scroll", schedule);
             listen(win.visualViewport, "resize", reconsider);
         }
-        schedule();
+        if (target) {
+            // A keyboard-opened field must receive the next key even before the next animation frame.
+            if (viewport.activity().pending) viewport.flush();
+            if (frame !== undefined) win.cancelAnimationFrame(frame);
+            position();
+        } else schedule();
     }
     function dispose(): void {
         if (disposed) return;
