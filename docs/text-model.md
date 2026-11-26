@@ -33,7 +33,8 @@ the start. `offsetAt({ line, column })` clamps long columns to content end.
 
 `line(n)` gives `from` and `to` excluding LF or CRLF. Its `.text`, `slice(from, to)` and `text()` copy the
 requested text. `chunks(from?, to?)` streams pieces that may split a line, code point or grapheme. Invalid
-coordinates throw. Use safe integer offsets in `[0, length]`, ordered endpoints, existing lines and
+coordinates throw a `RangeError`. For example, an out-of-bounds slice carries the code
+`invalid-utf-16-range`. Use safe integer offsets in `[0, length]`, ordered endpoints, existing lines and
 nonnegative columns. Versions share unchanged storage. `equals` can scan all unshared text.
 
 ### Edits

@@ -79,6 +79,28 @@ Paint order is comparison (10), occurrences (20), snippets (25), links (30), swa
 (40), Find (60), brackets (100), and character warnings and definition links (110). Ties follow registration
 order. Later layers can override custom properties. CSS determines class precedence.
 
+### Color lines with a stateful lexer
+
+For a lexer whose state carries across lines, call `attachLineTokenizer` once per pane. Return an
+immutable end state and decorations in document offsets. The helper retains rows before an edit and reads
+toward a distant viewport or minimap in small tasks. Each call to the host lexer runs synchronously.
+The editor disposes the attachment on unmount.
+
+```ts
+import { attachLineTokenizer, type TextEditor } from "sttropez/browser";
+
+export function colorFencedBlocks(editor: TextEditor) {
+    return attachLineTokenizer(editor, {
+        initialState: () => false,
+        tokenize(line, inside) {
+            const fence = line.text.startsWith("~~~");
+            return { endState: fence ? !inside : inside, decorations: inside || fence
+                ? [{ from: line.from, to: line.to, className: "host-code-block" }] : [] };
+        },
+    });
+}
+```
+
 ### Keep an annotation on its text
 
 Map an annotation through each document change. This example hides it if its text is deleted or a reload

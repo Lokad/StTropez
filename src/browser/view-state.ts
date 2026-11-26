@@ -1,3 +1,4 @@
+import { invalidRange } from "../core/bounds.ts";
 import type { Affinity } from "../core/positions.ts";
 import type { DocumentChange, DocumentId, DocumentSnapshot, DocumentView, ViewId } from "../core/workspace.ts";
 import type { Selection } from "../core/history.ts";
@@ -29,7 +30,7 @@ export function mapViewAnchor<T extends { revision: number; offset: number; affi
 export function selectionToRestore(document: DocumentSnapshot, view: DocumentView, state: ViewState, options: ViewRestoreOptions):
     { set: SelectionSet; source: ViewRestoreResult["selection"] } {
     const mode = options.selection ?? "captured", saved = state.folding;
-    if (mode !== "captured" && mode !== "current") throw new RangeError("Invalid view selection policy.");
+    if (mode !== "captured" && mode !== "current") invalidRange("view selection policy");
     if (mode === "current" || saved?.viewId === view.id && saved.revision !== document.revision)
         return { set: view.getSnapshot().selectionSet, source: "current" };
     const capture = state.selectionSet ?? { ranges: [state], primary: 0 }, length = document.buffer.length;

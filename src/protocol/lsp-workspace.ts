@@ -1,5 +1,5 @@
 import { emptyList } from "../core/empty-list.ts";
-import { isPositiveInteger } from "../core/bounds.ts";
+import { invalidRange, isPositiveInteger } from "../core/bounds.ts";
 import { applyEditMethod, didChangeMethod, executeCommandMethod } from "./lsp-methods.ts";
 import { wireLimits, isLspUri, isLspIdentityPart, ProtocolDecodeError, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
 import type { DocumentId, DocumentLanguage, DocumentSnapshot, ResourceLease, Workspace } from "../core/workspace.ts";
@@ -151,7 +151,7 @@ export class LspWorkspace {
 
     constructor(workspace: Workspace, options: LspWorkspaceOptions) {
         this.#workspace = workspace; this.#options = options;
-        if (!isPositiveInteger(options.maxScopes ?? wireLimits.scopes)) throw new RangeError("Invalid provider scope limit.");
+        if (!isPositiveInteger(options.maxScopes ?? wireLimits.scopes)) invalidRange("provider scope limit");
         this.#notifications = workspace.createNotificationScope(error => this.#report(error));
         this.#session = new LspSession(options, (epoch, id) => {
             const reply = this.#abandoned ?? this.#command?.reply;

@@ -1,7 +1,7 @@
 import { done, refused, stale, type Outcome } from "../core/outcome.ts";
 import { resolveControlStrings, type ControlStrings } from "./control-strings.ts";
 import { listenUntil } from "./listen.ts";
-import { isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
+import { invalidRange, isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
 import { mountInputCaret } from "./input-caret.ts";
 import { autoClosedPairs } from "./auto-closed-pairs.ts";
 import { automaticIndentation } from "./automatic-indentation.ts";
@@ -325,7 +325,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         validateRevealAlignment(align);
         if (typeof select !== "boolean" || typeof takeFocus !== "boolean") throw new TypeError("Invalid reveal flags.");
         if (expectedRevision !== undefined && !isNonNegativeInteger(expectedRevision))
-            throw new RangeError("Invalid reveal revision.");
+            invalidRange("reveal revision");
         if (disposed || !live()) return stale;
         if (input.disabled || resource.getSnapshot().state !== "ready" || composing || hostInsertion || activeCommand) {
             return refused("unavailable-view");
@@ -334,7 +334,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         if (expectedRevision !== undefined && revision !== expectedRevision) return stale;
         function offset(position: BufferPosition): number {
             if (!Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.column)) {
-                throw new RangeError("Invalid reveal position.");
+                invalidRange("reveal position");
             }
             const line = Math.max(0, Math.min(position.line, buffer.lineCount - 1));
             return buffer.offsetAt({ line, column: Math.max(0, position.column) });
@@ -349,7 +349,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             to = Math.max(first, last);
         } else {
             if (!Number.isSafeInteger(target.from) || !Number.isSafeInteger(target.to) || target.from > target.to)
-                throw new RangeError("Invalid reveal range.");
+                invalidRange("reveal range");
             from = Math.max(0, Math.min(target.from, buffer.length));
             to = Math.max(0, Math.min(target.to, buffer.length));
         }

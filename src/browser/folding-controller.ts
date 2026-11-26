@@ -1,3 +1,4 @@
+import { invalidRange } from "../core/bounds.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { Store, type Observable } from "../core/observable.ts";
@@ -33,7 +34,7 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
     const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
     if (editor.signal.aborted || !workspace.ownsDocumentView(view)) throw new Error("Invalid fold discovery view.");
     const delay = options.delayMs ?? 100;
-    if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid fold discovery delay.");
+    if (!Number.isFinite(delay) || delay < 0) invalidRange("fold discovery delay");
     const notifications = workspace.createNotificationScope();
     const cell = new Store<FoldingStatus>(Object.freeze({ status: "pending", revision: workspace.document(view.documentId).revision,
         regions: 0, collapsed: 0, groups: emptyList, message: "Discovering folds…" }), notifications);

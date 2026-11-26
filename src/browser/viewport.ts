@@ -1,6 +1,6 @@
 import { listenUntil } from "./listen.ts";
 import { editorElement } from "./editor-element.ts";
-import { isIndex, isNonNegativeInteger, isOffset, isPositiveInteger } from "../core/bounds.ts";
+import { invalidRange, isIndex, isNonNegativeInteger, isOffset, isPositiveInteger } from "../core/bounds.ts";
 import { clientBox, cssZoom, minimapWidth } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import { Store, type Observable } from "../core/observable.ts";
@@ -150,7 +150,7 @@ export type LineDecorator = (line: PresentedLine) => readonly InlineDecoration[]
 export type LineClass = (line: PresentedLine) => string | undefined;
 export type RevealAlignment = "start" | "center" | "nearest" | "center-if-outside";
 export function validateRevealAlignment(align: RevealAlignment): void {
-    if (align !== "start" && align !== "center" && align !== "nearest" && align !== "center-if-outside") throw new RangeError("Invalid reveal alignment.");
+    if (align !== "start" && align !== "center" && align !== "nearest" && align !== "center-if-outside") invalidRange("reveal alignment");
 }
 export type RevealOptions = Readonly<{ horizontal?: "center" | "nearest"; vertical?: "center" | "nearest" | "center-if-outside"; affinity?: Affinity }>;
 export type FoldLabels = Readonly<{
@@ -391,7 +391,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
         if (disposed || !live()) return false;
         const document = currentDocument(), folds = currentFolds();
         if (value && (!document || value.documentId !== documentId || value.revision !== document.revision || value.foldGeneration !== folds.generation || !value.index.matches(document.buffer, folds.index))) return false;
-        if (value && (!isPositiveInteger(value.id) || !Number.isFinite(value.lineHeight) || value.lineHeight <= 0)) throw new RangeError("Invalid comparison row capture.");
+        if (value && (!isPositiveInteger(value.id) || !Number.isFinite(value.lineHeight) || value.lineHeight <= 0)) invalidRange("comparison row capture");
         if (comparisonRows?.id === value?.id) return true;
         // At the top edge, newly inserted leading gaps must remain in view. At
         // other positions keep the same source row under the reader's eye.
@@ -400,7 +400,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
         comparisonRows = value && Object.freeze({ ...value }); rowGeneration++; schedule(); return true;
     }
     const validateScroll = (position: Readonly<{ top?: number; left?: number }>) => {
-        if ((position.top !== undefined && !Number.isFinite(position.top)) || (position.left !== undefined && !Number.isFinite(position.left))) throw new RangeError("Invalid scroll position.");
+        if ((position.top !== undefined && !Number.isFinite(position.top)) || (position.left !== undefined && !Number.isFinite(position.left))) invalidRange("scroll position");
     };
     const setScroll = (position: Readonly<{ top?: number; left?: number }>) => {
         if (disposed) return;
@@ -1118,9 +1118,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
             const scroll = { top: state.scrollTop, left: state.scrollLeft };
             validateScroll(scroll);
             if (value && (!isNonNegativeInteger(value.revision) || !isNonNegativeInteger(value.offset)
-                || !Number.isFinite(value.left) || value.left < 0 || value.affinity !== "before" && value.affinity !== "after")) throw new RangeError("Invalid horizontal view anchor.");
+                || !Number.isFinite(value.left) || value.left < 0 || value.affinity !== "before" && value.affinity !== "after")) invalidRange("horizontal view anchor");
             if (value?.revision === document.revision && value.offset > document.buffer.length) throw new RangeError("Horizontal view anchor is outside the document.");
-            if (vertical && (!isNonNegativeInteger(vertical.revision) || !isNonNegativeInteger(vertical.offset) || !Number.isFinite(vertical.topRemainder) || vertical.aligned !== undefined && vertical.aligned !== true)) throw new RangeError("Invalid vertical view anchor.");
+            if (vertical && (!isNonNegativeInteger(vertical.revision) || !isNonNegativeInteger(vertical.offset) || !Number.isFinite(vertical.topRemainder) || vertical.aligned !== undefined && vertical.aligned !== true)) invalidRange("vertical view anchor");
             if (vertical?.revision === document.revision && vertical.offset > document.buffer.length) throw new RangeError("Vertical view anchor is outside the document.");
             const selected = selectionToRestore(document, view, state, options);
             const folds = currentFolds();
@@ -1150,7 +1150,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
             const horizontal = options.horizontal ?? "center", vertical = options.vertical ?? "center", affinity = options.affinity ?? "after";
             if (horizontal !== "center" && horizontal !== "nearest"
                 || vertical !== "center" && vertical !== "nearest" && vertical !== "center-if-outside"
-                || affinity !== "after" && affinity !== "before") throw new RangeError("Invalid reveal options.");
+                || affinity !== "after" && affinity !== "before") invalidRange("reveal options");
             view.folding.reveal(currentFolds(), offset);
             anchor = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined;
             reveal = { revision: document.revision, foldGeneration: currentFolds().generation, offset, horizontal, vertical, affinity }; schedule();
@@ -1228,7 +1228,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
         if (disposed || !live()) return;
         const document = currentDocument();
         if (document?.revision !== renderedRevision || currentFolds().generation !== renderedFoldGeneration) return;
-        if (!isIndex(line, document.buffer.lineCount) || !Number.isFinite(column)) throw new RangeError("Invalid navigation column.");
+        if (!isIndex(line, document.buffer.lineCount) || !Number.isFinite(column)) invalidRange("navigation column");
         if (!renderedIndex.hiddenBy(line)) return withRow(line, columnScroll(column), undefined, work);
     }
     function isCompleteLine(buffer: TextBuffer, line: number, span = buffer.line(line)): boolean {
@@ -1380,7 +1380,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
             return "nextLine" in renderedIndex ? renderedIndex.nextLine(row, row < renderedIndex.rowAt(originLine) ? 1 : -1) : renderedIndex.lineAt(row);
         },
         navigationLine: (line, direction, count, page) => {
-            if (!isPositiveInteger(count)) throw new RangeError("Invalid row navigation.");
+            if (!isPositiveInteger(count)) invalidRange("row navigation");
             const index = page ? renderedIndex : currentFolds().index, at = Math.max(0, Math.min(index.visibleLineCount - 1, index.rowAt(line) + direction * count));
             return "nextLine" in index ? index.nextLine(at, direction) : index.lineAt(at);
         }

@@ -1,4 +1,4 @@
-import { isPositiveInteger } from "../core/bounds.ts";
+import { invalidRange, isPositiveInteger } from "../core/bounds.ts";
 import { wireLimits, rpcCodes, cancelledRequest, closedConnection, RpcError, isRecord, isJson, freezeParsedJson } from "./wire.ts";
 import type { JsonValue } from "./wire.ts";
 export type RpcId = string | number | null;
@@ -53,7 +53,7 @@ export class JsonRpcConnection {
         this.#timeoutMs = options.timeoutMs ?? wireLimits.timeoutMs; this.#maxPending = options.maxPending ?? wireLimits.pendingRequests; this.#maxMessageUnits = options.maxMessageUnits ?? wireLimits.messageUnits;
         this.#maxJsonNodes = options.maxJsonNodes ?? this.#maxMessageUnits;
         try {
-            if (![this.#timeoutMs, this.#maxPending, this.#maxMessageUnits, this.#maxJsonNodes].every(isPositiveInteger)) throw new RangeError("Invalid RPC limits.");
+            if (![this.#timeoutMs, this.#maxPending, this.#maxMessageUnits, this.#maxJsonNodes].every(isPositiveInteger)) invalidRange("RPC limits");
             this.#stopListening = transport.subscribe({ message: message => this.#receive(message), close: reason => this.dispose(reason) });
         } catch (error) {
             this.dispose(error instanceof Error ? error : closedConnection());
@@ -81,7 +81,7 @@ export class JsonRpcConnection {
         methodName(method);
         if (this.#disposed) throw closedConnection();
         if (this.#pending.size >= this.#maxPending) throw new RpcError(rpcCodes.pendingLimit, "Too many pending RPC requests.");
-        if (!isPositiveInteger(timeoutMs)) throw new RangeError("Invalid RPC deadline.");
+        if (!isPositiveInteger(timeoutMs)) invalidRange("RPC deadline");
         const id = ++this.#serial, message = { jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) };
         if (params !== undefined && !isRecord(params) && !Array.isArray(params)) throw new TypeError("RPC parameters must be structured.");
         const encoded = this.#encode(message);

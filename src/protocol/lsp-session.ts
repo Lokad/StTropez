@@ -1,5 +1,5 @@
 import { emptyList } from "../core/empty-list.ts";
-import { isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
+import { invalidRange, isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
 import { applyEditMethod, codeActionMethod, colorPresentationMethod, completionMethod,
     definitionMethod, didChangeMethod, didCloseMethod, didOpenMethod, documentColorMethod,
     documentHighlightMethod, documentLinkMethod, executeCommandMethod, foldingRangeMethod,
@@ -145,7 +145,7 @@ export class LspSession {
         this.#initializeBase = jsonSnapshot({ processId: null, rootUri: options.rootUri ?? null,
             ...(options.clientInfo ? { clientInfo: options.clientInfo } : {}), initializationOptions: options.initializationOptions ?? null }) as Readonly<Record<string, JsonValue>>;
         this.#maxDocuments = options.maxDocuments ?? 100; this.#maxDocumentUnits = options.maxDocumentUnits ?? defaultDocumentUnits; this.#maxTotalUnits = options.maxTotalUnits ?? 16 * 1024 * 1024;
-        if (![this.#maxDocuments, this.#maxDocumentUnits, this.#maxTotalUnits].every(isPositiveInteger)) throw new RangeError("Invalid LSP document limits.");
+        if (![this.#maxDocuments, this.#maxDocumentUnits, this.#maxTotalUnits].every(isPositiveInteger)) invalidRange("LSP document limits");
         this.#scope = new NotificationScope(error => this.#report(error));
         this.#store = new Store(this.#snapshot("disconnected", null), this.#scope);
         this.getSnapshot = this.#store.observable.getSnapshot;

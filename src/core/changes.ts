@@ -1,4 +1,4 @@
-import { isNonNegativeInteger } from "./bounds.ts";
+import { invalidRange, isNonNegativeInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 
 /** Offsets are UTF-16 code units in the original document. Ranges are half-open. */
@@ -21,7 +21,7 @@ export function changedTextEdits(buffer: TextBuffer, edits: readonly TextEdit[])
 }
 
 export function validateTextEdits(length: number, edits: readonly TextEdit[]): void {
-    if (!isNonNegativeInteger(length)) throw new RangeError("Invalid document length.");
+    if (!isNonNegativeInteger(length)) invalidRange("document length");
     let end = 0;
     for (const edit of edits) {
         if (!Number.isSafeInteger(edit.from) || !Number.isSafeInteger(edit.to) || edit.from < end

@@ -2,7 +2,7 @@ import { done, failed as failure, refused, stale, type Outcome } from "../core/o
 import type { TextEdit } from "../core/changes.ts";
 import { onAbort } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
-import { isOffsetRange } from "../core/bounds.ts";
+import { invalidRange, isOffsetRange } from "../core/bounds.ts";
 import { LiteralSearch } from "../core/search.ts";
 import type { TextEditor, TextEditorActivity } from "./text-editor.ts";
 import type { DocumentSnapshot, DocumentView, EditResult, Workspace } from "../core/workspace.ts";
@@ -98,7 +98,7 @@ export function createFindController(editor: TextEditor, options: FindController
 
 export function findForView(workspace: Workspace, editor: FindHost, options: FindControllerOptions = {}, viewport?: TextViewport): FindController {
     const backend = options.regularExpressionBackend, regexDelay = options.regularExpressionDelayMs ?? 80;
-    if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) throw new RangeError("Invalid regular-expression query delay.");
+    if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) invalidRange("regular-expression query delay");
     if (editor.activity().disposed || !workspace.ownsDocumentView(editor.view)) throw new Error("Find requires the captured document view.");
     const documentId = editor.view.documentId, resource = workspace.resource(documentId), lease = workspace.acquire(documentId), owner = editor.element.ownerDocument, win = owner.defaultView!;
     const viewSnapshot = () => editor.view.getSnapshot();
@@ -171,7 +171,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
     }
     const emptyMatches: readonly SearchMatch[] = emptyList;
     const matchesIn = (from: number, to: number, capture = store.get()): readonly SearchMatch[] => {
-        if (!isOffsetRange(from, to)) throw new RangeError("Invalid match range.");
+        if (!isOffsetRange(from, to)) invalidRange("match range");
         const state = store.get();
         if (!valid() || capture.revision !== state.revision || capture.matchesVersion !== state.matchesVersion
             || readDocument().revision !== state.revision) return emptyMatches;

@@ -1,4 +1,4 @@
-import { isNonNegativeInteger, isOffset, isPositiveInteger } from "./bounds.ts";
+import { invalidRange, isNonNegativeInteger, isOffset, isPositiveInteger } from "./bounds.ts";
 import { applyTextEdits } from "./changes.ts";
 import { lineEnding } from "./newlines.ts";
 import { PositionMap } from "./positions.ts";
@@ -17,7 +17,7 @@ export type InsertionText = Readonly<{ text: string; mapping: PositionMapping;
 
 export function validateInsertionIndentation(value: InsertionIndentation): void {
     if (!isPositiveInteger(value.tabSize) || value.tabSize > 256)
-        throw new RangeError("Invalid insertion indentation.");
+        invalidRange("insertion indentation");
 }
 /** Read only leading whitespace before the insertion, in bounded source slices. */
 export function insertionContext(buffer: TextBuffer, offset: number, indentation: InsertionIndentation): InsertionContext {
@@ -45,7 +45,7 @@ export function reindentInsertionText(value: string, sourceColumns: number, cont
     if (!isNonNegativeInteger(context.columns)
         || !isNonNegativeInteger(sourceColumns)
         || !isNonNegativeInteger(maxUnits))
-        throw new RangeError("Invalid insertion text context or limit.");
+        invalidRange("insertion text context or limit");
     const changes: { from: number; to: number; insert: string | number }[] = [];
     const runs: { from: number; to: number; columns: number; tabEnds: number[] }[] = [];
     let length = value.length;
@@ -89,7 +89,7 @@ export function reindentInsertionText(value: string, sourceColumns: number, cont
         return low ? run.tabEnds[(low - 1) * 2 + 1]! + offset - run.tabEnds[(low - 1) * 2]! : offset - run.from;
     };
     const mapPosition = (offset: number, affinity: Affinity = "after"): number => {
-        if (!isOffset(offset, value.length) || affinity !== "before" && affinity !== "after") throw new RangeError("Invalid insertion marker.");
+        if (!isOffset(offset, value.length) || affinity !== "before" && affinity !== "after") invalidRange("insertion marker");
         const run = preceding(runs, offset);
         if (run && offset <= run.to) {
             const start = mapping.map(run.from, "before").offset;

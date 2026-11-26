@@ -1,4 +1,4 @@
-import { isNonNegativeInteger, isOffsetRange, isPositiveInteger } from "./bounds.ts";
+import { invalidRange, isNonNegativeInteger, isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import { defaultIgnorable } from "./default-ignorable.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { highSurrogate, lowSurrogate } from "./utf16.ts";
@@ -21,11 +21,11 @@ export function characterWarningLabel(warning: Pick<CharacterWarning, "kind" | "
     return `${labels[warning.kind]} (U+${warning.codePoint.toString(16).toUpperCase().padStart(4, "0")})`;
 }
 function bounds(length: number, from: number, to: number) {
-    if (!isOffsetRange(from, to, length)) throw new RangeError("Invalid character-warning range.");
+    if (!isOffsetRange(from, to, length)) invalidRange("character-warning range");
 }
 function limits(options: CharacterWarningLimits) {
     const maxUnits = options.maxUnits ?? 4096, maxWarnings = options.maxWarnings ?? 256;
-    if (!Number.isSafeInteger(maxUnits) || maxUnits < 2 || !isPositiveInteger(maxWarnings)) throw new RangeError("Invalid character-warning limits.");
+    if (!Number.isSafeInteger(maxUnits) || maxUnits < 2 || !isPositiveInteger(maxWarnings)) invalidRange("character-warning limits");
     return { maxUnits, maxWarnings };
 }
 
@@ -48,7 +48,7 @@ export class CharacterWarnings {
         Object.freeze(this);
     }
     kind(codePoint: number, offset = 0): CharacterWarningKind | null {
-        if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff || !isNonNegativeInteger(offset)) throw new RangeError("Invalid character-warning position.");
+        if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff || !isNonNegativeInteger(offset)) invalidRange("character-warning position");
         if (this.#allowed.has(codePoint) || codePoint < 128 && codePoint !== 11 && codePoint !== 12) return null;
         let kind: CharacterWarningKind | undefined;
         if (codePoint === 0xfeff) { if (offset === 0) return null; kind = "bom"; }

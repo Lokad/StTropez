@@ -1,3 +1,4 @@
+import { invalidRange } from "./bounds.ts";
 import { basePattern, extendPattern } from "./word-patterns.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { lineContentEnd } from "./newlines.ts";
@@ -96,7 +97,7 @@ export function wordCommandOffset(buffer: TextBuffer, offset: number, direction:
 export function wordBoundary(buffer: TextBuffer, offset: number, direction: -1 | 1, bounds: Bounds): number {
     const { from, to } = bounds;
     if (![offset, from, to].every(Number.isSafeInteger) || from < 0 || from > offset || offset > to || to > buffer.length) {
-        throw new RangeError("Invalid word command target.");
+        invalidRange("word command target");
     }
     return scan(buffer, offset, direction, bounds);
 }

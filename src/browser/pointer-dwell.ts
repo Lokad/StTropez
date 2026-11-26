@@ -1,3 +1,4 @@
+import { invalidRange } from "../core/bounds.ts";
 import { listenUntil, onAbort } from "./listen.ts";
 import type { DocumentId } from "../core/workspace.ts";
 import type { Affinity } from "../core/positions.ts";
@@ -13,7 +14,7 @@ export function observePointerDwell(editor: TextEditor, listener: (position: Poi
     options: PointerDwellOptions = {}): PointerDwell {
     const { element, view, viewport } = editor, win = element.ownerDocument.defaultView!;
     const delay = options.delayMs ?? 300;
-    if (!Number.isFinite(delay) || delay < 0 || delay > 2147483647) throw new RangeError("Invalid pointer dwell delay.");
+    if (!Number.isFinite(delay) || delay < 0 || delay > 2147483647) invalidRange("pointer dwell delay");
     if (editor.signal.aborted) throw new Error("Pointer dwell needs a live editor.");
     const events = new AbortController(), signal = events.signal;
     const listen = listenUntil(signal);

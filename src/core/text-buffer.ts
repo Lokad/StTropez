@@ -1,4 +1,4 @@
-import { isIndex, isNonNegativeInteger, isOffsetRange } from "./bounds.ts";
+import { invalidRange, isIndex, isNonNegativeInteger, isOffsetRange } from "./bounds.ts";
 import { changedTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { PositionMap } from "./positions.ts";
@@ -100,7 +100,7 @@ function joinEdit(left: Root, insert: string, right: Root): Root {
     return join(join(left, original(insert)), right);
 }
 function validateRange(length: number, from: number, to = from): void {
-    if (!isOffsetRange(from, to, length)) throw new RangeError("Invalid UTF-16 range.");
+    if (!isOffsetRange(from, to, length)) invalidRange("UTF-16 range");
 }
 /** Walk owned nodes rather than comparing strings. Unshared text ends the proof. */
 function* sharedEdge(a: Root, b: Root, side: "start" | "end", range: PairRange): Generator<number> {
@@ -312,12 +312,12 @@ export class TextBuffer {
     offsetAt(position: number | BufferPosition): number {
         if (typeof position !== "number") {
             if (!position || !Number.isSafeInteger(position.line) || !isNonNegativeInteger(position.column))
-                throw new RangeError("Invalid line or column.");
+                invalidRange("line or column");
             const start = this.offsetAt(position.line);
             return Math.min(start + position.column, lineContentEnd(this, position.line));
         }
         let line = position;
-        if (!isIndex(line, this.lineCount)) throw new RangeError("Invalid line.");
+        if (!isIndex(line, this.lineCount)) invalidRange("line");
         if (line === 0) return 0;
         let node = this.#root!, offset = 0;
         while (node.kind === "branch") {

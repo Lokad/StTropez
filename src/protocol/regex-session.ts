@@ -1,6 +1,6 @@
 import { regexMatches, regexReplacement } from "../core/regex-search.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
-import { isPositiveInteger } from "../core/bounds.ts";
+import { invalidRange, isPositiveInteger } from "../core/bounds.ts";
 import { regexErrorLimit, regexIdentity, regexOptions, regexOutputLimit, regexProtocolVersion, regexQuery } from "./regex.ts";
 import type { RegexReply, RegexRequest, RegexResult } from "./regex.ts";
 
@@ -44,7 +44,7 @@ export class RegexSession {
                 throw new RangeError("Unsupported regex capture.");
             if (request.text !== undefined) {
                 if (request.source !== id || typeof request.text !== "string" || request.text.length !== request.length)
-                    throw new RangeError("Invalid regex source.");
+                    invalidRange("regex source");
                 this.source = { id, revision, text: request.text };
             }
             const source = this.source;

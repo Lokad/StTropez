@@ -1,10 +1,11 @@
+import { invalidRange } from "./bounds.ts";
 import type { DiffHunk } from "./diff.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { partitionPoint } from "./bound-search.ts";
 
 /** Project a fractional source row through completed, ordered diff ranges. */
 export function comparisonLine(hunks: readonly DiffHunk[], side: "baseline" | "working", line: number, baseline: TextBuffer, working: TextBuffer): number {
-    if (!Number.isFinite(line)) throw new RangeError("Invalid comparison row.");
+    if (!Number.isFinite(line)) invalidRange("comparison row");
     const other = side === "baseline" ? "working" : "baseline", source = side === "baseline" ? baseline : working, target = side === "baseline" ? working : baseline;
     const at = Math.min(source.lineCount - 1, Math.max(0, line));
     const low = partitionPoint(hunks.length, index => hunks[index]![side].lineFrom <= at);

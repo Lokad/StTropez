@@ -1,4 +1,4 @@
-import { isOffsetRange, isPositiveInteger } from "./bounds.ts";
+import { invalidRange, isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import type { FoldRange, FoldRegion } from "./folding.ts";
 import { movedCollapsedRegions, prepareFoldRanges } from "./folding.ts";
@@ -34,7 +34,7 @@ export function discoverIndentationFolds(buffer: TextBuffer, options: Indentatio
 }
 function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work: Work): Generator<void, readonly DiscoveredFold[]> {
     const tabSize = options.tabSize ?? 4, markers: { start: string; end: string; group: string }[] = [];
-    if (!isPositiveInteger(tabSize) || tabSize > 256) throw new RangeError("Invalid folding tab size.");
+    if (!isPositiveInteger(tabSize) || tabSize > 256) invalidRange("folding tab size");
     let prefixUnits = 1;
     for (const value of options.markers ?? []) {
         const marker = { ...value }; work.workUnits++;
@@ -115,7 +115,7 @@ function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work:
 export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly DiscoveredFold[], previous: readonly FoldRegion[]): readonly FoldRange[] {
     let candidates = discovered.map(value => {
         if (!isOffsetRange(value.from, value.to, buffer.length) || value.from === value.to
-            || value.group !== undefined && !value.group) throw new RangeError("Invalid discovered fold range.");
+            || value.group !== undefined && !value.group) invalidRange("discovered fold range");
         return { ...value, ...(discoveredRows.get(buffer)?.get(value) ?? { lineFrom: buffer.lineAt(value.from), lineTo: buffer.lineAt(value.to - 1) + 1 }) };
     });
     const moved = movedCollapsedRegions(buffer, previous);

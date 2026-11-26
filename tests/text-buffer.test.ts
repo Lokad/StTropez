@@ -88,7 +88,9 @@ for (const text of ["", "\n", "\r\n", "a\r\nb\r\n", "a\rb\n\r", "\ud800x\udc00",
             assert.equal(buffer.replace(0, 0, ""), buffer);
             for (const [from, to] of [[-1, 0], [0, text.length + 1], [1.5, 2], [2, 1], [NaN, 0]] as const) {
                 assert.throws(() => buffer.replace(from, to, "x"), RangeError);
-                assert.throws(() => buffer.slice(from, to), RangeError);
+                assert.throws(() => buffer.slice(from, to), {
+                    name: "RangeError", code: "invalid-utf-16-range", message: "Invalid UTF-16 range.",
+                });
                 assert.throws(() => buffer.chunks(from, to), RangeError);
             }
             for (const value of [-1, 0.5, NaN, Infinity]) {

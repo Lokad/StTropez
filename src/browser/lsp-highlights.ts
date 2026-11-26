@@ -1,3 +1,4 @@
+import { invalidRange } from "../core/bounds.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { documentHighlightMethod } from "../protocol/lsp-methods.ts";
 import { Store, type Observable } from "../core/observable.ts";
@@ -22,7 +23,7 @@ const identifier = new RegExp(`^(?:\\$|${codeWordConstituentPattern})+$`, "u");
 export function mountOccurrences(editor: TextEditor, owner: LspDocumentOwner,
     { delayMs: delay = 150 }: Readonly<{ delayMs?: number }>): LspHighlightController {
     const { workspace, view } = editor, documentId = view.documentId, win = editor.element.ownerDocument.defaultView!;
-    if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid highlight delay.");
+    if (!Number.isFinite(delay) || delay < 0) invalidRange("highlight delay");
     const { provider } = owner;
     const client = highlightClient(owner);
     const notifications = workspace.createNotificationScope(), cell = new Store<LspHighlightSnapshot>(Object.freeze({ status: "idle", documentId,

@@ -4,7 +4,7 @@ import { fixtureModules } from "../helpers/fixture-modules.ts";
 const serveModules = fixtureModules({
     core: "src/index.ts",
     viewport: "src/browser/viewport.ts",
-    editor: "src/browser/text-editor.ts",
+    editor: "src/browser/index.ts",
 });
 
 test.beforeEach(async ({ page }) => {
@@ -128,4 +128,63 @@ test("a retained diagnostic, swatch and point follow typing and history in a scr
     await expect(page.locator(".missing-again")).toHaveCount(0);
     expect(await page.evaluate(() => (window as unknown as { clearMarks(): boolean }).clearMarks())).toBe(false);
     await expect(page.locator(".swatch, .test-diagnostic, .missing-again")).toHaveCount(0);
+});
+
+test("a distant pane receives the correct incoming lexical state after editing or reloading its document", async ({ page }) => {
+    const result = await page.evaluate(async () => {
+        const path = "/viewport-decorations/";
+        const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { attachLineTokenizer, mountTextEditor } = await import(path + "editor.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const text = "body\n".repeat(1_500);
+        const file = workspace.createTextResource({ scope: "test", resource: "source", variant: "work" }, "Source", { value: text });
+        const host = document.createElement("main");
+        host.style.cssText = "height:180px;width:400px";
+        document.body.append(host);
+        const editor = mountTextEditor(host, workspace, file.id);
+        const reads: number[] = [];
+        attachLineTokenizer(editor, {
+            initialState: () => false,
+            tokenize(line, inside) {
+                reads.push(line.from);
+                const endState = line.text.startsWith("/*") || inside && !line.text.startsWith("*/");
+                return { endState, decorations: [{ from: line.from, to: line.to, className: endState ? "block" : "plain" }] };
+            },
+        });
+        async function waitForPaint(className: string) {
+            const end = performance.now() + 5_000;
+            while (!host.querySelector(".st-viewport-row ." + className)) {
+                if (performance.now() > end) throw new Error("Missing lexical class " + className);
+                await new Promise(resolve => requestAnimationFrame(resolve));
+            }
+        }
+        const jump = () => {
+            editor.reveal({ line: 1_200, column: 0 }, { align: "start" });
+            editor.viewport.flush();
+        };
+        try {
+            jump();
+            const jumpReads = reads.length;
+            await waitForPaint("plain");
+            reads.length = 0;
+            const from = workspace.document(file.id).buffer.offsetAt(1_000);
+            workspace.edit({ documentId: file.id, expectedRevision: 0, origin: "human", edits: [{ from, to: from, insert: "/*" }] });
+            await waitForPaint("block");
+            const keptPrefix = reads.length > 0 && Math.min(...reads) === from;
+            workspace.undo({ documentId: file.id, expectedRevision: 1 });
+            await waitForPaint("plain");
+            const load = workspace.beginLoad(file);
+            load.accept({ value: "/*" + text });
+            jump();
+            await waitForPaint("block");
+            editor.dispose();
+            return { jumpReads, keptPrefix, subscriptions: workspace.diagnostics().subscriptions };
+        } finally {
+            editor.dispose();
+            host.remove();
+        }
+    });
+    expect(result.jumpReads).toBeLessThan(1_200);
+    expect(result.keptPrefix).toBe(true);
+    expect(result.subscriptions).toBe(0);
 });

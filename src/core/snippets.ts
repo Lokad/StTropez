@@ -1,5 +1,5 @@
 import { emptyList } from "./empty-list.ts";
-import { isNonNegativeInteger } from "./bounds.ts";
+import { invalidRange, isNonNegativeInteger } from "./bounds.ts";
 import { applyTextEdits, validateTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { PositionMap } from "./positions.ts";
@@ -188,7 +188,7 @@ function contextualEdit(buffer: TextBuffer, stops: readonly SnippetStop[], activ
 /** The provider's choice text is contextual only at explicit choice acceptance. Ordinary
  * paste and composition stay literal; editor newline commands opt into contextual transfer. */
 export function snippetChoiceText(stop: SnippetStop, range: SnippetOccurrence, choice: number, maxUnits = Number.MAX_SAFE_INTEGER): string | undefined {
-    if (!isNonNegativeInteger(maxUnits)) throw new RangeError("Invalid snippet insertion limit.");
+    if (!isNonNegativeInteger(maxUnits)) invalidRange("snippet insertion limit");
     const value = stop.choices[choice];
     if (value === undefined) return;
     if (range.insertion) {
@@ -209,7 +209,7 @@ export function snippetChoiceText(stop: SnippetStop, range: SnippetOccurrence, c
     if (value.length > maxUnits) throw new RangeError("Snippet choice exceeds the insertion limit."); return value;
 }
 export function planSnippetChoice(buffer: TextBuffer, stops: readonly SnippetStop[], active: number, choice: number, primary = 0, maxUnits = Number.MAX_SAFE_INTEGER): SnippetEditPlan | undefined {
-    if (!isNonNegativeInteger(maxUnits)) throw new RangeError("Invalid snippet document limit.");
+    if (!isNonNegativeInteger(maxUnits)) invalidRange("snippet document limit");
     const stop = stops[active]; if (!stop || stop.index === 0 || !stop.ranges[primary] || stop.choices[choice] === undefined) return;
     let remaining = maxUnits - buffer.length + stop.ranges.reduce((n, range) => n + range.to - range.from, 0);
     if (remaining < 0) throw new RangeError("Snippet choice exceeds the document limit.");

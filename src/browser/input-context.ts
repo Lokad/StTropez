@@ -1,3 +1,4 @@
+import { invalidRange } from "../core/bounds.ts";
 import { PositionMap, composePositionMaps } from "../core/positions.ts";
 import { importText } from "../core/newlines.ts";
 import type { Affinity } from "../core/positions.ts";
@@ -11,7 +12,7 @@ export const inputContextUnits = defaultContextUnits * 2 + defaultSelectedUnits;
 /** A large selection is represented by one selected placeholder, never by exporting its contents. */
 export function inputContext(buffer: TextBuffer, selection: Selection, contextUnits = defaultContextUnits, selectedUnits = defaultSelectedUnits): InputContext {
     const low = Math.min(selection.anchor, selection.head), high = Math.max(selection.anchor, selection.head);
-    if (![low, high, contextUnits, selectedUnits].every(Number.isSafeInteger) || low < 0 || high > buffer.length || contextUnits < 0 || selectedUnits < 0) throw new RangeError("Invalid input context.");
+    if (![low, high, contextUnits, selectedUnits].every(Number.isSafeInteger) || low < 0 || high > buffer.length || contextUnits < 0 || selectedUnits < 0) invalidRange("input context");
     const from = Math.max(0, low - contextUnits), to = Math.min(buffer.length, high + contextUnits), compressed = high - low > selectedUnits;
     const virtual = compressed ? buffer.slice(from, low) + "\ufffc" + buffer.slice(high, to) : buffer.slice(from, to);
     const collapsed = new PositionMap(to - from, compressed ? [{ from: low - from, to: high - from, insert: "\ufffc" }] : []);

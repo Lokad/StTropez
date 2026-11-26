@@ -1,5 +1,5 @@
 import { emptyList } from "../core/empty-list.ts";
-import { isNonNegativeInteger, isOffsetRange } from "../core/bounds.ts";
+import { invalidRange, isNonNegativeInteger, isOffsetRange } from "../core/bounds.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import { composePositionMaps, positionMapSize } from "../core/positions.ts";
 import type { PositionMapping } from "../core/positions.ts";
@@ -171,7 +171,7 @@ export function createDecorationLayers(current: () => DocumentSnapshot | undefin
                 invalidate(fromLine = 0, toLine?: number) {
                     if (disposed || !entries.includes(entry)) return;
                     if (!isNonNegativeInteger(fromLine) || (toLine !== undefined && (!Number.isSafeInteger(toLine) || toLine < fromLine)))
-                        throw new RangeError("Invalid decoration line interval.");
+                        invalidRange("decoration line interval");
                     invalidate(row => fromLine <= row.line && (toLine === undefined || row.line < toLine), entry.minimap);
                 },
                 dispose() {

@@ -1,3 +1,4 @@
+export { attachLineTokenizer, type LineTokenizerOptions } from "./line-tokenizer.ts";
 export { observePointerDwell } from "./pointer-dwell.ts";
 export type { PointerDwell, PointerDwellOptions, PointerDwellPosition } from "./pointer-dwell.ts";
 export type { EditorCommand, EditorCommands, EditorKeymap } from "./command-registry.ts";

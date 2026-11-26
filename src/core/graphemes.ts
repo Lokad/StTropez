@@ -1,4 +1,4 @@
-import { isOffsetRange, isPositiveInteger } from "./bounds.ts";
+import { invalidRange, isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { highSurrogate, lowSurrogate } from "./utf16.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
@@ -15,7 +15,7 @@ export class GraphemeLimitError extends Error {
     constructor(limit: "operations" | "clusters") { super(`Grapheme segmentation exceeded its ${limit} limit.`); this.name = "GraphemeLimitError"; this.limit = limit; }
 }
 let publish: (source: GraphemeSource, from: number, to: number, blocks: readonly (readonly number[])[], count: number) => GraphemeIndex;
-const range = (length: number, from: number, to: number) => { if (!isOffsetRange(from, to, length)) throw new RangeError("Invalid grapheme range."); };
+const range = (length: number, from: number, to: number) => { if (!isOffsetRange(from, to, length)) invalidRange("grapheme range"); };
 
 /** Immutable extended-grapheme boundaries. Coordinates are absolute UTF-16 offsets. */
 export class GraphemeIndex {
@@ -27,7 +27,7 @@ export class GraphemeIndex {
     boundaryAt(index: number): number { range(this.boundaryCount, index, index + 1); return this.#blocks[Math.floor(index / 256)]![index % 256]!; }
     clusterAt(index: number): GraphemeRange { range(this.clusterCount, index, index + 1); return Object.freeze({ from: this.boundaryAt(index), to: this.boundaryAt(index + 1) }); }
     #floorIndex(offset: number): number {
-        if (!Number.isSafeInteger(offset) || offset < this.from || offset > this.to) throw new RangeError("Invalid grapheme offset.");
+        if (!Number.isSafeInteger(offset) || offset < this.from || offset > this.to) invalidRange("grapheme offset");
         let low = 0, high = this.boundaryCount; while (low + 1 < high) { const mid = (low + high) >>> 1; if (this.boundaryAt(mid) <= offset) low = mid; else high = mid; } return low;
     }
     isBoundary(offset: number): boolean { return this.boundaryAt(this.#floorIndex(offset)) === offset; }
@@ -93,7 +93,7 @@ function drive(iterator: Generator<void, GraphemeIndex | null> | null, c: Counte
 function create(source: GraphemeSource, length: number, options: GraphemeOptions): GraphemeCursor {
     const from = options.from ?? 0, to = options.to ?? length; range(length, from, to);
     const maxOperations = options.maxOperations ?? Math.max(1_000_000, (to - from) * 16), maxClusters = options.maxClusters ?? Math.max(1_000_000, to - from);
-    if (![maxOperations, maxClusters].every(isPositiveInteger)) throw new RangeError("Invalid grapheme limits.");
+    if (![maxOperations, maxClusters].every(isPositiveInteger)) invalidRange("grapheme limits");
     const c: Counters = { phase: "scan", scanned: 0, reads: 0, points: 0, boundaries: 0, clusters: 0, work: 0 }; return drive(segment(source, from, to, maxOperations, maxClusters, c), c);
 }
 export function createGraphemeCursor(source: TextBuffer | string, options: GraphemeOptions = {}): GraphemeCursor { return create(typeof source === "string" ? Object.freeze({ kind: "string", text: source }) : Object.freeze({ kind: "buffer", buffer: source }), source.length, options); }

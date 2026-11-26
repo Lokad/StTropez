@@ -1,5 +1,5 @@
 import { emptyList } from "../core/empty-list.ts";
-import { isOffsetRange } from "../core/bounds.ts";
+import { invalidRange, isOffsetRange } from "../core/bounds.ts";
 import { splitsTextPair, textExcerpt } from "../core/utf16.ts";
 import { wireLimits, staleRequest } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, EditOrigin, EditRequest, Workspace } from "../core/workspace.ts";
@@ -81,7 +81,7 @@ export function describeLspEdit(source: Pick<LspDocumentSnapshot, "buffer" | "re
 /** Read notes for [first, end) across the edit's documents in provider order. */
 export function readLspEditNotes(edit: LspWorkspaceEdit | null, title: (documentId: string) => string,
     first: number, end: number): LspEditNotes {
-    if (!isOffsetRange(first, end)) throw new RangeError("Invalid edit note range.");
+    if (!isOffsetRange(first, end)) invalidRange("edit note range");
     const notes: LspWorkspaceEditNote[] = [];
     let count = 0;
     for (const change of edit?.documents ?? emptyList) {

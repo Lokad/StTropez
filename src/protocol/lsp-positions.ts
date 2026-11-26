@@ -1,3 +1,4 @@
+import { invalidRange } from "../core/bounds.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { isLspUint } from "./wire.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
@@ -125,7 +126,7 @@ export class LspLineIndex {
             const nextA = left < lf ? this.buffer.offsetAt(left + 1) : Infinity, nextB = right < this.bare.length ? this.bare[right]! + 1 : Infinity;
             if (a > nextB) high = left - 1; else if (b > nextA) low = left + 1; else return Math.max(a, b);
         }
-        throw new RangeError("Invalid LSP line.");
+        invalidRange("LSP line");
     }
     at(offset: number): LspPosition {
         if (!isLspUint(offset) || offset > this.buffer.length || interior(this.buffer, offset)) throw new RangeError("Offset is outside text or inside a CRLF pair.");
@@ -133,7 +134,7 @@ export class LspLineIndex {
         return Object.freeze({ line: line + cr, character: offset - start });
     }
     offsetAt(position: LspPosition): number {
-        if (!position || !isLspUint(position.line) || !isLspUint(position.character)) throw new RangeError("Invalid UTF-16 LSP position.");
+        if (!position || !isLspUint(position.line) || !isLspUint(position.character)) invalidRange("UTF-16 LSP position");
         if (position.line >= this.lineCount) return this.buffer.length;
         const from = this.start(position.line); let to = this.buffer.length;
         if (position.line + 1 < this.lineCount) { const next = this.start(position.line + 1);

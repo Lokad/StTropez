@@ -1,4 +1,4 @@
-import { isNonNegativeInteger, isOffset } from "./bounds.ts";
+import { invalidRange, isNonNegativeInteger, isOffset } from "./bounds.ts";
 import { codeWordConstituentPattern } from "./word-patterns.ts";
 import { splitsSurrogatePair } from "./utf16.ts";
 /** Native assertions retain inline flag semantics; guards restrict them to editor rows.
@@ -32,7 +32,7 @@ export function regexExpression(pattern: string, matchCase = true, wholeWord = f
 }
 /** Use in the worker: a single native match can take unbounded time. */
 export function regexMatches(text: string, pattern: string, matchCase = true, wholeWord = false, from = 0) {
-    if (!isOffset(from, text.length) || splitsSurrogatePair(text, from)) throw new RangeError("Invalid regex start offset.");
+    if (!isOffset(from, text.length) || splitsSurrogatePair(text, from)) invalidRange("regex start offset");
     // The platform iterator handles Unicode zero-width progression, including EOF.
     // Multiline anchors match editor lines; dot still requires an explicit class to cross lines.
     const expression = regexExpression(pattern, matchCase, wholeWord);
@@ -43,7 +43,7 @@ export function regexMatches(text: string, pattern: string, matchCase = true, wh
  * The worker owns the complete captured input; prefix/suffix substitutions are explicit bulk work.
  * The controller must bound planned output before publishing a transaction. */
 export function regexReplacement(match: RegExpExecArray, replacement: string, maxUnits = Number.MAX_SAFE_INTEGER): string {
-    if (!isNonNegativeInteger(maxUnits)) throw new RangeError("Invalid regex replacement budget.");
+    if (!isNonNegativeInteger(maxUnits)) invalidRange("regex replacement budget");
     const text = match.input;
     const end = match.index + match[0].length;
     let result = "";

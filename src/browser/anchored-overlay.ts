@@ -1,6 +1,6 @@
 import { transientSurface } from "./transient-surface.ts";
 import { listenUntil, onAbort, stopPopupPropagation } from "./listen.ts";
-import { isOffsetRange } from "../core/bounds.ts";
+import { invalidRange, isOffsetRange } from "../core/bounds.ts";
 import type { Affinity } from "../core/positions.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { rowTextRanges } from "./text-geometry.ts";
@@ -199,7 +199,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     function show(next: OverlayAnchor, target?: HTMLElement): void {
         if (disposed) return;
         const from = "offset" in next ? next.offset : next.from, to = "offset" in next ? next.offset : next.to;
-        if (!isOffsetRange(from, to)) throw new RangeError("Invalid overlay anchor.");
+        if (!isOffsetRange(from, to)) invalidRange("overlay anchor");
         if (target && !element.contains(target)) throw new RangeError("Focus target must belong to the overlay.");
         if (surface && !surface.claim()) return;
         focusTarget = target;

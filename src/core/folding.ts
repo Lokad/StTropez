@@ -1,4 +1,4 @@
-import { isIndex, isOffsetRange, isPositiveInteger } from "./bounds.ts";
+import { invalidRange, isIndex, isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { unchangedPositionEdges } from "./positions.ts";
 import type { PositionMapping } from "./positions.ts";
@@ -257,7 +257,7 @@ export class FoldIndex {
     declare readonly collapsedCount: number;
     declare readonly regions: readonly FoldRegion[];
     constructor(lineCount: number, regions: readonly FoldRegion[] = empty) {
-        if (!isPositiveInteger(lineCount)) throw new RangeError("Invalid fold line count.");
+        if (!isPositiveInteger(lineCount)) invalidRange("fold line count");
         const values = regions.length ? regions : retain(empty);
         const metadata = owned.get(values);
         if (!metadata || metadata.maxLineTo > lineCount) throw new RangeError("Expected validated fold row intervals.");
@@ -273,7 +273,7 @@ export class FoldIndex {
         indexed.set(values, this);
     }
     hiddenBy(line: number): FoldRegion | undefined {
-        if (!isIndex(line, this.lineCount)) throw new RangeError("Invalid source line.");
+        if (!isIndex(line, this.lineCount)) invalidRange("source line");
         const layout = this.layout, h = hiddenAt(layout, line);
         return h && line < h.to + layout.lines ? projectedRegion(layout, h.owner) : undefined;
     }
@@ -283,18 +283,18 @@ export class FoldIndex {
         for (const h of layout.hidden) yield projectedRegion(layout, h.owner);
     }
     rowAt(line: number): number {
-        if (!isIndex(line, this.lineCount)) throw new RangeError("Invalid source line.");
+        if (!isIndex(line, this.lineCount)) invalidRange("source line");
         const layout = this.layout, h = hiddenAt(layout, line);
         return !h ? line : line < h.to + layout.lines ? h.from + layout.lines - h.before - 1 : line - h.before - (h.to - h.from);
     }
     lineAt(row: number): number {
-        if (!isIndex(row, this.visibleLineCount)) throw new RangeError("Invalid visible row.");
+        if (!isIndex(row, this.visibleLineCount)) invalidRange("visible row");
         const layout = this.layout;
         const low = partitionPoint(layout.hidden.length, i => { const h = layout.hidden[i]!; return h.from - h.before + layout.lines <= row; });
         const h = layout.hidden[low - 1]; return row + (h ? h.before + h.to - h.from : 0);
     }
     headerAt(line: number): FoldRegion | undefined {
-        if (!isIndex(line, this.lineCount)) throw new RangeError("Invalid source line.");
+        if (!isIndex(line, this.lineCount)) invalidRange("source line");
         const layout = this.layout, local = line - layout.lines;
         const low = partitionPoint(layout.regions.length, i => layout.regions[i]!.lineFrom < local);
         const r = layout.regions[low]; return r?.lineFrom === local ? projectedRegion(layout, r) : undefined;
@@ -380,7 +380,7 @@ export function revealIndexSelection(buffer: TextBuffer, index: FoldIndex, selec
     return endpoints.size ? indexFor(buffer.lineCount, revealEndpoints(index.regions, endpoints)) : index;
 }
 export function revealIndexRange(buffer: TextBuffer, index: FoldIndex, from: number, to = from): FoldIndex {
-    if (!isOffsetRange(from, to, buffer.length)) throw new RangeError("Invalid fold reveal range.");
+    if (!isOffsetRange(from, to, buffer.length)) invalidRange("fold reveal range");
     if (!index.collapsedCount) return index;
     const first = buffer.lineAt(from), last = buffer.lineAt(to > from ? to - 1 : to);
     if (!index.hiddenBy(first) && index.rowAt(last) - index.rowAt(first) === last - first) return index;

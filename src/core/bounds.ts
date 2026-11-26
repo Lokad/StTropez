@@ -18,3 +18,9 @@ export function isIndex(value: number, length: number): boolean {
 export function isOffsetRange(from: number, to: number, length = Number.MAX_SAFE_INTEGER): boolean {
     return isOffset(from, to) && isOffset(to, length);
 }
+
+/** Keep the readable RangeError and give hosts a stable code for the rejected argument. */
+export function invalidRange(subject: string): never {
+    const code = "invalid-" + subject.toLowerCase().replaceAll(" ", "-");
+    throw Object.assign(new RangeError(`Invalid ${subject}.`), { code });
+}

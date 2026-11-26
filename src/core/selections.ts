@@ -1,4 +1,4 @@
-import { isIndex, isNonNegativeInteger, isOffset } from "./bounds.ts";
+import { invalidRange, isIndex, isNonNegativeInteger, isOffset } from "./bounds.ts";
 import type { TextEdit } from "./changes.ts";
 import type { Affinity, PositionMapping } from "./positions.ts";
 import { unchangedPositionEdges } from "./positions.ts";
@@ -24,7 +24,7 @@ function normalizeSelection(length: number, { anchor, head, anchorAffinity, head
 }
 
 function knownSelectionSet(length: number, ranges: readonly Selection[], primary: number) {
-    if (!isNonNegativeInteger(length)) throw new RangeError("Invalid document length.");
+    if (!isNonNegativeInteger(length)) invalidRange("document length");
     if (!ranges.length || !isIndex(primary, ranges.length)) throw new RangeError("A selection set needs ranges and a valid primary index.");
     const known = normalizedSets.get(ranges);
     if (known?.primary === primary) {
