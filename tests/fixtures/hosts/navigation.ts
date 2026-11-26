@@ -75,7 +75,7 @@ export class HostNavigationTools {
                     const destination = presentDocument(this.host, id, pane ? [pane] : []);
                     if (!destination || source.getSnapshot()?.revision !== revision || !this.host.canCapture(id)) return false;
                     const range = kind === "definition" ? { from: at.from, to: at.from } : at;
-                    if (!destination.reveal(range, { expectedRevision: at.document.revision, select: true })) return false;
+                    if (destination.reveal(range, { expectedRevision: at.document.revision, select: true }).status !== "done") return false;
                     focusSource(destination);
                     return true;
                 });

@@ -1,3 +1,4 @@
+import { done, refused, stale, type Outcome } from "../core/outcome.ts";
 import { resolveControlStrings, type ControlStrings } from "./control-strings.ts";
 import { listenUntil } from "./listen.ts";
 import { isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
@@ -68,8 +69,7 @@ export type TextEditorActivity = Readonly<{
 }>;
 export type TextEditorDiagnostics = TextEditorActivity & Readonly<{
     inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number;
-    keydownEvents: number; lastKeydownMs: number; navigationTurns: number;
-    navigationPreparationMs: number; maxNavigationTurnMs: number; navigationWorkMs: number;
+    keydownEvents: number; lastKeydownMs: number;
     conflicts: number;
 }>;
 export type TextEditorSnapshot = Readonly<{ focused: boolean; disabled: boolean; composing: boolean;
@@ -103,7 +103,7 @@ export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HT
     characterWarnings: CharacterWarningHighlights;
     /** Returns whether the command was accepted; long selections finish asynchronously. */
     commands: EditorCommands; keymap: EditorKeymap;
-    reveal: (target: RevealTarget, options?: EditorRevealOptions) => EditorRevealRange | null;
+    reveal: (target: RevealTarget, options?: EditorRevealOptions) => Outcome<EditorRevealRange>;
     focus: () => void; captureView: () => ViewState; restoreView: TextViewport["restoreView"];
     /** Immutable activity capture, reused while its fields are unchanged. Does not collect metrics. */
     activity: () => TextEditorActivity;
@@ -190,7 +190,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     let conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
     let beforeInputEvents = 0, lastBeforeInputMs = 0;
     let keydownEvents = 0, lastKeydownMs = 0;
-    let navigationTurns = 0, navigationPreparationMs = 0, maxNavigationTurnMs = 0, navigationWorkMs = 0, navigationDepth = 0;
     type VisualColumns = Readonly<{ head: number | undefined; anchor?: number | undefined }>;
     let preferred: Readonly<{ selections: SelectionSet; revision: number; layout: string; columns: readonly (VisualColumns | undefined)[] }> | undefined;
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; tail: ReturnType<typeof typingRun> | "spaces" | undefined; key: string }> | undefined;
@@ -321,16 +320,18 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         }
     }
     const revealScope = workspace.createNotificationScope();
-    function reveal(target: RevealTarget, options: EditorRevealOptions = {}): EditorRevealRange | null {
+    function reveal(target: RevealTarget, options: EditorRevealOptions = {}): Outcome<EditorRevealRange> {
         const { align = "nearest", select = false, focus: takeFocus = false, expectedRevision } = options;
         validateRevealAlignment(align);
         if (typeof select !== "boolean" || typeof takeFocus !== "boolean") throw new TypeError("Invalid reveal flags.");
         if (expectedRevision !== undefined && !isNonNegativeInteger(expectedRevision))
             throw new RangeError("Invalid reveal revision.");
-        if (disposed || input.disabled || !live() || resource.getSnapshot().state !== "ready") return null;
-        if (composing || hostInsertion || activeCommand) return null;
+        if (disposed || !live()) return stale;
+        if (input.disabled || resource.getSnapshot().state !== "ready" || composing || hostInsertion || activeCommand) {
+            return refused("unavailable-view");
+        }
         const { revision, buffer } = currentDocument();
-        if (expectedRevision !== undefined && revision !== expectedRevision) return null;
+        if (expectedRevision !== undefined && revision !== expectedRevision) return stale;
         function offset(position: BufferPosition): number {
             if (!Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.column)) {
                 throw new RangeError("Invalid reveal position.");
@@ -357,9 +358,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             viewport.revealRange(from, to, align);
             return true;
         });
-        if (!applied || disposed || !live() || currentDocument().revision !== revision) return null;
+        if (!applied || disposed || !live() || currentDocument().revision !== revision) return stale;
         if (takeFocus) focus();
-        return Object.freeze({ from, to });
+        return done(Object.freeze({ from, to }));
     }
     function revealCaret(selected = currentView().selection, vertical: NonNullable<RevealOptions["vertical"]> = "nearest"): void {
         let offset = selected.head;
@@ -678,12 +679,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             if (validCommand(capture) && selectAndReveal(capture.revision, result, wholeWord)) refresh();
         });
     }
-    function navigationTurn(work: () => void): void {
-        if (navigationDepth) { work(); return; }
-        const began = win.performance.now(); navigationDepth++;
-        try { work(); } finally { navigationDepth--; const elapsed = win.performance.now() - began;
-            navigationTurns++; navigationWorkMs += elapsed; maxNavigationTurnMs = Math.max(maxNavigationTurnMs, elapsed); }
-    }
     function navigationStyle(): string {
         const style = win.getComputedStyle(root);
         return [root.isConnected, style.width, style.height, style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.lineHeight,
@@ -696,11 +691,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     }
     function beginNavigation(prepare: (capture: CommandCapture, style: string) => void): void {
         activeCommand = undefined;
-        navigationTurns = navigationPreparationMs = maxNavigationTurnMs = navigationWorkMs = 0;
-        navigationTurn(() => commandTurn(() => {
+        commandTurn(() => {
             const capture = commandCapture(false);
             if (validCommand(capture)) prepare(capture, navigationStyle());
-        }));
+        });
     }
     function verticalCount(page: boolean): number {
         const state = viewport.getSnapshot(); return page && state.lineHeight > 0 ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
@@ -717,10 +711,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     }
     function moveToBoundary(key: "Home" | "End", extend: boolean, documentBoundary = false): boolean {
         prepareMovement(); preferred = undefined; activeCommand = undefined;
-        navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
         const capture = commandCapture(false), buffer = capture.buffer, firstNonblank = new Map<number, number>();
         if (!validCommand(capture)) return false;
-        navigationTurn(() => eachRange(capture, range => {
+        eachRange(capture, range => {
             if (documentBoundary) return moved(range, key === "Home" ? 0 : buffer.length, extend);
             const line = buffer.lineAt(range.head);
             if (key === "End") return moved(range, lineContentEnd(buffer, line), extend);
@@ -732,17 +725,16 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
                 firstNonblank.set(line, first);
             }
             return moved(range, range.head === first ? start : first, extend);
-        }, ranges => finishRanges(capture, ranges)));
+        }, ranges => finishRanges(capture, ranges));
         return true;
     }
     function horizontal(key: "ArrowLeft" | "ArrowRight", extend: boolean): boolean {
         prepareMovement(); preferred = undefined;
         beginNavigation((capture, style) => {
-            const began = win.performance.now(); viewport.flush();
+            viewport.flush();
             if (!validCommand(capture) || navigationStyle() !== style) { activeCommand = undefined; return; }
             const layout = navigationLayout(style);
             const direction = key === "ArrowLeft" ? -1 : 1;
-            navigationPreparationMs = win.performance.now() - began;
             eachRange(capture, range => {
                 const point = navigation.horizontalPoint(capture.buffer, range, direction, extend);
                 if (point) return moved(range, point.offset, extend, point.affinity);
@@ -759,7 +751,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         prepareMovement();
         // Use source columns on ordinary fixed-pitch rows. Tabs, shaped text and proportional fonts keep their geometry.
         beginNavigation((capture, style) => {
-            const began = win.performance.now(); viewport.flush();
+            viewport.flush();
             const buffer = capture.buffer, selected = capture.selection;
             if (!viewport.coordsAt(selected.head, selected.headAffinity)) { revealCaret(selected); viewport.flush(); }
             if (!validCommand(capture) || navigationStyle() !== style) { activeCommand = undefined; return; }
@@ -775,7 +767,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
                     if (span.to - span.from <= 512 && !/[^ -~]/.test(span.text)) cells.set(line, span);
                 }
             }
-            navigationPreparationMs = win.performance.now() - began;
             function columnAt(line: number, offset: number, affinity: Affinity | undefined) {
                 const span = cells.get(line);
                 return span ? viewportPadding + (Math.min(span.to, offset) - span.from) * state.columnWidth
@@ -1567,7 +1558,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         reveal,
         captureView: () => { syncSelection(); return viewport.captureView(); },
         restoreView: (state, options) => { const result = viewport.restoreView(state, options); if (result) refresh(); return result; },
-        getDiagnostics: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, keydownEvents, lastKeydownMs, navigationTurns, navigationPreparationMs, maxNavigationTurnMs, navigationWorkMs,
+        getDiagnostics: () => Object.freeze({ ...activity(), inputUnits: input.value.length, inputEvents, lastInputMs, beforeInputEvents, lastBeforeInputMs, keydownEvents, lastKeydownMs,
             conflicts }),
         dispose: () => {
             if (disposed) return;

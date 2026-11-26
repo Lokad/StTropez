@@ -582,7 +582,7 @@ test("a diagnostic tracks its text through an edit and a fresh push replaces the
         decorations: layers.handle,
         reveal: (range, options) => {
             reveals.push([range, options]);
-            return "from" in range ? range : null;
+            return "from" in range ? { status: "done", value: range } : { status: "stale" };
         },
     };
     const before = f.provider.snapshot();

@@ -65,7 +65,7 @@ export function openProblem(editor: TextEditor, revision: number, line: number, 
 ```
 
 Select and focus are opt-in, including in read-only panes. `align` accepts `"nearest"`,
-`"center-if-outside"`, `"start"` or `"center"`. A busy, stale or closed view returns `null`.
+`"center-if-outside"`, `"start"` or `"center"`. A `done` outcome carries the clamped range. A changed revision or closed view returns `stale`. During composition or another active input operation, the view returns `refused` with reason `unavailable-view`.
 
 ### Input and host commands
 

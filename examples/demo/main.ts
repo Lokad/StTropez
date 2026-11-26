@@ -310,7 +310,7 @@ function openLocation(capturedProject: DemoProject, target: DemoSymbolTarget, or
     origin.visit(() => {
         if (destination !== active) mountFile(destination);
         if (editor?.view !== destination.view) return false;
-        opened = !!editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true, align: "center-if-outside" });
+        opened = editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true, align: "center-if-outside" }).status === "done";
         if (!opened || !sameView) return opened;
         // A second click still offers fixes. Add a Back stop only if the view moved.
         const before = origin.viewState;

@@ -65,7 +65,7 @@ export function mountDiagnostic(editor: TextEditor, { scope, binding }: LspDocum
                 const now = source.getSnapshot();
                 if (!available() || displayed !== result || now.result !== result || !now.isPlacementCurrent()
                     || cell.get().diagnostics !== diagnostics || options.canCapture?.() === false) return false;
-                return !!editor.reveal({ from, to }, { expectedRevision: result.snapshotRevision, select: true, focus: true });
+                return editor.reveal({ from, to }, { expectedRevision: result.snapshotRevision, select: true, focus: true }).status === "done";
             };
             diagnostics.push(Object.freeze({
                 from, to, message, severity, source: item.source, select,

@@ -67,7 +67,7 @@ const mounts: Mounts = {
                     actions.push({ label: editor.strings.text("Code actions"), run() {
                         const { selection } = editor.view.getSnapshot();
                         if ((point.offset < Math.min(selection.head, selection.anchor) || point.offset > Math.max(selection.head, selection.anchor))
-                            && !editor.reveal({ from: point.offset, to: point.offset }, { expectedRevision: point.revision, select: true })) return;
+                            && editor.reveal({ from: point.offset, to: point.offset }, { expectedRevision: point.revision, select: true }).status !== "done") return;
                         editor.commands.run("quickfix.show");
                     } });
                 }

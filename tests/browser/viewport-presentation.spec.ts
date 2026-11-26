@@ -414,7 +414,7 @@ test("Back restores the origin selections across edits at a same-file destinatio
             viewport.flush();
             const top = viewport.getSnapshot().scrollTop;
             const origin = history.capture(editor)!;
-            origin.visit(() => !!editor.reveal({ from: 1, to: 1 }, { select: true, align: "start" }));
+            origin.visit(() => editor.reveal({ from: 1, to: 1 }, { select: true, align: "start" }).status === "done");
             viewport.flush();
             for (const insert of ["xx", "y"]) workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision,
                 edits: [{ from: 1, to: 1, insert }], origin: "human" });
@@ -462,23 +462,29 @@ test("revealing a source range in a read-only editor aligns the painted rows and
             const untouched = view.getSnapshot().selectionSet === selection && folding.getSnapshot().index.collapsedCount === 1 && document.activeElement === other;
             const point = editor.reveal({ line: 80, column: 999 }, { align: "start" });
             viewport.flush(); const start = viewport.getSnapshot().scrollTop;
-            const preview = point?.from === row.to && point.to === row.to && !!viewport.coordsAt(row.to)
+            const preview = point.status === "done" && point.value.from === row.to && point.value.to === row.to && !!viewport.coordsAt(row.to)
                 && view.getSnapshot().selectionSet === selection && document.activeElement === other && folding.getSnapshot().index.collapsedCount === 0;
             editor.reveal(row); viewport.flush(); const kept = viewport.getSnapshot().scrollTop === start;
             const selected = editor.reveal(positions, { align: "center", select: true, focus: true, expectedRevision: revision });
             viewport.flush(); const centered = viewport.getDiagnostics();
             const centerDelta = start - centered.scrollTop;
             const center = Math.abs(centerDelta - (centered.height - centered.lineHeight) / 2) < centered.lineHeight;
-            const chosen = selected?.from === row.from && selected.to === row.to && view.getSnapshot().selection.head === row.to
+            const chosen = selected.status === "done" && selected.value.from === row.from && selected.value.to === row.to && view.getSnapshot().selection.head === row.to
                 && view.getSnapshot().selection.anchor === row.from && editor.getSnapshot().focused;
             const full = editor.reveal({ start: { line: 999, column: 999 }, end: { line: -9, column: 0 } });
             editor.restoreView(origin); viewport.flush();
             const returned = viewport.getSnapshot().scrollTop === origin.scrollTop && view.getSnapshot().selection.anchor === 5 && view.getSnapshot().selection.head === 1
                 && view.getSnapshot().selectionSet.ranges.length === 2;
-            return { stale, rejected, untouched, preview, kept, center, chosen, full: full?.from === 0 && full.to === buffer.length, returned };
+            const refresh = workspace.beginLoad(resource);
+            const unavailable = editor.reveal(row, { select: true });
+            refresh.dispose();
+            editor.dispose();
+            const released = editor.reveal(row);
+            return { stale, unavailable, released, rejected, untouched, preview, kept, center, chosen, full: full.status === "done" && full.value.from === 0 && full.value.to === buffer.length, returned };
         } finally { editor.dispose(); other.remove(); host.remove(); }
     });
-    expect(result).toEqual({ stale: null, rejected: true, untouched: true, preview: true, kept: true, center: true, chosen: true, full: true, returned: true });
+    expect(result).toEqual({ stale: { status: "stale" }, unavailable: { status: "refused", reason: "unavailable-view" },
+        released: { status: "stale" }, rejected: true, untouched: true, preview: true, kept: true, center: true, chosen: true, full: true, returned: true });
 });
 
 test("minimap gestures preserve focus and multiple selections as the document projection changes", async ({ page }) => {

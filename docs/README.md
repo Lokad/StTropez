@@ -71,7 +71,6 @@ gutter are visible. State which frames satisfy readiness. Physical display laten
 | --- | --- |
 | Input handler | Entry to return of one listener, including synchronous model, subscribers and browser work. `lastKeydownMs`, `lastBeforeInputMs` and `lastInputMs` belong to different events. Check the event count for a fresh sample. |
 | Completion handler | `lastCompletionBeforeInputMs` times its input listener, `lastCompletionCommandMs` the registered command through synchronous publication. Replies and paint can arrive later. |
-| Navigation | `navigationWorkMs` totals setup and scheduled callbacks, including synchronous flushes. `maxNavigationTurnMs` is the longest turn. `navigationPreparationMs` covers initial geometry. Nested work counts once. |
 | Event observation | Capture observer to bubble observer, including other listeners. |
 | Headless edit planning | Planner creation to complete plan. Report elapsed time and calling-thread CPU. Commit and rendering follow. |
 | Find | `FindDiagnostics.maxScanStepMs` is the longest synchronous scan/index step. Regex measures main-thread dispatch and indexing, excluding worker matching and transfer. `replaceTransactionMs` covers commit, notification and context refresh. |
