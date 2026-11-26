@@ -52,8 +52,11 @@ export async function runDemoActions(page: Page, url = "/") {
     await expect(page.locator("#editor")).toContainText("import { exampleRate }");
     await source.press("Control+Home"); await source.press("Control+.");
     const choice = actions.getByRole("button", { name: "Demo refactor: rename exampleRate across files", exact: true });
-    await choice.click(); await expect(actions.getByLabel("Quick-fix edits").locator("li")).toHaveCount(3);
-    await expect(actions.getByLabel("Quick-fix edits")).toContainText("rate.ts");
+    await choice.click();
+    const edits = actions.getByLabel("Quick-fix edits");
+    await expect(edits.locator("li")).toHaveCount(3);
+    await expect(edits).toContainText("rate.ts");
+    await expect(edits.locator("li").last()).toBeInViewport({ ratio: 1 });
     const apply = actions.getByRole("button", { name: "Apply fix", exact: true });
     const retiredApply = await apply.evaluateHandle(node => {
         const button = node as HTMLButtonElement, confirm = button.onclick!;

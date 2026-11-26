@@ -239,15 +239,16 @@
 :is(.st-rename, .st-code-actions, .st-color-picker) del { color: var(--st-rename-removed, var(--_st-control-removed)); }
 :is(.st-rename, .st-code-actions, .st-color-picker) ins { color: var(--st-rename-added, color-mix(in srgb, var(--_st-control-text) 65%, seagreen)); }
 
-:is(.st-code-actions, .st-color-picker) { width: min(390px, calc(100vw - 16px)); max-height: 270px; padding: 10px; border: 1px solid var(--_st-control-border); border-radius: 7px;
+:is(.st-code-actions, .st-color-picker) { width: min(390px, calc(100vw - 16px)); padding: 10px; border: 1px solid var(--_st-control-border); border-radius: 7px;
     background: var(--st-actions-background, var(--_st-control-surface)); box-shadow: var(--_st-control-shadow); font: 13px/1.4 system-ui, sans-serif; }
-.st-code-actions:not([hidden]) { display: flex; flex-direction: column; }
+.st-code-actions:not([hidden]) { display: flex; flex-direction: column; max-height: min(32rem, calc(100vh - 16px)); }
 .st-code-actions > div { min-height: 0; overflow: auto; overscroll-behavior: contain; }
 :is(.st-code-actions, .st-color-picker) footer { display: flex; flex: none; gap: 6px; padding-top: 4px; }
 .st-code-actions p { margin: 0 0 6px; }
 .st-code-actions [data-choice] { display: block; width: 100%; text-align: left; margin-bottom: 3px; }
 .st-code-actions [data-chosen="true"] { background: var(--st-actions-selected, var(--_st-control-selected)); color: var(--_st-control-text); }
 :is(.st-code-actions, .st-color-picker) ol { padding-inline-start: 20px; overflow-wrap: anywhere; }
+.st-color-picker { max-height: 270px; }
 .st-color-picker > div:first-child { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 .st-color-picker label { display: grid; gap: 2px; min-width: 0; max-width: 100%; }
 .st-color-picker input { width: 5rem; }
