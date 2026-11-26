@@ -116,9 +116,12 @@ function showSaveState() {
     saved.value = competingText !== undefined ? "The saved copy changed. Review it in Changes."
         : file.metadata.getSnapshot().dirty ? "Unsaved changes" : "No unsaved changes";
 }
-function readyForHostAction() {
+function editPending() {
     const { composing, pendingInput, pendingCommand } = current.editor.activity();
-    if (composing || pendingInput || pendingCommand || find.getSnapshot()?.status === "replacing") {
+    return composing || pendingInput || pendingCommand || find.getSnapshot()?.status === "replacing";
+}
+function readyForHostAction() {
+    if (editPending()) {
         saved.value = pendingNotice;
         return false;
     }
@@ -205,8 +208,13 @@ saveReviewed.addEventListener("click", () => {
             expectedServerVersion: competingText });
     }
 });
+function beforeUnload(event: BeforeUnloadEvent) {
+    if (file.metadata.getSnapshot().dirty || editPending()) event.preventDefault();
+}
+window.addEventListener("beforeunload", beforeUnload);
 window.addEventListener("pagehide", event => {
     if (event.persisted) return;
+    window.removeEventListener("beforeunload", beforeUnload);
     stopConnection();
     stopDirty();
     current.dispose();

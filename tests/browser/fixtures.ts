@@ -4,6 +4,10 @@ import { captureBrowserErrors } from "../helpers/browser-errors.ts";
 
 export { expect };
 
+export function warnsBeforeUnload(page: Page): Promise<boolean> {
+    return page.evaluate(() => !window.dispatchEvent(new Event("beforeunload", { cancelable: true })));
+}
+
 /** Keep zero-delay command continuations beyond the clock's paused tick. */
 export async function pauseBetweenCommandTurns(page: Page) {
     await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));

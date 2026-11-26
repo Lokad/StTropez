@@ -36,8 +36,8 @@ review the new comparison before saving.
 **Connect language server** enables the local example provider. In Changes, focus the working
 copy to use its language commands. You can search either pane.
 
-Before saving or switching views, the host checks `editor.activity()` and the Find bar. If input,
-a command or a replacement is pending, finish the edit and retry. This keeps the working view alive until the edit commits.
+The host checks `editor.activity()` and the Find bar before saving or switching views. Retry once
+pending edits finish. On close or reload, the host requests confirmation if an edit is pending or the file has unsaved changes.
 
 The host keeps its working view with `workspace.createDocumentView(file.documentId)` and passes
 it to both mounts. The selection and folds follow the working document into comparison.

@@ -1,4 +1,4 @@
-import { ready, test, expect } from "./fixtures.ts";
+import { ready, test, expect, warnsBeforeUnload as warning } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { hostTextEquals } from "../../scripts/host-scene.mjs";
 const snapshot = (p: Page) => p.evaluate(() => window.hostFixture.snapshot());
@@ -74,7 +74,6 @@ async function waitForDraft(page: Page): Promise<void> {
     await page.waitForFunction(() => { const s = window.hostFixture.snapshot(); return window.hostFixture.settled && (!s.draft?.busy); });
 }
 async function exact(p: Page, value: string): Promise<void> { expect(await hostTextEquals(p, value)).toBe(true); }
-async function warning(p: Page): Promise<boolean> { return p.evaluate(() => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; }); }
 async function restore(p: Page, name: string): Promise<void> { await button(p, name).click(); await expect(button(p, "Confirm draft action")).toBeEnabled(); await button(p, "Confirm draft action").click(); await waitForDraft(p); }
 async function dispose(p: Page): Promise<void> { await p.evaluate(() => window.hostFixture.dispose()); const s = await snapshot(p); expect(s.draft?.disposed).toBe(true); }
 async function closeWithDecision(p: Page, accept: boolean): Promise<void> {

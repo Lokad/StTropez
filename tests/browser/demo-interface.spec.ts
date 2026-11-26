@@ -1,7 +1,7 @@
 import { demoSample } from "../../examples/demo/samples.ts";
 import { latch } from "../helpers/latch.ts";
 import { moveEditorIntoShadow } from "../helpers/shadow-editor.ts";
-import { expect, expectPanelKeyReserved, pauseBetweenCommandTurns, test } from "./fixtures.ts";
+import { expect, expectPanelKeyReserved, pauseBetweenCommandTurns, test, warnsBeforeUnload } from "./fixtures.ts";
 import { dragBundleScrollbars, hoverString, selectInsideString } from "./demo-minified.ts";
 import { checkDemoLigatures } from "./demo-ligatures.ts";
 import { paintedCharacter } from "../helpers/painted-character.ts";
@@ -741,8 +741,10 @@ test("opening Changes during Replace all reviews the committed edit and a file s
     await page.locator(".st-find-query").fill("calculateTotal");
     await page.locator(".st-replacement").fill("reviewTotal");
     const replace = page.locator(".st-replace-all"), compare = page.locator("#compare"), review = page.locator(".st-comparison");
+    expect(await warnsBeforeUnload(page)).toBe(false);
     await replace.click(); await expect.poll(gate.waiting).toBe(1);
     await expect(page.locator(".st-find-status")).toHaveText("Replacing…");
+    expect(await warnsBeforeUnload(page)).toBe(true);
     await page.locator('[data-panel="problems"]').click(); await compare.click(); await gate.release();
     const panes = review.locator(".st-comparison-panes > section");
     await expect(panes.last().locator('.st-viewport-row[data-line="0"]')).toContainText("reviewTotal");

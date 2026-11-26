@@ -787,7 +787,7 @@ window.addEventListener("keydown", event => {
     if (!event.repeat) void save();
 }, { signal: listeners.signal });
 window.addEventListener("beforeunload", event => {
-    if ([...projects.values()].some(project => project.dirty())) { event.preventDefault(); event.returnValue = ""; }
+    if (projectBusy() || [...projects.values()].some(project => project.dirty())) event.preventDefault();
 }, { signal: listeners.signal });
 window.addEventListener("pagehide", event => {
     if (event.persisted) return;
