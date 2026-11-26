@@ -1,5 +1,5 @@
 import { isIndex, isNonNegativeInteger, isOffsetRange } from "./bounds.ts";
-import { changedTextEdits, validateTextEdits } from "./changes.ts";
+import { changedTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { PositionMap } from "./positions.ts";
 import { lineContentEnd } from "./newlines.ts";
@@ -242,17 +242,18 @@ export class TextBuffer {
     text(): string { return rangeText(this.#root, 0, this.length); }
     replace(from: number, to: number, insert: string): TextBuffer { return this.apply([{ from, to, insert }]).buffer; }
     apply(edits: readonly TextEdit[]): BufferChange {
-        validateTextEdits(this.length, edits);
         const effective = changedTextEdits(this, edits);
         const mapping = new PositionMap(this.length, effective);
-        if (!effective.length) return Object.freeze({ buffer: this, mapping, changedUnits: 0 });
-        let root: Root;
+        let buffer: TextBuffer = this;
         if (effective.length === 1) {
-            const edit = effective[0]!, [left, rest] = split(this.#root, edit.from), [, right] = split(rest, edit.to - edit.from);
-            root = joinEdit(left, edit.insert, right);
-        } else root = batch(this.#root, effective);
-        const buffer = new TextBuffer(root);
-        if (effective.length > 1 && buffer.equals(this)) return Object.freeze({ buffer: this, mapping: new PositionMap(this.length, []), changedUnits: 0 });
+            const edit = effective[0]!;
+            const [left, rest] = split(this.#root, edit.from);
+            const [, right] = split(rest, edit.to - edit.from);
+            buffer = new TextBuffer(joinEdit(left, edit.insert, right));
+        } else if (effective.length > 1) {
+            buffer = new TextBuffer(batch(this.#root, effective));
+            if (buffer.equals(this)) return this.apply([]);
+        }
         return Object.freeze({ buffer, mapping, changedUnits: effective.reduce((sum, edit) => sum + edit.to - edit.from + edit.insert.length, 0) });
     }
     lineAt(offset: number): number {

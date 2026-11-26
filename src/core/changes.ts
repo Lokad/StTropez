@@ -6,12 +6,17 @@ export type TextEdit = Readonly<{ from: number; to: number; insert: string;
     /** First edit of a paired whole-line move produced by the language planner. */
     lineMove?: true }>;
 
+const changesLength = (edit: TextEdit) => edit.to - edit.from !== edit.insert.length;
+
 /** Compare the replacement with its validated range in the source. */
 export function changesText(buffer: TextBuffer, edit: TextEdit): boolean {
-    return edit.to - edit.from !== edit.insert.length || buffer.slice(edit.from, edit.to) !== edit.insert;
+    return changesLength(edit) || buffer.slice(edit.from, edit.to) !== edit.insert;
 }
 
-export function changedTextEdits(buffer: TextBuffer, edits: readonly TextEdit[]): TextEdit[] {
+export function changedTextEdits(buffer: TextBuffer, edits: readonly TextEdit[]): readonly TextEdit[] {
+    if (edits.every(changesLength)) return edits;
+    // Check original ranges before a content comparison can discard an overlapping no-op.
+    validateTextEdits(buffer.length, edits);
     return edits.filter(edit => changesText(buffer, edit));
 }
 

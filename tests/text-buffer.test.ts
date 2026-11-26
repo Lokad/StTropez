@@ -14,11 +14,14 @@ test("the selected buffer applies atomic original-coordinate batches and preserv
     assert.equal(result.mapping.map(7).offset, result.buffer.length);
     const noOp = original.apply([{ from: 1, to: 3, insert: "😀" }]);
     assert.equal(noOp.buffer, original); assert.equal(noOp.mapping.map(2).offset, 2);
-    assert.throws(() => original.apply([{ from: 0, to: 3, insert: "x" }, { from: 1, to: 1, insert: "bad" }]), RangeError);
+    for (const insert of ["x", "a😀"]) {
+        assert.throws(() => original.apply([{ from: 0, to: 3, insert }, { from: 1, to: 1, insert: "bad" }]), RangeError);
+    }
     const duplicates = original.apply([{ from: 1, to: 1, insert: "X" }, { from: 1, to: 1, insert: "Y" }]);
     assert.equal(duplicates.buffer.slice(0, 5), "aXY😀");
     const unchanged = TextBuffer.from("ab"), netNoOp = unchanged.apply([{ from: 0, to: 1, insert: "" }, { from: 1, to: 1, insert: "a" }]);
-    assert.equal(netNoOp.buffer, unchanged); assert.equal(netNoOp.mapping.map(1).offset, 1);
+    assert.equal(netNoOp.buffer, unchanged);
+    assert.deepEqual(netNoOp.mapping.map(1), { offset: 1, deleted: false });
     assert.equal(netNoOp.changedUnits, 0);
     const partial = unchanged.apply([{ from: 0, to: 1, insert: "a" }, { from: 1, to: 2, insert: "X" }]);
     assert.equal(partial.changedUnits, 2);
@@ -274,7 +277,4 @@ test("dense batches bound fragmentation while sparse batches share large unchang
     const oldNodes = fragmented.diagnostics().retention.nodes;
     const shared = fragmented.apply([{ from: 1, to: 2, insert: "!" }, { from: fragmented.length - 2, to: fragmented.length - 1, insert: "!" }]).buffer;
     assert.ok(TextBuffer.retained([fragmented, shared]).nodes < oldNodes * 1.1 + 128, "Sparse batches must retain untouched subtrees instead of rebuilding the source tree.");
-    const cancellation = TextBuffer.from("ab");
-    const noOp = cancellation.apply([{ from: 0, to: 1, insert: "" }, { from: 1, to: 1, insert: "a" }]);
-    assert.equal(noOp.buffer, cancellation); assert.equal(noOp.changedUnits, 0); assert.deepEqual(noOp.mapping.map(1), { offset: 1, deleted: false });
 });
