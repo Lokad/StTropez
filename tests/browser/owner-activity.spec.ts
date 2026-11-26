@@ -18,9 +18,9 @@ test("owner activity retains immutable captures without collecting metrics and f
         const { editorSettled, viewportSettled } = await import(path + "readiness.js") as typeof import("../fixtures/readiness.ts");
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "activity", variant: "text" }, "Activity", { value: "const sample = 123;\n".repeat(100) });
-        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "activity"), host = document.createElement("section");
+        const host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const { editor, input, setComparisonRows } = mountEditor(host, workspace, tab), viewport = editor.viewport;
+        const { editor, input, setComparisonRows } = mountEditor(host, workspace, source.documentId), viewport = editor.viewport;
         const forbidden = () => { throw new Error("Readiness collected metrics"); };
         const readyViewport = { ...viewport, getDiagnostics: forbidden }, readyEditor = { ...editor, viewport: readyViewport, getDiagnostics: forbidden };
         const ready = () => editorSettled(readyEditor), frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
@@ -75,7 +75,7 @@ test("owner activity retains immutable captures without collecting metrics and f
             return { comparisonSetterExposed: "setComparisonRows" in viewport, polling, states, selectionStale, foldStale, insertionAborted: held.signal.aborted,
                 oldCapturesUnchanged: !idleInput.disposed && !idleViewport.disposed && idleViewport.revision === 0 && idleViewport.alignmentId === null,
                 disposedStable: editor.activity() === editor.activity() && viewport.activity() === viewport.activity() };
-        } finally { editor.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { editor.dispose(); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("owner-activity", { body: JSON.stringify(result), contentType: "application/json" });
     expect(result.polling).toEqual({ metricCaptures: 2000, metricValueReads: 1000, activityCaptures: 2, valueReads: 0, layoutReads: 0,

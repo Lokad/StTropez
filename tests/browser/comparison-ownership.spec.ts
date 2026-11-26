@@ -21,22 +21,21 @@ test("independent comparison modules share workspace identity and release retain
         const first = await import(path + "comparison.js?one") as typeof import("../../src/browser/comparison.ts");
         const second = await import(path + "comparison.js?two") as typeof first;
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "source", variant: "working" }, "Working", { value: "working" });
-        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "working"), view = workspace.createDocumentView(source.documentId);
+        const view = workspace.createDocumentView(source.documentId);
         const host = document.createElement("section"); document.body.append(host);
         const baseline = { buffer: TextBuffer.from("head\n  needle\nend"), version: "one" };
         let hiddenThroughout = true;
         const stopInventory = workspace.subscribe(() => {
-            const state = workspace.getSnapshot(), tabs = workspace.tabs.getSnapshot();
+            const state = workspace.getSnapshot();
             hiddenThroughout &&= state.resources.length === 1 && state.resources[0]!.id === source.id
-                && state.documents.length === 1 && state.documents[0]!.id === source.documentId
-                && tabs.length === 1 && tabs[0]!.id === tab;
+                && state.documents.length === 1 && state.documents[0]!.id === source.documentId;
         });
-        const one = first.mountTextComparison(host, workspace, tab, baseline, { view, workBudget: 256 });
-        const two = second.mountTextComparison(host, workspace, tab, baseline, { view, controls: false });
+        const one = first.mountTextComparison(host, workspace, source.documentId, baseline, { view, workBudget: 256 });
+        const two = second.mountTextComparison(host, workspace, source.documentId, baseline, { view, controls: false });
         const { createFindController, createFoldingController } = await import(path + "tools.js") as typeof import("../../src/browser/index.ts");
         const editor = one.panes.reference, old = workspace.resourceForDocument(editor.view.documentId), oldLease = workspace.acquire(old.id);
         const distinct = old.id !== workspace.resourceForDocument(two.panes.reference.view.documentId).id;
-        const internal = old.metadata.getSnapshot().visibility === "internal" && editor.tab === undefined && workspace.diagnostics().tabs === 1;
+        const internal = old.metadata.getSnapshot().visibility === "internal";
         const initial = workspace.document(editor.view.documentId), find = createFindController(editor);
         const folds = createFoldingController(editor, document => [{ from: 0, to: document.buffer.offsetAt(2) - 1 }], { delayMs: 0 });
         const wait = async (ready: () => boolean) => {
@@ -68,7 +67,7 @@ test("independent comparison modules share workspace identity and release retain
             retained: [old.getSnapshot().state, current.getSnapshot().state] };
         oldLease.release(); currentLease.release(); await Promise.resolve();
         const afterRelease = { resources: workspace.diagnostics().resources, retained: [old.getSnapshot().state, current.getSnapshot().state] };
-        view.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id); host.remove();
+        view.dispose(); workspace.releaseResource(source.id); host.remove();
         return { distinct, internal, hiddenThroughout, afterRefresh, afterDestroy, afterRelease, leases: workspace.diagnostics().leases };
     });
     expect(result).toEqual({ distinct: true, internal: true, hiddenThroughout: true, afterRefresh: { stable: true, oldText: "head\n  needle\nend", text: "head\n  needle\nend\nneedle", retiredRejected: true, rulers: [72], query: "needle", folded: true, collapsed: 1, defaultWorking: true, activeReference: true },
@@ -206,14 +205,14 @@ test("browser comparison work yields with large requested budgets and cancels it
                 { requested: Number.MAX_SAFE_INTEGER, rate: 1 }, { requested: undefined, rate: 0 }]) {
                 clockRate = rate;
                 const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "budget", variant: "working" }, "Working", { value: "working" });
-                const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "working"), host = document.createElement("section"); document.body.append(host);
+                const host = document.createElement("section"); document.body.append(host);
                 const baseline = { buffer: TextBuffer.from("baseline"), version: "one" }, before = workspace.diagnostics();
                 // Clamping must not make invalid public input acceptable or leak a mount.
                 for (const invalid of [255, 256.5, Infinity, NaN]) {
-                    let rejected = false; try { mountTextComparison(host, workspace, tab, baseline, { workBudget: invalid }); } catch (error) { rejected = error instanceof RangeError; }
+                    let rejected = false; try { mountTextComparison(host, workspace, source.documentId, baseline, { workBudget: invalid }); } catch (error) { rejected = error instanceof RangeError; }
                     if (!rejected || host.childElementCount || workspace.diagnostics().leases !== before.leases) throw new Error("Invalid mount budget was accepted or leaked ownership.");
                 }
-                const mounted = mountTextComparison(host, workspace, tab, baseline, requested === undefined ? {} : { workBudget: requested });
+                const mounted = mountTextComparison(host, workspace, source.documentId, baseline, requested === undefined ? {} : { workBudget: requested });
                 try {
                     now = calls = work = 0;
                     const queued = tasks.entries().next().value; if (!queued) throw new Error("Missing comparison work.");
@@ -225,7 +224,7 @@ test("browser comparison work yields with large requested budgets and cancels it
                     for (const run of tasks.values()) run();
                     results.push({ requested: requested ?? null, clockRate, calls, elapsed: measured.maxStepMs, work, pending,
                         cancelled: tasks.size === 0 && calls === prior && workspace.diagnostics().leases === 0 && workspace.diagnostics().subscriptions === 0 });
-                } finally { mounted.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+                } finally { mounted.dispose(); workspace.releaseResource(source.id, true); host.remove(); }
             }
         } finally {
             window.setTimeout = timeout; window.clearTimeout = clear; TextDiff.prototype.next = next;
@@ -312,9 +311,9 @@ test("review highlights survive every typing paint while exact comparison work i
         const { TextDiff } = await import(path + "kernels.js") as typeof import("../../src/kernels/index.ts");
         const { mountTextComparison } = await import(path + "comparison.js") as typeof import("../../src/browser/comparison.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint", variant: "working" }, "Working", { value: "old\n" + "unchanged\n".repeat(4000) });
-        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "working"), host = document.createElement("section");
+        const host = document.createElement("section");
         host.id = "held-comparison"; host.style.height = "540px"; document.body.append(host);
-        const mounted = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from("new\n" + "unchanged\n".repeat(4000)), version: "one" });
+        const mounted = mountTextComparison(host, workspace, source.documentId, { buffer: TextBuffer.from("new\n" + "unchanged\n".repeat(4000)), version: "one" });
         await new Promise<void>(resolve => { const stop = mounted.controller.subscribe(() => { if (mounted.controller.getSnapshot().status === "ready") { stop(); resolve(); } }); });
         const exact = mounted.hunkAt(0)!; exact.select();
         mounted.panes.working.view.setSelection(0, { anchor: 1, head: 1 }); mounted.panes.working.focus();
@@ -335,7 +334,7 @@ test("review highlights survive every typing paint while exact comparison work i
                 try { return ticket.complete({ buffer: TextBuffer.from("replacement reference"), version: "two" }); }
                 finally { ticket.finish(); }
             },
-            dispose: () => { TextDiff.prototype.next = next; mounted.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); },
+            dispose: () => { TextDiff.prototype.next = next; mounted.dispose(); workspace.releaseResource(source.id, true); host.remove(); },
         };
     });
     try {

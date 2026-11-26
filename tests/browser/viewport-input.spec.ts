@@ -9,9 +9,9 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "interaction", variant: "text" }, "Input", { value: "a\nb\nc\nd\n" });
-        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "input"), host = document.createElement("section");
+        const host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const viewport = mountTextViewport(host, workspace, tab), root = viewport.element, input = document.createElement("textarea"); root.append(input);
+        const viewport = mountTextViewport(host, workspace, source.documentId), root = viewport.element, input = document.createElement("textarea"); root.append(input);
         const order: string[] = []; let stopLater = () => {}, focus = 0, errors = 0, afterError = 0;
         const stopFirst = viewport.onRender(() => {
             order.push("first"); stopFirst(); stopRemoved(); stopLater = viewport.onRender(() => order.push("later"));
@@ -56,7 +56,7 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
             return { firstOrder, secondOrder, revision: workspace.document(source.documentId).revision, errors, afterError, duplicate,
                 guarded, existingEscaped, newEscaped, markersIgnored, escapedFocus, removedFocus, detached, expired, inactive, afterDestroy,
                 destroyed: { disposed: destroyed.disposed, revision: destroyed.revision, rows: destroyed.rows, pending: destroyed.pending } };
-        } finally { window.removeEventListener("error", error); viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { window.removeEventListener("error", error); viewport.dispose(); workspace.releaseResource(source.id, true); host.remove(); }
     });
     expect(result).toEqual({ firstOrder: ["first", "last"], secondOrder: ["first", "last", "last", "later"], revision: 1,
         errors: 1, afterError: 1, duplicate: true, guarded: true, existingEscaped: true, newEscaped: true, markersIgnored: true,

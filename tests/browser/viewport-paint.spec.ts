@@ -18,10 +18,10 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
         const { observeBufferReads } = await import(path + "probe.js") as typeof import("../observe-buffer-reads.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint-captures", variant: "text" }, "Paint", { value: "const sample = 123;\r\n".repeat(1000) });
-        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "paint"), host = document.createElement("section");
+        const host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let calls = 0, notices = 0, shade = "paint-a";
-        const { viewport, setComparisonRows } = mountViewport(host, workspace, tab);
+        const { viewport, setComparisonRows } = mountViewport(host, workspace, source.documentId);
         let lastGeometry = viewport.getSnapshot(), geometryChanges = 0;
         const stopGeometry = viewport.subscribe(() => { lastGeometry = viewport.getSnapshot(); geometryChanges++; });
         viewport.decorations.addProvider({ order: 0, provide: line => { calls++; return [{ from: line.from, to: line.to, className: shade }]; } });
@@ -98,7 +98,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
                 exactBounds, stableGeometry, resizePublished, released,
                 correcting, correctionPaints: corrected.renders - beforeCorrection, extentError: Math.abs(corrected.horizontalExtent - measured - 24),
                 idleAfterCorrection, partialIdle, partialAnchor: capture.horizontalAnchor !== undefined, restoredError: Math.abs(point.left - restored.left) };
-        } finally { reads.dispose(); observer.disconnect(); viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { reads.dispose(); observer.disconnect(); viewport.dispose(); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("paint-work", { body: JSON.stringify(result), contentType: "application/json" });
     for (const work of [result.idle, result.afterSelection, result.idleAfterCorrection, result.partialIdle])

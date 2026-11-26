@@ -2,7 +2,7 @@ import { isolatedTest as test, expect } from "./fixtures.ts";
 import { fixtureModules } from "../helpers/fixture-modules.ts";
 import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
-import type { Workspace, TextResourceHandle, TabId } from "../../src/index.ts";
+import type { Workspace, TextResourceHandle } from "../../src/index.ts";
 import type { TextEditor, InputConflictDetail, CompletionController, LspHighlightController } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 
@@ -12,7 +12,7 @@ const serveModules = fixtureModules({
     protocol: "src/protocol/index.ts",
 });
 
-type Fixture = { workspace: Workspace; source: TextResourceHandle; tab: TabId; editor: TextEditor;
+type Fixture = { workspace: Workspace; source: TextResourceHandle; editor: TextEditor;
     provider?: LspWorkspace; completion?: CompletionController; highlights?: LspHighlightController;
     prepareCompletion?: () => Promise<void>;
     errors: string[]; cancellations: string[]; dispose: () => Promise<void> };
@@ -29,17 +29,16 @@ async function mount(page: Page, language: boolean) {
         const { RpcError } = await import(path + "protocol.js") as typeof import("../../src/protocol/index.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "focus", resource: "source", variant: "text" }, "Source", { value: "sample sample\ns" }, undefined,
             { language: { uri: "focus:source", languageId: "generic" } });
-        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "source");
         const outer = document.createElement("div"), inner = document.createElement("div"), outside = document.createElement("button");
         outside.id = "shadow-focus-outside"; outside.textContent = "Outside"; document.body.append(outside, outer); outer.attachShadow({ mode: "open" }).append(inner);
         const tree = inner.attachShadow({ mode: "closed" }), style = document.createElement("style"), host = document.createElement("section");
         style.textContent = css; host.style.cssText = "height:240px;width:600px"; tree.append(style, host);
-        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Shadow source" }), errors: string[] = [], cancellations: string[] = [];
+        const editor = mountTextEditor(host, workspace, source.documentId, { ariaLabel: "Shadow source" }), errors: string[] = [], cancellations: string[] = [];
         // A cancelled request may already be removed when its peer's cancellation reply arrives.
         // The protocol reports that late reply; keep it distinct from unexpected diagnostics.
         const report = (error: unknown) => { if (error instanceof RpcError && error.code === -32800) cancellations.push(error.message); else errors.push(String(error)); };
-        const f: Fixture = { workspace, source, tab, editor, errors, cancellations, dispose: async () => {
-            editor.dispose(); f.provider?.dispose(); workspace.tabs.close(tab);
+        const f: Fixture = { workspace, source, editor, errors, cancellations, dispose: async () => {
+            editor.dispose(); f.provider?.dispose();
             await Promise.resolve(); workspace.releaseResource(source.id, true); outer.remove(); outside.remove();
         } }; window.shadowFocus = f;
         if (language) {

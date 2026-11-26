@@ -2,10 +2,10 @@ import { test, expect } from "./fixtures.ts";
 import { editorModules } from "../helpers/fixture-modules.ts";
 import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
-import type { Workspace, ResourceId, TabId } from "../../src/index.ts";
+import type { Workspace, ResourceId } from "../../src/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
 
-type Fixture = { workspace: Workspace; editor: TextEditor; tab: TabId; resource: ResourceId; host: HTMLElement; calls: number; allowed: boolean;
+type Fixture = { workspace: Workspace; editor: TextEditor; resource: ResourceId; host: HTMLElement; calls: number; allowed: boolean;
     set: (text: string, caret: number) => void; select: (caret: number) => void; states: string[]; stop?: () => void };
 declare global { interface Window { bracketFixture: Fixture } }
 let css: string;
@@ -21,16 +21,16 @@ async function fixture(page: Page, shadow = false) {
         const path = "/bracket-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "brackets", variant: "text" }, "Brackets", { value: "(a) [b]" });
-        const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "brackets"), container = document.createElement("div"); document.body.append(container);
+        const container = document.createElement("div"); document.body.append(container);
         const root = shadow ? container.attachShadow({ mode: "open" }) : container, style = document.createElement("style"), host = document.createElement("section");
         style.textContent = css + ".fixture-color { color: rgb(160, 30, 120) }"; host.style.cssText = "height:240px;width:600px"; root.append(style, host);
         const before = workspace.diagnostics();
-        try { mountTextEditor(host, workspace, tab, { settings: { bracketMatching: { maxWorkUnits: 0 } } }); throw new Error("Invalid matching limits accepted."); }
+        try { mountTextEditor(host, workspace, resource.documentId, { settings: { bracketMatching: { maxWorkUnits: 0 } } }); throw new Error("Invalid matching limits accepted."); }
         catch (error) { if (!(error instanceof RangeError)) throw error; }
         if (workspace.diagnostics().views !== before.views || host.childNodes.length) throw new Error("Invalid mount leaked a view or DOM.");
-        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Bracket source" });
+        const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Bracket source" });
         editor.decorations.addProvider({ order: 0, provide: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
-        const f: Fixture = { workspace, editor, tab, resource: resource.id, host, calls: 0, allowed: false, states: [],
+        const f: Fixture = { workspace, editor, resource: resource.id, host, calls: 0, allowed: false, states: [],
             set: (text, caret) => { const document = workspace.document(resource.documentId);
                 const result = workspace.edit({ documentId: resource.documentId, expectedRevision: document.revision, origin: "host", view: editor.view,
                     edits: [{ from: 0, to: document.buffer.length, insert: text }], selection: { anchor: caret, head: caret } });
@@ -129,7 +129,7 @@ test("bracket budgets, syntax refresh and reentrant cancellation never publish s
         f.editor.configure({ bracketMatching: true }); f.set("(" + "x\n".repeat(100000) + ")", 0);
         const pending = f.editor.bracketMatching.getSnapshot().status;
         f.editor.dispose(); f.stop?.(); const state = f.editor.bracketMatching.getSnapshot();
-        f.workspace.tabs.close(f.tab); f.workspace.releaseResource(f.resource, true);
+        f.workspace.releaseResource(f.resource, true);
         await new Promise(resolve => setTimeout(resolve, 30));
         return { disabled, pending, status: state.status, result: state.result, views: f.workspace.diagnostics().views, subscriptions: f.workspace.diagnostics().subscriptions,
             markers: f.host.querySelectorAll(".st-matching-bracket").length, states: f.states };

@@ -1,11 +1,11 @@
 import { test, expect } from "./fixtures.ts";
 import { editorModules } from "../helpers/fixture-modules.ts";
-import type { Workspace, ResourceId, TabId } from "../../src/index.ts";
+import type { Workspace, ResourceId } from "../../src/index.ts";
 import type { TextEditor, TextComparison } from "../../src/browser/index.ts";
 import { fontFixture } from "../fixtures/consumer/font-fixture.ts";
 import { paintedCharacter } from "../helpers/painted-character.ts";
 
-type Fixture = { workspace: Workspace; editor: TextEditor; host: HTMLElement; tab: TabId; resource: ResourceId; comparison?: TextComparison };
+type Fixture = { workspace: Workspace; editor: TextEditor; host: HTMLElement; resource: ResourceId; comparison?: TextComparison };
 declare global { interface Window { presentationFixture: Fixture } }
 
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
@@ -485,10 +485,10 @@ test("minimap gestures preserve focus and multiple selections as the document pr
         const workspace = new Workspace(), lines = Array.from({ length: 200 }, (_, i) => i < 75 || i > 150 ? "    section " + i : "");
         lines[0] = "x".repeat(200);
         const resource = workspace.createTextResource({ scope: "test", resource: "map", variant: "text" }, "Map", { value: lines.join("\n") });
-        const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "map"), host = document.createElement("section");
+        const host = document.createElement("section");
         host.style.cssText = "width:410.5px;height:240.5px;zoom:1.25"; document.body.append(host);
-        const editor = mountTextEditor(host, workspace, tab), viewport = editor.viewport;
-        window.presentationFixture = { workspace, resource: resource.id, host, tab, editor };
+        const editor = mountTextEditor(host, workspace, resource.documentId), viewport = editor.viewport;
+        window.presentationFixture = { workspace, resource: resource.id, host, editor };
         if (viewport.settings().minimap || host.querySelector("canvas")) throw new Error("Expected an opt-in overview.");
         viewport.configure({ minimap: true });
         editor.view.setSelections(workspace.document(resource.documentId).revision, [{ anchor: 6, head: 2 }, { anchor: 9, head: 9 }], 0);
@@ -553,12 +553,12 @@ test("minimap projects comparison gaps and follows linked and independent scroll
         const { mountTextComparison } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const lines = Array.from({ length: 160 }, (_, i) => "section " + i);
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "map-review", variant: "text" }, "Working", { value: lines.join("\n") });
-        const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "review"), host = document.createElement("section");
+        const host = document.createElement("section");
         host.style.width = "900px"; document.body.append(host); lines.splice(40, 0, ...Array<string>(80).fill("baseline section"));
-        const comparison = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from(lines.join("\n")), version: "one" }, { rowsAligned: true, settings: {
+        const comparison = mountTextComparison(host, workspace, resource.documentId, { buffer: TextBuffer.from(lines.join("\n")), version: "one" }, { rowsAligned: true, settings: {
             minimap: true, minimapLabel: line => line === null ? "Espace" : "Ligne " + line,
         } });
-        window.presentationFixture = { workspace, host, tab, resource: resource.id, editor: comparison.panes.working, comparison };
+        window.presentationFixture = { workspace, host, resource: resource.id, editor: comparison.panes.working, comparison };
     });
     await page.waitForFunction(() => window.presentationFixture.editor.viewport.activity().aligned);
     const maps = page.locator(".st-minimap"), saved = maps.first(), working = maps.last();
@@ -615,11 +615,11 @@ test.describe("scrolling beyond the last line", () => {
             const path = "/presentation-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
             const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
             const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "trailing-space", variant: "text" }, "Trailing space", { value: "head\nbody\nend" });
-            const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "trailing-space"), host = document.createElement("section");
+            const host = document.createElement("section");
             host.style.cssText = "height:240.4px;width:600.4px;zoom:1.25"; document.body.append(host);
 
-            const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Trailing source" }), viewport = editor.viewport;
-            window.presentationFixture = { workspace, editor, host, tab, resource: resource.id };
+            const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Trailing source" }), viewport = editor.viewport;
+            window.presentationFixture = { workspace, editor, host, resource: resource.id };
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
             const defaults = viewport.settings().scrollBeyondLastLine, ordinary = viewport.getDiagnostics(), selection = editor.view.getSnapshot().selectionSet;
             viewport.configure({ scrollBeyondLastLine: true }); viewport.flush();
@@ -682,10 +682,10 @@ test.describe("scrolling beyond the last line", () => {
             const path = "/presentation-fixture/", { Workspace, TextBuffer } = await import(path + "core.js") as typeof import("../../src/index.ts");
             const { mountTextComparison } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
             const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "aligned-trailing", variant: "text" }, "Working", { value: "a\nb\nc" });
-            const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "review"), host = document.createElement("section");
+            const host = document.createElement("section");
             host.style.cssText = "height:500px;width:800px"; document.body.append(host);
-            const comparison = mountTextComparison(host, workspace, tab, { buffer: TextBuffer.from("extra\na\nb\nc"), version: "one" }, { rowsAligned: true });
-            window.presentationFixture = { workspace, resource: resource.id, host, tab, comparison, editor: comparison.panes.working };
+            const comparison = mountTextComparison(host, workspace, resource.documentId, { buffer: TextBuffer.from("extra\na\nb\nc"), version: "one" }, { rowsAligned: true });
+            window.presentationFixture = { workspace, resource: resource.id, host, comparison, editor: comparison.panes.working };
         });
         await page.waitForFunction(() => { const c = window.presentationFixture.comparison!;
             return c.controller.getSnapshot().status === "ready" && c.getDiagnostics().rowsAligned && !c.panes.working.viewport.activity().pending && !c.panes.reference.viewport.activity().pending; });
@@ -710,9 +710,9 @@ test.describe("scrolling beyond the last line", () => {
             const path = "/presentation-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
             const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
             const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "empty-trailing", variant: "text" }, "Empty", { value: "" });
-            const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "empty"), host = document.createElement("section");
+            const host = document.createElement("section");
             host.style.cssText = "height:240.6px;width:600.6px;zoom:1.25"; document.body.append(host);
-            const editor = mountTextEditor(host, workspace, tab, { settings: { scrollBeyondLastLine: true } }), viewport = editor.viewport;
+            const editor = mountTextEditor(host, workspace, resource.documentId, { settings: { scrollBeyondLastLine: true } }), viewport = editor.viewport;
             const samples: { width: number; height: number; overflow: boolean; extent: number; lineHeight: number }[] = [];
             for (const value of ["", "single"]) {
                 viewport.configure({ minimap: value === "single" });
@@ -737,11 +737,11 @@ test("ligature policy changes native shaping while preserving caret, selection, 
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const face = new FontFace("StLigatureFixture", new Uint8Array(bytes)); await face.load(); document.fonts.add(face);
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "ligatures", variant: "text" }, "Ligatures", { value: "fi AB\nfi" });
-        const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "ligatures"), host = document.createElement("section");
+        const host = document.createElement("section");
         host.style.cssText = "height:240px;width:600px;--st-font:StLigatureFixture;--st-font-size:40px"; document.body.append(host);
 
-        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Ligature source" }), viewport = editor.viewport;
-        window.presentationFixture = { workspace, editor, host, tab, resource: resource.id };
+        const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Ligature source" }), viewport = editor.viewport;
+        window.presentationFixture = { workspace, editor, host, resource: resource.id };
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
         const selection = editor.view.getSnapshot().selectionSet, child = host.querySelector('.st-viewport-row[data-line="0"]')!.firstChild!;
         const sample = () => {
@@ -794,7 +794,7 @@ test("ligature policy changes native shaping while preserving caret, selection, 
         const f = window.presentationFixture, viewport = f.editor.viewport;
         f.editor.dispose(); const disabled = !viewport.settings().fontLigatures, rejected = !viewport.configure({ fontLigatures: true });
         const path = "/presentation-fixture/", { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
-        const second = mountTextEditor(f.host, f.workspace, f.tab, { settings: { fontLigatures: true } }); second.viewport.flush();
+        const second = mountTextEditor(f.host, f.workspace, f.editor.view.documentId, { settings: { fontLigatures: true } }); second.viewport.flush();
         const mounted = second.viewport.settings().fontLigatures, css = getComputedStyle(second.element).fontVariantLigatures; second.dispose();
         return { disabled, rejected, mounted, css, nodes: f.host.childNodes.length, views: f.workspace.diagnostics().views };
     });
@@ -806,16 +806,16 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         const path = "/presentation-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "rulers", variant: "text" }, "Rulers", { value: ("x".repeat(200) + "\n").repeat(1000) });
-        const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "rulers"), host = document.createElement("section");
+        const host = document.createElement("section");
         host.style.cssText = "height:240px;width:600px"; document.body.append(host);
         for (const columns of [[0], [-1], [1.5], [Infinity], [NaN], [Number.MAX_SAFE_INTEGER + 1], Array(1), Array(129).fill(80)]) {
             const before = workspace.diagnostics().views;
-            try { mountTextEditor(host, workspace, tab, { settings: { columnRulers: columns } }); throw new Error("Invalid rulers accepted."); }
+            try { mountTextEditor(host, workspace, resource.documentId, { settings: { columnRulers: columns } }); throw new Error("Invalid rulers accepted."); }
             catch (error) { if (!(error instanceof RangeError)) throw error; }
             if (workspace.diagnostics().views !== before || host.childNodes.length) throw new Error("Invalid mount leaked ownership.");
         }
-        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Ruler source" }), viewport = editor.viewport;
-        window.presentationFixture = { workspace, editor, host, tab, resource: resource.id };
+        const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Ruler source" }), viewport = editor.viewport;
+        window.presentationFixture = { workspace, editor, host, resource: resource.id };
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.activity().pending) return; } throw new Error("Viewport did not settle."); };
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         settle(); const plain = viewport.getDiagnostics(), point = viewport.coordsAt(20)!, row = host.querySelector('.st-viewport-row[data-line="0"]')!, child = row.firstChild;
@@ -891,8 +891,8 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
     expect(changes).toMatchObject({ retainedNode: true, scaled: true, noGuides: true, samePoint: true, sameSelections: true });
     expect(changes.scaledError).toBeLessThan(.5); expect(changes.scaledUnits).toBeLessThan(1000); expect(changes.emptyExtent).toEqual(changes.extent);
     const end = await page.evaluate(() => { const f = window.presentationFixture, viewport = f.editor.viewport;
-        viewport.configure({ columnRulers: [20] }); f.workspace.tabs.close(f.tab); viewport.flush(); const closed = !f.host.querySelector(".st-column-rulers");
-        f.editor.dispose(); f.workspace.releaseResource(f.resource, true);
+        viewport.configure({ columnRulers: [20] }); f.editor.dispose(); const closed = !f.host.querySelector(".st-column-rulers");
+        f.workspace.releaseResource(f.resource, true);
         return { closed, configured: viewport.configure({ columnRulers: [20] }), columns: viewport.settings().columnRulers, children: f.host.childNodes.length,
             views: f.workspace.diagnostics().views, subscriptions: f.workspace.diagnostics().subscriptions }; });
     expect(end).toEqual({ closed: true, configured: false, columns: [], children: 0, views: 0, subscriptions: 0 });
@@ -904,14 +904,14 @@ test("current-line presentation follows the primary caret through input, folding
         const path = "/presentation-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "current-line", variant: "text" }, "Current line", { value: "head\nbody\nmore\nend\n" });
-        const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "current-line"), host = document.createElement("section"), style = document.createElement("style");
+        const host = document.createElement("section"), style = document.createElement("style");
         host.style.cssText = "height:400px;width:800px;--st-current-line:#ffffff18";
         style.textContent = ".host-row { background: rgb(30, 45, 65) } .host-color { color: rgb(180, 60, 160) }"; document.body.append(style, host);
 
-        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Line source" }), viewport = editor.viewport;
+        const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Line source" }), viewport = editor.viewport;
         editor.decorations.addProvider({ order: 0, lineClass: () => "host-row",
             provide: line => [{ from: line.from, to: line.to, className: "host-color" }] });
-        window.presentationFixture = { workspace, editor, tab, resource: resource.id, host };
+        window.presentationFixture = { workspace, editor, resource: resource.id, host };
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
         const defaults = viewport.settings().highlightCurrentLine, point = viewport.coordsAt(1), row = host.querySelector('.st-viewport-row[data-line="0"]')!, child = row.firstChild;
         const extent = [viewport.element.scrollWidth, viewport.element.scrollHeight]; viewport.configure({ highlightCurrentLine: true }); viewport.flush();
@@ -970,7 +970,7 @@ test("current-line presentation follows the primary caret through input, folding
         const { TextBuffer } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextComparison } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         f.editor.dispose(); f.host.style.height = "500px";
-        f.comparison = mountTextComparison(f.host, f.workspace, f.tab, { buffer: TextBuffer.from("extra\nHEAD\nbody\nmore\nend\n"), version: "one" }, { rowsAligned: true });
+        f.comparison = mountTextComparison(f.host, f.workspace, f.editor.view.documentId, { buffer: TextBuffer.from("extra\nHEAD\nbody\nmore\nend\n"), version: "one" }, { rowsAligned: true });
     });
     await page.waitForFunction(() => { const c = window.presentationFixture.comparison!;
         return c.controller.getSnapshot().status === "ready" && c.getDiagnostics().rowsAligned && !c.panes.working.viewport.activity().pending && !c.panes.reference.viewport.activity().pending; });
@@ -998,7 +998,7 @@ test("current-line presentation follows the primary caret through input, folding
     expect(aligned.edges).toContain("inset"); expect(aligned.fill).not.toBe("rgba(0, 0, 0, 0)");
     await info.attach("current-line-review", { body: await page.screenshot(), contentType: "image/png" });
     const end = await page.evaluate(() => { const f = window.presentationFixture, c = f.comparison!, reference = c.panes.reference.viewport;
-        c.dispose(); f.workspace.tabs.close(f.tab); f.workspace.releaseResource(f.resource, true);
+        c.dispose(); f.workspace.releaseResource(f.resource, true);
         return { configured: reference.configure({ highlightCurrentLine: true }), enabled: reference.settings().highlightCurrentLine, children: f.host.childNodes.length,
             views: f.workspace.diagnostics().views, subscriptions: f.workspace.diagnostics().subscriptions }; });
     expect(end).toEqual({ configured: false, enabled: false, children: 0, views: 0, subscriptions: 0 });

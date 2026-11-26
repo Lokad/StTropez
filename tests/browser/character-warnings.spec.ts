@@ -1,10 +1,10 @@
 import { test, expect } from "./fixtures.ts";
 import { editorModules } from "../helpers/fixture-modules.ts";
 import type { Page } from "@playwright/test";
-import type { Workspace, ResourceId, TabId } from "../../src/index.ts";
+import type { Workspace, ResourceId } from "../../src/index.ts";
 import type { CharacterWarningCapture, TextEditor } from "../../src/browser/index.ts";
 
-type Fixture = { workspace: Workspace; editor: TextEditor; tab: TabId; resource: ResourceId; host: HTMLElement;
+type Fixture = { workspace: Workspace; editor: TextEditor; resource: ResourceId; host: HTMLElement;
     set: (text: string, caret?: number) => void; capture?: CharacterWarningCapture };
 declare global { interface Window { warningFixture: Fixture } }
 async function fixture(page: Page, text = "a\u00a0b\u200bc", enabled = false) {
@@ -18,15 +18,15 @@ async function fixture(page: Page, text = "a\u00a0b\u200bc", enabled = false) {
         const path = "/warning-fixture/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "warnings", variant: "text" }, "Warnings", { value: text });
-        const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "warnings"), host = document.createElement("section");
+        const host = document.createElement("section");
         host.style.cssText = "height:240px;width:600px"; document.body.append(host);
         const before = workspace.diagnostics();
-        try { mountTextEditor(host, workspace, tab, { settings: { characterWarnings: { allow: ["two"] } } }); throw new Error("Invalid allow-list accepted."); }
+        try { mountTextEditor(host, workspace, resource.documentId, { settings: { characterWarnings: { allow: ["two"] } } }); throw new Error("Invalid allow-list accepted."); }
         catch (error) { if (!(error instanceof TypeError)) throw error; }
         if (workspace.diagnostics().views !== before.views || host.childNodes.length) throw new Error("Invalid mount leaked a view or DOM.");
-        const editor = mountTextEditor(host, workspace, tab, { ariaLabel: "Warning source", settings: { characterWarnings: enabled } });
+        const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Warning source", settings: { characterWarnings: enabled } });
         editor.decorations.addProvider({ order: 0, provide: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
-        window.warningFixture = { workspace, editor, tab, resource: resource.id, host,
+        window.warningFixture = { workspace, editor, resource: resource.id, host,
             set: (text, caret = 0) => { const document = workspace.document(resource.documentId);
                 const result = workspace.edit({ documentId: resource.documentId, expectedRevision: document.revision, origin: "host", view: editor.view,
                     edits: [{ from: 0, to: document.buffer.length, insert: text }], selection: { anchor: caret, head: caret } });
@@ -66,7 +66,7 @@ test("warning policy composes with colors and selection; captures expire on edit
     const end = await page.evaluate(() => {
         const f = window.warningFixture, capture = f.editor.characterWarnings.query(0, 5)!;
         f.editor.dispose(); const configured = f.editor.configure({ characterWarnings: true }), query = f.editor.characterWarnings.query(0, 5);
-        f.workspace.tabs.close(f.tab); f.workspace.releaseResource(f.resource, true);
+        f.workspace.releaseResource(f.resource, true);
         return { current: capture.isCurrent(), configured, query, configuration: f.editor.settings().characterWarnings, views: f.workspace.diagnostics().views,
             subscriptions: f.workspace.diagnostics().subscriptions, children: f.host.childNodes.length };
     });

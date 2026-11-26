@@ -19,9 +19,9 @@ test("input refresh reuses bounded projections while repairing native state and 
         const { observeBufferReads } = await import(path + "probe.js") as typeof import("../observe-buffer-reads.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "context-reuse", variant: "text" }, "Context",
             { value: "const row = '東京 😀';\r\n".repeat(1000) });
-        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "context"), host = document.createElement("section");
+        const host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const editor = mountTextEditor(host, workspace, tab), input = editor.element.querySelector("textarea")!, target = workspace.tabs.capture(tab);
+        const editor = mountTextEditor(host, workspace, source.documentId), input = editor.element.querySelector("textarea")!;
         const doc = () => workspace.document(source.documentId), refresh = () => input.dispatchEvent(new KeyboardEvent("keyup", { key: "Tab", bubbles: true }));
         const settle = async () => { for (let i = 0; i < 60; i++) {
             await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
@@ -84,14 +84,14 @@ test("input refresh reuses bounded projections while repairing native state and 
             const crlf = doc().buffer.offsetAt(1) - 1;
             editor.view.setSelection(doc().revision, { anchor: crlf, head: crlf }); refresh(); input.dispatchEvent(new Event("select"));
             const rawCrLf = editor.view.getSnapshot().selection.head === crlf && exact();
-            await settle(); workspace.tabs.close(tab); const disabled = input.disabled;
+            await settle();
             editor.dispose(); const prior = reads.read(doc().buffer).sliceUnits; refresh();
-            return { work, compressedExact, repaired, authority, directionChanged, completeSet, newBuffer, expiredComposition, rawCrLf, disabled,
+            return { work, compressedExact, repaired, authority, directionChanged, completeSet, newBuffer, expiredComposition, rawCrLf,
                 disposed: !input.isConnected && input.value === "" && reads.read(doc().buffer).sliceUnits === prior };
-        } finally { reads.dispose(); editor.dispose(); if (workspace.tabs.resolve(target)) workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { reads.dispose(); editor.dispose(); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("input-context-reuse", { body: JSON.stringify(result), contentType: "application/json" });
     for (const item of result.work) expect(item.sliceUnits, item.name).toBe(0);
     expect(result).toMatchObject({ compressedExact: true, repaired: true, authority: true, directionChanged: true, completeSet: true, newBuffer: true,
-        expiredComposition: true, rawCrLf: true, disabled: true, disposed: true });
+        expiredComposition: true, rawCrLf: true, disposed: true });
 });

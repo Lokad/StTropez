@@ -17,11 +17,11 @@ test("viewport maps retained source rows through newline edits without stale con
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "retained-rows", variant: "text" }, "Rows",
             { value: Array.from({ length: 1200 }, (_, i) => `const row_${i} = ${i};`).join("\r\n") });
-        const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "rows"), host = document.createElement("section");
+        const host = document.createElement("section");
         host.style.cssText = "height:260px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let shade = "row-token", early = false;
         const stopEarly = workspace.observeDocument(source.documentId).subscribe(() => { if (early) viewport.flush(); });
-        const { viewport, setComparisonRows } = mountViewport(host, workspace, tab);
+        const { viewport, setComparisonRows } = mountViewport(host, workspace, source.documentId);
         viewport.decorations.addProvider({ order: 0,
             provide: row => [{ from: row.from, to: Math.min(row.to, row.from + 5), className: shade }], lineClass: row => row.line % 2 ? "row-odd" : "row-even" });
         const doc = () => workspace.document(source.documentId), row = (line: number) => host.querySelector<HTMLElement>(`.st-viewport-row[data-line="${line}"]`)!;
@@ -107,7 +107,7 @@ test("viewport maps retained source rows through newline edits without stale con
             edit([{ from: doc().buffer.length - 1, to: doc().buffer.length, insert: "" }]); settle();
             const joinedEnd = row(3) === sameB && !eof.isConnected;
             return { work, selected, refreshed, fragment, deletion, insertion, joinedEnd, exact: exact() };
-        } finally { stopEarly(); viewport.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true); host.remove(); }
+        } finally { stopEarly(); viewport.dispose(); workspace.releaseResource(source.id, true); host.remove(); }
     });
     await testInfo.attach("row-retention", { body: JSON.stringify(result), contentType: "application/json" });
     for (const work of result.work) {
