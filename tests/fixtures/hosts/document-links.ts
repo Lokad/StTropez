@@ -72,7 +72,6 @@ export class HostDocumentLinks {
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && !this.disposed && !this.active.editor.signal.aborted,
             connected: !!this.route && !this.disconnected && this.options.provider.getSnapshot().phase === "ready",
             disconnected: this.disconnected, requestView: this.route?.origin.id ?? null, canReturn: !!this.visit });
-        if (patch.message) this.host.report("modules", patch.message);
     }
     private releaseResults() {
         const route = this.route; this.route = undefined;
@@ -206,7 +205,7 @@ export class HostDocumentLinks {
         return route;
     }
     private start(keyboard: boolean, returning = false) {
-        const mayFocus = this.host.claimNavigationFocus("modules");
+        const mayFocus = this.host.claimNavigationFocus();
         const origin = this.active, route = origin && this.begin(origin, returning);
         if (!origin || !route) return;
         if (keyboard && origin.editor.getSnapshot().focused) route.focusResults = mayFocus;
@@ -267,7 +266,7 @@ export class HostDocumentLinks {
         // Resolving disables the row. Keep Escape and Tab in the results list.
         if ("open" in selected && selected.canResolve && list?.matches(":focus-within")) list.focus({ preventScroll: true });
         const focused = owner.activeElement;
-        const mayFocus = this.host.claimNavigationFocus("modules");
+        const mayFocus = this.host.claimNavigationFocus();
         const events = new AbortController(); let follow = true;
         if (!("open" in selected) || selected.canResolve) {
             const leave = () => { follow = false; }, options = { capture: true, once: true, signal: events.signal };
@@ -325,7 +324,7 @@ export class HostDocumentLinks {
     readonly returnToOrigin = () => {
         const visit = this.visit;
         if (!visit) return;
-        this.host.claimNavigationFocus("modules");
+        this.host.claimNavigationFocus();
         if (!this.host.canCapture(visit.destination.view.documentId)) { this.publish({ message: unavailablePaneMessage }); return; }
         if (visit.returnPoint?.isNext()) {
             const result = this.host.back(visit.destination, this.sessions.keys());

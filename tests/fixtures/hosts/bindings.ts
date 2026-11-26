@@ -50,8 +50,6 @@ export class ViewBindings {
     readonly domain: HostDomainTools;
     readonly navigation: HostNavigationTools;
     private readonly locationHistory: ReturnType<typeof createNavigationHost>["history"];
-    readonly locationStatus: ReturnType<typeof createNavigationHost>["locationStatus"];
-    readonly switchLocations: () => void;
     readonly project: HostProjectTools;
     readonly signature: HostSignatureTools;
     readonly rename: HostRenameTools;
@@ -219,8 +217,6 @@ export class ViewBindings {
         const present = (document: DocumentId) => this.presentNavigationDocument(document);
         const languageHost = createNavigationHost({ workspace: controller.workspace, canCapture, present, reconnect: reconnectProvider });
         this.locationHistory = languageHost.history;
-        this.locationStatus = languageHost.locationStatus;
-        this.switchLocations = languageHost.switchLocations;
         this.links = new HostDocumentLinks(languageHost, lsp.links);
         this.navigation = new HostNavigationTools(languageHost, { ...lsp.navigation, linkAt: (editor, offset) => this.links.linkAt(editor, offset) });
         this.project = new HostProjectTools(languageHost, lsp.project, lsp.owner);

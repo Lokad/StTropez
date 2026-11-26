@@ -62,7 +62,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const destroyActions = mountActionsPanel(codeActions, bindings.actions);
     const destroyRename = mountRenamePanel(rename, bindings.rename);
     const destroyProject = mountProjectPanel(project, bindings.project);
-    const destroyNavigation = mountNavigationPanel(navigation, bindings.navigation, false);
+    const destroyNavigation = mountNavigationPanel(navigation, bindings.navigation);
     const destroyDomain = mountDomainPanel(domain, bindings.domain);
     const destroyTablePaste = mountTablePastePanel(tablePaste, bindings.tablePaste);
     const destroyLanguage = mountLanguagePanel(language, bindings.language);

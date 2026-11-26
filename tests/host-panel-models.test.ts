@@ -5,9 +5,7 @@ import { HostController } from "./fixtures/hosts/controller.ts";
 import { hostSceneModel } from "./fixtures/hosts/scene-model.ts";
 import { variantPanelModel } from "./fixtures/hosts/variant-panel.ts";
 import type { VariantReviewSnapshot } from "./fixtures/hosts/variants.ts";
-import { navigationPanelModel } from "./fixtures/hosts/navigation-panel.ts";
 import { projectPanelModel } from "./fixtures/hosts/project-panel.ts";
-import type { NavigationSnapshot } from "./fixtures/hosts/navigation.ts";
 import type { ProjectSnapshot } from "./fixtures/hosts/project.ts";
 import { renamePanelModel } from "./fixtures/hosts/rename-panel.ts";
 import { actionsPanelModel } from "./fixtures/hosts/actions-panel.ts";
@@ -181,26 +179,6 @@ test("action controls invoke the choice and confirmation supplied by their snaps
     first.actions.find(action => action.label === "Apply captured action")!.invoke!(); assert.deepEqual(applied, [10, 9]);
     newer.changes.items()[0]!.invoke(); first.changes.items()[0]!.invoke(); assert.deepEqual(opened, [secondId, firstId]);
     assert.equal(first.module.bind, tools.bindModule);
-});
-
-test("navigation presentation keeps a captured target while a newer snapshot supplies another page", () => {
-    const opened: [number, number][] = [];
-    const tools: Parameters<typeof navigationPanelModel>[0] = { findDefinition: noop, findReferences: noop, cancel: noop, returnToOrigin: noop,
-        addCompanion: noop, disconnect: noop, reconnect: noop, setIncludeDeclaration: noop, bindList: noop };
-    let formatted = 0;
-    const state: NavigationSnapshot = Object.freeze({ available: true, connected: true, disconnected: false, canCancel: true,
-        paging: { key: 7, first: 0, previous: null, next: noop }, status: "ready", message: "Captured results", includeDeclaration: true, canReturn: false,
-        locations: Object.freeze([Object.freeze({ declaration: true, ordinal: 0,
-            get title() { formatted++; return "First"; }, line: 1, column: 3, excerpt: "const rate = 1;", open: () => { opened.push([7, 0]); } })]) });
-    const first = navigationPanelModel(tools, state), statusOnly = navigationPanelModel(tools, { ...state, message: "Origin focused", canReturn: true });
-    assert.equal(formatted, 0, "status presentation does not format the retained result list");
-    assert.equal(statusOnly.results.identity, first.results.identity);
-    const newer = navigationPanelModel(tools, { ...state, paging: { key: 8, first: 64, previous: noop, next: null }, locations: [{ ...state.locations[0]!, ordinal: 64, open: () => { opened.push([8, 64]); } }] });
-    newer.results.items()[0]!.invoke(); first.results.items()[0]!.invoke();
-    assert.deepEqual(opened, [[8, 64], [7, 0]], "old rows never resolve through the newer result page");
-    assert.notEqual(newer.results.identity, first.results.identity);
-    assert.equal(first.actions.find(a => a.label === "Next navigation results")!.invoke, noop);
-    assert.equal(newer.actions.find(a => a.label === "Next navigation results")!.disabled, true);
 });
 
 test("project presentation keeps decisions, edit pages and resources tied to the displayed review", () => {

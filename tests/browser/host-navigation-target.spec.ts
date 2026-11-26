@@ -52,7 +52,7 @@ test("links and definitions retry a failed presentation and keep the requesting 
         const attempted = new Set<string>();
         const panes = createNavigationHost({ workspace: ws, canCapture: () => true, present: id => {
             const label = id === module.documentId ? "Module" : "Declaration";
-            if (!attempted.has(id)) { attempted.add(id); throw new Error(label + " pane is unavailable."); }
+            if (!attempted.has(label)) { attempted.add(label); throw new Error(label + " pane is unavailable."); }
             destination?.dispose();
             return destination = mountTextEditor(document.getElementById("destination")!, ws, id, { ariaLabel: label });
         } });
@@ -93,12 +93,10 @@ test("links and definitions retry a failed presentation and keep the requesting 
     await page.getByRole("button", { name: "Return to link origin" }).click();
     await expect(page.getByRole("textbox", { name: "Main", exact: true })).toBeFocused();
     await findDefinition.click();
-    const row = page.getByRole("button", { name: "library:types:2:6 · declaration", exact: true });
     await expect(page.getByRole("textbox", { name: "Notes", exact: true })).toHaveCount(0);
-    await expect(row).toBeVisible(); await row.click();
     await expect(page.getByLabel("Symbol navigation status", { exact: true })).toHaveText("Declaration pane is unavailable.");
     await expect(page.getByRole("button", { name: "Return to navigation origin" })).toBeDisabled();
-    await row.click();
+    await findDefinition.click();
     const target = page.getByRole("textbox", { name: "Declaration" });
     await expect(target).toBeFocused(); await expect(target).toHaveAttribute("readonly", "");
     const start = (await target.inputValue()).indexOf("Currency");

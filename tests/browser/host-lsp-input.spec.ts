@@ -48,7 +48,8 @@ async function previews(page: Page, checkComposition = false): Promise<void> {
     await select(page, caret);
     const before = await snapshot(page);
     await input(page).press("F12"); await settled(page);
-    await expect(page.getByRole("list", { name: "Navigation results", exact: true }).getByRole("button")).toHaveCount(1);
+    await expect.poll(async () => (await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection.head)
+        .toBe(source.indexOf("catalogue"));
     await select(page, caret);
     await page.getByLabel("New identifier", { exact: true }).fill("inventory");
     await button(page, "Prepare rename preview").click();

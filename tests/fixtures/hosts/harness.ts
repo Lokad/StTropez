@@ -77,7 +77,6 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         requestProvider: bindings.language.request,
         setDomainDelay: (delay: number) => { if (!Number.isFinite(delay) || delay < 0 || delay > 10000) throw new RangeError("Invalid domain delay."); bindings.domain.fixture.delay = delay; },
         faultDomainNext: (fault: "malformed" | "failure" | "late") => { bindings.domain.fixture.fault = fault; },
-        setNavigationDelay: bindings.navigation.fixture.setDelay,
         releaseNavigationCompanion: () => bindings.navigation.releaseCompanion(),
         setProjectDelay: bindings.project.fixture.setDelay, faultProjectNext: bindings.project.fixture.faultNext,
         setSignatureDelay: bindings.signature.fixture.setDelay, faultSignatureNext: bindings.signature.fixture.faultNext, requestSignature: bindings.signature.inspect,
@@ -120,7 +119,6 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     providerState: () => ReturnType<ViewBindings["language"]["state"]["getSnapshot"]>["provider"];
     requestProvider: () => void;
     setDomainDelay: (delay: number) => void; faultDomainNext: (fault: "malformed" | "failure" | "late") => void;
-    setNavigationDelay: (delay: number) => void;
     releaseNavigationCompanion: () => boolean;
     setProjectDelay: (value: number) => void; faultProjectNext: (value: "malformed" | "failure" | "ack") => void;
     setSignatureDelay: (value: number) => void; faultSignatureNext: (value: "malformed" | "failure" | "markup") => void; requestSignature: () => void;

@@ -16,19 +16,6 @@ export type LanguageHost = Readonly<{
 /** A later destination request owns focus even if its result is empty or fails. */
 export function createNavigationHost(host: LanguageHost) {
     let latest = 0;
-    type Kind = "symbols" | "modules";
-    const messages = { symbols: "Focus a source to look up a symbol or module.", modules: "Focus a source to discover module links." };
-    const requested = new Set<Kind>();
-    const status = new HostCell<{ kind: Kind; message: string; alternate: Kind | null }>({ kind: "symbols", message: messages.symbols, alternate: null });
-    function show(kind: Kind) {
-        const other = kind === "symbols" ? "modules" : "symbols", alternate = requested.has(other) ? other : null;
-        const current = status.get(), message = messages[kind];
-        if (current.kind !== kind || current.message !== message || current.alternate !== alternate) status.set({ kind, message, alternate });
-    }
-    function report(kind: Kind, message: string) {
-        messages[kind] = message;
-        if (status.get().kind === kind) show(kind);
-    }
     const history = createNavigationHistory(host.workspace);
     // The link panel has a targeted Return. Track opaque visit identities so it never pops a newer symbol jump.
     const visits = new HostCell<readonly symbol[]>([]);
@@ -60,13 +47,12 @@ export function createNavigationHost(host: LanguageHost) {
         if (result === "restored" && origin) focusSource(origin);
         return result;
     }
-    function claimNavigationFocus(kind: Kind) {
-        const request = ++latest; requested.add(kind); show(kind);
+    function claimNavigationFocus() {
+        const request = ++latest;
         return () => request === latest;
     }
     return { ...host, history: { capture, getSnapshot: () => history.getSnapshot().back, subscribe: visits.observable.subscribe,
-        dispose() { history.dispose(); visits.set([]); } }, back, locationStatus: status.observable, report, claimNavigationFocus,
-        switchLocations() { const other = status.get().alternate; if (other) claimNavigationFocus(other); } };
+        dispose() { history.dispose(); visits.set([]); } }, back, claimNavigationFocus };
 }
 export type NavigationHost = ReturnType<typeof createNavigationHost>;
 export type HostLocation = NonNullable<ReturnType<NavigationHost["history"]["capture"]>>;

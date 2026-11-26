@@ -38,7 +38,6 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .host-locations ul { max-height: 12rem; overflow: auto; padding-inline-start: 1.5rem; }
 .host-locations ul:empty { margin: 0; }
 .host-locations li > p { margin: .2rem 0 .5rem; overflow-wrap: anywhere; }
-.host-locations ul[aria-label="Navigation results"] p { font-family: monospace; white-space: pre-wrap; }
 .host-language button { margin: 3px; }
 .st-token-keyword { color: #a9c5ff; }
 .st-token-number { color: #b9e29e; }
