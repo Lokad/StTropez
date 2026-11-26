@@ -1,51 +1,25 @@
 # Getting started
 
-StTropez is a TypeScript library for embedding a text editor and a workspace in a browser app.
-Use it when several views need to edit, compare or undo changes to the same files, while your
-application decides where to save them and what happens when the user clicks Run.
-
-A **resource** identifies a file or a typed value such as project settings. A text resource’s
-**document** holds shared text, revision and undo history. A **tab** records where a resource
-is open. Each editor **view** has its own selection and folds,
-and each mounted pane scrolls independently. The host owns storage, execution and network I/O.
-
-| Public import | Use it to |
-| --- | --- |
-| `sttropez` | Open files and edit shared text with the headless `Workspace`. Capture a ticket when saving. |
-| `sttropez/browser` | Mount an editor or comparison and enable language features with `attachEditorLanguage`. |
-| `sttropez/protocol` | Share an `LspWorkspace` across views. The host supplies its transport and scheduler. |
-| `sttropez/kernels` | Use individual algorithms in a provider, such as `validateTextEdits` to check an edit batch. |
-
-Capture the document and revision when you request an edit. If the user types or switches tabs before
-the reply arrives, its offsets refer to the original text.
-
-**Where the work runs.** Typing, rendering and literal search run on the browser’s main thread.
-Longer tasks such as diffing yield between chunks. The host can supply a dedicated Web Worker
-for regex matching and replacement planning. Local syntax coloring needs no server. When LSP is
-enabled the connected provider computes its diagnostics and completions. The host decides where
-Save and Run execute. [Regex worker](search.md#regular-expressions-and-worker-limits)
+StTropez lets several editor panes share a document and its Undo history. Each pane has its own
+selection, folds and scroll position. Your application supplies storage and language services.
+[Public imports](api.md) · [Architecture](architecture.md)
 
 ## Use
 
-Run `npm run demo` and open `http://127.0.0.1:4173/reference/` for a complete host.
-Edit `quote.ts` and choose **Changes** to review it. Use **Save for this tab** or press
-Ctrl+S (Cmd+S on macOS) in either pane. Reload the tab to reopen the saved text.
-If another view in the tab saves first, Changes shows its saved text beside your draft.
-Choose **Save reviewed working copy** to keep your version. If the saved text changes again,
-review the new comparison before saving.
-**Connect language server** enables the local example provider. In Changes, focus the working
-copy to use its language commands. You can search either pane.
+Run `npm run demo` from the checkout and open the [reference host](http://127.0.0.1:4173/reference/).
 
-The host checks `editor.activity()` and the Find bar before saving or switching views. Retry once
-pending edits finish. On close or reload, the host requests confirmation if an edit is pending or the file has unsaved changes.
+1. Edit `quote.ts` and choose **Changes**. The working pane keeps your selection and folds.
+2. Use **Save for this tab** or Ctrl+S (Cmd+S on macOS), then reload to reopen the saved text.
+   If another view saved first, inspect both copies and choose **Save reviewed working copy**.
+3. Choose **Connect language server** to try completion and code actions. In Changes, language
+   commands act on the working pane. Find can search either pane.
 
-The host keeps its working view with `workspace.createDocumentView(file.documentId)` and passes
-it to both mounts. The selection and folds follow the working document into comparison.
-[Editor, Find and saving](../examples/reference/main.ts) · [Find bar](search.md) · [Language attachment](../examples/reference/language.ts)
+The reference host checks for pending input before Save, remount or reload. Its source shows how
+to share the working view across mounts. [Mount, Find and Save](../examples/reference/main.ts) · [Language commands](../examples/reference/language.ts)
 
 ### Open the first editor
 
-Start `app.js` with a checklist. Create a resource for the file and mount its document in the page.
+To embed an editor in your own page, start `site/app.js` with this checklist document.
 
 ```js file=app.js
 import { Workspace } from "sttropez";
@@ -65,10 +39,9 @@ const editor = mountTextEditor(primary, workspace, file.documentId, { ariaLabel:
 editor.focus();
 ```
 
-To run it, put the contents of the `assets/` directory from the StTropez NuGet archive in
-`site/sttropez/`, beside `site/app.js` and the following `site/index.html`. From a source checkout,
-`npm ci` and `npm run build` produce the same directory layout in `dist/`. Copy the whole tree
-so the modules can find their shared chunks. [NuGet restore and staging](packaging.md#use)
+Copy the NuGet archive’s `assets/` contents into `site/sttropez/`, preserving subdirectories.
+From source, `npm ci` and `npm run build` produce the same modules in `dist/`. Save this as
+`site/index.html`. [Staging the package](packaging.md#use)
 
 ```html
 <!doctype html>
@@ -95,13 +68,11 @@ so the modules can find their shared chunks. [NuGet restore and staging](packagi
 <script type="module" src="./app.js"></script>
 ```
 
-Serve `site/` over HTTP. For example, from that directory run `python -m http.server 8000`
-and open `http://localhost:8000/`. The examples use native ES modules and need no bundler.
+From `site/` run `python -m http.server 8000` and open `http://localhost:8000/`.
 
 ### Add features to a browser IDE
 
-Add this toolbar helper to `app.js`. Append the remaining snippets there too, except for the tokenizer
-in `checklist.js`.
+Append the following blocks to `app.js` in order. The tokenizer goes in its own file, `checklist.js`.
 
 ```js file=app.js
 const controls = new AbortController();
@@ -132,10 +103,8 @@ const editsReady = panes => {
 
 #### Switch and move tabs
 
-Choose **Notes** to open a second file. Switch back to the checklist, then return to Notes. Keeping
-both editors mounted preserves each caret, fold and scroll position. Your toolbar decides which tab to
-show and where to put focus. `workspace.tabs.move` keeps the tab ID and pending captures valid across
-panes. `workspace.tabs.replace` reuses the ID and expires captures for the old tab.
+**Notes** opens a second document. **Checklist** switches back. Both panes stay mounted, so each
+keeps its caret and scroll position. **Dock notes** moves the existing tab into a second pane.
 
 ```js file=app.js
 const notes = workspace.createTextResource(
@@ -174,10 +143,9 @@ button("Dock notes", () => {
 
 #### Close a tab and keep its draft
 
-Choose **Review close**, move the notes tab, then choose **Close notes**. The close works. Try
-editing the notes after **Review close** instead. The edit expires the decision, as would replacing
-the tab. Reopening **Notes** gives the same document a new tab, with its draft and undo history
-intact.
+Choose **Review close**, then **Close notes**. Moving the tab preserves the close decision.
+Editing it or replacing its contents expires the decision. Reopening Notes restores its text and
+history. [Resource lifetime](workspace.md#loading-and-resource-lifetime)
 
 ```js file=app.js
 /** @type {import("sttropez").CloseIntent | undefined} */
@@ -201,9 +169,8 @@ button("Close notes", () => {
 
 #### Propose an edit, apply it later, and undo
 
-The remaining commands act on the checklist. Click **Propose task**, type in the checklist,
-then click **Apply task**. The workspace rejects the
-old offsets. Propose again and apply without typing to add the task in one undo step.
+Choose **Propose task**, then type in the checklist. **Apply task** rejects the stale offsets.
+A fresh proposal applies in one Undo step.
 
 ```js file=app.js
 /** @type {(() => boolean) | undefined} */
@@ -229,9 +196,7 @@ button("Undo", () => workspace.undo({ documentId: file.documentId,
 
 #### Plug in a standalone tokenizer
 
-Save this tokenizer as `site/checklist.js`. It recognizes open and completed task markers at the
-start of a line. Each token has a kind and a half-open UTF-16 range relative to that line.
-For example, `[0, 5)` colors the first five units.
+Save this as `site/checklist.js`. Its ranges count UTF-16 units from the start of a line.
 
 ```js file=checklist.js
 /** @param {string} prefix */
@@ -242,9 +207,8 @@ export function tokens(prefix) {
 }
 ```
 
-Back in `app.js`, attach a token provider to the second editor. The host loads the
-tokenizer or grammar parser and maps its output to document offsets and CSS classes. The stylesheet gives
-`open-task` and `done-task` different colors. Change a space to `x` to see the marker change.
+Mount another view of the checklist. Its decoration provider maps the tokenizer’s ranges to
+document offsets and CSS classes. Change a checkbox from `[ ]` to `[x]` to see its color change.
 
 ```js file=app.js
 import { tokens } from "./checklist.js";
@@ -268,22 +232,14 @@ const checklist = split.decorations.addProvider({
 });
 ```
 
-For a multiline token, pass the previous line’s ending state into the next call, as in
-`const { tokens, endState } = lexLine(text, startState)`. A line can start inside a block comment.
-Cache results by document and revision. After an edit, tokenize from the first changed line until the
-unchanged suffix has its original incoming state. Paint spans that intersect the visible fragment.
-
-`provide` runs synchronously during paint. For an expensive grammar, run its tokenizer in a
-host worker. Check the document ID and revision when the result arrives, cache the spans, then
-call `checklist.invalidate(firstLine, endLine)` to repaint the affected lines. Comment
-and indentation rules use `language`. Completion and diagnostics use a separate provider.
-[Host tokenization](host-integration.md#tokenization-annotations-and-forms)
+`provide` runs during paint. For a multiline grammar, track lexical state across lines. For an
+asynchronous tokenizer, check the document and revision, cache the spans and call
+`checklist.invalidate(firstLine, endLine)`. [Host tokenization](host-integration.md#tokenization-annotations-and-forms)
 
 #### Paste a list
 
-Paste tab-separated text in either pane to turn it into checklist rows. Other text uses the usual
-paste handler. `insert` replaces the captured selections in one undo step. If your converter runs
-asynchronously, keep the capture until it finishes.
+Paste tab-separated cells into either checklist pane to turn them into rows in one Undo step.
+Plain text uses the editor’s usual paste behavior. [Asynchronous conversion](host-integration.md#captured-insertion-and-structured-paste)
 
 ```js file=app.js
 for (const pane of [editor, split]) {
@@ -299,7 +255,7 @@ for (const pane of [editor, split]) {
 
 #### Save the working text
 
-Show unsaved edits in the page title. Subscribe once, then read the snapshot on each change.
+Reflect unsaved changes in the page title.
 
 ```js file=app.js
 const showDirty = () => { document.title = file.metadata.getSnapshot().dirty ? name + " (unsaved)" : name; };
@@ -307,10 +263,9 @@ const stopDirty = file.metadata.subscribe(showDirty);
 showDirty();
 ```
 
-Save checks for pending edits in every checklist pane. The sample uses the stored text as its version.
-If another view saved first, **Compare saved** lets the user inspect that copy alongside the draft.
-A remote service must check `expectedServerVersion` when it accepts the write.
-[Conflict review and retry](workspace.md#retry-after-review)
+The stored text doubles as the version for this local example. If it changes before Save,
+**Compare saved** shows the competing copy alongside the draft. A remote service must check
+the expected version when writing. [Reviewed saves](workspace.md#retry-after-review)
 
 ```js file=app.js
 import { TextBuffer } from "sttropez";
@@ -346,7 +301,7 @@ button("Save", () => {
 
 #### Run a check on the draft
 
-This host counts unfinished tasks using the current draft and the configured marker.
+**Run** counts unfinished tasks using the current draft and the marker in a separate settings resource.
 
 ```js file=app.js
 const rules = workspace.createResource(
@@ -364,9 +319,8 @@ button("Run", () => {
 
 #### Compare saved and working text
 
-Open a review against the last successful save, or the
-file as opened. The reference stays fixed while the working pane follows edits. Click again
-to pick up a later save.
+**Compare saved** opens the saved buffer next to the live document. Choose it again to pick up
+a later save.
 
 ```js file=app.js
 import { mountTextComparison } from "sttropez/browser";
@@ -382,9 +336,9 @@ button("Compare saved", () => {
 
 #### Connect a language server
 
-The HTTP server above serves the checklist files. **Connect** needs a separately provided Markdown
-language server at the same origin’s `/lsp` WebSocket endpoint. It must speak LSP 3.17, use
-UTF-16 positions and recognize the URI assigned to the checklist resource.
+To use completion, supply a Markdown language server at `/lsp` on the same origin. The static
+file server above serves only the page and assets. The provider uses WebSocket, LSP 3.17 and
+UTF-16 positions. [Language server](language-server.md)
 
 ```js file=app.js
 import { BrowserLspWorkspace, attachEditorLanguage, openWebSocketTransport } from "sttropez/browser";
@@ -396,8 +350,8 @@ const provider = new BrowserLspWorkspace(workspace, {
 });
 ```
 
-Attach the provider to the first pane. Use **Connect**, then Ctrl+Space in the editor to request
-completion. Arrow keys choose a suggestion and Enter accepts it.
+Choose **Connect**, focus the first pane and press Ctrl+Space. Use the arrows to select a
+completion and Enter to insert it.
 
 ```js file=app.js
 const language = attachEditorLanguage(editor, provider, {
@@ -413,20 +367,18 @@ const stopDiagnostics = diagnostics.subscribe(showLanguage);
 button("Connect", completion.connect);
 ```
 
-For cross-file rename, enable `workspaceEdits` on the provider. Pass the project’s document
-snapshots through the attachment’s `rename.documents` callback. Request the rename with
-`{ review: true }` and bind Apply to the returned preview. One Undo restores all affected files.
-[Complete rename example](language-features.md#rename-and-workspace-edits)
+For cross-file rename, supply the participating documents and review the returned edit before
+applying it. [Rename example](language-features.md#rename-and-workspace-edits)
 
 ## Contract
 
-A revision changes when you edit or undo. The saved version changes when your storage service
-acknowledges a write. Undo back to the saved text and the file is clean again.
-[Save and conflicts](workspace.md#save-and-conflicts)
+Typing and Undo advance the document revision. A successful Save advances the stored version.
+Undo back to the saved text and the document becomes clean. [Save and conflicts](workspace.md#save-and-conflicts)
 
 ## Host responsibilities
 
-Close the attachments when the host closes this file. Ask before discarding edits.
+Check pending edits and confirm before discarding a draft. Dispose attachments before their
+provider and mounts before releasing their resources.
 
 ```js file=app.js
 button("Close", () => {
@@ -453,8 +405,8 @@ button("Close", () => {
 
 ### Mount an editor in React
 
-Create one view and one callback ref per pane when the host opens the document. Pass that same
-ref on each render. React calls it with the element on mount and with `null` on detach.
+Create a stable callback ref when the host opens the pane. React supplies the element on mount
+and `null` on detach.
 
 ```tsx
 import type { DocumentView, Workspace } from "sttropez";
@@ -473,13 +425,11 @@ export function EditorPane({ bind }: { bind: ReturnType<typeof createEditorRef> 
 }
 ```
 
-The host creates `view` with `workspace.createDocumentView(file.documentId)` and passes
-`bind = createEditorRef(workspace, view)` to `<EditorPane bind={bind} />`. Unmounting releases
-the editor. The view keeps its selection and folds for the next mount, including Strict Mode's
-development replay. Call `view.dispose()` when the host retires the pane.
-[Document views](workspace.md#document-views) · [Two-pane React host](../tests/fixtures/hosts/react-main.tsx)
+Create the view with `workspace.createDocumentView(file.documentId)`. Pass the same
+`createEditorRef(workspace, view)` result to `EditorPane` on each render. The view keeps its
+selection and folds across remounts. Dispose it when the host retires the pane.
+[Document views](workspace.md#document-views) · [React fixture](../tests/fixtures/hosts/react-main.tsx)
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for browser and device coverage.
-For runnable host examples, see the [example catalogue](examples.md#development-routes).
+[Device support](README.md#support-matrix) · [Runnable examples](examples.md#development-routes)

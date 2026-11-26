@@ -1,14 +1,12 @@
 # Architecture
 
-The workspace owns the text and undo history. Browser panes and language clients read from it.
-You can close a pane and reopen the same unsaved document with its undo history intact.
-Your application decides when to release the file, where to save it and which services to call.
+The workspace owns text, revisions and Undo. An editor mounts a view of that text. Its host can
+close the editor, keep the document and reopen it with the same history.
+[Reference host](../examples/reference/main.ts) · [Embedding walkthrough](getting-started.md#use)
 
 ## Use
 
-An application uses `sttropez` for workspace state, `sttropez/browser` for editor views
-and `sttropez/protocol` for language clients. Import `sttropez/kernels` for standalone
-algorithms or direct access to JSON-RPC and LSP messages.
+The browser layer supplies the DOM and browser transports. Core and protocol also run headless.
 
 ```mermaid
 flowchart TD
@@ -23,8 +21,8 @@ flowchart TD
     Protocol --> Core
 ```
 
-A host can keep a document view when it closes a pane. Tie analysis to the mount that
-requested it so a reply from the old pane expires even if the same view reopens.
+Tie a pane-local analysis to the editor that requested it. The host may reuse the document view
+in a later mount while the old request is pending.
 
 ```ts
 import type { TextBuffer } from "sttropez";
@@ -56,9 +54,8 @@ export function startAnalysis(
 }
 ```
 
-Await `settled` and check `isCurrent()` before displaying or acting on the result. Closing the
-pane cancels its analysis. Call `dispose()` when the user dismisses or replaces it. To apply
-an edit, submit the revision the analysis read. [Transactions](workspace.md#transactions-and-history) · [When a view capture expires](host-integration.md#captured-view-requests)
+Await `settled` and check `isCurrent()` before showing or applying the result. Use the captured
+revision for edits. Dismissal calls `dispose()`. [View captures](host-integration.md#captured-view-requests) · [Transactions](workspace.md#transactions-and-history)
 
 ## Contract
 
@@ -66,124 +63,85 @@ an edit, submit the revision the analysis read. [Transactions](workspace.md#tran
 
 ### What each layer can import
 
-| Layer | What goes here | What it can use |
+| Layer | Responsibility | Dependencies |
 | --- | --- | --- |
-| `src/core` | Buffers, edits, selections, history, resources and transactions. Runs without a browser. | Other core modules. No DOM, React, Node, network or storage APIs. |
-| `src/protocol` | JSON-RPC/LSP sessions and the regex worker's private protocol. Validates messages. | Core and protocol modules. The caller supplies transport and scheduling through interfaces. |
-| `src/kernels` | Public entry for text algorithms, JSON-RPC, LSP sessions and diagnostic decoding | Re-exports core and protocol modules. |
-| `src/browser` | Editor DOM, native input, caret geometry, drawing and browser adapters | Browser APIs and all three library layers |
-| Host application | Storage, authentication, service endpoints, file routing, framework state, forms and controls | Public package entries and the application's dependencies |
-| Development tools and fixtures | Builds, servers, test providers, hooks and measurement | Development dependencies. These tools aren't part of the shipped runtime. |
+| `src/core` | Buffer, positions, selections, documents, transactions and history | Core modules |
+| `src/protocol` | JSON-RPC/LSP, synchronization and regex-worker messages | Core, injected transport and scheduler |
+| `src/kernels` | Public entry for standalone algorithms and protocol clients | Re-exports from core and protocol |
+| `src/browser` | Input, rendering, editor controls and browser adapters | Library modules and browser APIs |
+| Host | Tabs and surrounding UI, storage, authentication, routing and services | Public entries and host dependencies |
 
-Core and protocol compile with ES2022 and no ambient package types. Using `document` or a Node
-global in either layer fails the type check. The runtime build rejects inputs outside `src/`.
-
-For the published entry points, see [Packaging](packaging.md). The development host includes a
-test peer for the [supported language-server messages](language-server.md).
+Core and protocol type-check against ES2022 without DOM, Node or ambient package types. The runtime
+build accepts only `src/` inputs. Tooling and fixtures may use development dependencies.
+[Public entries](api.md) · [Package contents](packaging.md)
 
 ### Mutable state and lifetime
 
-| Owner | State and lifetime |
+| Owner | State |
 | --- | --- |
-| Workspace/resource | Current contents and revision, permitted operations, last saved contents, undo history and the tabs or leases keeping the resource open |
-| Document view | Independent selections and folding over a shared document, including while detached |
-| Editor input adapter | Native input context, composition capture, ordered input and delayed editing/navigation |
-| Caret presentation | Caret DOM, placement cache and scheduled placement; no text edits, selection writes or command scheduling |
-| Viewport | Rendered rows, scroll projection, native geometry and layout observers |
-| Protocol provider/session | Connection state, document synchronization and shared feature scopes |
-| Feature request | Captured context, cancellation and result lifetime within its provider/view owner |
-| Host controller | Application navigation, menus/forms, commands, recovery and services across view remounts |
+| Workspace and resource | Working and saved contents, revision, permissions, shared history, tabs and leases |
+| Document view | Directed selections and folds, including while detached |
+| Editor input adapter | Native text context, composition, pending navigation and ordered edits |
+| Viewport and caret | Visible fragments, scroll projection, layout observers and caret placement |
+| Language provider and feature scope | Connection, synchronized documents, pending requests and cancellation |
+| Host controller | Navigation history, commands, forms, recovery and services that span mounts |
 
-During composition the input adapter captures the revision, all selections and the native LF
-mapping. It commits or recovers the text before refreshing the input. Word, grapheme and navigation
-commands use the same ordering and edit guards.
-
-The ordered-input queue drains actions in bounded turns. A commit releases its recovery text before
-notifying the view. Cancellation returns only unconsumed input. Editing, folding, comparison, find
-and bracket matching share scheduling helpers. Each controller checks its own captures, disposes
-iterators and publishes its result. Dispose the caret before the viewport.
-
-The workspace commits text, history and view changes atomically. Save tickets capture the resource and revision at invocation. See [workspace ownership](workspace.md#identities-and-snapshots).
-
-Language clients share synchronization and cancellation. If preparation edits the document,
-synchronize the resulting revision. Preserve provider and validation errors when cleanup also
-cancels a request. See [language features](language-features.md).
+Composition captures its revision, selections and native LF offsets. The input adapter commits or
+recovers the text before refreshing. The queue drains in bounded turns and recovers unconsumed input
+on cancellation. An edit commits text, view state and history together. [Editor input](editor.md) · [Workspace transactions](workspace.md#transactions-and-history)
 
 ### Identity and asynchronous work
 
-Choose the identity that can change while a request is in flight. A save that overwrites a server
-copy needs the resource and the server version it expects. A suggested edit needs the document revision
-whose offsets it uses. A command for a particular tab needs its ID and generation. Moving the tab
-preserves both. Replacing its contents changes the generation, and closing it removes the target.
-
-Capture the target and acquire any lease before the first `await`. When the reply arrives,
-check the capture, any selection or view state the result used, and whether a newer request
-superseded it. Two requests can read the same revision. Give the caller a way to cancel while
-it waits. [Identity and capture terms](README.md#glossary)
+Capture the identity the operation depends on before the first `await`. A save checks the resource
+and expected server version. An edit checks the document revision. A tab command checks the tab ID
+and generation, which survives a move and expires on replacement or close. A pane-local result
+also depends on the view and the request that produced it. Two requests can share a revision.
+[Identity and capture terms](README.md#glossary)
 
 ### Snapshots and notification delivery
 
-Reading an observable twice returns the same immutable object until something changes. Subscribe
-to the document, resource or field you display. Read the workspace snapshot when you need the
-whole inventory. The workspace builds it on demand.
-
-Workspace transactions and queued LSP updates publish all changed stores before listeners run. A
-failed listener does not prevent other listeners from receiving the update. Read state during
-notification and issue commands after delivery, including for nested controller notifications. See
-[workspace observables](workspace.md#observables).
+`getSnapshot()` returns the same immutable value until it changes. Subscribe to the document or
+field you display. The workspace builds its full inventory on demand. Changed stores publish
+before listeners run. Schedule writes after delivery. For an edit-by-edit feed, use
+`workspace.onDocumentChange`. [Workspace observables](workspace.md#observables)
 
 ### DOM and framework ownership
 
-Give the editor an empty container. It owns the descendants it mounts. Put host forms and
-annotations in sibling containers and position them with the geometry API.
-
-In React, keep shared state in a controller. Pure components read stable observables and invoke
-commands from event handlers. Stable refs mount and detach editor views. Effects register and remove
-listeners. Keep the document and controller alive across a view remount. See
-[embedding](getting-started.md) and [host integration](host-integration.md).
-
-A source-backed form needs a lossless conversion and a way to display invalid source. Separate
-settings, source and result resources keep their own identities and save permissions. The host owns
-credentials, routing and service execution.
+Mount an editor in an empty container. Keep host forms and interactive annotations outside its
+subtree. React components read stable controller handles and run commands in event handlers.
+Use stable refs to mount editors and effects to register listeners. Keep the controller and
+document alive across remounts. [React mounting](getting-started.md#mount-an-editor-in-react) · [Source-backed forms](host-integration.md#tokenization-annotations-and-forms)
 
 <a id="performance-invariants-and-cost-boundaries"></a>
 
 ### What costs time and memory?
 
-| Operation | How StTropez limits the work | Where the cost grows |
-| --- | --- | --- |
-| Typing and scrolling | Cap the native editing context and the rows or fragments rendered. Measure layout separately from DOM writes. | Native input, layout and browser calls that cannot yield |
-| Editing and mapping positions | Apply edits by range and share indexed buffers and history. Read only the changed range in a routine input subscriber. | Bulk edits, many selections and exporting a whole file as a string |
-| Updating the workspace | Publish a new snapshot for each field that changed. | Reading the full inventory or changing the list of tabs can visit the whole collection. |
-| Highlighting and diagnostics | Work on a captured revision and prioritize visible fragments. Bound the work per turn. | A change near the start of a file can invalidate coloring or require synchronization across a large range. Check the revision before using a result to edit. |
-| Searching and comparing | Let the caller cancel a search, diff or proposed change. Check its result before applying it. | A full search, comparison or transfer can require work proportional to the document, spread across several turns. |
-| Memory | Limit caches and history, share immutable text and release listeners, timers and leases. | Measure garbage collection and memory the browser retains separately. |
-| Startup | Load a matching set of assets and measure optional features when they start. | Downloading and parsing modules, starting a worker and showing the first view have different costs from editing an open file. |
+| Operation | Where work scales |
+| --- | --- |
+| Typing and scrolling | Native input context and rendered fragments are bounded. DOM writes, layout and presentation have separate clocks. Check that text, selection, syntax and gutter all appear. |
+| Edits and history | Range edits share indexed buffers. Many selections, dense batches and explicit full-text exports add work. |
+| Workspace notifications | Read only the displayed snapshot. Listing all resources or tabs visits the collection. |
+| Syntax and diagnostics | Visible fragments get priority. An edit near the beginning can invalidate a long suffix. |
+| Search and comparison | Full results can require a document scan or diff across several turns. A host can provide a dedicated regex worker. |
+| Memory and startup | Retained text, history and caches consume memory. Account separately for downloading assets, parsing modules, worker startup and first render. |
 
-For an edit or scroll, check when the correct text, selection, colors and comparison appear. A
-gutter update can precede the text. See the [clock definitions](README.md#measuring-an-interaction) and
-[test procedures](testing.md).
+[Interaction clocks](README.md#measuring-an-interaction) · [Measurement procedures](testing.md)
 
 <a id="dependency-and-acceleration-policy"></a>
 
 ### Dependencies and alternatives to TypeScript
 
-Runtime code has zero third-party dependencies. Reuse the existing buffers, controllers and platform
-APIs. Keep frameworks and application parsers in the host. Generated character data retains its
-[Unicode](unicode.md) notices.
-
-Before adding a compiler, WASM or a managed runtime, time one operation against its TypeScript
-implementation. Include startup, encoding, copying, allocation and conversion back to TypeScript.
-Check that both versions produce the same results and respect the same limits, cancellation and
-revision checks.
+The runtime has zero third-party dependencies. Before introducing WASM or another runtime,
+compare one kernel against its TypeScript implementation, including startup, copying, encoding
+and conversion of the result. Both implementations must meet the same correctness, cancellation
+and revision requirements.
 
 ## Host responsibilities
 
-The host owns services, routing and framework state. Capture targets before starting work, release
-them on failure or teardown, and retain document identity across remounts. Use scoped subscriptions
-for view updates. See [testing](testing.md#test-ownership) when changing a contract.
+Own credentials, endpoints, persistence and service execution. Retain the targets that delayed
+work needs and release them on failure, cancellation or teardown. Scope view subscriptions to
+their mounts. [Host integration](host-integration.md)
 
 ## Not covered
 
-For questions about a specific browser or input device, such as dead keys or touch
-selection, check the [support matrix](README.md#support-matrix).
+[Browser and device support](README.md#support-matrix)
