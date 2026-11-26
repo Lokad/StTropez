@@ -29,7 +29,7 @@ export type { WorkspaceTabs } from "./core/workspace-tabs.ts";
 export type { TextTransaction } from "./core/text-transaction.ts";
 export type {
     BatchEditResult, Capabilities, ChangeResult, DocumentChange, DocumentEditRequest, DocumentId, DocumentLanguage, DocumentSnapshot, DocumentView,
-    DocumentViewSnapshot, EditLease, EditOrigin, EditRequest, EditResult, HistoryRequest,
+    DocumentViewSnapshot, EditOrigin, EditRequest, EditResult, HistoryRequest,
     LoadedResource, LoadedTextBuffer, ResourceLoad, PaneId, ResourceHandle, ResourceId, ResourceKey, ResourceLease,
     ResourceMetadata, ResourceOptions, ResourceSnapshot, ResourceTarget, ResourceVisibility, SaveReceipt, SaveReview, SaveSubmission, SaveTicket, Surface, TabId, TabSnapshot, TabTarget, TextResourceHandle, TextResourceOptions, TextTransactionOptions, TextWriteResult,
     ViewId, WorkspaceOptions, WorkspaceSnapshot,

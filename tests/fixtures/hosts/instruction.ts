@@ -30,7 +30,7 @@ export class TransferInstruction {
     private disposed = false;
     private reads = 0;
     constructor(host: HostController) { this.host = host; }
-    private permissions(): string { const m = this.host.source.metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
+    private permissions(): string { const m = this.host.source.metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit]); }
     private publish(patch: Partial<State>): void { if (!this.disposed) this.cell.set({ ...this.cell.get(), ...patch }); }
     private line(buffer: TextBuffer, offset: number): Span {
         const line = buffer.lineAt(Math.min(offset, buffer.length)), from = buffer.offsetAt(line); let to = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
@@ -73,7 +73,7 @@ export class TransferInstruction {
         } catch (error) { problem = (error as Error).message; }
         else problem = "Instruction anchor was removed or replaced. Undo or anchor again.";
         this.publish({ located: !!this.span, revision: d.revision, from: this.span?.from ?? 0, to: this.span?.to ?? 0, line: this.span ? d.buffer.lineAt(this.span.from) : 0,
-            values: this.parsed?.values ?? this.cell.get().values, canEdit: !!this.parsed && m.state === "ready" && m.capabilities.edit.includes("human") && m.editLock === null,
+            values: this.parsed?.values ?? this.cell.get().values, canEdit: !!this.parsed && m.state === "ready" && m.capabilities.edit.includes("human"),
             validation: problem });
     }
     capture(field: InstructionField): InstructionCapture | null {
@@ -99,8 +99,8 @@ export class TransferInstruction {
     }
     readonly captureCopy = (): void => {
         if (this.disposed || !this.parsed || this.parsed.validation || !this.span) return; this.cancelCopy();
-        const t = this.host.transfer.resource, s = t.getSnapshot(); if (s.state !== "ready" || !s.metadata.capabilities.edit.includes("human") || s.metadata.editLock !== null) return;
-        const authority = () => { const m = t.metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }, stamp = authority(); let stale = false;
+        const t = this.host.transfer.resource, s = t.getSnapshot(); if (s.state !== "ready" || !s.metadata.capabilities.edit.includes("human")) return;
+        const authority = () => { const m = t.metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit]); }, stamp = authority(); let stale = false;
         const destination = this.host.workspace.captureResource(t.id);
         this.copy = { destination, source: this.host.workspace.captureResource(this.host.source.id), revision: s.revision, version: s.metadata.serverVersion, authority: stamp,
             sourceRevision: this.revision, values: this.parsed.values, stale: () => stale, stop: t.subscribe(() => { if (authority() !== stamp) stale = true; }) };

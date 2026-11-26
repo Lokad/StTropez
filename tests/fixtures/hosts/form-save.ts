@@ -43,7 +43,7 @@ export class FormSave<T extends SnapshotValue> {
         const reviewCurrent = reviewed !== undefined && this.workspace.resolveResource(reviewed.target) === this.resource;
         if (cached && cached.state === state && cached.resource === resource && cached.request === request && cached.reviewed === reviewed && cached.reviewCurrent === reviewCurrent && cached.disposed === disposed) return cached.value;
         const validation = resource.state === "ready" ? this.policy.validate(resource.value()) : `${this.policy.title} is unavailable.`, metadata = resource.metadata;
-        const available = !disposed && !state.pending && resource.state === "ready" && metadata.capabilities.save && metadata.editLock === null && metadata.saveStatus !== "saving" && validation === null;
+        const available = !disposed && !state.pending && resource.state === "ready" && metadata.capabilities.save && metadata.saveStatus !== "saving" && validation === null;
         const value: FormSavePresentation<T> = Object.freeze({ title: this.policy.title, noun: this.policy.noun, resource, validation, preview: state.preview, disposed,
             status: `${this.policy.title} ${metadata.dirty ? "Unsaved" : "Saved"} · Save status: ${state.pending ? "saving" : metadata.saveStatus} · ${validation ?? state.message}`,
             canSave: available && (metadata.dirty || metadata.saveStatus === "failed") && state.conflict === null,

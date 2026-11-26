@@ -57,19 +57,18 @@ test("stale source sets/revisions and stale destination revisions cannot partial
     }
 });
 
-test("a readonly source copies, while a lost move permission or target lock refuses atomically", () => {
+test("a readonly source copies, while loss of source or destination permission refuses atomically", () => {
     const readonly = fixture("abcd"); readonly.sourceView.setSelection(0, { anchor: 1, head: 3 });
     readonly.workspace.setCapabilities(readonly.source.id, { edit: [], save: false });
     const source = readonly.capture(); assert.equal(source.moveAllowed, false);
     const copied = applyTextDrop({ workspace: readonly.workspace, tab: readonly.workspace.tabs.capture(readonly.targetTab), view: readonly.targetView, expectedRevision: 0, offset: 0, source });
     assert.deepEqual(copied, { applied: true, operation: "copy", revision: 1, offset: 2 }); assert.equal(readonly.text(), "abcd"); assert.equal(readonly.text(readonly.destination.documentId), "bctarget");
-    for (const lost of ["source-permission", "target-lock"] as const) {
+    for (const lost of ["source", "destination"] as const) {
         const f = fixture("abcd"); f.sourceView.setSelection(0, { anchor: 1, head: 3 }); const capture = f.capture();
-        const lease = lost === "target-lock" ? f.workspace.acquireEditLease(f.destination.id, "test", "human") : undefined;
-        if (lost === "source-permission") f.workspace.setCapabilities(f.source.id, { edit: [], save: false });
+        f.workspace.setCapabilities(f[lost].id, { edit: [], save: false });
         const result = applyTextDrop({ workspace: f.workspace, tab: f.workspace.tabs.capture(f.targetTab), view: f.targetView, expectedRevision: 0, offset: 1, source: capture });
         assert.equal(result.applied, false); assert.equal(f.text(), "abcd"); assert.equal(f.text(f.destination.documentId), "target");
-        assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 0); lease?.release();
+        assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 0);
     }
 });
 

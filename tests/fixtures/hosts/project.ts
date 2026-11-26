@@ -49,7 +49,7 @@ export class HostProjectTools {
     private available(s: Session): boolean {
         return !this.disposed && this.sessions.get(s.token) === s && isMountedEditor(this.host.workspace, s.editor, s.target);
     }
-    private authority(id: DocumentId): string { const m = this.host.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }
+    private authority(id: DocumentId): string { const m = this.host.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit]); }
     private publish(patch: Partial<ProjectSnapshot> = {}): void {
         const preview = this.review ? this.describeReview(this.review) : null;
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.lane.value?.snapshot().connected ?? false,

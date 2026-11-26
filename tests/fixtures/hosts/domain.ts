@@ -41,7 +41,7 @@ export class HostDomainTools {
     }
     private authority(session: Session): string {
         const state = this.workspace.resourceForDocument(session.editor.view.documentId).getSnapshot();
-        return JSON.stringify([state.state, state.metadata.capabilities.edit.includes("human"), state.metadata.editLock]);
+        return JSON.stringify([state.state, state.metadata.capabilities.edit.includes("human")]);
     }
     private editable(session: Session): boolean {
         const state = session.editor.getSnapshot();

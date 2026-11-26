@@ -5,7 +5,7 @@ import { Workspace } from "../src/index.ts";
 import { findForView } from "../src/browser/find.ts";
 import type { FindHost } from "../src/browser/find.ts";
 
-for (const change of ["permission", "lease", "read-only"] as const) test(`literal replacement respects ${change} changes and requires explicit retry`, () => {
+for (const change of ["permission", "read-only"] as const) test(`literal replacement respects ${change} changes and requires explicit retry`, () => {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "find", resource: "authority", variant: "working" }, "Source", { value: "cat cat" });
     const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId);
     let serial = 0; const tasks = new Map<number, () => void>();
@@ -21,12 +21,6 @@ for (const change of ["permission", "lease", "read-only"] as const) test(`litera
             workspace.setCapabilities(source.id, { ...original, edit: ["host"] });
             find.replaceAll("dog");
             workspace.setCapabilities(source.id, original);
-        } else if (change === "lease") {
-            const lease = workspace.acquireEditLease(source.id, "temporary", "host");
-            try {
-                find.replaceAll("dog");
-                assert.match(find.getSnapshot().message, /another edit/i);
-            } finally { lease.release(); }
         } else {
             editor.setReadOnly(true);
             find.replaceAll("dog");
@@ -35,7 +29,7 @@ for (const change of ["permission", "lease", "read-only"] as const) test(`litera
         assert.equal(after.buffer.slice(0, after.buffer.length), "cat cat"); assert.strictEqual(after.buffer, before.buffer); assert.equal(after.revision, before.revision);
         assert.deepEqual(view.getSnapshot().selectionSet, selected); assert.deepEqual(workspace.observeHistory(source.documentId).getSnapshot(), history);
         assert.equal(workspace.diagnostics().subscriptions, idleSubscriptions);
-        assert.equal(find.getSnapshot().reason, change === "lease" ? "edit-locked" : "read-only");
+        assert.equal(find.getSnapshot().reason, "read-only");
         editor.setReadOnly(false);
         find.replaceAll("dog");
         assert.equal(workspace.document(source.documentId).buffer.slice(0, 7), "dog dog");

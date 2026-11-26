@@ -1,7 +1,7 @@
 import { isSaveKey, isUnmodifiedShortcut, usesAppleShortcuts } from "../shared/host-shortcuts.ts";
 import { mountTextEditor, mountTextComparison, mountFindBar, createFoldingController, diagnosticDecoration, editRefusedEvent } from "../../src/browser/index.ts";
 import type {
-    EditorCommands, EditRefusedDetail, TextEditor, TextComparison, FoldingController,
+    EditorCommands, TextEditor, TextComparison, FoldingController,
     DecorationLayer, DecorationProvider, NavigationOrigin,
 } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
@@ -565,11 +565,9 @@ function setPanel(next: DemoPanel): void {
 }
 function observePane(target: TextEditor): void {
     find.attach(target);
-    target.element.addEventListener(editRefusedEvent, event => {
+    target.element.addEventListener(editRefusedEvent, () => {
         if (!project || !active || target !== activePane) return;
-        const { reason } = (event as CustomEvent<EditRefusedDetail>).detail;
-        const message = reason === "edit-locked" ? "This file is locked for editing."
-            : target === output?.editor ? "Generated JavaScript is read-only. Edit the TypeScript source."
+        const message = target === output?.editor ? "Generated JavaScript is read-only. Edit the TypeScript source."
             : target === comparison?.panes.reference ? "The saved copy is read-only. Edit your working copy."
             : active.name + " is read-only.";
         project.setEditRefusal(message);

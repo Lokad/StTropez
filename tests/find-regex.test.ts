@@ -170,7 +170,7 @@ test("partial async regex plans respect selection, revision, composition, author
             if (change === "selection") f.view.setSelections(0, [{ anchor: 0, head: 0 }, { anchor: 6, head: 6 }]);
             if (change === "revision") f.workspace.edit({ documentId: f.source.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 7, to: 7, insert: " human" }] });
             if (change === "composition") f.compose();
-            if (change === "authority") { const lease = f.workspace.acquireEditLease(f.source.id, "other", "host"); lease.release(); }
+            if (change === "authority") f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: true });
             if (change === "options") f.find.setFlags({ regularExpression: false });
             if (change === "view") f.view.dispose();
             if (change === "focus") f.owner.dispatchEvent(new Event("focusin"));
@@ -179,7 +179,7 @@ test("partial async regex plans respect selection, revision, composition, author
             assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, change === "revision" || change === "focus" ? 1 : 0, change);
             assert.equal(f.focused(), beforeFocus, change); assert.equal(f.plans[0]!.disposed, true, change);
             assert.equal(f.find.getSnapshot().reason, { selection: "cancelled", revision: "cancelled", composition: "composition-active",
-                authority: "edit-locked", options: "cancelled", view: "view-unavailable", focus: "replaced" }[change], change);
+                authority: "read-only", options: "cancelled", view: "view-unavailable", focus: "replaced" }[change], change);
             if (change === "composition") {
                 assert.equal(f.find.next(), false); assert.equal(f.find.getSnapshot().reason, "composition-active");
                 assert.equal(f.find.replaceCurrent("dog"), false); assert.equal(f.find.getSnapshot().reason, "composition-active");

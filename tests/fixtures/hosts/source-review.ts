@@ -127,7 +127,7 @@ export class HostSourceReview {
         const canSaveReviewed = !this.disposed && conflict?.review === "ready" && conflict.reviewVersion !== null && this.conflictReference?.buffer === reference.buffer
             && this.conflictReference.version === reference.version && this.conflictPresentation !== undefined
             && this.workspace.tabs.resolve(this.conflictPresentation) !== undefined && metadata.state === "ready" && metadata.capabilities.save
-            && metadata.editLock === null && metadata.saveStatus !== "saving";
+            && metadata.saveStatus !== "saving";
         const cached = this.cachedPresentation;
         if (cached && cached.conflict === conflict && cached.canSaveReviewed === canSaveReviewed && cached.disposed === this.disposed) return cached;
         return this.cachedPresentation = Object.freeze({ conflict, canSaveReviewed, disposed: this.disposed });

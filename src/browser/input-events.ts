@@ -19,11 +19,10 @@ export const inputConflictEvent = "sttropez-conflict";
 
 /** Bubbles from the editor root when read-only authority prevents an input gesture. */
 export const editRefusedEvent = "sttropez-edit-refused";
-export type EditRefusedDetail = Readonly<{ documentId: DocumentId; reason: "read-only" | "edit-locked" }>;
+export type EditRefusedDetail = Readonly<{ documentId: DocumentId; reason: "read-only" }>;
 
 export function humanEditRefusal(metadata: ResourceMetadata): EditRefusedDetail["reason"] | undefined {
     if (!metadata.capabilities.edit.includes("human")) return "read-only";
-    if (metadata.editLock) return "edit-locked";
     return undefined;
 }
 

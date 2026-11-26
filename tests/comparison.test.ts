@@ -98,14 +98,18 @@ test("delayed whole-review reversion rejects newer typing, selection, reference 
     }
 });
 
-test("permission and lease cycles cannot revive an old discard confirmation", () => {
-    for (const change of ["permissions", "lease"] as const) {
-        const f = fixture(); ready(f.comparison); const ticket = f.comparison.beginReversion();
-        if (change === "permissions") { f.workspace.setCapabilities(f.resource.id, { edit: ["host"], save: true }); f.workspace.setCapabilities(f.resource.id, { edit: ["human", "host", "agent"], save: true }); }
-        if (change === "lease") { const lease = f.workspace.acquireEditLease(f.resource.id, "other", "host"); lease.release(); }
-        const before = f.workspace.document(f.resource.documentId); assert.equal(ticket.complete(), false, change); assert.equal(f.workspace.document(f.resource.documentId), before);
-        f.comparison.dispose(); assert.equal(f.workspace.diagnostics().leases, 0);
-    }
+test("restoring permission cannot revive an old discard confirmation", () => {
+    const f = fixture();
+    ready(f.comparison);
+    const ticket = f.comparison.beginReversion();
+    const original = f.resource.metadata.getSnapshot().capabilities;
+    f.workspace.setCapabilities(f.resource.id, { edit: ["host"], save: true });
+    f.workspace.setCapabilities(f.resource.id, original);
+    const before = f.workspace.document(f.resource.documentId);
+    assert.equal(ticket.complete(), false);
+    assert.equal(f.workspace.document(f.resource.documentId), before);
+    f.comparison.dispose();
+    assert.equal(f.workspace.diagnostics().leases, 0);
 });
 
 test("cancelled and empty whole-review reversions are inert and release explicit ownership", () => {

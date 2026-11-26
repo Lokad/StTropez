@@ -52,7 +52,6 @@ export type ResourceMetadata = Readonly<{
     state: "loading" | "ready" | "failed" | "released";
     dirty: boolean; serverVersion: string | null; capabilities: Capabilities;
     saveStatus: "idle" | "saving" | "failed" | "conflict"; failure: string | null;
-    editLock: Readonly<{ owner: string; origin: EditOrigin }> | null;
 }>;
 export type ResourceSnapshot<T> = Readonly<{ revision: number; metadata: ResourceMetadata }> & Readonly<
     { state: "ready"; value: () => Immutable<T> } | { state: "loading" | "failed" | "released" }
@@ -86,7 +85,6 @@ export type WorkspaceSnapshot = Readonly<{
 export type TabTarget = Readonly<{ workspace: symbol; id: TabId; generation: number }>;
 export type ResourceTarget = Readonly<{ workspace: symbol; id: ResourceId }>;
 export type ResourceLease = Readonly<{ resourceId: ResourceId; active: () => boolean; release: () => void }>;
-export type EditLease = ResourceLease & Readonly<{ origin: EditOrigin }>;
 export type ResourceLoad<T> = Readonly<{
     accept: (loaded: LoadedResource<T>) => boolean; fail: (message: string) => boolean; dispose: () => void;
 }>;
@@ -100,21 +98,21 @@ export type SaveTicket<T, S extends SaveSubmission<T> = SaveSubmission<T>, R ext
     start: () => S; accept: (response: Readonly<{ serverVersion: string; canonical?: T }>, options?: Readonly<{ applyCanonical?: boolean }>) => R;
     conflict: () => void; fail: () => void; finish: () => void }>;
 export type EditRequest = Readonly<{
-    documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; source?: string; lease?: EditLease;
+    documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; source?: string;
     history?: Readonly<{ kind: EditKind; group?: string; reset?: boolean }>; view?: DocumentView; selection?: Selection; selectionSet?: SelectionSet;
 }>;
 export type DocumentEditRequest = EditRequest | (Omit<EditRequest, "edits"> & Readonly<{ text: string | TextBuffer; edits?: never }>);
 export type TextTransactionOptions = Readonly<{
-    origin: EditOrigin; source?: string; lease?: EditLease; view?: DocumentView;
+    origin: EditOrigin; source?: string; view?: DocumentView;
     history: "record" | "reset"; kind?: EditKind;
 }>;
 type EditRefusal = Readonly<{ applied: false;
-    reason: "missing-resource" | "missing-document" | "stale-revision" | "not-ready" | "read-only" | "edit-locked" | "history-empty" | "history-blocked" }>;
+    reason: "missing-resource" | "missing-document" | "stale-revision" | "not-ready" | "read-only" | "history-empty" | "history-blocked" }>;
 export type TextWriteResult = Readonly<{ applied: true; changed: boolean; revision: number }> | EditRefusal;
 export type ChangeResult = Readonly<{ applied: true; revision: number }> | EditRefusal;
 export type EditResult = ChangeResult;
 export type BatchEditResult = Readonly<{ applied: true; revisions: readonly Readonly<{ documentId: DocumentId; revision: number }>[] }> | EditRefusal;
-export type HistoryRequest = Readonly<{ documentId: DocumentId; expectedRevision: number; origin?: EditOrigin; source?: string; lease?: EditLease }>;
+export type HistoryRequest = Readonly<{ documentId: DocumentId; expectedRevision: number; origin?: EditOrigin; source?: string }>;
 export type WorkspaceOptions = Readonly<{ onListenerError?: (error: unknown) => void; history?: HistoryOptions }>;
 
 function refuseEdit(reason: EditRefusal["reason"]): EditRefusal {
@@ -124,10 +122,10 @@ function singleRevision(result: BatchEditResult): EditResult {
     return result.applied ? { applied: true, revision: result.revisions[0]!.revision } : result;
 }
 function textWriteRequest(documentId: DocumentId, expectedRevision: number, options: TextTransactionOptions): Omit<EditRequest, "edits"> {
-    const { history, kind = "replace", origin, source, lease, view } = options;
+    const { history, kind = "replace", origin, source, view } = options;
     if (history !== "record" && history !== "reset") throw new TypeError("Invalid text history policy.");
     return { documentId, expectedRevision, origin, history: { kind, reset: history === "reset" },
-        ...(source !== undefined && { source }), ...(lease && { lease }), ...(view && { view }) };
+        ...(source !== undefined && { source }), ...(view && { view }) };
 }
 function replaceDocumentBuffer(before: TextBuffer, text: string | TextBuffer) {
     if (typeof text === "string") return before.apply(compactDocumentEdit(before, [{ from: 0, to: before.length, insert: text }]));
@@ -154,7 +152,7 @@ type ResourceRecord = {
     buffer: TextBuffer | null; savedBuffer: TextBuffer | null; change: DocumentChange | null; history: Store<HistorySnapshot>;
     views: Map<ViewId, ViewRecord>; loading?: ResourceLease; beforeLoad?: ResourceSnapshot<SnapshotValue>;
     leases: Set<symbol>;
-    saveReservations: number; reloadReservations: number; saving: string | null; editLease: EditLease | null;
+    saveReservations: number; reloadReservations: number; saving: string | null;
 };
 const defaultCapabilities: Capabilities = { edit: ["human", "agent", "host"], save: true };
 function capabilities(value: Capabilities): Capabilities {
@@ -270,7 +268,7 @@ export class Workspace {
         const documentId = kind === "text" ? `${documentIdPrefix}${++this.#nextId}` as DocumentId : null;
         const metadata = Object.freeze({ id, key, title, kind, visibility,
             state: loaded === undefined ? "loading" as const : "ready" as const, dirty: false,
-            serverVersion: loaded?.serverVersion ?? null, capabilities: capabilities(permissions), saveStatus: "idle" as const, failure: null, editLock: null });
+            serverVersion: loaded?.serverVersion ?? null, capabilities: capabilities(permissions), saveStatus: "idle" as const, failure: null });
         const state = new Store<ResourceSnapshot<SnapshotValue>>(loaded === undefined
             ? Object.freeze({ metadata, state: "loading", revision: 0 }) : readySnapshot(metadata, 0, buffer ?? value!), this.#scope);
         const meta = new Store(metadata, this.#scope);
@@ -279,7 +277,7 @@ export class Workspace {
             document: new Store<DocumentSnapshot | undefined>(undefined, this.#scope), saved: buffer ? undefined : value,
             buffer, savedBuffer: buffer, change: null, history: new Store<HistorySnapshot>(this.#history.snapshot(documentId ?? ""), this.#scope), views: new Map(),
             leases: new Set(),
-            saveReservations: 0, reloadReservations: 0, saving: null, editLease: null };
+            saveReservations: 0, reloadReservations: 0, saving: null };
         this.#records.set(id, record); this.#resourceKeys.add(identity); this.#handles.set(handle, record);
         if (documentId !== null) this.#documents.set(documentId, record);
         const changed = new Set<Store<unknown>>();
@@ -421,12 +419,12 @@ export class Workspace {
         return target.workspace === this.#lifetime ? this.#records.get(target.id)?.handle : undefined;
     }
 
-    updateResource<T extends SnapshotValue>(handle: ResourceHandle<T>, request: Readonly<{ expectedRevision: number; value: T; origin: EditOrigin; lease?: EditLease }>): ChangeResult {
+    updateResource<T extends SnapshotValue>(handle: ResourceHandle<T>, request: Readonly<{ expectedRevision: number; value: T; origin: EditOrigin }>): ChangeResult {
         this.#scope.assertWritable();
         const record = this.#handles.get(handle);
         if (!record || record.state.get().state === "released") return refuseEdit("missing-resource");
         if (record.documentId !== null) throw new Error("Text resources require range transactions.");
-        const refusal = this.#validateEdit(record, request.expectedRevision, request.origin, request.lease);
+        const refusal = this.#validateEdit(record, request.expectedRevision, request.origin);
         if (refusal) return refusal;
         return this.#changeValue(record, snapshotValue(request.value));
     }
@@ -467,7 +465,7 @@ export class Workspace {
                 || (policy?.reset ?? false) !== reset) throw new Error("A text transaction has one origin and history policy.");
             const record = this.#documents.get(request.documentId);
             if (!record) return refuseEdit("missing-document");
-            const refusal = this.#validateEdit(record, request.expectedRevision, request.origin, request.lease); if (refusal) return refusal;
+            const refusal = this.#validateEdit(record, request.expectedRevision, request.origin); if (refusal) return refusal;
             const view = request.view === undefined ? undefined : record.views.get(request.view.id);
             if ((request.view && view?.handle !== request.view) || ((request.selection || request.selectionSet) && !view)) throw new Error("Selection target must be a live view of this document.");
             if (request.selection && request.selectionSet) throw new Error("Choose a single selection or a selection set.");
@@ -512,14 +510,14 @@ export class Workspace {
         if (request.source !== undefined && typeof request.source !== "string") throw new TypeError("Edit source must be a string.");
         const record = this.#documents.get(request.documentId), origin = request.origin ?? "human";
         if (!record) return refuseEdit("missing-document");
-        const refusal = this.#validateEdit(record, request.expectedRevision, origin, request.lease); if (refusal) return refusal;
+        const refusal = this.#validateEdit(record, request.expectedRevision, origin); if (refusal) return refusal;
         const entry = this.#history.peek(request.documentId, direction);
         if (!entry) return refuseEdit("history-empty");
         if (!this.#history.available(entry, direction)) return refuseEdit("history-blocked");
         for (const change of entry.changes) {
             const participant = this.#documents.get(change.documentId as DocumentId);
             if (!participant || participant.buffer !== (direction === "undo" ? change.after : change.before)) return refuseEdit("history-blocked");
-            const denied = this.#validateEdit(participant, participant.state.get().revision, origin, participant === record ? request.lease : undefined); if (denied) return denied;
+            const denied = this.#validateEdit(participant, participant.state.get().revision, origin); if (denied) return denied;
         }
         const prepared = entry.changes.map(change => {
             const participant = this.#documents.get(change.documentId as DocumentId)!, forward = change.mapping;
@@ -587,11 +585,10 @@ export class Workspace {
             if (previous.undoDepth !== next.undoDepth || previous.redoDepth !== next.redoDepth) record.history.set(next, changed);
         }
     }
-    #validateEdit(record: ResourceRecord, revision: number, origin: EditOrigin, lease?: EditLease): EditRefusal | undefined {
+    #validateEdit(record: ResourceRecord, revision: number, origin: EditOrigin): EditRefusal | undefined {
         const state = record.state.get();
         if (state.state !== "ready") return refuseEdit("not-ready");
         if (!state.metadata.capabilities.edit.includes(origin)) return refuseEdit("read-only");
-        if (record.editLease !== null && (record.editLease !== lease || lease.origin !== origin)) return refuseEdit("edit-locked");
         if (state.revision !== revision) return refuseEdit("stale-revision");
         return undefined;
     }
@@ -620,23 +617,6 @@ export class Workspace {
         this.#commitRecord(record, withMetadata(state, { ...state.metadata, capabilities: next }));
     }
 
-    acquireEditLease(id: ResourceId, owner: string, origin: EditOrigin): EditLease {
-        this.#scope.assertWritable();
-        const record = this.#requireResource(id), state = record.state.get();
-        if (state.state !== "ready" || !state.metadata.capabilities.edit.includes(origin) || record.editLease) throw new Error("Resource cannot grant this edit lease.");
-        const retention = this.acquire(record.handle.id);
-        const lease: EditLease = Object.freeze({ ...retention, origin, release: () => {
-            this.#scope.assertWritable();
-            if (record.editLease !== lease) return;
-            record.editLease = null; retention.release();
-            const current = record.state.get();
-            this.#commitRecord(record, withMetadata(current, { ...current.metadata, editLock: null }));
-        } });
-        record.editLease = lease;
-        this.#commitRecord(record, withMetadata(state, { ...state.metadata, editLock: Object.freeze({ owner, origin }) }));
-        return lease;
-    }
-
     /** Retain ownership; preventReload also protects captured work from replacement by a load. */
     acquire(id: ResourceId, options: Readonly<{ preventReload?: boolean }> = {}): ResourceLease {
         this.#scope.assertWritable();
@@ -657,7 +637,7 @@ export class Workspace {
         this.#scope.assertWritable();
         const record = this.#handles.get(handle);
         if (!record || record.state.get().state === "released") throw new Error("Unknown resource.");
-        if (record.metadata.get().dirty || record.saveReservations || record.editLease || record.reloadReservations) throw new Error("Cannot refresh local, locked or pending work.");
+        if (record.metadata.get().dirty || record.saveReservations || record.reloadReservations) throw new Error("Cannot refresh local or pending work.");
         const lease = this.acquire(handle.id);
         record.loading?.release();
         record.loading = lease;
@@ -735,7 +715,6 @@ export class Workspace {
             const state = record.state.get();
             if (!record.buffer || state.state !== "ready" || record.saveReservations || record.reloadReservations) return refuseEdit("not-ready");
             if (version.expectedRevision !== undefined && version.expectedRevision !== state.revision) return refuseEdit("stale-revision");
-            if (record.editLease) return refuseEdit("edit-locked");
             if (state.metadata.dirty && !state.metadata.capabilities.edit.includes("host")) return refuseEdit("read-only");
             if (version.serverVersion !== null && typeof version.serverVersion !== "string") throw new TypeError("Invalid saved text version.");
             const before = record.buffer, { buffer, mapping, changedUnits: units } = replaceDocumentBuffer(before, version.text);
@@ -765,7 +744,7 @@ export class Workspace {
     captureSave<T extends SnapshotValue>(handle: ResourceHandle<T>, review?: SaveReview): SaveTicket<T> {
         this.#scope.assertWritable();
         const record = this.#handles.get(handle), initial = record?.state.get();
-        if (!record || initial?.state !== "ready" || !initial.metadata.capabilities.save || record.editLease) throw new Error("Resource is not ready or cannot be saved.");
+        if (!record || initial?.state !== "ready" || !initial.metadata.capabilities.save) throw new Error("Resource is not ready or cannot be saved.");
         const reviewedVersion = review?.expectedServerVersion;
         if (review !== undefined) {
             if (!isNonNegativeInteger(review.expectedRevision)) throw new TypeError("Reviewed save requires a revision and server version.");
@@ -791,7 +770,7 @@ export class Workspace {
             this.#scope.assertWritable();
             const current = record.state.get();
             if (finished || settled || record.saving !== null) throw new Error("Save ticket is closed or a write is in progress.");
-            if (current.state !== "ready" || !current.metadata.capabilities.save || record.editLease) throw new Error("Save capability or edit lease has changed.");
+            if (current.state !== "ready" || !current.metadata.capabilities.save) throw new Error("Save permission has changed.");
             if (reviewedVersion !== undefined && current.metadata.serverVersion !== initial.metadata.serverVersion) throw new Error("Saved baseline changed after review capture.");
             record.saving = id;
             submission = Object.freeze({ id, target, key: initial.metadata.key, revision, value,
@@ -805,7 +784,7 @@ export class Workspace {
             if (current.state !== "ready") throw new Error("Saved resource is no longer ready.");
             const savedBuffer = capturedBuffer ? response.canonical === undefined || savedValue === value ? capturedBuffer : TextBuffer.from(savedValue as string) : null;
             const canonicalApplied = current.revision === revision && current.metadata.capabilities.edit.includes("host")
-                && record.editLease === null && options.applyCanonical !== false
+                && options.applyCanonical !== false
                 && (savedBuffer ? !record.buffer!.equals(savedBuffer) : !equalValue(current.value(), savedValue));
             const canonical = savedBuffer && canonicalApplied ? record.buffer!.apply([textDifference(current.value() as string, savedValue as string)!]) : undefined;
             const text = canonical ? this.#prepareText(record, canonical.buffer, canonical.mapping, { wholeText: true }) : undefined;

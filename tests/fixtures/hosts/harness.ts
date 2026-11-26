@@ -54,7 +54,6 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         selectSourceSet: (id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary = 0) => bindings.selectSourceSet(id, revision, ranges, primary),
         configureSource: (id: "primary" | "secondary" | "comparison", configuration: import("../../../src/index.ts").LanguageConfiguration) => bindings.configureSource(id, configuration),
         setSourceReadOnly: (value: boolean) => controller.workspace.setCapabilities(controller.source.id, { edit: value ? ["host"] : ["human", "host", "agent"], save: true }),
-        cycleSourceEditLease: () => { const lease = controller.workspace.acquireEditLease(controller.source.id, "host-fixture", "host"); lease.release(); },
         openTransferTarget: (text: string) => {
             if (lifecycle.disposed || transferTarget) throw new Error("Transfer target cannot be mounted.");
             lifecycle.unmount();
@@ -113,7 +112,6 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     selectSourceSet: (id: "primary" | "secondary" | "comparison", revision: number, ranges: readonly Selection[], primary?: number) => boolean;
     configureSource: (id: "primary" | "secondary" | "comparison", configuration: import("../../../src/index.ts").LanguageConfiguration) => boolean;
     setSourceReadOnly: (value: boolean) => void;
-    cycleSourceEditLease: () => void;
     openTransferTarget: (text: string) => void; transferSnapshot: () => TransferTargetSnapshot;
     editTransferTarget: (expectedRevision: number, edits: readonly TextEdit[]) => ReturnType<HostController["workspace"]["edit"]>;
     setTransferReadOnly: (value: boolean) => void;

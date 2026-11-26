@@ -72,9 +72,6 @@ test("a history-only reset checks every target before clearing stacks and preser
     workspace.setCapabilities(source.id, { ...permissions, edit: ["human"] });
     assert.deepEqual(workspace.edit(request), { applied: false, reason: "read-only" });
     workspace.setCapabilities(source.id, permissions);
-    const lock = workspace.acquireEditLease(source.id, "restore", "host");
-    assert.deepEqual(workspace.edit(request), { applied: false, reason: "edit-locked" });
-    lock.release();
     assert.deepEqual(workspace.edit({ ...request, expectedRevision: request.expectedRevision - 1 }), { applied: false, reason: "stale-revision" });
     const peer = workspace.createDocument({ scope: "history", resource: "peer", variant: "working" }, "Peer", "");
     assert.deepEqual(workspace.editDocuments([request, { ...request, documentId: peer, expectedRevision: 1 }]), { applied: false, reason: "stale-revision" });
@@ -122,7 +119,6 @@ test("workspace snapshots export text only through explicit captured readers", (
     workspace.edit({ documentId: source.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "😀" }] });
     assert.deepEqual([anchor.from, anchor.to], [102, 132]);
     const current = document(); assert.notEqual(current.buffer, saved); assert.equal(current.buffer.length, saved.length + 2);
-    const lease = workspace.acquireEditLease(source.id, "synthetic", "host"); lease.release();
     workspace.setCapabilities(source.id, { edit: ["human"], save: true });
     for (const snapshot of [first, firstResource, current, source.getSnapshot(), workspace.getSnapshot()]) {
         const spread = { ...snapshot }, assigned = Object.assign({}, snapshot);

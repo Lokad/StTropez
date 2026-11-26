@@ -137,11 +137,10 @@ test.describe(`plain LSP server edits`, () => {
             expect((await snapshot(page)).bindings.project).toMatchObject({ pending: true, applied: 0, state: { review: null } });
         };
         const deliver = async () => { expect(release).toBeDefined(); release!(); release = undefined; await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {})); };
-        for (const mode of ["typing", "authority", "lease", "remount"] as const) {
+        for (const mode of ["typing", "authority", "remount"] as const) {
             await hold();
             if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("X"); current += "X"; }
             else if (mode === "authority") await page.evaluate(() => { window.hostFixture.setSourceReadOnly(true); window.hostFixture.setSourceReadOnly(false); });
-            else if (mode === "lease") await page.evaluate(() => window.hostFixture.cycleSourceEditLease());
             else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
             await done(page); await expect.poll(() => cancelled).toBe(true); const interrupted = await snapshot(page);
             await deliver(); await expect.poll(() => response?.result?.applied).toBe(false); await done(page); await exact(page, current);

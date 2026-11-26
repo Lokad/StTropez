@@ -194,7 +194,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         const metadata = comparison.working ? workspace.resource(comparison.working.resourceId).metadata.getSnapshot() : undefined;
         const access = working.getSnapshot();
         const canRevert = canNavigate && selectedHunk !== null && access.readOnlyReason === null && !access.disabled
-            && metadata?.capabilities.edit.includes("human") === true && metadata.editLock === null;
+            && metadata?.capabilities.edit.includes("human") === true;
         return Object.freeze({ comparison, selectedHunk, canNavigate, canRevert, scrollLinked: scroll.snapshot().linked, alignment: alignment.snapshot(), disposed });
     }
     function publishState(): void {

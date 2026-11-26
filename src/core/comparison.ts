@@ -65,7 +65,7 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
     const publish = (next: ComparisonSnapshot) => { scope.publish(state, Object.freeze(next)); };
     const live = () => !disposed && state.get().baseline !== null && workspace.ownsDocumentView(view, target)
         && resource.getSnapshot().state === "ready" && (!referenceDocument || !!referenceDocument.getSnapshot());
-    const canAccept = () => live() && resource.metadata.getSnapshot().capabilities.edit.includes("human") && resource.metadata.getSnapshot().editLock === null;
+    const canAccept = () => live() && resource.metadata.getSnapshot().capabilities.edit.includes("human");
     function expire(): void {
         job?.dispose(); job = undefined;
         publish({ status: "expired", generation: state.get().generation + 1, baseline: null, working: null, hunks: emptyList, progress: null, failure: null });
@@ -80,7 +80,7 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
     const update = () => {
         if (disposed || state.get().status === "expired") return;
         const metadata = resource.metadata.getSnapshot();
-        if (metadata.capabilities !== reversionPolicy.capabilities || metadata.editLock !== reversionPolicy.editLock || metadata.serverVersion !== reversionPolicy.serverVersion) reversionPolicyGeneration++;
+        if (metadata.capabilities !== reversionPolicy.capabilities || metadata.serverVersion !== reversionPolicy.serverVersion) reversionPolicyGeneration++;
         reversionPolicy = metadata;
         if (!live()) expire();
         else {

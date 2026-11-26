@@ -28,8 +28,10 @@ test("read captures survive expanded fold metadata and defer abort handlers beyo
         aborted++;
         assert.ok(f.workspace.edit({ documentId: f.source.documentId, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "!" }] }).applied);
     }, { once: true });
-    const lock = f.workspace.acquireEditLease(f.source.id, "fixture", "host");
-    assert.equal(captured.isCurrent(), false); assert.equal(aborted, 0); lock.release(); assert.equal(captured.isCurrent(), false);
+    f.workspace.setCapabilities(f.source.id, { edit: [], save: false });
+    assert.equal(captured.isCurrent(), false); assert.equal(aborted, 0);
+    f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: false });
+    assert.equal(captured.isCurrent(), false);
     await Promise.resolve(); assert.equal(aborted, 1); assert.equal(captured.signal.aborted, true);
     assert.equal(f.workspace.document(f.source.documentId).buffer.slice(0, 1), "!");
 });

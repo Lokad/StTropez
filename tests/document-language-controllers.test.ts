@@ -326,7 +326,7 @@ test("requests expire an obsolete project capture before contacting the provider
 
 const colorChanges = {
     ...sourceChanges,
-    "edit authority": (f: Fixture) => f.workspace.acquireEditLease(f.source.id, "test", "host").release(),
+    "edit authority": (f: Fixture) => f.workspace.setCapabilities(f.source.id, { edit: [], save: true }),
 };
 for (const [cause, interrupt] of Object.entries(colorChanges)) {
     test(`a delayed color presentation loses its edit target after ${cause}`, { timeout: 5000 }, async t => {
@@ -504,7 +504,7 @@ const linkChanges = {
         f.workspace.edit({ documentId: target.id, expectedRevision: target.revision, origin: "host",
             edits: [{ from: 0, to: 0, insert: "new " }] });
     },
-    "target edit authority": (f: Fixture) => f.workspace.acquireEditLease(f.other.id, "test", "host").release(),
+    "target edit authority": (f: Fixture) => f.workspace.setCapabilities(f.other.id, { edit: [], save: true }),
 };
 for (const [cause, interrupt] of Object.entries(linkChanges)) {
     test(`a delayed link reply leaves no destination after ${cause}`, { timeout: 5000 }, async t => {

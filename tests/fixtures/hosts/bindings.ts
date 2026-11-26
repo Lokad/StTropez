@@ -2,7 +2,7 @@ import { registerCommandPalette } from "./command-palette.ts";
 import { focusSource, onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { restoreReferenceView, type SavedReferenceView } from "../../../examples/shared/reference-view.ts";
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../../src/browser/index.ts";
-import type { EditRefusedDetail, TextEditor, TextComparison, ViewState } from "../../../src/browser/index.ts";
+import type { TextEditor, TextComparison, ViewState } from "../../../src/browser/index.ts";
 import type { ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget } from "../../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../language/presentation.ts";
@@ -101,9 +101,7 @@ export class ViewBindings {
             this.review = review;
             scope.defer(() => { if (this.review === review) this.review = undefined; review.dispose(); });
             host.addEventListener(editRefusedEvent, event => {
-                const { reason } = (event as CustomEvent<EditRefusedDetail>).detail;
-                status.textContent = reason === "edit-locked" ? "The source is locked for editing."
-                    : event.target === review.panes.reference.element ? "The comparison reference is read-only." : "This source is read-only.";
+                status.textContent = event.target === review.panes.reference.element ? "The comparison reference is read-only." : "This source is read-only.";
             }, { signal: listeners.signal });
             const saveTarget = this.controller.workspace.tabs.capture(this.controller.viewTab("primary"));
             this.attachTools(scope, "comparison", this.controller.viewTab("primary"), review.panes.working, presentation);
@@ -322,9 +320,8 @@ export class ViewBindings {
                 const feedback = host.ownerDocument.createElement("output");
                 feedback.className = "host-edit-feedback"; feedback.setAttribute("aria-label", ariaLabel + " edit feedback");
                 host.append(feedback); scope.defer(() => feedback.remove());
-                editor.element.addEventListener(editRefusedEvent, event => {
-                    const { reason } = (event as CustomEvent<EditRefusedDetail>).detail;
-                    feedback.textContent = reason === "edit-locked" ? "This source is locked for editing." : "This source is read-only.";
+                editor.element.addEventListener(editRefusedEvent, () => {
+                    feedback.textContent = "This source is read-only.";
                 }, { signal: listeners.signal });
                 editor.element.addEventListener("focusout", () => { feedback.textContent = ""; }, { signal: listeners.signal });
                 editor.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });

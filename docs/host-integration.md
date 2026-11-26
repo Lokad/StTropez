@@ -48,7 +48,7 @@ export function attachConvertedPaste(
 ### Captured view requests
 
 Call `captureViewRequest(editor, options)` before the first `await`. Omit
-`editOrigin` for reads. Edits need permission and an unlocked resource. A revision, selection, visible-fold,
+`editOrigin` for reads. Edits need permission for the chosen origin. A revision, selection, visible-fold,
 authority or tab-target change expires the capture. Disposing the editor aborts outstanding requests,
 even when a new mount reuses its document view.
 
@@ -156,7 +156,7 @@ export function ownInputRecovery(
 }
 ```
 
-`editRefusedEvent` gives the `documentId` and refusal reason (`read-only` or `edit-locked`).
+`editRefusedEvent` gives the `documentId` and refusal reason (`read-only`).
 `inputConflictEvent` carries the document ID, reason, `expectedRevision` and `attemptedText`.
 Prefer `attemptedEdit` for the UTF-16 span. `contextFrom` alone can be zero for a pending insertion.
 Validate event data before storage, omit unsuitable `cause` values and recheck the resource and revision

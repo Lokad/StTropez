@@ -381,7 +381,7 @@ export class LspWorkspace {
             const capture = entry && this.#live(entry) ? this.#session.synchronized(entry.binding, didChangeMethod) : undefined;
             const isCurrent = () => {
                 const now = metadata.getSnapshot(), owner = this.#uris.get(uri);
-                return !released && connected() && documents.getSnapshot() === doc && now.capabilities === access.capabilities && now.editLock === access.editLock
+                return !released && connected() && documents.getSnapshot() === doc && now.capabilities === access.capabilities
                     && (!owner || owner.id === doc.id) && (!capture || capture.isCurrent());
             };
             let interrupt: (() => void) | undefined;

@@ -22,7 +22,7 @@ export function configurationFormModel(controller: Pick<HostController, "setPath
     const validation = state.state === "ready" ? configurationValidation(state.value()) : null;
     return { available: state.state === "ready", status: state.state, validation: validation ?? "", field: {
         label: "Configuration path", value: state.state === "ready" ? state.value().path : "",
-        readOnly: state.state !== "ready" || !state.metadata.capabilities.edit.includes("human") || state.metadata.editLock !== null,
+        readOnly: state.state !== "ready" || !state.metadata.capabilities.edit.includes("human"),
         invalid: validation !== null, change: controller.setPath,
     } } as const;
 }

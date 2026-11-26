@@ -82,8 +82,6 @@ test("workspace-edit preflight and core validation refuse a bad last target with
     f.workspace.setCapabilities(f.resources[1]!.id, { edit: ["human"], save: true });
     reject(plan, /read-only/);
     f.workspace.setCapabilities(f.resources[1]!.id, { edit: ["human", "host"], save: true });
-    const lock = f.workspace.acquireEditLease(f.resources[1]!.id, "locked", "host");
-    try { reject(plan, /edit-locked/); } finally { lock.release(); }
     const foreign = new Workspace(), foreignId = foreign.createDocument({ scope: "foreign", resource: "source", variant: "working" }, "Foreign", "text"), foreignView = foreign.createDocumentView(foreignId);
     try { assert.throws(() => applyLspWorkspaceEdit(f.workspace, plan, { ...options, view: foreignView }), /view/); unchanged(); } finally { foreignView.dispose(); }
     const empty = await capture(f.documents, [[], []]);

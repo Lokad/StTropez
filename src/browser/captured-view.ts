@@ -27,7 +27,7 @@ export function observeViewSource(workspace: Workspace, view: DocumentView, targ
 }
 
 export type CapturedViewOptions = Readonly<{
-    /** Omit for a read request. Editing also requires this origin and no edit lock. */
+    /** Omit for a read request. Edits require permission for this origin. */
     editOrigin?: EditOrigin;
     /** Host lifecycle/input guard; call cancel when unobserved host state changes. */
     available?: () => boolean;
@@ -42,8 +42,7 @@ export type CapturedViewRequest = Readonly<{
 export function sameEditAuthority(before: ResourceMetadata, after: ResourceMetadata): boolean {
     const left = before.capabilities.edit, right = after.capabilities.edit;
     return before === after || before.state === after.state
-        && (left === right || left.length === right.length && left.every((origin, index) => origin === right[index]))
-        && before.editLock?.owner === after.editLock?.owner && before.editLock?.origin === after.editLock?.origin;
+        && (left === right || left.length === right.length && left.every((origin, index) => origin === right[index]));
 }
 
 type CaptureOwner = Pick<TextEditor, "workspace" | "tab" | "view" | "signal">;
@@ -60,7 +59,7 @@ export function captureRequest({ workspace, tab: target, view, signal }: Capture
     if (signal.aborted || !workspace.ownsDocumentView(view, tab) || !available()) return;
     const document = workspace.observeDocument(view.documentId).getSnapshot(); if (!document) return;
     const resource = workspace.resourceForDocument(document.id), permission = resource.metadata.getSnapshot();
-    if (permission.state !== "ready" || editOrigin !== undefined && (!permission.capabilities.edit.includes(editOrigin) || permission.editLock !== null)) return;
+    if (permission.state !== "ready" || editOrigin !== undefined && !permission.capabilities.edit.includes(editOrigin)) return;
     const selectionSet = view.getSnapshot().selectionSet, folding = view.folding.getSnapshot();
     const lease = workspace.acquire(resource.id), abort = new AbortController();
     let active = true; const stops: (() => void)[] = [];

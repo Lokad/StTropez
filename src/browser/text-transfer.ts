@@ -26,7 +26,7 @@ export function captureTextTransfer(workspace: Workspace, tab: TabTarget | undef
     if (!fragments.length) return;
     return Object.freeze({ workspace, tab, documentId: view.documentId, view, revision: current.document.revision,
         buffer: current.document.buffer, selectionSet, text: fragments.join("\n"),
-        moveAllowed: current.metadata.capabilities.edit.includes("human") && current.metadata.editLock === null });
+        moveAllowed: current.metadata.capabilities.edit.includes("human") });
 }
 export function isCurrentTextTransfer(source: TextTransferCapture): boolean {
     if (source.documentId !== source.view.documentId) return false;

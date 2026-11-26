@@ -23,7 +23,6 @@ const literalBudget = Object.freeze({ units: 4096, matches: 1024, calls: 32 });
 type ReplacementRefusal = Extract<EditResult, { applied: false }>["reason"] | "composition-active";
 const replacementMessages: Partial<Record<ReplacementRefusal, string>> = {
     "read-only": "This document is read-only.",
-    "edit-locked": "Another edit is in progress. Try again when it finishes.",
     "not-ready": "The document is unavailable.",
     "composition-active": "Finish composition before replacing."
 };

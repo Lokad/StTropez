@@ -92,6 +92,19 @@ and maps newer selections. [View state](viewport.md#scrolling-and-saved-views)
 document with a shared origin and history policy. `replaceText` accepts a string or `TextBuffer` and
 `"record"` or `"reset"`. `transact` addresses the staged buffer at each step and rolls back on error.
 
+Use `setCapabilities` to choose which origins may write (`human`, `host`, `agent`) and whether the resource can be saved.
+An edit that returns `applied: false` leaves the target unchanged.
+
+| Reason | When it occurs |
+| --- | --- |
+| `missing-resource` | The resource handle is missing or released. |
+| `missing-document` | The target has no live text document. |
+| `not-ready` | Loading or failure prevents editing, or a pending save or protected load prevents adopting saved text. |
+| `read-only` | The resource denies the requested edit origin. |
+| `stale-revision` | The document has changed since the request was prepared. |
+| `history-empty` | There is no entry in the requested Undo or Redo direction. |
+| `history-blocked` | A participating document has a different history entry or buffer. |
+
 ```ts
 import type { DocumentId, TextEdit, Workspace } from "sttropez";
 
@@ -178,8 +191,7 @@ or `fail(message)`. Call `dispose()` to abandon it and restore the previous stat
 its lease immediately and ignores late replies. Acceptance resets selections, folds and linked history.
 
 Tabs, views and leases retain resources. `acquire(id, { preventReload: true })` blocks refresh.
-Exclusive writers pass their origin and edit lease. Use `releaseResource` after last use or
-`releaseResourceWhenUnowned` to defer release. A dirty edit cancels release when discard is forbidden.
+Use `releaseResource` after last use or `releaseResourceWhenUnowned` to defer release. A dirty edit cancels release when discard is forbidden.
 
 <a id="delayed-work-and-presentation"></a>
 
@@ -243,7 +255,7 @@ export function createFileSaver(
 }
 ```
 
-Capture and submission require save permission and an unlocked resource. Each press gets its own result.
+Capture and submission require save permission. Each press gets its own result.
 Failure or conflict leaves both draft and baseline intact. `finish()` releases the reservation.
 
 #### Retry after review
@@ -260,7 +272,7 @@ match the saved value.
 #### Install an existing saved version
 
 `adoptSaved` and atomic `adoptSavedDocuments` take text, server version and history policy. After a delayed
-read, pass the reviewed revision. A pending save or load, stale revision or edit lock blocks adoption. Dirty
+read, pass the reviewed revision. A pending save or load or a stale revision blocks adoption. Dirty
 text requires host edit permission.
 
 Observers see the baseline, text, clean state and mapped views together. `"record"` preserves equal text’s

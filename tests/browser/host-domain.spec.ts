@@ -154,7 +154,7 @@ test(`plain domain results reject stale revision, authority, fold, selection, co
     await button(page, "Discover domain regions").click(); await expect(status(page)).toContainText("Finish pending typing or composition"); expect((await snapshot(page)).bindings.domain.requested).toBe(0);
     await input(page, "Secondary source").evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })));
     const cases = [
-        ["discovery", "revision"], ["discovery", "permission"], ["discovery", "lease"], ["discovery", "fold"],
+        ["discovery", "revision"], ["discovery", "permission"], ["discovery", "fold"],
         ["import", "selection"], ["import", "permission"], ["import", "typing"],
         ["discovery", "composition"], ["discovery", "remount"], ["import", "remount"], ["discovery", "replacement"]
     ] as const;
@@ -167,7 +167,6 @@ test(`plain domain results reject stale revision, authority, fold, selection, co
         if (reason === "typing") await input(page, "Secondary source").pressSequentially("x");
         if (reason === "revision") await page.evaluate(() => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: 0, insert: "x" }]); });
         if (reason === "permission") await page.evaluate(() => { window.hostFixture.setSourceReadOnly(true); window.hostFixture.setSourceReadOnly(false); });
-        if (reason === "lease") await page.evaluate(() => window.hostFixture.cycleSourceEditLease());
         if (reason === "fold") { await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 45 }]); }); await button(page, "Fold selected lines").click(); }
         if (reason === "selection") await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 1, head: 1 }]); });
         if (reason === "composition") { await input(page, "Secondary source").evaluate(node => node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }))); await input(page, "Secondary source").evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }))); }

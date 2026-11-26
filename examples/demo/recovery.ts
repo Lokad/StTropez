@@ -119,7 +119,7 @@ export class DemoRecovery {
         return !this.disposed && this.inputIdle() && capture.length === files.length && capture.every(item => files.includes(item.file)
             && this.workspace.ownsDocumentView(item.file.view)
             && this.workspace.document(item.document.id).revision === item.document.revision
-            && item.file.resource.metadata.getSnapshot() === item.metadata && item.metadata.editLock === null
+            && item.file.resource.metadata.getSnapshot() === item.metadata
             && item.metadata.saveStatus !== "saving" && item.metadata.capabilities.edit.includes("human"));
     }
     private publish(status: RecoveryState["status"], message: string): void {

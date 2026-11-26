@@ -84,7 +84,7 @@ export class HostDraftRecovery {
     readonly state = this.cell.observable;
     constructor(controller: HostController, store: DraftStore) {
         this.controller = controller; this.store = store;
-        const authority = (kind: "source" | "configuration" | "transfer") => { const m = (kind === "source" ? controller.source : kind === "configuration" ? controller.connection : controller.transfer.resource).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); };
+        const authority = (kind: "source" | "configuration" | "transfer") => { const m = (kind === "source" ? controller.source : kind === "configuration" ? controller.connection : controller.transfer.resource).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit]); };
         let source = authority("source"), configuration = authority("configuration"), transfer = authority("transfer");
         this.stops.push(controller.workspace.observeDocument(controller.source.documentId).subscribe(() => this.publish()),
             controller.source.metadata.subscribe(() => { const next = authority("source"); if (next !== source) { source = next; this.sourceAuthority++; } this.publish(); }),
@@ -95,7 +95,7 @@ export class HostDraftRecovery {
             this.loadedStops.splice(0).forEach(stop => stop()); this.loadedAuthority++; this.protectedLoaded = undefined;
             const resource = controller.loadedSource.getSnapshot().resource;
             if (resource) {
-                const authority = () => { const m = resource.metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); };
+                const authority = () => { const m = resource.metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit]); };
                 let previous = authority();
                 this.loadedStops.push(controller.workspace.observeDocument(resource.documentId).subscribe(() => this.publish()),
                     resource.metadata.subscribe(() => { const next = authority(); if (next !== previous) { previous = next; this.loadedAuthority++; } this.publish(); }));
@@ -149,7 +149,7 @@ export class HostDraftRecovery {
         if (capture.loaded === null) return resource === null;
         return !!resource && !!c.workspace.resolveResource(capture.loaded) && metadata?.state === "ready"
             && c.workspace.document(resource.documentId).revision === capture.loadedRevision && metadata.serverVersion === capture.loadedVersion
-            && (!editing || metadata.capabilities.edit.includes("human") && metadata.editLock === null);
+            && (!editing || metadata.capabilities.edit.includes("human"));
     }
     private current(capture: Capture): boolean {
         const c = this.controller, source = c.source.metadata.getSnapshot(), configuration = c.connection.getSnapshot();
@@ -161,9 +161,9 @@ export class HostDraftRecovery {
         const transfer = c.transfer.resource.getSnapshot(), transferCurrent = transfer.state === "ready" && transfer.revision === capture.transferRevision && transfer.metadata.serverVersion === capture.transferVersion;
         if (capture.kind === "keep") return sourceCurrent && configurationCurrent && transferCurrent && this.currentLoaded(capture, false) && c.canCaptureRecovery() && !this.hasComposition();
         if (capture.kind === "loaded") return this.currentLoaded(capture, true) && c.canCaptureRecovery() && !this.hasComposition();
-        if (capture.kind === "source") return sourceCurrent && c.canCaptureRecovery() && !this.hasComposition() && capture.sourceAuthority === this.sourceAuthority && source.capabilities.edit.includes("human") && source.editLock === null;
-        if (capture.kind === "transfer") return transferCurrent && !this.hasComposition() && capture.transferAuthority === this.transferAuthority && transfer.metadata.capabilities.edit.includes("human") && transfer.metadata.editLock === null;
-        return configurationCurrent && !this.hasComposition() && capture.configurationAuthority === this.configurationAuthority && configuration.metadata.capabilities.edit.includes("human") && configuration.metadata.editLock === null;
+        if (capture.kind === "source") return sourceCurrent && c.canCaptureRecovery() && !this.hasComposition() && capture.sourceAuthority === this.sourceAuthority && source.capabilities.edit.includes("human");
+        if (capture.kind === "transfer") return transferCurrent && !this.hasComposition() && capture.transferAuthority === this.transferAuthority && transfer.metadata.capabilities.edit.includes("human");
+        return configurationCurrent && !this.hasComposition() && capture.configurationAuthority === this.configurationAuthority && configuration.metadata.capabilities.edit.includes("human");
     }
     readonly prepare = (kind: Kind): void => {
         if (this.disposed || this.busy) return;
