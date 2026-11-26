@@ -206,7 +206,7 @@ test("backward word selection at multiple member names replaces only their separ
     expect((await snapshot(page)).primary.selection.head).toBe(0);
 });
 
-test("a long word yields, deletes beyond native context and restores through shared history", async ({ page }) => {
+test("a long word deletes beyond native context and restores through shared history", async ({ page }) => {
     await setup(page, "x".repeat(200_000) + "  tail"); const before = await snapshot(page);
     await page.keyboard.press("Control+Delete"); await ready(page); const after = await snapshot(page);
     expect(after.document).toMatchObject({ length: 6, revision: before.document!.revision + 1 });
@@ -237,27 +237,6 @@ test("word movement stops at line boundaries and word deletion treats indentatio
     const input = page.getByRole("textbox", { name: "Primary source", exact: true });
     await expect(input).toBeFocused();
     await expect(page.locator("#primary .st-viewport-row").first()).toHaveJSProperty("textContent", "a.b   next word");
-});
-
-test("pending word deletion expires after revision, selection or tab-generation changes", async ({ page }) => {
-    for (const changed of ["revision", "selection", "generation"] as const) {
-        await page.goto("/editing/"); await ready(page); await setup(page, "x".repeat(200_000));
-        const before = await snapshot(page);
-        const pending = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((input, changed) => {
-            input.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", ctrlKey: true, bubbles: true, cancelable: true }));
-            const pending = window.editingFixture.snapshot().primary.pendingWord;
-            if (changed === "revision") window.editingFixture.edit([{ from: 0, to: 0, insert: "!" }]);
-            if (changed === "selection") window.editingFixture.select("primary", { anchor: 2, head: 2 });
-            if (changed === "generation") window.editingFixture.replacePrimary();
-            return pending;
-        }, changed);
-        expect(pending).toBe(true);
-        await expect.poll(() => page.evaluate(() => window.editingFixture.snapshot().primary.pendingWord)).toBe(false);
-        const inserted = changed === "revision" ? 1 : 0;
-        expect((await snapshot(page)).document).toMatchObject({
-            length: 200_000 + inserted, revision: before.document!.revision + inserted,
-        });
-    }
 });
 
 test("page and line movement retain a measured column across short lines and extend backward selections", async ({ page }) => {
@@ -340,19 +319,14 @@ test("page movement preserves raw CRLF offsets and measured columns in horizonta
     expect((await snapshot(page)).document).toMatchObject({ revision: before.document!.revision });
 });
 
-test("pending word deletion orders native deletion and typing and respects permission changes", async ({ page }) => {
+test("a word deletion commits before following native input and permission changes", async ({ page }) => {
     const text = "x".repeat(200_000) + " tail";
     await setup(page, text);
     const before = (await snapshot(page)).document!.revision;
     await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
         const input = node as HTMLTextAreaElement;
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", ctrlKey: true, bubbles: true, cancelable: true }));
-        if (!window.editingFixture.snapshot().primary.pendingWord) throw new Error("Word command did not yield.");
-        window.editingFixture.keymap.unbind("Ctrl+Delete");
-        window.editingFixture.keymap.unbind("Enter");
-        const unbound = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
-        input.dispatchEvent(unbound);
-        if (!unbound.defaultPrevented) throw new Error("Unbound Enter reached the native input during deletion.");
+        if (window.editingFixture.range(0, 5) !== " tail") throw new Error("Word deletion did not commit.");
         input.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteWordForward", bubbles: true, cancelable: true }));
         input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", bubbles: true }));
     }); await ready(page);
@@ -362,19 +336,24 @@ test("pending word deletion orders native deletion and typing and respects permi
     await page.keyboard.press("Control+z"); await ready(page); expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe(" tail");
     await page.keyboard.press("Control+z"); await ready(page); expect((await snapshot(page)).document).toMatchObject({ length: text.length });
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 0, head: 0 });
-    await setup(page, "x".repeat(200_000)); const revision = (await snapshot(page)).document!.revision;
+    await setup(page, "x".repeat(200_000) + " tail");
+    const revision = (await snapshot(page)).document!.revision;
     await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(node => {
-        window.editingFixture.keymap.bind("Ctrl+Delete", "delete-word-forward");
-        node.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", ctrlKey: true, bubbles: true, cancelable: true })); window.editingFixture.readOnly(true);
-    }); await ready(page); expect((await snapshot(page)).document).toMatchObject({ length: 200_000, revision });
-    await page.keyboard.press("Control+Delete"); await ready(page); expect((await snapshot(page)).document!.revision).toBe(revision);
-    await page.keyboard.press("Control+ArrowRight"); await ready(page); expect((await snapshot(page)).primary.selection.head).toBe(200_000);
+        node.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", ctrlKey: true, bubbles: true, cancelable: true }));
+        window.editingFixture.readOnly(true);
+    });
+    await ready(page);
+    expect((await snapshot(page)).document).toMatchObject({ length: 5, revision: revision + 1 });
+    await page.keyboard.press("Control+Delete");
+    expect((await snapshot(page)).document!.revision).toBe(revision + 1);
+    await page.keyboard.press("Control+ArrowRight");
+    expect((await snapshot(page)).primary.selection.head).toBe(5);
     const readOnly = await page.evaluate(() => {
         const f = window.editingFixture;
         return [f.command("delete-backward"), f.command("delete-word-backward"), f.command("select-word-backward")];
     });
     expect(readOnly).toEqual([false, false, true]); await ready(page);
-    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 200_000, head: 0 });
+    expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 5, head: 1 });
 });
 
 test("horizontal arrows move offscreen carets by grapheme without measuring their rows", async ({ page }) => {

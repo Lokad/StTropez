@@ -99,12 +99,14 @@ test("Undo groups a leading space with its word and keeps a run of spaces separa
     await page.keyboard.press("Control+Shift+z"); await page.keyboard.press("End"); await page.keyboard.type("d");
     await page.keyboard.press("Control+z"); await expect(row).toHaveJSProperty("textContent", "abc");
     await page.evaluate(() => {
-        const f = window.editingFixture; f.setText("w".repeat(200_000)); f.selections([{ anchor: 0, head: 0 }]);
-        const input = document.querySelector("#primary textarea")!;
-        input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
-        if (!f.snapshot().primary.pendingWord) throw new Error("Expected pending navigation.");
-        for (const data of "abc def") input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data, bubbles: true, cancelable: true }));
+        const f = window.editingFixture;
+        f.setText("w".repeat(200_000));
+        f.selections([{ anchor: 0, head: 0 }]);
+        f.focus("primary");
     });
+    await page.keyboard.press("Control+ArrowRight");
+    expect((await state(page)).primary.selection.head).toBe(200_000);
+    await page.keyboard.type("abc def");
     await ready(page); await page.keyboard.press("Control+z"); await ready(page);
     expect(await page.evaluate(() => { const f = window.editingFixture; return f.range(200_000, f.snapshot().document!.length); })).toBe("abc");
 });

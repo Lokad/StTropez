@@ -66,11 +66,9 @@ an interval. `graphemeBoundaries(text)` builds the whole array synchronously.
 Deletion at a caret removes a cluster, including CRLF. Nonempty selections keep exact bounds. The editor may
 index a whole line and ending or the preceding line when moving back from line start.
 
-`WordCursor(buffer, offset, direction, options)` groups letters, numbers and connector punctuation. Marks
-and join controls attach to their base. Other symbols form runs. Forward movement consumes the run and
-following whitespace. Backward movement skips whitespace and crosses the prior run. Use
-`skipWhitespace: false` for run edges. `next(maxWork)` returns a raw offset. Supply line bounds and snap to
-a grapheme for caret placement.
+Word movement groups letters, numbers and connector punctuation. Marks and join controls attach to their
+base. Other symbols form runs. Word commands scan within a logical line, stop at its boundaries and snap
+the result to a grapheme before moving or deleting.
 
 ### Browser caret geometry
 

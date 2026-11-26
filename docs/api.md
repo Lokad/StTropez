@@ -29,7 +29,6 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [core/text-buffer.ts](../src/core/text-buffer.ts) | `BufferChange`, `BufferLine`, `BufferPosition`, `BufferRetention`, `TextBuffer` |
 | [core/text-transaction.ts](../src/core/text-transaction.ts) | `TextTransaction` |
 | [core/values.ts](../src/core/values.ts) | `Immutable`, `SnapshotValue` |
-| [core/words.ts](../src/core/words.ts) | `WordOptions`, `WordStep` |
 | [core/workspace-operations.ts](../src/core/workspace-operations.ts) | `WorkspaceOperations` |
 | [core/workspace-tabs.ts](../src/core/workspace-tabs.ts) | `WorkspaceTabs` |
 | [core/workspace.ts](../src/core/workspace.ts) | `BatchEditResult`, `Capabilities`, `ChangeResult`, `CloseIntent`, `CloseOperation`, `DocumentChange`, `DocumentEditRequest`, `DocumentId`, `DocumentLanguage`, `DocumentSnapshot`, `DocumentView`, `DocumentViewSnapshot`, `EditLease`, `EditOrigin`, `EditRequest`, `EditResult`, `HistoryRequest`, `LoadOperation`, `LoadedResource`, `LoadedTextBuffer`, `Operation`, `PaneId`, `ResourceHandle`, `ResourceId`, `ResourceKey`, `ResourceLease`, `ResourceMetadata`, `ResourceOptions`, `ResourceSnapshot`, `ResourceTarget`, `ResourceVisibility`, `SaveReceipt`, `SaveReview`, `SaveSubmission`, `SaveTicket`, `Surface`, `TabId`, `TabSnapshot`, `TabTarget`, `TextResourceHandle`, `TextResourceOptions`, `TextTransactionOptions`, `TextWriteResult`, `ViewId`, `Workspace`, `WorkspaceOptions`, `WorkspaceSnapshot` |
@@ -116,7 +115,6 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [core/search.ts](../src/core/search.ts) | `LiteralSearch` |
 | [core/selections.ts](../src/core/selections.ts) | `mapSelectionSet`, `planSelectionEdits` |
 | [core/snippets.ts](../src/core/snippets.ts) | `offsetSnippetStops`, `parseSnippet`, `planSnippetChoice`, `planSnippetEdit`, `snippetChoiceText` |
-| [core/words.ts](../src/core/words.ts) | `WordCursor` |
 | [protocol/json-rpc.ts](../src/protocol/json-rpc.ts) | `JsonRpcConnection` |
 | [protocol/lsp-features.ts](../src/protocol/lsp-features.ts) | `decodeLspDiagnostics` |
 | [protocol/lsp-session.ts](../src/protocol/lsp-session.ts) | `LspSession` |
