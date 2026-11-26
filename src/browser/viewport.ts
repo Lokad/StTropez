@@ -318,6 +318,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number; aligned?: true }> | undefined;
     let reveal: Readonly<{ revision: number; foldGeneration: number; offset: number; end?: number; align?: RevealAlignment }> & Required<RevealOptions> | undefined;
     let horizontalAnchor: ViewState["horizontalAnchor"];
+    let restoredHorizontal: ViewState["horizontalAnchor"];
     let fragmentPlacement: Readonly<{ revision: number; line: number; from: number; to: number; left: number; shift: number }> | undefined;
     let fixedPitch = false, measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null, spacerWidth = -1;
     let selectionMetrics: { font: string; height: number; zoom: number } | undefined;
@@ -678,11 +679,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             const line = document.buffer.lineAt(anchor.offset);
             top = index.rowAt(line) * lineHeight + anchor.topRemainder; left = (anchor.offset - document.buffer.offsetAt(line)) * columnWidth + anchor.leftRemainder;
         } else if (previous && previous.revision !== document.revision && document.change === null) { top = 0; left = 0; }
-        if (horizontalAnchor?.revision === document.revision && width > 0 && horizontalAnchor.left >= width && !deferAnchor) {
-            // The caret was visible in a wider pane. Keep it inside this pane without moving vertically.
-            const fitted = horizontalPosition(horizontalAnchor.left);
-            left += horizontalAnchor.left - fitted;
-            horizontalAnchor = { ...horizontalAnchor, left: fitted };
+        if (horizontalAnchor && horizontalAnchor === restoredHorizontal && width > 0 && !deferAnchor) {
+            restoredHorizontal = undefined;
+            if (horizontalAnchor.left >= width) {
+                const fitted = horizontalPosition(horizontalAnchor.left);
+                left += horizontalAnchor.left - fitted;
+                horizontalAnchor = { ...horizontalAnchor, left: fitted };
+            }
         }
         let horizontalEnd: number | undefined;
         if (reveal?.revision === document.revision && reveal.foldGeneration === folds.generation) {
@@ -1131,7 +1134,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 if (currentFolds() !== folds) restoredFolds = currentFolds();
                 reveal = undefined;
                 setScroll(scroll);
-                if (value) horizontalAnchor = { ...value };
+                if (value) restoredHorizontal = horizontalAnchor = { ...value };
                 if (vertical) anchor = { ...vertical, leftRemainder: left - (vertical.offset - document.buffer.offsetAt(document.buffer.lineAt(vertical.offset))) * columnWidth };
             });
             return Object.freeze({ selection: selected.source, foldsRestored: regions !== undefined,
