@@ -59,65 +59,52 @@ documents. When the host sends custom messages that return diagnostics in LSP fo
 
 ### Captures and ranges
 
-The attachment captures the originating view, selection and document revision before sending a
-request. Keep the returned choice or preview in the control that uses it. If the user switches
-documents or the provider reconnects, a delayed click cannot apply to the replacement.
+A request belongs to the view, selection and document revision that started it. Keep each returned
+choice or preview in its button’s handler. Replacing the document or reconnecting the provider expires
+old actions. Use `getSnapshot()` and `subscribe()` to follow a controller, `cancel()` to dismiss its
+request and `dispose()` to detach it.
 
-`lspRangeOffsets` converts raw UTF-16 positions. Character positions past a valid line's end
-clamp to that end; nonexistent lines, negative/noninteger positions and reversed wire ranges
-are refused. Clamping does not split CRLF. A position inside a surrogate pair retains its UTF-16
-meaning. Feature decoders validate a complete result before publication; diagnostics and folding
-have the explicit placement/skip behavior described in their contracts.
+A request returning `Outcome` reports `done` with its value, `stale` for a superseded request,
+`refused` with a reason such as `unavailable-view`, or `failed` with the error. An empty list can be
+a successful result. A `prepare` callback can send scoped custom messages before the request.
 
-A `prepare` callback receives the scoped custom-message API. A late callback cannot publish for a
-superseded request or retarget it to newer text. Handle rejection and dismiss host controls when
-their captures expire.
+`lspRangeOffsets` converts UTF-16 positions. Columns beyond a line clamp to its end, before CRLF.
+An offset between surrogate halves stays there. Invalid lines, negative or fractional positions,
+or a reversed range fail validation. Decoders validate the whole result. Diagnostics and folds
+can retain or skip individual ranges as described below.
 
 ### Diagnostics
 
-Read `scope.observeDiagnostics(binding)` for the shared immutable `LspDiagnosticState` (`empty`,
-`current`, `pending` or `expired`). `decodeLspDiagnostics` checks the URI and document capture on each
-push. A versioned push must match the wire version. If the server omits the version, the client can
-place the diagnostic but cannot tell when the server analyzed the text. `snapshotRevision` names the
-buffer used for placement. The provider version and revision are null.
+Enable `diagnostics: {}` to paint pushes. Marks use the provider’s severity (error by default),
+strike through deprecated text and draw a triangle at empty ranges. Call an item’s `select()`
+to reveal it. An expired item returns `false`. `cancel()` pauses painting and `request()` resumes
+from the latest push. Use `autoConnect: false` when the host opens the connection. For diagnostics
+fetched by the host, use `diagnosticDecoration` in a decoration layer.
 
-Ranges on nonexistent lines retain their message and wire range with null offsets and
-`placement: "out-of-bounds"`; they have no marker. Malformed structures or metadata reject the
-whole batch, including an invalid final item. Fresh batches replace the result; an empty batch
-clears it. Invalid or known-stale pushes leave the observable snapshot and its markers untouched.
+`scope.observeDiagnostics(binding)` exposes `LspDiagnosticState`. A versioned push must match
+the wire version. An unversioned push has null provider version and revision. Its
+`snapshotRevision` identifies the buffer used for placement. A fresh batch replaces the old one,
+including an empty batch. A malformed or known-stale push leaves existing marks alone.
+A diagnostic on a nonexistent line keeps its message and wire range, with null offsets and
+`placement: "out-of-bounds"`.
 
-After a local edit, transaction maps move the markers and mark the diagnostics pending. Fully deleted
-ranges disappear. Undo cannot bring them back. The provider version, revision and original wire ranges
-stay available. Use `isPlacementCurrent()` to check whether a marker points to the right place
-locally. A pending result’s `isCurrent()` is false until fresh analysis arrives. A missing map, close,
-URI reuse or reconnect expires the association. Unrelated capability registrations leave placements
-alone. Mapping these offsets needs neither a full-text export nor another server request.
+Local edits map surviving ranges and mark them `pending`. A fully deleted range stays gone through
+Undo. `isPlacementCurrent()` checks the local marker. `isCurrent()` requires fresh analysis.
+A missing transaction map, close, URI reuse or reconnect expires the result.
+Only overlapping, placed diagnostics with a current provider version enter a code-action request.
 
-Diagnostics can carry an integer or string `code`, `codeDescription`, `tags`, `relatedInformation` and
-opaque JSON `data`. The client advertises the `unnecessary` and `deprecated` tags and forwards unknown
-integer tags. Open related files only when the host requests them. For a code action, the client
-forwards overlapping, placed diagnostics only when their provider version is current. A pending or
-unversioned diagnostic cannot supply that context.
-
-Enable `diagnostics` on the attachment to paint pushed diagnostics. Hosts that fetch
-diagnostics themselves can map their placed ranges through `diagnosticDecoration` and set a decoration
-layer. Both paths color marks by severity, strike through deprecated text and draw a triangle for an
-empty range. An omitted severity uses the error color. Snapshot items retain the provider's severity,
-source, code and tags. Call an item's `select()` to reveal it. An expired item returns `false`.
-
-`cancel()` clears the marks and pauses observation. `request()` resumes with the latest push.
-Pass `{ autoConnect: false }` if the host opens the connection. Render messages as text. Your host
-pages the list, checks help links and opens related locations.
+Items retain severity, source, string or integer `code`, `codeDescription`, integer `tags`
+(including unrecognized tags), `relatedInformation` and opaque `data`. Render messages as text.
+The host controls list paging, help links and opening related files.
 
 ### Completion
 
-Use `completion: { list: true }` for a caret-anchored list with keyboard and pointer selection.
-To translate it, pass `{ label, status, omitted, loadingDetail }` as `list`. Set
-`--st-completion-background` and `--st-completion-selected` to style it.
+`completion: { list: true }` shows suggestions at the caret. Pass `label`, `status`, `omitted` and
+`loadingDetail` in the `list` options to translate the popup. Style it with
+`--st-completion-background` and `--st-completion-selected`.
 
-For a custom list, use `completion: {}` and subscribe to the controller. Position the list at
-the snapshot’s `anchor` and hide it when the anchor is null. Bind each row to its captured item.
-Keep focus in the editor on pointer down so the row can accept the click.
+For a custom list, enable `completion: {}` and subscribe to the controller. Position it at the
+snapshot’s `anchor` and hide it when the anchor is null. Bind each row to the item it displays.
 
 ```ts
 import type { CompletionSnapshot } from "sttropez/browser";
@@ -134,109 +121,77 @@ export function completionButton(list: CompletionSnapshot, index: number) {
 }
 ```
 
-Call `item.select()` to highlight a row. Keep the buttons while the `choices` array is the same.
-Move the highlight to `choiceIndex` on arrow keys and rebuild the rows when the list changes. A button bound to
-an expired item returns `false` from `accept`. When an incomplete list refreshes, its visible
-choices remain usable until the replacement arrives.
+Reuse the rows while `choices` stays the same. `item.select()` changes the highlight at
+`choiceIndex`. An expired item returns `false` from `accept`. An incomplete list’s existing rows
+remain usable until its replacement arrives.
 
-**Requesting suggestions.** Ctrl/Cmd+Space or `await completion.request()` requests a list.
-A `done` outcome carries the snapshot, including an empty result. Superseded requests return
-`stale`, unavailable views or connections return `refused`, and provider errors return `failed`.
-Set `automatic: false` for manual requests only. `prepareCompletion` runs after the captured
-document synchronizes. Use `canCapture` for host readiness checks.
+**Request and filter.** Ctrl/Cmd+Space or `completion.request()` requests suggestions. Set
+`automatic: false` for manual requests only. `canCapture` checks host readiness.
+`prepareCompletion` runs after the captured document synchronizes. Typing a word or an advertised
+trigger can open the list. A number alone needs a matching trigger. Typing or backspacing in the
+prefix filters the list and retains a matching selection. Erasing the prefix dismisses it.
+Backspacing past the original query requests the shorter word. Undo, unrelated edits, blur or a
+caret move dismiss the offer.
 
-Typing in a word or entering an advertised trigger character can open the list. Decimal digits
-on their own leave it closed unless the provider advertises a matching trigger. Typing or
-backspacing within a prefix filters the choices and keeps the selected item when it matches.
-Erasing the prefix dismisses the list. Backspacing past the original query requests suggestions
-for the shorter word. Undo, unrelated edits, blur or moving the caret dismiss the offer.
+`sortText` sets the order, `filterText` supplies the case-insensitive prefix and `preselect`
+chooses the initial item. Manual requests show all candidates unless `filterManualCompletions`
+is true. `completionIncomplete` records a partial list. Render details and documentation as
+text. `omittedCompletions` lists unsupported snippets and items that require a follow-up command.
 
-The provider controls sorting with `sortText`, case-insensitive prefix matching with `filterText`,
-and the initial choice with `preselect`. Manual requests show all candidates unless
-`filterManualCompletions` is true. `completionIncomplete` reports the provider’s partial-list
-flag. Render details and documentation as text. Unsupported snippets
-and items requiring a follow-up command are listed in `omittedCompletions`.
+**Select and accept.** Up/Down changes the selection. PageUp/PageDown moves by the visible row
+count (`getPageSize` for custom lists, ten by default). Escape dismisses suggestions. Home and
+End return to the source. Enter uses the provider’s replacement range. Tab uses its insert range,
+preserving the suffix. Without a supplied range, the edit covers the selection or word at the caret.
 
-**Accepting a choice.** Enter replaces the provider's replacement range. Tab inserts using
-its narrower insert range, preserving any suffix. Without an explicit range, completion uses
-the selected text or the word at the caret. Up/Down selects a row. PageUp/PageDown moves by the
-visible row count. For custom controls, `getPageSize` supplies the count and defaults to ten. Escape dismisses the list. Home and End return to the source.
+`accept` can return `true` before item resolution finishes. Typing, a selection change or losing edit
+permission cancels queued acceptance. A commit character typed while waiting enters as ordinary text.
+Once ready, the completion, commit character and additional edits share one Undo. Resolution can
+supply details and edits, keeping the original item identity, label and primary range bounds.
+Additional edits must match the revision sent for resolution.
 
-Acceptance can wait for item resolution. A `true` return means the controller took the request.
-Typing, a selection change or a loss of edit permission cancels queued acceptance. A commit
-character typed before resolution enters ordinary text. Once the choice is ready, the character,
-completion and additional edits such as an import share one Undo step. Resolution can fill in
-details or edits. The primary edit must stay within its captured ranges. Additional edits use
-the revision sent for resolution. Changing the item’s label or identity invalidates the reply.
+Manual completion accepts a single-line selection or multiple collapsed carets. Each caret’s
+replacement must cover identical text on its own line. Additional edits apply once. An overlap or
+incompatible caret refuses the batch. Automatic completion uses one caret or linked snippet fields.
 
-Explicit completion also accepts one single-line selection or several collapsed carets. For
-multiple carets each replacement must fit on its line and cover the same text. Additional edits
-apply once. An overlap or incompatible caret refuses the batch. Automatic completion works with
-one caret or the linked fields of an active snippet.
+**Snippets.** Tab and Shift+Tab visit numbered fields even with suggestions open. Edits and
+completions update each occurrence of the field. Alt+Up/Down cycles choices. Escape closes
+suggestions first, then the snippet. Tab ends at `$0`. Undo and Redo restore text and selections.
+`--st-snippet-field-border` styles inactive fields. Multiline inserts follow the insertion line’s
+indentation and newline style unless `insertTextMode: 1` preserves the supplied text.
+[Snippet grammar](text-model.md#snippet-planning)
 
-**Snippets.** Tab and Shift+Tab move between numbered fields, including when the list is open.
-Typing or accepting a suggestion updates all occurrences of that field. Alt+Up/Down cycles
-field choices. Escape closes suggestions first, then ends the snippet. Tab navigation ends at
-the final `$0` caret position. Undo and Redo restore text and selections. Use
-`--st-snippet-field-border` for the inactive field outline. Multiline inserts use the insertion
-line’s indentation and newline style by default. `insertTextMode: 1` preserves the supplied text.
-[Snippet grammar and planning](text-model.md#snippet-planning)
-
-Read `connected`, `pending` and the current `choices` from `completion.getSnapshot()`.
-`completion.getDiagnostics()` exposes `lastCompletionBeforeInputMs` for the input
-listener and `lastCompletionCommandMs` for a registered completion or snippet command. Both
-stop when the handler returns. Provider replies and visible rendering have separate clocks.
-[Measurement boundaries](README.md#measuring-an-interaction)
+`completion.getDiagnostics()` reports `lastCompletionBeforeInputMs` and `lastCompletionCommandMs`.
+Both stop at handler return. [Interaction clocks](README.md#measuring-an-interaction)
 
 ### Hover and documentation
 
-Enable `hover: { popup: true }` on the language attachment. Hold the pointer over source text
-for 300 ms or press Ctrl+K Ctrl+I (Cmd+K Cmd+I on macOS) to inspect the caret. The card opens
-at the source without moving focus. Keyboard inspection scrolls only far enough to reveal
-the caret. Escape dismisses the card. A toolbar can call `hover.request()`.
-Pass a popup options object to set `closeHint`, control links or decline a pointer or keyboard
-lookup through `beforeInspect`.
+Enable `hover: { popup: true }`. Dwell over source for 300 ms or press Ctrl+K Ctrl+I
+(Cmd+K Cmd+I on macOS) to inspect the caret. Keyboard inspection reveals the caret and preserves
+focus and selection. Escape closes the card. Popup options include `closeHint`, link handling
+and `beforeInspect` for declining a lookup.
 
-For a custom view, enable `hover: {}` and subscribe to the controller. Call `hover.request()`
-at the caret or pass a captured `{ revision, offset }` from the [pointer dwell observer](editor.md#pointer-dwell).
-Diagnostics appear as they become available. Symbol documentation joins them when the request completes.
-`await hover.request()` returns `done` with the combined snapshot, including `empty` when
-neither source has content. A replaced or cancelled lookup returns `stale`. An unavailable
-view or hidden or invalid position returns `refused`. A provider failure or timeout returns
-`failed`. Overlapping diagnostics stay visible. A mapped diagnostic reads “Awaiting recheck”
-until fresh analysis arrives.
+For a custom card, use `hover: {}`. A toolbar can call `hover.request()` at the caret or pass
+a captured `{ revision, offset }` from pointer dwell. `request(point)` refreshes the lookup.
+`request(point, "reuse")` shares a pending lookup at that point or reuses the symbol inside a
+current provider range. Overlapping diagnostics follow the latest offset. A missing provider
+range anchors the card at the inspected position. [Pointer dwell](editor.md#pointer-dwell)
 
-Render the ready snapshot’s `content` with `mountDocumentation`. Its `diagnostics` array contains
-the `from`, `to` and `message` of each diagnostic at the inspected offset, in the order supplied.
-Use it to offer Code actions. A point diagnostic matches its exact offset.
-The snapshot’s `range` identifies where the same information applies.
-For pointer dwell, call `request(point, "reuse")` to track the new position.
-Requests for the same pending position in reuse mode share the lookup.
-Inside a current provider range, the controller reuses the symbol reply and shows diagnostics
-for the latest offset as they arrive. The default `request(point)` refreshes the lookup.
-The controller preserves focus and selection. Editing, changing the selection or
-fold projection, and replacing the tab expire the result. `cancel()` dismisses it and `dispose()`
-releases the controller. For a separate analysis service, pass its observable `diagnostics` and
-`diagnosticRevision` snapshot through the `diagnostics` option. The lookup uses the painted revision.
+The snapshot carries `content`, its `range` and diagnostics in provider order. Each diagnostic
+has `from`, `to` and `message`. A point diagnostic matches its exact offset. Diagnostics can
+arrive before symbol documentation and remain visible if the lookup fails. Mapped marks read
+“Awaiting recheck”. To include another analysis service, supply its observable `diagnostics` and
+`diagnosticRevision`. Editing, changing the selection or folds, or replacing the tab expires the
+card. Hidden or invalid positions are refused.
 
-A provider can return Markdown, plaintext or a code block with a language tag. When it omits
-a range, the built-in card stays at the inspected position.
+`mountDocumentation` renders plaintext, paragraphs, emphasis, flat lists, inline and fenced code,
+and links. It builds DOM nodes without inserting provider HTML or loading images or embeds.
+Code language tags are metadata. Deep nesting and oversized destinations display literally.
+The host entries export `DocumentationContent` and `DocumentationPart`. `setContent` reuses an
+unchanged immutable array, and `dispose` removes the view and listeners.
 
-Use `mountDocumentation` from `sttropez/browser` to append a `DocumentationView`. `setContent` reuses
-an unchanged immutable array. `dispose` removes the view and listeners. The host entries (`sttropez`,
-`sttropez/browser`, `sttropez/protocol`) export the headless `DocumentationContent` and
-`DocumentationPart` types.
-
-The view renders plaintext, paragraphs, emphasis, strong emphasis, flat ordered and unordered lists,
-inline or fenced code and inline links. Code language labels are metadata. The view builds its own
-elements and text nodes. It never inserts provider HTML or loads an image or embed. At nesting
-depth 16, inline content stays literal. Link destinations longer than 8,192 UTF-16 units before
-trimming or unescaping also stay literal.
-
-Links render as buttons. Without `openLink`, clicking does nothing. The view checks `canOpenLink` when
-it renders and again on click. Check the destination in your own action too. Replacing the content or
-disposing the view disables old buttons. The example accepts only destinations with a registered host
-action.
+Links render as buttons. Supply `openLink` to handle activation. `canOpenLink` is checked at
+render and on click. Check the destination in the host action too. Old buttons expire when
+content changes or the view closes.
 
 ```ts
 import type { DocumentationContent } from "sttropez";
@@ -258,161 +213,106 @@ export function createHelpView(
 }
 ```
 
-Clear the popup when its capture expires. For an overlong Markdown destination, including whitespace
-and title, the view shows literal text. Your callback handles any fetching, normalization or opening.
-Set `markdownDocumentation: true` to request Markdown for hover and signature help, with no allowed
-HTML tags. Otherwise the client requests plaintext. Completion documentation always uses plaintext.
+Use `markdownDocumentation: true` to request Markdown for hover and signature help. Otherwise
+the client requests plaintext. Completion always uses plaintext.
 
 ### Signature help
 
-Set `signature: { popup: true }` on the language attachment to show help at the primary caret.
-The popup highlights the active parameter and shows its documentation. For translated labels, link
-handling or a host-owned overload toolbar, pass `SignaturePopupOptions` in `popup`. Set
-`overloadControls: false` to hide the popup's overload buttons.
-Await `signature.request()` for a `done` result with the displayed signature or an `empty`
-snapshot. A dismissed or superseded request returns `stale`, an unavailable view returns
-`refused`, and a provider error or timeout returns `failed`.
-Call `request()` or press Ctrl/Cmd+Shift+Space to show parameter help, including in a read-only
-view. In a focused editor, an explicit request brings the caret into view. If the caret is
-already visible, the page keeps its scroll position. An accepted trigger such as `(` requests
-help at the resulting caret, including when the editor supplies the closing parenthesis.
-Typing more of the argument can share that request. Moving elsewhere before the first
-request goes out discards the trigger.
-An intercepted key leaves help closed. Up and Down
-cycle through overloads. Escape closes the topmost popup. A higher-priority completion list gets
-these keys first.
+`signature: { popup: true }` shows the active parameter and its documentation. Press
+Ctrl/Cmd+Shift+Space or call `signature.request()`, including in a read-only view. An explicit
+request in a focused editor brings the caret into view. A provider trigger such as `(` requests
+help at the resulting caret, including after automatic bracket pairing. Typing an argument can
+share that lookup. Moving elsewhere before dispatch cancels the trigger.
 
-For a custom view, use `signature: {}`, subscribe to the controller and render `getSnapshot().signature`.
-Its label and parameter offsets describe the highlighted text. Use the snapshot's `anchor` to position the popup. While you type
-an argument expression such as `item.price` at the same caret, a `pending` snapshot keeps the last
-signature at the new position. A comma clears the previous parameter highlight until the provider
-identifies the next one. Left, Right, Backspace and Delete also preserve the label within an
-argument name or number. Crossing a call boundary or jumping elsewhere clears it while the
-provider refreshes. Blur, composition and `cancel()` dismiss help. A host
-can move focus to its own field while rendering a signature. Disposing the editor also disposes
-the controller. If attachment fails, the host can retry with a live provider on the same editor.
+Up/Down cycles overloads. Escape dismisses the topmost popup. A higher-priority completion list
+gets those keys first. Pass `SignaturePopupOptions` to translate labels, handle links or set
+`overloadControls: false` for a host-owned toolbar.
 
-Signature help returns literal labels and documentation plus structured content, UTF-16
-parameter offsets, active indices and immutable wire context. String parameter labels must occur
-inside the signature label; tuple offsets must fit it. A signature's active parameter overrides
-the batch value. Missing or out-of-range nonnegative indices select the first available entry;
-zero parameters means no highlighted parameter. Null and empty help yield no useful presentation.
+For a custom popup, enable `signature: {}`, subscribe to its controller and read `getSnapshot().signature` and `anchor`.
+While the provider refreshes, editing or moving within an argument name or number retains the
+label. A comma clears the parameter highlight. Crossing a call boundary or jumping elsewhere
+clears the old signature. Blur, composition or cancellation dismisses help. A retrigger retains
+the selected overload for the same document and registration. A fresh explicit request resets it.
 
-On a provider retrigger, signature help preserves the selected overload for the same document
-and provider registration. Starting an explicit request or cancelling clears it.
-
-Render signature and parameter content with the [documentation view](#hover-and-documentation).
+The result includes literal labels, documentation, UTF-16 parameter offsets, active indices and
+immutable wire context. A string parameter must occur in the label and tuple offsets must fit.
+A signature’s active parameter overrides the batch value. Missing or out-of-range nonnegative
+indices select the first available entry. Empty help has no signature and zero parameters have
+no highlight. [Rendering documentation](#hover-and-documentation)
 
 ### Navigation and target loading
 
-`attachEditorLanguage(editor, provider, { navigation: options })` handles definition links for one mounted
-view. Hold Ctrl or Cmd over a symbol to underline it, including when the editor is mounted in a
-shadow root. Hover preserves focus, selections and open tabs. Releasing the modifier clears the
-underline. A primary click while the modifier is held resolves the target even if the lookup
-is pending. A drag starting inside selected text uses the editor’s text transfer.
-Editing or remounting the source expires the gesture. Alt+click stays available for multiple carets.
+Enable `navigation` on the attachment. Ctrl/Cmd+hover underlines a symbol without changing the
+selection or opening a tab. A primary click follows it, even if lookup is pending. Releasing the
+modifier clears the underline. Dragging inside a selection starts a text drag. Alt+click
+adds a caret. Editing or remounting expires the gesture.
 
-The first attachment for an editor reserves its provider scope at mount. If the provider has
-reached its limit, mounting throws and the host can retry after a scope is released. Hover and
-explicit lookups use that reserved scope.
+**Following a definition.** In `onDefinition(offset)`, call `navigation.request("definition", offset)`
+to reuse the hover reply. F12 can request the definition at the caret. For references, call
+`request("references", offset)`. Pass `false` as the third argument to exclude declarations.
+To give a document link precedence, return its UTF-16 range and `open()` action from the
+synchronous `linkAt(offset)` callback. A click released over the same range and revision invokes
+the captured action. Returning `undefined` falls back to symbol lookup.
 
-Use `options.linkAt(offset)` to handle a document link under the pointer. Return its UTF-16
-range and an `open()` action. Ctrl/Cmd hover underlines the whole range, including punctuation.
-Releasing the pointer over the same range and revision invokes the action captured on press.
-Return `undefined` to use symbol lookup. Keep `linkAt` synchronous and defer opening to the action.
+Supply current project snapshots in `documents`. Successive requests reuse unchanged files on
+the server. Dismissing the lookup releases its project files. The source stays bound to the
+editor’s shared provider scope. If the scope limit is reached, attachment can be retried after
+a scope is released.
 
-Supply the project with `options.documents`. Moving between symbols with the modifier held keeps
-unchanged project files open on the server. A new request on the same controller also reuses
-those files and checks the current project list. Dismissing the lookup releases its project files.
-The attached source stays bound until the last panel for that editor and provider closes.
-A host that opens tabs or shows a chooser handles
-`options.onDefinition(offset)` by calling `controller.request("definition", offset)` during the
-callback. This reuses the hover reply. F12 and reference commands can call the same controller
-at the caret. A completed request returns `done` with the published result, even when it has zero
-locations. A cancelled or superseded request returns `stale`. An unavailable view returns
-`refused` with reason `unavailable-view`. Use `result.count` to size your list and
-`result.locationAt(index)` to read a visible row. An invalid zero-based index yields `undefined`.
-Keep each choice in its row's click handler. Its `open(present)` calls the host with the captured
-document and range while the choice is current. It returns false after cancellation, replacement,
-a change to the captured documents or a provider restart. The host opens the destination.
-A result list can open several choices as the caret moves. Set
-`resultLifetime: "view"` for a popup tied to the original selection and folds.
-Without a callback, the controller publishes the result through `getSnapshot()`
-and `subscribe()`. Call `cancel()` to dismiss navigation and `dispose()` to detach it.
+**Showing results.** Use `result.count` and `result.locationAt(index)` to render visible rows
+in provider order. An invalid index gives `undefined`. Keep the choice in its row and call
+`choice.open(present)` to reveal the captured document and range. An expired choice returns
+`false`. The list can open several locations as the caret moves. Set `resultLifetime: "view"`
+to tie it to the original selection and folds.
 
-A references request includes declarations by default. Pass `false` as the third argument to
-`navigation.request("references", offset, false)` to exclude them. A definition hover can
-underline the source before opening any target file.
+Definitions accept `Location`, `Location[]` or `LocationLink[]`. References accept `Location[]`.
+A null reply is empty. A mixed list, unknown target or invalid range rejects the whole reply.
+A link’s selection must fit its target range, and its optional origin refers to the captured source.
 
-Navigation loads up to four distinct missing URIs at once and returns locations in the provider's
-original order. Repeated locations share a load. If the host declines a URI, the lookup fails and
-releases the other targets, including any that finish after cancellation.
+**Loading missing files.** Navigation, rename, code actions and incoming edits use
+`LspWorkspaceOptions.resolveTarget(uri, context)`. Authorize the URI before reading it.
+`context` identifies the operation, its source (null for server edits), currentness and cancellation.
 
-Navigation accepts Location, Location[] or LocationLink[] for definitions and
-Location[] for references; null yields an empty result. Mixed location/link arrays are refused.
-Every target URI must resolve to an exact captured buffer/index/resource/document/revision.
-Unknown targets reject the whole batch. A LocationLink selection must fit its target range after
-position conversion; its optional origin range uses the source capture. Results retain all
-validated locations within the host's input limits. The navigation controller pages these locations. The host decides when to reveal one.
+| Loader result | Use |
+| --- | --- |
+| `{ document: workspace.document(id) }` | A project file loaded into this workspace with the requested URI. Editing also requires current permissions and a matching version. |
+| `{ text, languageId }` | A read-only navigation target. Supply a string or `TextBuffer`. The workspace retains it while a result or opened view needs it. |
+| `undefined` | Decline the target. The lookup fails and releases its other targets. |
 
-Navigation, rename, actions and incoming edits share `LspWorkspaceOptions.resolveTarget(uri,
-context)` for missing targets. Wire structure is validated before loading. `LspTargetContext`
-identifies navigation/editing, the captured source (null for server edits), source/provider
-currentness and cancellation. Return `undefined` to decline. For project files return
-`{ document: workspace.document(id) }` after loading the text or buffer. The snapshot must
-belong to this workspace and carry the requested URI. For a read-only navigation target, return
-`{ text, languageId }`, where `text` is a string or a `TextBuffer`. The workspace retains these
-contents in an internal read-only resource while the result or an opened view needs them.
+Navigation loads up to four distinct URIs at once. Repeated locations share a load. The loader
+can return `release()` with either result. Honor cancellation, including results that arrive
+late. A lookup can read a definition without mounting a view or sending `didOpen`. The client
+checks the complete batch against the captured documents after loading.
+[Synchronization and index budgets](language-server.md#limits-and-failures)
 
-The provider builds the UTF-16 index with the [synchronization budget](language-server.md#limits-and-failures),
-checks the resource and its edit permissions, and uses a
-wire version only for a matching synchronized document. Either form accepts an optional
-`release()` callback for host-owned I/O resources.
+**Returning from a jump.** Before lookup, save an origin with `createNavigationHistory(workspace)`
+and `history.capture(editor)`. Busy, detached and foreign views return `undefined`. For a pointer
+jump, pass the clicked offset as a second argument. A single caret returns there, while selected
+ranges and multiple carets retain their positions.
 
-Authorize each URI before loading its contents. You can load a definition target without mounting a
-view or sending `didOpen`. Reading the file grants no permission to edit it or follow a link. Cancel
-the loader with the request and release a late target even if loading finished after cancellation,
-replacement, disposal or a provider change. Keep accepted targets until the result or server-edit
-decision ends. Recheck the whole batch once loading finishes.
+Open the destination inside `origin.visit(() => …)` and return true on successful reveal. A change to
+the source revision before the visit expires it. Reuse the origin for choices in one list to give
+them one Back entry. `origin.viewState` is available to hosts reopening a view. History retains
+up to 100 origins and publishes their count.
 
-Use `createNavigationHistory(workspace)` to let users retrace jumps across editors.
-`history.capture(editor)` saves an origin before a jump or lookup. It returns `undefined` for
-a busy, detached or foreign view. Wrap the code that opens a destination in `origin.visit(() => …)`
-and return true after the reveal succeeds. A changed source revision expires the visit.
-For a pointer jump, pass the clicked UTF-16 offset to `history.capture(editor, offset)`.
-A single caret returns to that offset. A selected range or multiple carets retain their places.
-Capturing leaves the editor untouched. `origin.viewState` holds the same selections and scroll
-position for hosts that reopen a replaced source view.
-Reuse the origin for choices
-in the same result list to give them one Return point. The history keeps the last 100 origins.
-`getSnapshot()` gives the count and `subscribe()` reports count changes.
-
-`history.back(present)` asks the host to present the original `DocumentView`. Return its editor,
-`undefined` to skip it, or `"busy"` to keep it for a later attempt. Return skips closed views
-and replaced tabs. Edits after a jump move the saved selections and scroll anchors with the source.
-Back restores them and reports `"restored"`, `"empty"` or
-`"busy"`. Pass `{ focus: true }` as the second argument to focus the editor on return.
-Dispose the history with its host. Canonical saves follow the workspace's selection rules.
-[Whole-text writes](workspace.md#transactions-and-history)
-[Restoring a view after edits](viewport.md#scrolling-and-saved-views)
+`history.back(present)` asks the host for the editor showing the original `DocumentView`. Return
+`undefined` to skip an entry or `"busy"` to keep it for later. Back skips closed views and replaced
+tabs, maps saved selections and scroll anchors through subsequent edits, and reports `"restored"`,
+`"empty"` or `"busy"`. Pass `{ focus: true }` to focus the restored editor. Dispose history with
+the host. [Canonical saves](workspace.md#transactions-and-history) · [View restoration](viewport.md#scrolling-and-saved-views)
 
 ### Rename and workspace edits
 
-Enable `rename: { popup: true }` on the editor attachment for a rename field in the working pane.
-F2 brings the field into view and selects the current symbol’s name. Type a new name and press Enter to
-preview the edits. Click Apply rename or press Enter again to apply and return to the editor.
-Escape returns to the editor without applying. A toolbar can run
-`editor.commands.run("rename.start")`. The preview shows up to 64 edits per page and stays
-open while the user scrolls. Changing the source or selection expires the captured target.
+With `rename: { popup: true }`, F2 or `editor.commands.run("rename.start")` opens the name
+field and selects the symbol. Enter previews the changes, then Enter or **Apply rename** commits
+them. Escape returns to the editor. The preview pages 64 edits at a time and stays open while
+scrolling. Editing the source or changing its selection expires the target.
 
-Pass `popup: { beforeOpen, onNotice, text }` to coordinate other controls, report a rejected
-target in the host UI or translate labels. For a custom interface, use `rename: {}`.
-Pass other open project files through `rename.documents`.
-`await rename.request(name)` renames the symbol at the caret. Undo from any changed file restores
-the whole rename.
-
-To ask for approval, request a preview. Let the dialog page through `preview.readEdits(first, end)`
-and enable Apply when `canApply` is true. Keep the preview the user saw while the dialog was open.
+Pass `beforeOpen`, `onNotice` and `text` in the popup options to coordinate controls, report
+refusals and translate labels. For a custom UI use `rename: {}`. Supply other open project files
+in `rename.documents`. `rename.request(name)` applies directly. One Undo from any changed file
+restores the whole rename. To review first, bind Apply to the preview the user saw and enable it
+when `canApply` is true.
 
 ```ts
 import type { RenameController, RenamePreview } from "sttropez/browser";
@@ -429,46 +329,39 @@ export async function reviewRename(
 }
 ```
 
-Here `undefined` means the user dismissed the dialog. On `done`, report the changed files in
-`value`. On `stale`, close the old preview. For `refused`, check `reason` (`empty-name`,
-`unavailable-view`, `not-writable` or `no-changes`). On `failed`, report `error`. The host sets
-name-field limits and the server checks naming rules. Cancel the pending rename if the user
-edits the proposed name. [Working host example](../examples/reference/language.ts)
+The example returns `undefined` on dismissal. On `done`, `value` lists changed files. Refusal reasons
+include `empty-name`, `unavailable-view`, `not-writable` and `no-changes`. Limit field length in
+the host, leave naming rules to the provider and cancel a pending rename when the name changes.
+[Reference host](../examples/reference/language.ts)
 
-**Workspace text edits.** The client accepts a `changes` map or `documentChanges`. If both are present,
-it uses `documentChanges`. Each URI must resolve to a current, captured document. Numeric versions
-must match its wire version. An unknown URI, repeated document, invalid range or overlap rejects the
-whole batch. Equal-position inserts preserve provider order and inserted text keeps its line endings.
+**Workspace text edits.** `documentChanges` takes precedence over `changes`. Every URI must
+resolve to a captured current document, and numeric versions must match its wire version. An
+unknown or repeated document, invalid range or overlap rejects the batch. Equal-position inserts
+keep provider order and inserted text retains its line endings. Rename omits identical replacements.
 
-A preview page contains edits with ordinals in `[first, end)` and the total across all files.
-An empty range returns the total alone. Notes include bounded excerpts and the full insertion length.
-The display cutoff keeps surrogate pairs and CRLF together. The edit retains its original UTF-16
-offsets and text.
-Rename omits text-identical replacements. Reading an expired preview returns `undefined`.
-[Preview limits](#limits)
+`preview.readEdits(first, end)` returns excerpts for `[first, end)` and a total across files.
+An empty range reads only the total. Excerpts keep surrogate pairs and CRLF together and report
+the full insertion length. Apply uses the complete original text. An expired preview returns
+`undefined`. [Preview limits](#limits)
 
-For a headless approval callback, retain the targets and recheck permission before calling
-`applyLspWorkspaceEdit` from `sttropez/kernels`. It accepts the edit origin, optional required
-origins, view and history kind (default `"replace"`). It returns the changed snapshots or throws
-on refusal. An empty edit creates no Undo entry. Use `readLspEditNotes` to show the same excerpts.
+For headless review, use `readLspEditNotes` and `applyLspWorkspaceEdit` from `sttropez/kernels`.
+Recheck targets and permissions before applying. Options include origin, required origins, view
+and history kind (default `"replace"`). Apply returns changed snapshots or throws on refusal.
+An empty edit creates no Undo entry.
 
 ### Code actions and commands
 
-Enable `codeActions` on the attachment. `actions.request()` sends the primary selection and
-its overlapping diagnostics to the provider. Supply current snapshots in `documents()` for edits
-to other project files. A superseded snapshot returns `stale` before discovery starts.
-Set `codeActions: { popup: true }` for an anchored review. Ctrl+. (Cmd+. on macOS) and
-`editor.commands.run("quickfix.show")` bring the caret into view and open the list. Arrow keys choose an action.
-Enter requests a preview if the first available fix needs resolution. Press Enter on a ready preview to apply it.
-While the list loads, arrows and Enter preserve the selection. If every choice is unavailable, the editor
-handles those keys normally. Hover over a disabled choice for its reason, or press Escape to close the list.
-Pass the choices returned by `request()` as the command argument to open a diagnostic's
-current list without another request.
+`codeActions: { popup: true }` enables Ctrl+. (Cmd+. on macOS) and the `quickfix.show` command.
+Both reveal the caret and open the list. Arrows select a fix. Enter previews a fix that needs
+resolution, then applies a ready preview. During lookup, arrows and Enter preserve the selection.
+If no fix is available, the editor handles those keys normally. Hover over a disabled fix for its
+reason. Escape closes the list.
 
-The popup asks for confirmation by default. Supply `popup.quickApply(choice, preview)` to
-apply selected edits on click. Commands always require confirmation. `popup.beforeOpen` can
-dismiss competing controls or return false to keep the list closed. `popup.text` supplies labels.
-For a custom menu, bind each button to its returned choice so a later edit cannot redirect it.
+`actions.request()` sends the primary selection and its overlapping current diagnostics. Supply
+current project snapshots in `documents()` for cross-file edits. Pass the returned choices to
+`editor.commands.run("quickfix.show", choices)` to reuse a diagnostic’s list. `popup.beforeOpen`
+can decline to open it and `popup.text` translates labels. `popup.quickApply(choice, preview)`
+can approve edits on click. Commands always require confirmation.
 
 ```ts
 import type { CodeActionChoice, CodeActionController } from "sttropez/browser";
@@ -484,47 +377,37 @@ export async function chooseFix(
 }
 ```
 
-An empty list means the provider found no actions. In this example dismissal returns `undefined`.
-`choice.select()` resolves and applies the action. To review it first, call
-`choice.select({ review: true })`, display the returned preview’s `readEdits(first, end)`, then
-call `await preview.apply()` on approval. Repeated selection of the same pending choice shares one
-request. Choosing another supersedes it. Wire replies can add the advertised edit on resolve.
-A changed title, command or opaque data invalidates the reply. The client validates the whole
-list, including disabled choices. Render titles and reasons as text.
+In a custom menu, bind each row to its returned choice. `choice.select()` resolves and applies
+it. To ask for approval, use `select({ review: true })`, show `preview.readEdits(first, end)` and
+call `preview.apply()`. Dismissal in the example returns `undefined`. Selecting the same pending
+choice shares its request. Choosing another supersedes it. Resolution can add an advertised edit.
+Changing the title, command or opaque data invalidates the reply. The client validates every
+choice, including disabled ones. Render provider text literally.
 
-An applied edit creates one Undo step across its files. If the action includes a command,
-the initial edit commits first. Use `reviewCommandEdit(request, context, writable)` to approve
-each server edit. Disable Apply for unwritable files and close the dialog on `context.onCancel`.
-A later failure leaves earlier edits undoable. The result uses the same outcomes as rename.
-`canRunCommand` lets the host defer execution while busy. A `command-unavailable` refusal keeps
-the preview open.
+An action’s initial edit commits as one Undo across its files, before any command runs.
+Use `reviewCommandEdit(request, context, writable)` for each incoming edit. Disable Apply for
+unwritable targets and close the dialog on `context.onCancel`. A later failure leaves earlier
+edits undoable. `canRunCommand` can defer a command with `command-unavailable` and keep its
+preview open.
 
-Build a command menu from `provider.commandNames()` and run the user's choice with
-`commands.run(name, args)`. The controller's snapshot lists files changed even
-if the acknowledgement is lost. A command that makes no edits preserves any open action preview.
-After cancellation, check `provider.getSnapshot().commandRequiresReconnect` before retrying.
-
-For host-authorized commands, `codeActions.commandPolicy` receives the exact command and arguments.
-Return a server or local route with a revocable `isCurrent`, or `null` to disable the whole action.
-Cancel an open request if host policy changes. [Command permissions, review deadlines and reconnect](language-server.md#commands-and-edit-decisions)
+Populate menus from `provider.commandNames()` and call `commands.run(name, args)`. Its snapshot
+records changed files even if acknowledgement fails. A command with no edits preserves an open
+action preview. Check `commandRequiresReconnect` after cancellation. For host-authorized actions,
+`codeActions.commandPolicy` receives the exact command and arguments. Return a server or local
+route with a revocable `isCurrent`, or `null` to disable the action. Cancel open requests on a
+policy change. [Command permissions, approval and reconnect](language-server.md#commands-and-edit-decisions)
 
 ### Document links
 
-Use the attachment's `links` option to discover links in the mounted document. If URI mapping
-depends on other documents, return their current snapshots from `documents()`. An outdated
-snapshot returns `stale` before the provider is contacted. A request that expires in flight
-also returns `stale`. On success, `await links.request()` returns `done` with the list published
-to `getSnapshot().links`. An unavailable view returns `refused`, and errors return `failed`.
-Each choice carries its range, tooltip, optional target and an `open` action.
+`links.request()` returns the captured choices in `getSnapshot().links`. Each carries its
+range, tooltip, optional target and `open(visit)` action. Supply `documents()` when URI mapping
+depends on other files. An outdated project snapshot expires the request before sending.
 
-Use `attachEditorLanguage(editor, provider, { links: { paint: true } })` to underline links
-as the document changes. Panes showing the same document share a scan and refresh after reconnect. Use `setPaint(false)`
-to hide the marks, or `setPaint(true)` to resume. `linkAt(offset)` returns the first matching
-choice in the current explicit result, then checks the painted ranges. Both use UTF-16
-offsets and exclude the end of the range. Pass a choice's `open(visit)` action to your menu
-or modifier-click handler. A lazy link resolves on the clicked pane even if a sibling closes.
-When opening a tab, keep the visit tied to the click that requested it. Here the host aborts
-`intent` when focus leaves, another action starts, or the pane closes.
+`links: { paint: true }` underlines links. Panes share a scan and refresh after reconnect.
+`setPaint(false)` hides the marks and `setPaint(true)` resumes. `linkAt(offset)` checks the
+explicit result before painted ranges, with exclusive range ends. A lazy link resolves on the
+clicked pane even if a sibling closes. Tie navigation to the click that requested it. Here the
+host aborts `intent` on focus loss, another action or pane closure.
 
 ```ts
 import type { DocumentLinkChoice } from "sttropez/browser";
@@ -536,77 +419,59 @@ export function openLink(link: DocumentLinkChoice, intent: AbortSignal, visit: (
 }
 ```
 
-`open(visit)` resolves a missing target when the provider supports resolution. After `visit(uri)`
-returns, the outcome is `done` with that URI. A refusal gives the reason `no-target`, `resolving`
-or `unavailable-view`. A provider or presentation error returns `failed` with the error.
-The host chooses permitted URIs, their destination and how to return. Read the updated link
-from the snapshot for a fresh click.
+`open(visit)` can resolve a missing target and returns the URI after `visit` succeeds.
+Refusal reasons include `no-target`, `resolving` and `unavailable-view`. Check URI permissions
+in the host. A resolved link can change its target and tooltip while retaining its range and
+identity. Use the updated snapshot for a fresh click.
 
-Caret movement cancels an explicit lookup or pending navigation. The automatic scan and completed list survive caret movement.
-An edit or authority change in a captured document, a new request, cancellation or editor
-disposal invalidates its actions. An expired action returns `stale`. The controller checks each range and bounds the URI, tooltip and opaque data. A resolved link
-may change its target and tooltip. Its range and identity must match the original link.
+Caret movement cancels an explicit lookup or pending navigation. The automatic scan and
+completed list survive it. Edits or authority changes in a captured file, another request,
+cancellation and disposal invalidate its actions.
 
 ### Document colors
 
-With `colors: {}` on the attachment, `await language.colors.request()` returns an `Outcome` containing the
-captured color choices on success. Call `choice.presentations(rgba)` for the provider's list of formats.
-An empty list is a successful reply. Invalid RGBA channels return `refused` with reason `invalid-color`.
-A superseded request returns `stale`.
+`colors: { picker: true }` makes swatches clickable. Choose a color, opacity and provider
+format, then review its edits. Apply commits them together and returns focus to the editor.
+Escape closes the picker. Opening it preserves the source selection. From a menu, pass a mark
+from `colorAt(offset)` or a choice from `colors.request()` to `colors.openPicker(mark)`.
+An expired mark or unavailable picker returns `false`. Use `picker: { text: translate }`
+for labels.
 
-Pass `colors: { picker: true }` to `attachEditorLanguage` to make provider swatches clickable.
-Click a swatch to change its color or opacity, choose a provider format and review its edits.
-Apply writes the changes together and returns focus to the editor. Escape closes the picker.
-Opening it preserves the source selection. For a menu or hover button, keep the mark returned
-by `colors.colorAt(offset)` and pass it to `colors.openPicker(mark)` on activation. A choice
-from `colors.request()` also works. The call returns false if the mark has expired or the
-built-in picker is unavailable. Moving the selection or editing the document expires an open
-review. Pass `picker: { text: translate }` to translate control labels.
+`colors: { swatches: true }` just paints the marks. A `swatches` activation callback opens a
+custom picker and takes precedence over `picker`. `setSwatches(false)` hides marks and
+`setSwatches(true)` resumes scanning. Panes share a scan. Edits move existing marks until the
+provider replies, but `colorAt` only returns current colors. A failed format request preserves
+the swatches.
 
-Use `colors: { swatches: true }` for painted swatches alone.
-Views of the same document share one scan. Edits move the painted ranges while fresh colors
-are pending. `colorAt(offset)` returns a color only for the current revision. To open a picker
-of your own, pass an activation callback as `swatches`. It takes precedence over `picker`. Use `setSwatches(false)`
-to hide the marks and `setSwatches(true)` to resume scanning. If a color format request fails,
-the current swatches stay available in every pane.
+For a custom picker, call `choice.presentations(rgba)` on a choice from `colors.request()`.
+RGBA channels must be finite and within `[0, 1]`, or the call returns `refused` with
+`invalid-color`. An empty format list is a successful result. Call `dismissPreview()` when the
+value changes to cancel the old request and disable its Apply action. The same color choice can
+request formats again.
 
-Call a format's `select()` to apply its edits. For a picker with an Apply button, call
-`select({ review: true })` and bind the button to the returned review's `apply()`. Both edit
-paths return `done` with the changed file, or an empty list when its text already matches.
-An expired choice returns `stale`. A read-only or locked target returns `refused("not-writable")`.
+`format.select()` applies directly. For review, call `select({ review: true })`, display
+`review.notes` and bind Apply to `review.apply()`. The notes contain bounded excerpts and the
+full `insertUnits`. `review.edits` contains the full replacements. Changing format, source,
+selection, folds or permissions expires the old approval. A read-only or locked file allows
+review and refuses Apply with `not-writable`.
 
-Use `review.notes` to display the proposed edits. Each note gives the captured range, nearby text,
-the first 256 UTF-16 units of the insertion and its full length in `insertUnits`.
-`review.edits` contains the complete replacements used by Apply.
-
-Call `dismissPreview()` when the picker value changes. It cancels the pending presentation
-and clears its Apply action. The same color list can preview the new value immediately.
-Changing the selected format, source, selection, folds or edit permission invalidates the old
-Apply action. Read-only sources allow review. A successful Apply preserves relative carets inside
-replaced literals and groups all edits into one Undo. Matching text preserves revision and history.
-
-Color discovery validates every range and requires finite RGBA channels in `[0, 1]`.
-
-The color controller validates complete primary/additional edit plans. A missing primary
-edit uses the literal presentation label at the captured color range. An invalid final choice,
-overlap or out-of-document edit rejects the batch. Empty choices are unavailable for application.
-Labels need not be color literals; the proposed-color input grammar belongs to the host.
-
+The controller validates the whole batch, including additional edits. Missing primary edits
+use the presentation label at the captured color range. Overlap or an out-of-document edit
+rejects the batch. Labels can be arbitrary text. Apply preserves relative carets inside
+replaced literals and records one Undo. Identical text keeps its revision and history and
+returns an empty changes list.
 
 ### Occurrences
 
-Occurrences can overlap and carry a text, read or write kind. An omitted kind means text.
-The editor skips zero-width ranges when painting.
+Enable `occurrences: {}` to paint text, read and write occurrences in the focused pane once
+input and composition settle. `delayMs` sets the debounce. A single caret can move inside one
+highlighted identifier (up to 4,096 UTF-16 units, end exclusive) without refreshing it.
+Overlapping ranges, a selection or leaving the identifier trigger a new lookup. Edits, blur
+and provider changes clear the marks.
 
-Enable `occurrences: {}` to paint occurrences in the focused pane once the caret settles and
-queued input or composition finishes. Use `delayMs` to set the debounce. A single caret can move
-inside the same highlighted identifier (up to 4,096 UTF-16 units) without clearing its highlights or
-starting another request. The range end is exclusive. An overlapping range, a selection or a move
-outside the identifier starts a fresh lookup. Edits, focus loss and provider changes clear the result.
-Style the marks with `.st-occurrence-text`, `.st-occurrence-read` and `.st-occurrence-write`.
-Use `occurrences.intersect(from, to)` to read the same ranges. Each pane owns its caret and
-requests. After disposal you can read the final snapshot. Subscribe to the replacement pane’s
-controller when remounting. The host owns the provider connection.
+`occurrences.intersect(from, to)` reads the ranges. An omitted kind means text. The editor skips zero-width ranges when painting. Style marks with `.st-occurrence-text`, `.st-occurrence-read` and
+`.st-occurrence-write`. Each pane owns its requests. You can read its final snapshot after
+disposal. Subscribe to the new controller on remount.
 
 ### Folding
 
