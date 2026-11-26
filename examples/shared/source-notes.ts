@@ -13,16 +13,32 @@ export class HostSourceNotes {
     private readonly cell: HostCell<Readonly<{ revision: number | null; notes: readonly SourceNote[] }>>;
     readonly state;
     constructor(workspace: Workspace, document: DocumentId) {
-        this.workspace = workspace; this.document = document;
-        this.cell = new HostCell({ revision: workspace.document(document).revision, notes: [] }); this.state = this.cell.observable;
-        this.stop = workspace.observeDocument(document).subscribe(() => {
-            const next = workspace.observeDocument(document).getSnapshot(), previous = this.cell.get();
-            if (next?.revision === previous.revision) return;
-            const notes = next?.change?.previousRevision === previous.revision ? previous.notes.flatMap(note => {
-                const range = next.change!.mapping.mapRange(note.range); return range ? [Object.freeze({ ...note, range })] : [];
+        this.workspace = workspace;
+        this.document = document;
+        this.cell = new HostCell({ revision: workspace.document(document).revision, notes: [] });
+        this.state = this.cell.observable;
+        const observed = workspace.observeDocument(document);
+        // Edits have individual maps even in a batch. A reload supplies a new buffer without a map.
+        const stopEdits = workspace.onDocumentChange(document, ({ previousRevision, revision, mapping }) => {
+            const previous = this.cell.get();
+            if (!observed.getSnapshot()?.change || previous.revision === revision) return;
+            const notes = previous.revision === previousRevision ? previous.notes.flatMap(note => {
+                const range = mapping.mapRange(note.range);
+                return range ? [{ ...note, range }] : [];
             }) : [];
-            this.cell.set({ revision: next?.revision ?? null, notes });
+            this.cell.set({ revision, notes });
         });
+        const stopReload = observed.subscribe(() => {
+            const current = observed.getSnapshot();
+            const previous = this.cell.get().revision;
+            const revision = current?.revision ?? null;
+            if (revision === previous || current?.change && previous !== null) return;
+            this.cell.set({ revision, notes: [] });
+        });
+        this.stop = () => {
+            stopEdits();
+            stopReload();
+        };
     }
     add(revision: number, from: number, to: number, text: string): boolean {
         if (this.disposed || this.cell.get().revision !== revision || this.cell.get().notes.length >= 64) return false;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Workspace } from "../src/index.ts";
 import { DemoProject } from "../examples/demo/project.ts";
+import { HostSourceNotes } from "../examples/shared/source-notes.ts";
 import type { DraftStore, StoredDraft } from "../examples/shared/draft-store.ts";
 import { latch } from "./helpers/latch.ts";
 
@@ -15,6 +16,34 @@ test("shipped sample files and benchmark corpora fit in 512 KB of UTF-8", () => 
         }
     }
     for (const id of corpusIds) assert.ok(Buffer.byteLength(corpus(id), "utf8") <= 512_000, id);
+});
+
+test("source notes follow every edit in a workspace batch", () => {
+    const workspace = new Workspace();
+    const resource = workspace.createTextResource({ scope: "notes", resource: "rules", variant: "working" },
+        "Rules", { value: "one two three" });
+    const documentId = resource.documentId;
+    const notes = new HostSourceNotes(workspace, documentId);
+    notes.add(0, 4, 7, "keep");
+    notes.add(0, 8, 13, "remove");
+    workspace.createNotificationScope().batch(() => {
+        workspace.edit({ documentId, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "#" }] });
+        workspace.edit({ documentId, expectedRevision: 1, origin: "host", edits: [{ from: 9, to: 14, insert: "" }] });
+    });
+    const state = notes.state.getSnapshot();
+    assert.equal(state.revision, 2);
+    assert.deepEqual(state.notes.map(({ text, range }) => [text, range.from, range.to]), [["keep", 5, 8]]);
+    const save = workspace.captureSave(resource);
+    save.start();
+    save.accept({ serverVersion: "saved" });
+    save.finish();
+    const reload = workspace.operations.beginLoad(resource);
+    reload.accept({ value: "different text", serverVersion: "external" });
+    reload.finish();
+    assert.deepEqual(notes.state.getSnapshot(), { revision: workspace.document(documentId).revision, notes: [] });
+    workspace.releaseResource(resource.id, true);
+    assert.deepEqual(notes.state.getSnapshot(), { revision: null, notes: [] });
+    notes.dispose();
 });
 
 class MemoryStore implements DraftStore {

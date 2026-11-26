@@ -61,28 +61,22 @@ export function attachConvertedPaste(
 }
 ```
 
-Store a note as an anchored range. After each transaction, map it to the new revision. This example
-drops a deleted note or one with a missing map. Read the snapshot to draw it.
+Map a note through every document change, including edits delivered together. Drop it if the
+text it refers to is deleted or the document closes. Draw it when its revision matches the editor.
 
 ```ts
-import { anchoredRange } from "sttropez";
-import type { AnchoredRange, DocumentId, Workspace } from "sttropez";
+import { anchoredRange, type AnchoredRange, type DocumentId, type Workspace } from "sttropez";
 
 export function trackNote(workspace: Workspace, documentId: DocumentId, from: number, to: number) {
     const document = workspace.document(documentId);
-    let state: Readonly<{ revision: number; range: AnchoredRange | undefined }> = Object.freeze({
-        revision: document.revision,
-        range: anchoredRange(document.buffer.length, from, to, { onDelete: "invalidate" })
-    });
     const observed = workspace.observeDocument(documentId);
-    const stop = observed.subscribe(() => {
-        const next = observed.getSnapshot();
-        if (next?.revision === state.revision) return;
-        const range = state.range && next?.change?.previousRevision === state.revision
-            ? next.change.mapping.mapRange(state.range) : undefined;
-        state = Object.freeze({ revision: next?.revision ?? -1, range });
+    let revision = document.revision;
+    let range: AnchoredRange | undefined = anchoredRange(document.buffer.length, from, to, { onDelete: "invalidate" });
+    const stop = workspace.onDocumentChange(documentId, change => {
+        range = range && change.previousRevision === revision ? change.mapping.mapRange(range) : undefined;
+        revision = change.revision;
     });
-    return { getSnapshot: () => state, dispose: stop };
+    return { getSnapshot: () => observed.getSnapshot()?.revision === revision ? range : undefined, dispose: stop };
 }
 ```
 

@@ -21,13 +21,17 @@ export function hostDecorations(line: PresentedLine): readonly InlineDecoration[
 function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile, editor: TextEditor, open: (target: DemoSymbolTarget) => void) {
     const owner = editor.element.ownerDocument, layer = owner.createElement("div"), events = new AbortController(), nodes = new Map<number, HTMLElement>();
     const origin = project.workspace.tabs.capture(file.tab);
+    const observed = project.workspace.observeDocument(file.resource.documentId);
     // Sample-owned linkage: note labels and file names are host policy, not editor syntax.
     const inventory = file.name === "workflow.rules" ? project.files.find(candidate => candidate.name === "inventory.csv") : undefined;
     layer.className = "demo-source-notes"; layer.setAttribute("aria-label", "Host source notes"); owner.body.append(layer);
     const render = () => {
-        const doc = project.workspace.document(file.resource.documentId), state = model.state.getSnapshot(), box = editor.element.getBoundingClientRect();
+        const doc = observed.getSnapshot();
+        const state = model.state.getSnapshot();
+        if (doc && state.revision !== doc.revision) return;
+        const box = editor.element.getBoundingClientRect();
         const shown = new Set<number>();
-        if (state.revision === doc.revision && editor.element.isConnected) for (const note of state.notes) {
+        if (doc && editor.element.isConnected) for (const note of state.notes) {
             const point = editor.viewport.coordsAt(note.range.from); if (!point || point.top < box.top || point.top + point.height > box.bottom) continue;
             const folded = editor.view.folding.getSnapshot().index.hiddenBy(doc.buffer.lineAt(note.range.from));
             const destination = note.text === "Inventory source" ? inventory : undefined;
