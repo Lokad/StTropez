@@ -80,11 +80,10 @@ async function previews(page: Page, checkComposition = false): Promise<void> {
 
 // All requests run in the same turn as the input event, before cooperative work can finish.
 // This tests each binding's capture guard without repeating the large paste per feature.
-async function blocked(page: Page, kind: "movement" | "composition" | "paste", text = ""): Promise<void> {
+async function blocked(page: Page, kind: "composition" | "paste", text = ""): Promise<void> {
     const result = await input(page).evaluate((node, { kind, text }) => {
         const f = window.hostFixture, before = f.snapshot();
-        if (kind === "movement") node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", ctrlKey: true, bubbles: true, cancelable: true }));
-        else if (kind === "composition") node.dispatchEvent(new CompositionEvent("compositionstart", { data: "", bubbles: true }));
+        if (kind === "composition") node.dispatchEvent(new CompositionEvent("compositionstart", { data: "", bubbles: true }));
         else {
             const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
             event.clipboardData!.setData("text/plain", text); node.dispatchEvent(event);
@@ -98,7 +97,6 @@ async function blocked(page: Page, kind: "movement" | "composition" | "paste", t
         if (kind === "paste") for (const label of ["Insert catalogue import", "Save source", "Run captured inputs"]) click(label);
         const after = f.snapshot();
         return {
-            movement: pending.bindings.views.find(v => v.id === "primary")!.metrics!.pendingCommand,
             paste: pending.bindings.tablePaste.pending, pasteStillPending: after.bindings.tablePaste.pending,
             navigation: after.bindings.navigation.requested - before.bindings.navigation.requested,
             rename: after.bindings.rename.requested - before.bindings.rename.requested,
@@ -114,12 +112,11 @@ async function blocked(page: Page, kind: "movement" | "composition" | "paste", t
         };
     }, { kind, text });
     expect(result).toMatchObject({ navigation: 0, rename: 0, actions: 0, links: 0, colors: 0, colorPreviews: 0, domain: 0, saves: 0, runs: 0, revision: 0, historyUnchanged: true });
-    if (kind === "movement") expect(result.movement).toBe(true);
     if (kind === "composition") expect(result).toMatchObject({ renameApplicable: false, actionApplicable: false, colorApplicable: false, signatureVisible: false, linksAvailable: 0 });
     if (kind === "paste") expect(result).toMatchObject({ paste: true, pasteStillPending: true });
 }
 
-test("language requests wait for movement, composition and table paste", async ({ page }) => {
+test("language requests wait for composition and table paste", async ({ page }) => {
     test.setTimeout(120000);
     const replies = await holdLspReplies(page, "textDocument/signatureHelp");
     const wire: string[] = [];
@@ -132,8 +129,7 @@ test("language requests wait for movement, composition and table paste", async (
     await page.getByLabel("New identifier", { exact: true }).fill("inventory");
     const longSource = "lookup(" + " ".repeat(200000) + ") #abc";
     await seed(page, longSource, 7);
-    await blocked(page, "movement"); await settled(page);
-    expect(wire).toEqual([]);
+    await input(page).press("Control+ArrowRight");
     await select(page, longSource.indexOf(")")); await input(page).press("Control+Shift+Space");
     await expect(signature(page).getByLabel("Active signature parameter", { exact: true })).toHaveText("key: string");
     expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.metrics!.viewport.scrollLeft).toBeGreaterThan(0);

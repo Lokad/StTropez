@@ -22,7 +22,7 @@ async function setup(page: Page, host: string, text: string): Promise<void> {
     await page.getByRole("checkbox", { name: "Paste tables as CSV", exact: true }).check();
     await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 0 }]); });
 }
-test("paste during a pending word move keeps the literal text at its destination with CSV enabled", async ({ page }) => {
+test("paste after word movement converts the table at the new caret", async ({ page }) => {
     const word = "a".repeat(200001), original = word + ";end";
     await setup(page, "plain", original); await input(page).focus();
     const before = await snapshot(page);
@@ -31,10 +31,10 @@ test("paste during a pending word move keeps the literal text at its destination
         const event = new ClipboardEvent("paste", { clipboardData: new DataTransfer(), bubbles: true, cancelable: true });
         event.clipboardData!.setData("text/plain", "X\tY"); node.dispatchEvent(event);
     });
-    await waitForPaste(page); await exact(page, word + "X\tY;end");
+    await waitForPaste(page); await exact(page, word + '"X","Y";end');
     const after = await snapshot(page);
     expect(after.history.undoDepth).toBe(before.history.undoDepth + 1);
-    expect(after.bindings.tablePaste.status).toBe("idle");
+    expect(after.bindings.tablePaste.status).toBe("applied");
     await input(page).press("Control+z"); await waitForPaste(page); await exact(page, original);
 });
 
