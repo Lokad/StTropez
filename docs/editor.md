@@ -127,7 +127,7 @@ An empty selection first resolves the word at the caret.
 | Mod+] / Mod+[ | Indent / outdent touched lines. |
 | Alt+Up / Down | Move lines. Add Shift to copy them and select the copies. |
 | Mod+Shift+K | Delete lines and keep the column on the surviving line, up to its end. |
-| Mod+Enter / Mod+Shift+Enter | Insert a line below / above with its indentation. |
+| Mod+Enter / Mod+Shift+Enter | Insert a line below / above. After a collapsed block, an indented line uses the header’s indentation. |
 | Escape then Tab / Shift+Tab | Leave the editor forward / backward. With multiple ranges, the first Escape keeps the primary range. |
 
 Go to line passes `requestLine` one-based `currentLine`, `lineCount` and an abort signal.

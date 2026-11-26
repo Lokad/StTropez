@@ -31,6 +31,25 @@ function plan(text: string, ranges: readonly Selection[], command: Parameters<ty
 }
 const selection = (anchor: number, head = anchor) => [{ anchor, head }];
 
+test("a new line after a collapsed block inherits the visible header's indentation", () => {
+    const body = "  steps:\r\n    prepare:\r\n      validate";
+    for (const tail of ["", "\r\nafter"]) {
+        const buffer = TextBuffer.from(body + tail);
+        const folds = new FoldIndex(buffer.lineCount, createFoldRegions(buffer, [
+            { id: "steps", from: 0, to: tail ? buffer.offsetAt(3) : buffer.length, collapsed: true },
+        ]));
+        const config = resolveLanguageConfiguration({ enter: () => ({ indent: 1 }) });
+        for (const command of ["insert-line-above", "insert-line-below"] as const) {
+            if (command === "insert-line-above" && !tail) continue;
+            const at = command === "insert-line-above" ? buffer.offsetAt(3) : 2;
+            const carets = createSelectionSet(buffer.length, selection(at));
+            const plan = planLanguageEdit(buffer, carets, command, config, folds);
+            assert.equal(buffer.apply(plan.edits).buffer.text(), body + "\r\n  " + tail);
+            assert.equal(plan.selectionSet.ranges[0]!.head, body.length + 4);
+        }
+    }
+});
+
 test("indentation and line comments edit a folded block once for carets on its header and inside it", () => {
     const original = "before\n  steps\n    prepare\n      validate\n\n    publish\nafter";
     const indent = "before\n    steps\n      prepare\n        validate\n\n      publish\nafter";

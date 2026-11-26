@@ -264,10 +264,10 @@ function lineComments(buffer: TextBuffer, selections: SelectionSet, command: "li
 }
 
 function enterIndent(buffer: TextBuffer, from: number, to: number, config: ResolvedLanguageConfiguration, unit: string,
-    read: (from: number, to: number) => string) {
+    read: (from: number, to: number) => string, afterFold = false) {
     if (!config.enter) return { outer: "", inner: "", split: false };
 
-    const rule = typeof config.enter === "function" ? config.enter({ buffer, from, to }) : { indent: 0 as const };
+    const rule = !afterFold && typeof config.enter === "function" ? config.enter({ buffer, from, to }) : { indent: 0 as const };
     const start = buffer.offsetAt(buffer.lineAt(from)), end = whitespace(read, start, from);
     let outer = read(start, end);
     if (rule.indent === -1) outer = outer.slice(outdentLength(outer, config.tabSize));
@@ -293,10 +293,11 @@ function insertOrDeleteLines(buffer: TextBuffer, selections: SelectionSet, comma
             delta -= to - from;
         } else {
             const above = command === "insert-line-above", preceding = above ? group.first - 1 : group.last;
-            const beforeLine = above || group.last + 1 < buffer.lineCount && !!collapsedLineBlock(folds, group.last);
+            const folded = preceding < 0 ? undefined : collapsedLineBlock(folds, preceding);
+            const beforeLine = above || group.last + 1 < buffer.lineCount && !!folded;
             const at = beforeLine ? buffer.offsetAt(above ? group.first : group.last + 1) : end;
-            const context = preceding < 0 ? 0 : lineContentEnd(buffer, preceding);
-            const indent = preceding < 0 ? "" : (enterIndent(buffer, context, context, config, unit, read)).inner;
+            const context = preceding < 0 ? 0 : lineContentEnd(buffer, folded?.lineFrom ?? preceding);
+            const indent = preceding < 0 ? "" : enterIndent(buffer, context, context, config, unit, read, !!folded).inner;
             const ending = lineEnding(buffer, Math.max(0, preceding)), insert = beforeLine ? indent + ending : ending + indent;
             edits.push(textEdit(at, at, insert));
             rowStart = at + delta + indent.length + (beforeLine ? 0 : ending.length);
