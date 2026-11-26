@@ -20,18 +20,13 @@ export async function runDemoDiagnosticRetention(page: Page, url = "/") {
             const message = JSON.parse(data); if (!ids.delete(message.id) || !probe.hold) return;
             event.stopImmediatePropagation(); probe.pending.push(() => target.dispatchEvent(new MessageEvent("message", { data })));
         }, { capture: true });
-        const NativeWorker = Worker, NativeSocket = WebSocket;
+        const NativeWorker = Worker;
         window.Worker = class extends NativeWorker {
             private readonly ids = new Set<number>();
             constructor(url: string | URL, options?: WorkerOptions) { super(url, options); if (String(url).endsWith("demo-language-worker.js")) observe(this, this.ids); }
             override postMessage(message: unknown, options: StructuredSerializeOptions | Transferable[] = []) {
                 outgoing(message, this.ids); if (Array.isArray(options)) super.postMessage(message, options); else super.postMessage(message, options);
             }
-        };
-        window.WebSocket = class extends NativeSocket {
-            private readonly ids = new Set<number>();
-            constructor(url: string | URL, protocols?: string | string[]) { super(url, protocols); observe(this, this.ids); }
-            override send(data: Parameters<typeof NativeSocket.prototype.send>[0]) { outgoing(data, this.ids); super.send(data); }
         };
     });
     await page.goto(url); await page.locator("#sample").selectOption("errors");

@@ -1,3 +1,4 @@
+import { routeLanguageWorker } from "./demo-worker-route.ts";
 import { test, expect } from "./fixtures.ts";
 import { runDemoCompletionCatalogue, runDemoSnippets, runDemoProjectResults, runDemoEditingRules, runDemoFolding, runDemoFoldingBoundaries, runDemoHighlights, runDemoUnopenedNavigation } from "./demo-walkthrough.ts";
 import { holdDemoFolds } from "./demo-folding-gate.ts";
@@ -7,7 +8,7 @@ test("development serves the browser provider without starting a server project"
     const serverRequests: string[] = [], workers: string[] = [];
     page.on("request", request => { if (new URL(request.url()).pathname.startsWith("/demo-provider")) serverRequests.push(request.url()); });
     page.on("worker", worker => workers.push(worker.url()));
-    await runDemoUnopenedNavigation(page, "/?provider=browser");
+    await runDemoUnopenedNavigation(page, "/");
     expect(workers.some(url => url.endsWith("/demo-language-worker.js"))).toBe(true);
     expect(serverRequests).toEqual([]);
 });
@@ -21,16 +22,16 @@ test("occurrences follow the caret, edits and large virtualized documents", asyn
 
 test("late occurrences cannot follow a changed caret or disposed file view", async ({ page }) => {
     const replies: (() => void)[] = []; let cancellations = 0;
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer(), requests = new Set<number>();
+    await routeLanguageWorker(page, (client, server) => {
+        const requests = new Set<number>();
         client.onMessage(message => {
-            const value = JSON.parse(message.toString());
+            const value = JSON.parse(message);
             if (value.method === "textDocument/documentHighlight") requests.add(value.id);
             if (value.method === "$/cancelRequest" && requests.has(value.params.id)) cancellations++;
             server.send(message);
         });
         server.onMessage(message => {
-            const value = JSON.parse(message.toString());
+            const value = JSON.parse(message);
             if (requests.has(value.id)) replies.push(() => client.send(message)); else client.send(message);
         });
     });
@@ -71,7 +72,7 @@ test("real provider retains the 1200-field catalogue through filtering, acceptan
 });
 
 test("the type error sample offers a spelling fix from Problems and shows the correction in Changes", async ({ page }) => {
-    await page.goto("/?provider=browser&sample=errors");
+    await page.goto("/?sample=errors");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     const pricingTab = page.getByRole("button", { name: "pricing.ts", exact: true });
     await pricingTab.click();
@@ -107,9 +108,10 @@ test("the type error sample offers a spelling fix from Problems and shows the co
 });
 
 test("real member completion preserves provider punctuation, resolves, applies once and undoes", async ({ page }) => {
-    const releaseFolds = await holdDemoFolds(page, "main.ts");
     let requests = 0;
-    page.on("websocket", socket => socket.on("framesent", frame => { if (JSON.parse(frame.payload.toString()).method === "textDocument/completion") requests++; }));
+    const releaseFolds = await holdDemoFolds(page, "main.ts", method => {
+        if (method === "textDocument/completion") requests++;
+    });
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+End"); await page.keyboard.insertText("\nconst basket = cart;\n");
@@ -149,15 +151,15 @@ test("real member completion preserves provider punctuation, resolves, applies o
 
 test("late real diagnostic responses cannot annotate a newer project or follow later focus", async ({ page }) => {
     let armed = false, held = false, release: (() => void) | undefined;
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const provider = client.connectToServer(), requests = new Set<number>();
+    await routeLanguageWorker(page, (client, provider) => {
+        const requests = new Set<number>();
         client.onMessage(message => {
-            const value = JSON.parse(message.toString());
+            const value = JSON.parse(message);
             if (armed && value.method === "sttropez/diagnostics" && value.params.kind === "semantic") requests.add(value.id);
             provider.send(message);
         });
         provider.onMessage(message => {
-            const value = JSON.parse(message.toString());
+            const value = JSON.parse(message);
             if (!held && requests.has(value.id) && value.result?.body?.some((problem: { code: number }) => problem.code === 2551)) {
                 held = true; release = () => client.send(message); return;
             }
@@ -180,10 +182,18 @@ test("late real diagnostic responses cannot annotate a newer project or follow l
     await expect(page.getByRole("textbox", { name: "pricing.ts", exact: true })).toBeVisible();
 });
 
-test("connection and partial mount failures preserve editing and retry their own owners", async ({ page, baseURL, browserErrors }) => {
+test("connection and partial mount failures preserve editing and retry their own owners", async ({ page }) => {
     await page.addInitScript(() => {
-        const state = { armed: false, reported: 0, failure: new Error("Injected language control mount failure") };
+        const state = { armed: false, reported: 0, starts: 0, ready: 0, failure: new Error("Injected language control mount failure") };
         Object.assign(window, { demoMountFailure: state });
+        window.Worker = class extends Worker {
+            constructor(url: string | URL, options?: WorkerOptions) {
+                super(url, options);
+                if (!String(url).endsWith("/demo-language-worker.js")) return;
+                state.starts++;
+                this.addEventListener("message", event => { if (event.data?.ready) state.ready++; });
+            }
+        };
         const append = Element.prototype.append, report = console.error;
         Element.prototype.append = function (...nodes) {
             append.apply(this, nodes);
@@ -197,16 +207,17 @@ test("connection and partial mount failures preserve editing and retry their own
         };
     });
     let attempts = 0;
-    const starts: string[] = [];
-    page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/demo-provider") starts.push(request.url()); });
-    browserErrors.allowConsoleError("Failed to load resource: the server responded with a status of 503 (Service Unavailable)", new URL("/demo-provider?sample=pricing", baseURL).href);
-    await page.route("**/demo-provider?sample=pricing", route => { attempts++; return route.fulfill({ status: 503, body: "Unavailable" }); });
+
+    await page.route("**/demo-language-worker.js", route => {
+        attempts++;
+        return route.fulfill({ contentType: "text/javascript", body: 'onmessage = () => postMessage({error: "Unavailable"});' });
+    });
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language service unavailable");
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     await source.press("Control+Home"); await source.pressSequentially("// Offline edit\n"); await source.press("Control+s");
     await expect(page.locator("#status")).toContainText("Saved in this browser");
     await expect(page.locator("#folding-status")).toContainText("retried"); expect(attempts).toBe(1);
-    await page.unroute("**/demo-provider?sample=pricing");
+    await page.unroute("**/demo-language-worker.js");
     await page.evaluate(() => { (window as unknown as { demoMountFailure: { armed: boolean } }).demoMountFailure.armed = true; });
     await page.getByRole("button", { name: "Retry language service", exact: true }).click();
     await expect(page.locator("#language-status")).toHaveText("Language controls unavailable");
@@ -214,10 +225,12 @@ test("connection and partial mount failures preserve editing and retry their own
     await expect(page.locator(".st-completion, .demo-snippet, .st-hover, .st-locations, .st-rename, .st-code-actions")).toHaveCount(0);
     await source.press("Control+Home"); await source.pressSequentially("// Mount recovery\n"); await source.press("Control+s");
     await expect(page.locator("#status")).toContainText("Saved in this browser");
-    const connectedStarts = starts.length;
     await page.getByRole("button", { name: "Retry language controls", exact: true }).click();
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
-    expect(starts.length).toBe(connectedStarts);
+    expect(await page.evaluate(() => {
+        const { starts, ready } = (window as unknown as { demoMountFailure: { starts: number; ready: number } }).demoMountFailure;
+        return { starts, ready };
+    })).toEqual({ starts: 2, ready: 1 });
     await expect(page.locator("#editor")).toContainText("// Offline edit");
     await source.press("Control+End"); await source.pressSequentially("\ncart.");
     await expect(page.locator(".st-completion")).toBeVisible();

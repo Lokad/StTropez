@@ -28,20 +28,6 @@ export async function runDemoHostIntegrations(page: Page, url = "/") {
             if (semanticWorkers.has(worker)) record("worker:send", args[0]?.start === true && args[0]?.names?.includes("workflow.rules"));
             return Reflect.apply(target, worker, args);
         } });
-        window.fetch = new Proxy(window.fetch, { apply(target, receiver, args) {
-            const input = args[0] as RequestInfo | URL, request = input instanceof Request ? input : undefined;
-            const path = new URL(request?.url ?? String(input), document.baseURI);
-            if (path.pathname.endsWith("/demo-provider") && (args[1]?.method ?? request?.method ?? "GET").toUpperCase() === "POST") record("server:start", path.searchParams.get("sample") === "host");
-            return Reflect.apply(target, receiver, args);
-        } });
-        WebSocket.prototype.send = new Proxy(WebSocket.prototype.send, { apply(target, socket, args) {
-            if (typeof args[0] === "string") {
-                const message = JSON.parse(args[0]) as { method?: string };
-                // A suspended previous sample may still finish protocol teardown.
-                if (message.method && !["$/cancelRequest", "textDocument/didClose", "shutdown", "exit"].includes(message.method)) record(message.method);
-            }
-            return Reflect.apply(target, socket, args);
-        } });
     });
     const providerFree = async () => {
         const transport = await page.evaluate(() => Reflect.get(window, "hostLanguageTransport") as { attempts: string[]; observed: string[] });

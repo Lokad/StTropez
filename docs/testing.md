@@ -150,8 +150,9 @@ The .NET 10/Chromium smoke restores a local package, stages assets with MSBuild,
 and compiles the reference host. The consumer loads CSS and a font, types and runs the packaged regex
 worker. [Package setup](packaging.md)
 
-Source demo tests can use WebSocket (`npm run demo -- --server-provider`) or a browser worker
-(`?provider=browser`). The static walkthrough covers deployment paths, editing, review and worker retry.
+The source and deployed demos use the same browser language worker. The static walkthrough checks asset
+paths, editing, review and worker retry. A separate integration test starts the Node language server and
+exercises its WebSocket bridge. [Bridge interop](../tests/integration/demo-provider.test.ts)
 
 ### Native-device checklist
 

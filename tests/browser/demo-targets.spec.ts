@@ -1,3 +1,4 @@
+import { routeLanguageWorker } from "./demo-worker-route.ts";
 import { test, expect } from "./fixtures.ts";
 import { runDemoUnopenedNavigation } from "./demo-walkthrough.ts";
 
@@ -7,10 +8,10 @@ test("unopened targets load for navigation and atomic rename with read-only decl
 
 test("held target contents cannot load a tab or steal focus after source edits or sample disposal", async ({ page }) => {
     let held = false, release: (() => void) | undefined;
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer(), pending = new Set<number>();
-        client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "sttropez/readDocument") pending.add(value.id); server.send(message); });
-        server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && pending.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
+    await routeLanguageWorker(page, (client, server) => {
+        const pending = new Set<number>();
+        client.onMessage(message => { const value = JSON.parse(message); if (value.method === "sttropez/readDocument") pending.add(value.id); server.send(message); });
+        server.onMessage(message => { const value = JSON.parse(message); if (!held && pending.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
     });
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await page.locator("#sample").selectOption("navigation");
@@ -36,11 +37,11 @@ test("held target contents cannot load a tab or steal focus after source edits o
 
 test("an action preview includes a newly resolved module and applies one guarded undo unit", async ({ page }) => {
     let generation = 0;
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer(), requests = new Map<number, string>();
-        client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") requests.set(value.id, value.params.textDocument.uri); server.send(message); });
+    await routeLanguageWorker(page, (client, server) => {
+        const requests = new Map<number, string>();
+        client.onMessage(message => { const value = JSON.parse(message); if (value.method === "textDocument/codeAction") requests.set(value.id, value.params.textDocument.uri); server.send(message); });
         server.onMessage(message => {
-            const value = JSON.parse(message.toString()), uri = requests.get(value.id); if (!uri) { client.send(message); return; }
+            const value = JSON.parse(message), uri = requests.get(value.id); if (!uri) { client.send(message); return; }
             requests.delete(value.id);
             const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } };
             const batch = ++generation;

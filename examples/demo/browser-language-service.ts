@@ -182,9 +182,11 @@ export class BrowserLanguageService {
                 if (span.start > offset || span.start + span.length < offset) return [];
                 const key = ++this.serial; this.completions.set(key, { uri: file.document.uri, offset, entry });
                 return [{ label: entry.name, sortText: entry.sortText, filterText: entry.filterText ?? (span.start < fallback.start ? entry.insertText ?? entry.name : entry.name),
+                    ...(entry.commitCharacters && { commitCharacters: entry.commitCharacters }),
                     insertTextFormat: entry.isSnippet ? 2 : 1, textEdit: { range: this.span(file, span), newText: entry.insertText ?? entry.name }, data: { key } }];
             });
-            return { isIncomplete: !!info.isIncomplete, items };
+            const itemDefaults = info.defaultCommitCharacters && { commitCharacters: info.defaultCommitCharacters };
+            return { isIncomplete: !!info.isIncomplete, itemDefaults, items };
         }
         if (method === "textDocument/hover") {
             const info = this.service.getQuickInfoAtPosition(file.path, offset);

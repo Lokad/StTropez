@@ -1,3 +1,4 @@
+import { routeLanguageWorker } from "./demo-worker-route.ts";
 import { test, expect, expectPanelKeyReserved } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { holdDemoFolds } from "./demo-folding-gate.ts";
@@ -89,17 +90,16 @@ test("real rename previews a captured name, rejects an old name and shares one u
 
 test("a delayed definition leaves output focus, Back history and the next typing target alone", async ({ page }) => {
     let release: (() => void) | undefined, cancelled = false;
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer();
+    await routeLanguageWorker(page, (client, server) => {
         let definitionId: number | undefined;
         client.onMessage(message => {
-            const value = JSON.parse(message.toString());
+            const value = JSON.parse(message);
             if (value.method === "textDocument/definition") definitionId = value.id;
             if (value.method === "$/cancelRequest" && value.params.id === definitionId) cancelled = true;
             server.send(message);
         });
         server.onMessage(message => {
-            const value = JSON.parse(message.toString());
+            const value = JSON.parse(message);
             if (definitionId !== undefined && value.id === definitionId && "result" in value) {
                 expect(value.result).toHaveLength(1);
                 release = () => { definitionId = undefined; client.send(message); };
@@ -170,16 +170,15 @@ test("F2 accepts immediate typing and retires a pending rename when focus leaves
         release!();
         release = undefined;
     };
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer();
+    await routeLanguageWorker(page, (client, server) => {
         client.onMessage(message => {
-            const value = JSON.parse(message.toString());
+            const value = JSON.parse(message);
             if (value.method === "textDocument/prepareRename") request = value.id;
             if (value.method === "$/cancelRequest" && value.params.id === request) cancelled = true;
             server.send(message);
         });
         server.onMessage(message => {
-            const value = JSON.parse(message.toString());
+            const value = JSON.parse(message);
             if (request !== undefined && value.id === request) { expect(value.result).toBeTruthy(); release = () => client.send(message); }
             else client.send(message);
         });
@@ -214,10 +213,10 @@ test("F2 accepts immediate typing and retires a pending rename when focus leaves
 
 test("real provider restart cancels a rename and resynchronizes edits without remounting the input", async ({ page }) => {
     let held = false, disconnect: (() => void) | undefined;
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer(), ids = new Set<number>();
-        client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/rename") ids.add(value.id); server.send(message); });
-        server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && ids.has(value.id)) { held = true; disconnect = () => client.close({ code: 1011, reason: "Provider restart" }); } else client.send(message); });
+    await routeLanguageWorker(page, (client, server) => {
+        const ids = new Set<number>();
+        client.onMessage(message => { const value = JSON.parse(message); if (value.method === "textDocument/rename") ids.add(value.id); server.send(message); });
+        server.onMessage(message => { const value = JSON.parse(message); if (!held && ids.has(value.id)) { held = true; disconnect = () => client.close("Provider restart"); } else client.send(message); });
     });
     await openDemo(page); const source = await symbol(page); await source.press("F2");
     const dialog = page.getByRole("dialog", { name: "Rename symbol", exact: true });

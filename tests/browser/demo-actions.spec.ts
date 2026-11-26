@@ -1,3 +1,4 @@
+import { routeLanguageWorker } from "./demo-worker-route.ts";
 import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { runDemoActions } from "./demo-walkthrough.ts";
@@ -20,14 +21,16 @@ async function typo(page: Page, selectProblem = true) {
 
 test("selecting a real spelling fix applies once and shares undo/redo with actual typing", async ({ page }) => {
     const requests = new Set<number>(), replies: number[] = [];
-    page.on("websocket", socket => {
-        socket.on("framesent", ({ payload }) => {
-            const message = JSON.parse(payload.toString());
+    await routeLanguageWorker(page, (client, worker) => {
+        client.onMessage(payload => {
+            const message = JSON.parse(payload);
             if (message.method === "textDocument/codeAction") requests.add(message.id);
+            worker.send(payload);
         });
-        socket.on("framereceived", ({ payload }) => {
-            const message = JSON.parse(payload.toString());
+        worker.onMessage(payload => {
+            const message = JSON.parse(payload);
             if (requests.has(message.id) && Array.isArray(message.result)) replies.push(message.result.length);
+            client.send(payload);
         });
     });
     await openDemo(page); const source = await typo(page, false);
@@ -68,10 +71,10 @@ test("selecting a real spelling fix applies once and shares undo/redo with actua
 
 test("held real fixes cannot replace newer text or follow later file focus", async ({ page }) => {
     let held = false, release: (() => void) | undefined;
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer(), ids = new Set<number>();
-        client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") ids.add(value.id); server.send(message); });
-        server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && ids.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
+    await routeLanguageWorker(page, (client, server) => {
+        const ids = new Set<number>();
+        client.onMessage(message => { const value = JSON.parse(message); if (value.method === "textDocument/codeAction") ids.add(value.id); server.send(message); });
+        server.onMessage(message => { const value = JSON.parse(message); if (!held && ids.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
     });
     await openDemo(page); const source = await typo(page); await expect.poll(() => held).toBe(true);
     await source.press("Control+Home"); await source.pressSequentially("// Keep current text\n");
@@ -89,15 +92,15 @@ test("explicit lazy fix activation applies once after resolution and expires wit
     let release: (() => void) | undefined, resolutions = 0;
     let holdList = false;
     let deliverList: (() => void) | undefined;
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer(), requests = new Map<number, string>(); let edit: unknown;
+    await routeLanguageWorker(page, (client, server) => {
+        const requests = new Map<number, string>(); let edit: unknown;
         client.onMessage(message => {
-            const value = JSON.parse(message.toString()); requests.set(value.id, value.method);
+            const value = JSON.parse(message); requests.set(value.id, value.method);
             if (value.method === "codeAction/resolve") { resolutions++; release = () => client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: { ...value.params, edit } })); }
             else server.send(message);
         });
         server.onMessage(message => {
-            const value = JSON.parse(message.toString()), method = requests.get(value.id);
+            const value = JSON.parse(message), method = requests.get(value.id);
             if (method === "initialize" && value.result) value.result.capabilities.codeActionProvider = { resolveProvider: true };
             if (method === "textDocument/codeAction" && Array.isArray(value.result)) {
                 edit = value.result.find((action: { edit?: unknown }) => action.edit)?.edit;
@@ -156,10 +159,10 @@ test("explicit lazy fix activation applies once after resolution and expires wit
 
 test("after a provider restart, holding Enter applies the fresh fix once", async ({ page }) => {
     let held = false, disconnect: (() => void) | undefined;
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer(), ids = new Set<number>();
-        client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === "textDocument/codeAction") ids.add(value.id); server.send(message); });
-        server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && ids.has(value.id)) { held = true; disconnect = () => client.close({ code: 1011, reason: "Provider restart" }); } else client.send(message); });
+    await routeLanguageWorker(page, (client, server) => {
+        const ids = new Set<number>();
+        client.onMessage(message => { const value = JSON.parse(message); if (value.method === "textDocument/codeAction") ids.add(value.id); server.send(message); });
+        server.onMessage(message => { const value = JSON.parse(message); if (!held && ids.has(value.id)) { held = true; disconnect = () => client.close("Provider restart"); } else client.send(message); });
     });
     await openDemo(page); const source = await typo(page); await source.press("Control+."); await expect.poll(() => held).toBe(true);
     disconnect!(); await expect(page.locator("#language-status")).toHaveText("Language service unavailable");

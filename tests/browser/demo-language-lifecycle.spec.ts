@@ -8,12 +8,11 @@ const serveModules = fixtureModules({
     cleanup: "examples/shared/cleanup-scope.ts",
     core: "src/index.ts",
     browser: "src/browser/index.ts",
-    provider: "tests/fixtures/demo/server-provider.ts",
+    provider: "examples/demo/worker-provider.ts",
 });
 
 test.beforeEach(async ({ page }) => {
     await serveModules(page, "/demo-language-lifecycle/");
-    // Keep the real loopback document's network address space for its WebSocket.
     await page.route("**/protocol-fixture.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
     await page.goto("/protocol/");
     await page.setContent('<base href="/"><link rel="stylesheet" href="/app.css"><div id="mount" style="width:600px;height:240px"></div>');
@@ -55,7 +54,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
     const results = await page.evaluate(async () => {
         const path = "/demo-language-lifecycle/";
         const { DemoProject } = await import(path + "project.js") as typeof import("../../examples/demo/project.ts");
-        const { openDemoProvider } = await import(path + "provider.js") as typeof import("../fixtures/demo/server-provider.ts");
+        const { openDemoProvider } = await import(path + "provider.js") as typeof import("../../examples/demo/worker-provider.ts");
         const { mountDemoLanguage } = await import(path + "language.js") as typeof import("../../examples/demo/language-view.ts");
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const project = await DemoProject.open("pricing", () => true, openDemoProvider);

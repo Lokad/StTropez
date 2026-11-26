@@ -8,7 +8,7 @@ import { paintedCharacter } from "../helpers/painted-character.ts";
 import type { Locator, Page } from "@playwright/test";
 
 function browserDemo(baseURL: string) {
-    return new URL("/?provider=browser", baseURL).href;
+    return new URL("/", baseURL).href;
 }
 
 async function openRows(page: Page, url: string) {

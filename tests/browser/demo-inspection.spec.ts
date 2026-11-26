@@ -1,3 +1,4 @@
+import { routeLanguageWorker } from "./demo-worker-route.ts";
 import { test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { runDemoDocumentation } from "./demo-walkthrough.ts";
@@ -42,7 +43,7 @@ test("real type inspection works from Code, keyboard and pointer without changin
     await page.mouse.move(2, 2); await expect(hover(page)).toBeHidden();
     // Blur clears occurrence decorations and schedules paint. Exercise a pointer arriving in
     // that same task, before the next frame, rather than relying on engine timing to hit it.
-    await source.focus(); await expect(page.locator("#editor .st-occurrence-read")).toHaveCount(2);
+    await source.focus(); await expect(page.locator("#editor .st-occurrence-write, #editor .st-occurrence-read")).toHaveText(["calculateTotal", "calculateTotal"]);
     await page.evaluate(point => {
         document.getElementById("walkthrough-toggle")!.focus();
         document.querySelector("#editor .st-editor")!.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: point.x, clientY: point.y }));
@@ -74,10 +75,10 @@ test("real signature help follows typed arguments until explicit completion repl
 
 test("held real hover and signature replies cannot reopen a popup after edits or file changes", async ({ page }) => {
     let method = "textDocument/hover", held = false, release: (() => void) | undefined;
-    await page.routeWebSocket("**/demo-provider/*", client => {
-        const server = client.connectToServer(), pending = new Set<number>();
-        client.onMessage(message => { const value = JSON.parse(message.toString()); if (value.method === method) pending.add(value.id); server.send(message); });
-        server.onMessage(message => { const value = JSON.parse(message.toString()); if (!held && pending.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
+    await routeLanguageWorker(page, (client, server) => {
+        const pending = new Set<number>();
+        client.onMessage(message => { const value = JSON.parse(message); if (value.method === method) pending.add(value.id); server.send(message); });
+        server.onMessage(message => { const value = JSON.parse(message); if (!held && pending.has(value.id)) { held = true; release = () => client.send(message); } else client.send(message); });
     });
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     const source = await select(page, "calculateTotal(cart"); await source.press("ArrowLeft"); await source.press("ArrowRight");

@@ -308,7 +308,7 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     await page.context().unroute(diagnosticGuide);
 }
 
-export async function runDemoHighlights(page: Page, url = "/", distinctWrites = false) {
+export async function runDemoHighlights(page: Page, url = "/") {
     await page.goto(url);
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     const replace = async (text: string) => { await source.press("Control+a"); await page.keyboard.insertText(text); };
@@ -317,9 +317,8 @@ export async function runDemoHighlights(page: Page, url = "/", distinctWrites = 
     const writes = page.locator("#editor .st-occurrence-write"), reads = page.locator("#editor .st-occurrence-read");
     const occurrences = page.locator("#editor .st-occurrence-write, #editor .st-occurrence-read");
     await expect(occurrences).toHaveText(["value", "value", "value"], { timeout: 30000 });
-    // The pinned Node server reports all these spans as reads; the compiler-backed static
-    // provider distinguishes writes. Preserve provider semantics instead of inventing kinds.
-    await expect(writes).toHaveCount(distinctWrites ? 2 : 0); await expect(reads).toHaveCount(distinctWrites ? 1 : 3);
+    await expect(writes).toHaveCount(2);
+    await expect(reads).toHaveCount(1);
     const continuity = await page.locator("#editor").evaluateHandle(root => {
         let minimum = 3;
         const observer = new MutationObserver(() => {
@@ -418,7 +417,7 @@ export async function runDemoFolding(page: Page, url = "/") {
 
     // Both TypeScript snapshots use syntax colors/outlining; review fold choices stay independent.
     const bootstrap = latch<void>();
-    await page.route(url => url.pathname === "/demo-provider" && url.searchParams.get("sample") === "navigation", async route => {
+    await page.route("**/demo-language-worker.js", async route => {
         await bootstrap.promise;
         await route.continue();
     }, { times: 1 });
@@ -428,7 +427,7 @@ export async function runDemoFolding(page: Page, url = "/") {
     const header = page.locator('#editor .st-viewport-row[data-line="0"]');
     try {
         await expect(imports).toHaveValue(/import type \{ RecordId \}/);
-        await page.clock.runFor(250); // Start debounced discovery before the language URI is assigned.
+        await page.clock.runFor(250); // Start debounced discovery before the language worker connects.
     } finally {
         bootstrap.resolve();
     }
