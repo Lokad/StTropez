@@ -1,11 +1,11 @@
 # Language features
 
-Attach language features to each editor that needs them. A read-only review pane can have its own
-hover and navigation while the working pane offers edits. [Connect a provider](language-server.md)
+Attach features per pane. A read-only baseline can offer hover and navigation while its working pane offers
+fixes. [Provider setup](language-server.md)
 
 ## Use
 
-Give the document a URI and language ID. Choose the controls to mount with the editor.
+Set the document URI and language ID, then choose controls.
 
 ```ts
 import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
@@ -24,36 +24,35 @@ export function attachLanguage(editor: TextEditor, provider: LspWorkspace) {
 }
 ```
 
-The editor and provider share one source binding across these features. Each pane owns its
-requests. Dispose the attachment to remove the controls. Disposing the editor also releases it.
+Features share a source binding. Each pane owns its requests. Disposing the attachment or editor removes the
+controls.
 
 ## Contract
 
 ### Captures and ranges
 
-Render state from `getSnapshot()` and `subscribe()`. Bind a button to the choice the user saw.
-Its method checks the document and provider when invoked. Requests return `done`, `stale`,
-`refused` with a reason, or `failed` with an error. `cancel()` dismisses a request.
+Read `getSnapshot()` in `subscribe()` callbacks. Bind buttons to captured choices, which recheck document
+and provider on invocation. Requests yield `done`, `stale`, `refused` with a reason or `failed` with an
+error. `cancel()` dismisses the request.
 
-`lspRangeOffsets` maps UTF-16 positions. Long columns clamp at line end. Surrogate-half offsets
-stay exact. Invalid lines or positions and reversed ranges fail validation.
+`lspRangeOffsets` maps UTF-16 positions, clamps long columns and keeps surrogate-half offsets exact. Invalid
+lines, positions or reversed ranges fail validation.
 
 ### Diagnostics
 
-`diagnostics: {}` paints server pushes. `item.select()` reveals the diagnostic. `cancel()` pauses
-painting and `request()` resumes it. Use `scope.observeDiagnostics(binding)` for the underlying
-wire version and placement, or `decodeLspDiagnostics` with `diagnosticDecoration` for custom paint.
+`diagnostics: {}` paints pushes. `item.select()` reveals, `cancel()` pauses paint and `request()` resumes.
+For custom presentation use `scope.observeDiagnostics(binding)` or `decodeLspDiagnostics` with
+`diagnosticDecoration`.
 
-A versioned push must match the synchronized version. An unversioned push has null provider
-version and revision. `snapshotRevision` identifies where marks are placed. Edits map surviving
-marks as pending. `isPlacementCurrent()` checks their location and `isCurrent()` checks the
-analysis. Only fresh, versioned marks overlapping the selection enter a code-action request.
-Stale or malformed pushes preserve existing marks. An out-of-bounds item keeps its message.
+Versioned pushes must match the synchronized version. Unversioned pushes have null provider version and
+revision. `snapshotRevision` locates the marks. Edits map surviving marks as pending. `isPlacementCurrent()`
+checks placement, `isCurrent()` analysis. Only fresh versioned marks overlapping the selection enter code
+actions. Stale or malformed pushes preserve marks. Out-of-bounds items retain their message.
 
 ### Completion
 
-Use `completion: { list: true }` for the built-in list. For custom rows use `{}`, position them
-at `snapshot.anchor` and bind each to its captured item.
+`completion: { list: true }` mounts the list. For custom rows use `{}`, `snapshot.anchor` and captured
+items.
 
 ```ts
 import type { CompletionSnapshot } from "sttropez/browser";
@@ -70,32 +69,30 @@ export function completionButton(list: CompletionSnapshot, index: number) {
 }
 ```
 
-| Input | Action |
-| --- | --- |
-| Ctrl/Cmd+Space | Request suggestions. Set `filterManualCompletions` for prefix filtering. |
-| Typing or Backspace | Words and trigger characters can open the list. Edits filter by `filterText`. Set `automatic: false` for explicit requests only. |
-| Arrows or PageUp/PageDown | Move by row or page. `sortText` orders choices and `preselect` picks the initial row. |
-| Enter / Tab | Replace the provider range / insert and keep the suffix. Escape dismisses. |
+Ctrl/Cmd+Space requests suggestions. `filterManualCompletions` enables prefix filtering. Words and trigger
+characters open automatic suggestions unless `automatic: false`. Edits filter by `filterText`. `sortText`
+orders choices and `preselect` selects the initial row. Use arrows or Page keys to move, Enter to replace
+the provider range, Tab to insert preserving the suffix and Escape to dismiss.
 
-An incomplete list stays visible during refresh. `item.accept()` can return `true` while resolve
-is pending. Typing or changing the selection cancels pending acceptance. Additional edits apply
-once with the insertion in one Undo. Manual completion accepts a single-line selection or
-nonoverlapping carets with identical replacement text. `omittedCompletions` reports unsupported items.
+An incomplete list stays during refresh. `item.accept()` can succeed while resolve is pending. Typing or
+selection changes cancel pending acceptance. Insertion and additional edits apply once in one Undo. Manual
+completion accepts a single-line selection or disjoint carets with identical replacement text.
+`omittedCompletions` counts unsupported items.
 
-Tab and Shift+Tab visit snippet fields, Alt+Up/Down cycles choices, and Tab finishes at `$0`.
-Edits follow linked occurrences. Multiline inserts adopt local indentation and endings unless
-`insertTextMode: 1` requests literal text. [Snippet planning](text-model.md#snippet-planning)
+Tab/Shift+Tab visit snippet stops, Alt+Up/Down cycles choices and Tab finishes at `$0`. Edits update linked
+occurrences. Multiline text adopts local indentation and endings unless `insertTextMode: 1`.
+[Snippet planning](text-model.md#snippet-planning)
 
 ### Hover and documentation
 
-With `hover: { popup: true }`, dwell for 300 ms or press Ctrl+K Ctrl+I (Cmd on Apple). Keyboard
-hover reveals the caret and keeps focus. Escape closes the card. `hover.request()` uses the
-caret or a supplied `{ revision, offset }`. Pass `"reuse"` to share a lookup at the same symbol.
-Diagnostics can appear before a symbol reply. Mapped marks show “Awaiting recheck”.
+`hover: { popup: true }` opens on 300 ms dwell or Ctrl+K Ctrl+I (Cmd on Apple). Keyboard hover reveals the
+caret and keeps focus. Escape dismisses. `hover.request()` takes the caret or `{ revision, offset }`.
+`"reuse"` shares an existing symbol lookup. Diagnostics can appear first. Mapped marks show “Awaiting
+recheck”.
 
-`mountDocumentation` renders text, lists, emphasis, code and link buttons. Authorize a link at
-render and activation. Replacing content expires the button. Hover and signature help accept
-`markdownDocumentation: true`. Both default to plaintext, as does completion.
+`mountDocumentation` renders text, lists, emphasis, code and link buttons. Authorize links at render and
+activation. Replacing content expires a button. Completion, hover and signatures default to plaintext. Hover
+and signatures accept `markdownDocumentation: true`.
 
 ```ts
 import type { DocumentationContent } from "sttropez";
@@ -119,44 +116,34 @@ export function createHelpView(
 
 ### Signature help
 
-`signature: { popup: true }` enables Ctrl/Cmd+Shift+Space, including in read-only views.
-Provider triggers use the caret after pairing. A comma clears the parameter highlight while
-the call refreshes. Up/Down cycles overloads unless completion owns the keys. Escape closes
-the top popup. Leaving the call, blur or composition dismisses help. Custom UI reads
-`signature` and `anchor` from the snapshot.
+`signature: { popup: true }` enables Ctrl/Cmd+Shift+Space in either pane. Triggers use the caret after
+pairing. A comma clears the parameter highlight pending refresh. Up/Down cycles overloads unless completion
+owns the keys. Escape closes the top popup. Leaving the call, blur or composition dismisses help. Custom
+controls read `signature` and `anchor`.
 
 ### Navigation and target loading
 
-Ctrl/Cmd+hover underlines the symbol. In `onDefinition`, call
-`navigation.request("definition", offset)` to reuse the lookup when clicked. Use `request("references", offset, false)` to exclude
-declarations. Page results with `count` and `locationAt(index)`. `choice.open(present)` checks the
-captured target before revealing it. The default result survives caret movement. Set
-`resultLifetime: "view"` to expire results when selections or folds change.
+Ctrl/Cmd+hover underlines a symbol. In `onDefinition`, `navigation.request("definition", offset)` reuses its
+lookup. `request("references", offset, false)` excludes declarations. Page with `count` and
+`locationAt(index)`. `choice.open(present)` validates before reveal. Results survive caret movement unless
+`resultLifetime: "view"` expires them on selection or fold changes.
 
-Supply open project snapshots in `documents`. For a missing URI, `resolveTarget(uri, context)`
-receives the requesting operation and source. Authorize the URI, honor cancellation and return
-one of the following.
+Supply open snapshots in `documents`. For a missing URI, `resolveTarget(uri, context)` gives the operation
+and source. Authorize the URI and honor cancellation. Return `{ document: workspace.document(id) }` for a
+matching workspace file, `{ text, languageId }` for a read-only string or `TextBuffer`, or `undefined` to
+decline. Edits require matching version and permission. Supply `release()` for retained targets. Navigation
+shares duplicate loads, runs four concurrently and validates the batch before display.
 
-| Return | Target |
-| --- | --- |
-| `{ document: workspace.document(id) }` | A workspace document with that URI. Edits require matching version and permissions. |
-| `{ text, languageId }` | A read-only navigation destination. Text can be a string or `TextBuffer`. |
-| `undefined` | Decline the lookup. |
-
-Supply `release()` with a retained target. Navigation shares duplicate loads, runs up to four
-at once and validates the batch before display. [Provider limits](language-server.md#limits-and-failures)
-
-For Back, use `createNavigationHistory(workspace)`. Capture the origin with `history.capture(editor)`
-before the lookup, passing the clicked offset for a pointer jump. Wrap a successful reveal in
-`origin.visit`. `history.back(present)` asks for the editor showing the original view. Return
-`"busy"` to defer or `undefined` to skip it. Back restores mapped selection and scroll. Set
-`focus: true` to resume typing there. [View restoration](viewport.md#scrolling-and-saved-views)
+For Back, create `createNavigationHistory(workspace)` and call `history.capture(editor)` before lookup. Pass
+the clicked offset for a pointer jump. Wrap successful reveal in `origin.visit`. `history.back(present)`
+needs the original view’s editor. Return `"busy"` to defer or `undefined` to skip. Back restores mapped
+selection and scroll. `focus: true` resumes typing.
 
 ### Rename and workspace edits
 
-`rename: { popup: true }` binds F2. Enter previews the name, then Enter applies. Escape returns
-to the editor. For a custom review, enable Apply only while `preview.canApply`. Pass other
-project files in `rename.documents`. `rename.request(name)` applies directly.
+`rename: { popup: true }` binds F2. Enter previews, then applies. Escape returns to the editor. Enable
+custom Apply only while `preview.canApply`. Supply `rename.documents` for other files.
+`rename.request(name)` applies directly.
 
 ```ts
 import type { RenameController, RenamePreview } from "sttropez/browser";
@@ -173,17 +160,16 @@ export async function reviewRename(
 }
 ```
 
-`preview.readEdits(first, end)` pages excerpts and gives a total. An expired preview returns
-`undefined`. Approval applies full edits. `documentChanges` takes precedence over `changes`.
-Unknown or repeated targets, mismatched versions or overlapping edits reject the batch.
-Same-position inserts keep provider order. One Undo from a changed file reverts the batch.
-[Workspace edits](language-server.md)
+`preview.readEdits(first, end)` returns paged excerpts and a total, or `undefined` on expiry. Approval
+applies full edits. `documentChanges` takes precedence over `changes`. Unknown or duplicate targets, wrong
+versions and overlapping edits reject the batch. Same-position inserts keep provider order. Undo from any
+changed file reverts all.
 
 ### Code actions and commands
 
-With `codeActions: { popup: true }`, Ctrl/Cmd+. shows fixes for the selection. Arrows choose,
-Enter previews or applies, and Escape closes. `quickfix.show` can reuse a diagnostic's captured
-choices. A delayed fix applies to its source and leaves typing in the field the user moved to.
+`codeActions: { popup: true }` binds Ctrl/Cmd+. to selection fixes. Arrows choose, Enter previews or
+applies, Escape closes. `quickfix.show` reuses a diagnostic’s choices. A delayed fix edits its source while
+typing stays in the newly focused field.
 
 ```ts
 import type { CodeActionChoice, CodeActionController } from "sttropez/browser";
@@ -199,25 +185,24 @@ export async function chooseFix(
 }
 ```
 
-Use `choice.select()` for an approved action. To show a review first, call `select({ review: true })`,
-page `preview.readEdits(first, end)` and bind Apply to `preview.apply()`. A new choice supersedes
-pending resolution. `popup.quickApply` can approve edit-only fixes. Commands need confirmation.
-A custom toolbar can explicitly focus its editor after Apply.
+`choice.select()` approves an action. For review, `select({ review: true })`, page
+`preview.readEdits(first, end)` and bind Apply to `preview.apply()`. New choices supersede pending
+resolution. `popup.quickApply` can approve edit-only fixes. Confirm commands separately. Custom toolbars may
+explicitly refocus the editor.
 
-Supply `documents()` for cross-file edits. A fix's edits commit in one Undo before its command
-runs. Use `reviewCommandEdit(request, context, writable)` for each incoming edit and close the
-approval on `context.onCancel`. Earlier edits stay undoable if a later step fails.
+Supply `documents()` for cross-file edits. Edits commit in one Undo before the command runs. Review each
+incoming edit via `reviewCommandEdit(request, context, writable)` and close approval on `context.onCancel`.
+Earlier edits stay undoable on later failure.
 
-Build command menus from `provider.commandNames()`. `codeActions.commandPolicy` receives the
-exact command and arguments. Return a revocable server or local route, or `null` to decline.
-After cancelling a sent command, check `commandRequiresReconnect` before another request.
-[Command approval and reconnect](language-server.md#commands-and-edit-decisions)
+Build menus from `provider.commandNames()`. `codeActions.commandPolicy` receives the exact command and
+arguments. Return a revocable server or local route, or `null`. After cancelling a sent command check
+`commandRequiresReconnect`. [Command review](language-server.md#commands-and-edit-decisions)
 
 ### Document links
 
-`links: { paint: true }` underlines links. `linkAt(offset)` checks the current list before painted
-ranges. `links.request()` returns choices with a range, tooltip and optional target. Authorize
-the destination in the host and cancel the navigation gesture if focus leaves its pane.
+`links: { paint: true }` underlines links. `linkAt(offset)` checks the current list before painted ranges.
+`links.request()` gives choices with range, tooltip and optional target. Authorize the destination and
+cancel navigation if focus leaves its pane.
 
 ```ts
 import type { DocumentLinkChoice } from "sttropez/browser";
@@ -229,59 +214,55 @@ export function openLink(link: DocumentLinkChoice, intent: AbortSignal, visit: (
 }
 ```
 
-Resolution updates a choice in place in the list. Keep focus on the row and use its new choice
-on the next click. A completed list survives caret movement. Edits, a new request, revoked
-authority or disposal expire its actions. [Reference host](../examples/reference/language.ts)
+Resolve updates the row in place. Keep its focus and invoke the updated choice on the next click. Completed
+lists survive caret movement. Edits, a new request, revoked authority or disposal expire actions.
 
 ### Document colors
 
-`colors: { picker: true }` enables swatches, opacity, provider formats and edit review. Opening
-preserves the selection. Apply takes one Undo and returns focus to the editor. Escape closes.
-Use `swatches: true` for paint alone. From a menu pass a current `colorAt(offset)` mark or
-`colors.request()` choice to `openPicker`.
+`colors: { picker: true }` shows swatches, opacity, formats and edit review. Opening preserves selection.
+Apply takes one Undo and returns editor focus. Escape dismisses. `swatches: true` paints only. Pass
+`colorAt(offset)` or a `colors.request()` choice to `openPicker`.
 
-For a custom picker, call `choice.presentations(rgba)` with channels in `[0, 1]`. On a new value,
-call `dismissPreview()` to release the old Apply action. `format.select()` applies immediately.
-To review, use `select({ review: true })`, show `review.notes` and bind to `review.apply()`.
-`review.edits` holds full replacements. Read-only panes let the user inspect the edit.
-A change to the source, selection, folds, permission or format expires approval.
+Custom pickers call `choice.presentations(rgba)` with channels in `[0, 1]`. On a new value,
+`dismissPreview()` releases the old approval. `format.select()` applies immediately. For review,
+`select({ review: true })`, display `review.notes` and bind Apply to `review.apply()`. `review.edits`
+contains full replacements. Read-only panes permit inspection. Source, selection, fold, permission or format
+changes expire approval.
 
 ### Occurrences
 
-`occurrences: {}` paints text, read and write marks after input settles. A caret inside a
-highlighted identifier reuses the result. Edits, blur and provider changes clear the marks.
-Query ranges with `intersect(from, to)`. Style them with `.st-occurrence-text`,
-`.st-occurrence-read` and `.st-occurrence-write`.
+`occurrences: {}` paints settled text, read and write marks. A caret inside a highlighted identifier reuses
+the result. Edits, blur or provider changes clear it. Query with `intersect(from, to)`. Style
+`.st-occurrence-text`, `.st-occurrence-read` and `.st-occurrence-write`.
 
 ### Folding
 
-Pass the provider result and its `isCurrent` guard to the controller for the pane that requested
-it. [Provider folds](folding.md#language-server-discovery)
+Give the requesting pane’s controller the result and its `isCurrent` guard.
+[Provider folds](folding.md#language-server-discovery)
 
 ### Limits
 
-Clients validate the complete reply before paging results. Text sizes count UTF-16 units.
-[Session and transport limits](language-server.md#limits-and-failures)
+Clients validate full replies before paging. Sizes count UTF-16 units.
+[Session limits](language-server.md#limits-and-failures)
 
 | Feature | Bound |
 | --- | --- |
-| Completion | Word fallback 2,048 units on either side. Rebase up to 2,048 inserted units. `maxDocumentUnits` bounds the snippet and plan. |
-| Hover | 64 fragments, 8,192 units each, 128 per code language tag, 16,384 combined. |
-| Documentation links | 8,192 per destination. After 16 nested levels, content displays literally. |
+| Completion | Word fallback 2,048 units per side. Rebase up to 2,048 inserted units. `maxDocumentUnits` bounds snippet and plan. |
+| Hover | 64 fragments, 8,192 units each, 128 per language tag, 16,384 combined |
+| Documentation links | 8,192 per destination. After 16 nested levels display literal text. |
 | Signature | 32 signatures, 64 parameters each. Label 4,096, documentation part 16,384, total 65,536. Advisory context 131,072, trigger 8. |
-| Document links | 1,024 links. URI and tooltip 4,096 each, data 8,192, resolve payload 16,384. Display and opaque data each get 65,536 total. |
-| Colors | 1,024 marks, 64 formats, labels 4,096. Up to 32 additional edits per choice, 1,024 edits total. Insertion 16,384, combined text 65,536. |
-| Edit excerpts | Title 128, removed and inserted text 256 each. The workspace edit uses the full replacements. |
-| Occurrences | Default delay 150 ms. Waits up to five seconds for pending input. Identifier reuse spans up to 4,096 units. |
+| Document links | 1,024 links. URI and tooltip 4,096 each, data 8,192, resolve payload 16,384. Display and opaque data each 65,536 total. |
+| Colors | 1,024 marks, 64 formats, labels 4,096. Up to 32 additional edits/choice, 1,024 edits total. Insertion 16,384, combined text 65,536. |
+| Edit excerpts | Title 128, removed and inserted text 256 each. Apply uses full replacements. |
+| Occurrences | Delay 150 ms by default. Pending input wait up to 5 s. Reuse up to 4,096 identifier units. |
 
-Completion timings from `getDiagnostics()` stop at handler return. [Interaction clocks](README.md#measuring-an-interaction)
+Completion `getDiagnostics()` times handlers. [Interaction clocks](README.md#measuring-an-interaction)
 
 ## Host responsibilities
 
-Authorize external links, target loads and command edits. Bind each approval to the preview the
-user reviewed. Report which files changed if a later command fails, and keep Save available.
+Authorize links, target loads and command edits. Bind approval to the reviewed preview. Report files changed
+before a command failure and keep Save available.
 
 ## Not covered
 
-Formatting, semantic tokens and completion follow-up commands are outside the
-[supported language features](README.md#support-matrix).
+[Supported language features](README.md#support-matrix)

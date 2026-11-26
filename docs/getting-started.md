@@ -1,25 +1,17 @@
 # Getting started
 
-Panes share a document and Undo history. Each keeps its own selection, folds and scroll position.
-Your application supplies storage and language services.
-[Public imports](api.md) · [Architecture](architecture.md)
+Build a two-pane checklist editor with shared text and Undo, a saved baseline and a separate caret in each
+pane.
 
 ## Use
 
-Run `npm run demo` from the checkout and open the [reference host](http://127.0.0.1:4173/reference/).
-
-1. Edit `quote.ts` and choose **Changes**. The working pane keeps your selection and folds.
-2. Use **Save for this tab** or Ctrl+S (Cmd+S on macOS), then reload to reopen the saved text.
-   If another view saved first, inspect both copies and choose **Save reviewed working copy**.
-3. Choose **Connect language server** to try completion and code actions. In Changes, language
-   commands act on the working pane. Find can search either pane.
-
-The reference host keeps the working view across mounts and checks for pending edits before
-Save or reload. [Mount, Find and Save](../examples/reference/main.ts) · [Language commands](../examples/reference/language.ts)
+Try the [reference host](http://127.0.0.1:4173/reference/) with `npm run demo`. Edit `quote.ts`, open
+**Changes**, choose **Save for this tab** and reload. **Connect language server** enables completion and
+fixes in the working pane.
 
 ### Open the first editor
 
-To embed an editor in your own page, start `site/app.js` with this checklist document.
+Start `site/app.js` with the working document.
 
 ```js file=app.js
 import { Workspace } from "sttropez";
@@ -39,9 +31,8 @@ const editor = mountTextEditor(primary, workspace, file.documentId, { ariaLabel:
 editor.focus();
 ```
 
-Copy the NuGet archive’s `assets/` tree into `site/sttropez/`, or build `dist/` with
-`npm ci` and `npm run build` and copy its contents there. Save the HTML as `site/index.html`.
-[Staging the package](packaging.md#use)
+Copy the package’s `assets/` contents (or `dist/` after `npm ci` and `npm run build`) to `site/sttropez/`.
+Save this as `site/index.html`.
 
 ```html
 <!doctype html>
@@ -68,11 +59,12 @@ Copy the NuGet archive’s `assets/` tree into `site/sttropez/`, or build `dist/
 <script type="module" src="./app.js"></script>
 ```
 
-From `site/` run `python -m http.server 8000` and open `http://localhost:8000/`.
+From `site/`, run `python -m http.server 8000` and open `http://localhost:8000/`.
 
 ### Add features to a browser IDE
 
-Append each block to `app.js` in order. Save the tokenizer in `checklist.js`.
+Append the following blocks to `app.js` in order, except for the tokenizer marked `checklist.js`. Check
+every editable checklist pane before acting on its text.
 
 ```js file=app.js
 const controls = new AbortController();
@@ -105,8 +97,7 @@ const checklistReady = () => editsReady(checklistPanes);
 
 #### Switch and move tabs
 
-**Notes** opens a second document. **Checklist** switches back. **Dock notes** shows both panes.
-Keeping them mounted preserves each caret and scroll position.
+**Notes** and **Checklist** switch panes. **Dock notes** displays both.
 
 ```js file=app.js
 const notes = workspace.createTextResource(
@@ -145,9 +136,8 @@ button("Dock notes", () => {
 
 #### Close a tab and keep its draft
 
-**Review close** captures the Notes tab for **Close notes**. Moving it keeps the decision valid.
-An edit or replacement expires it. Reopening Notes restores its text and history.
-[Resource lifetime](workspace.md#loading-and-resource-lifetime)
+**Review close** targets the Notes tab. Moving the tab preserves the prompt. An edit or replacement expires
+it. Reopen Notes to recover its draft and history.
 
 ```js file=app.js
 /** @type {import("sttropez").CloseIntent | undefined} */
@@ -171,8 +161,7 @@ button("Close notes", () => {
 
 #### Propose an edit, apply it later, and undo
 
-**Propose task** captures the revision. **Apply task** appends one undoable row if it matches.
-If a checklist pane has a pending edit, retry the action when it finishes.
+**Apply task** checks the revision captured by **Propose task**.
 
 ```js file=app.js
 /** @type {(() => boolean) | undefined} */
@@ -201,7 +190,7 @@ button("Undo", () => {
 
 #### Plug in a standalone tokenizer
 
-Save this as `site/checklist.js`. Its ranges count UTF-16 units from the start of a line.
+Save this tokenizer as `site/checklist.js`. Its ranges use UTF-16 offsets within the line.
 
 ```js file=checklist.js
 /** @param {string} prefix */
@@ -212,7 +201,7 @@ export function tokens(prefix) {
 }
 ```
 
-Mount a second pane. Its decoration provider colors each checkbox using document offsets.
+In `app.js`, color the split pane’s checkboxes using document offsets.
 
 ```js file=app.js
 import { tokens } from "./checklist.js";
@@ -237,14 +226,13 @@ const checklist = split.decorations.addProvider({
 });
 ```
 
-`provide` runs during paint. Track lexical state for multiline tokens. For async tokens, check
-the document and revision, cache spans and call `checklist.invalidate(firstLine, endLine)`.
+For async tokens, cache spans by document and revision, then call
+`checklist.invalidate(firstLine, endLine)`.
 [Host tokenization](host-integration.md#tokenization-annotations-and-forms)
 
 #### Paste a list
 
-Paste tab-separated cells into either checklist pane to turn them into rows in one Undo step.
-Plain text uses the editor’s usual paste behavior. [Asynchronous conversion](host-integration.md#captured-insertion-and-structured-paste)
+Paste tab-separated cells into either pane to insert checklist rows in one Undo step.
 
 ```js file=app.js
 for (const pane of [editor, split]) {
@@ -260,7 +248,7 @@ for (const pane of [editor, split]) {
 
 #### Save the working text
 
-Mark unsaved changes in the page title.
+Show unsaved changes in the title.
 
 ```js file=app.js
 const showDirty = () => { document.title = file.metadata.getSnapshot().dirty ? name + " (unsaved)" : name; };
@@ -268,9 +256,8 @@ const stopDirty = file.metadata.subscribe(showDirty);
 showDirty();
 ```
 
-The stored text acts as its version. A conflict shows the other copy in **Compare saved**.
-Queue Save presses when writing asynchronously.
-[Save queue and reviewed retries](workspace.md#save-and-conflicts)
+Use the text stored in this tab as its version. On conflict, **Compare saved** shows the competing text. For
+asynchronous writes, share a [save queue](workspace.md#save-and-conflicts).
 
 ```js file=app.js
 import { TextBuffer } from "sttropez";
@@ -311,7 +298,7 @@ button("Save", () => {
 
 #### Run a check on the draft
 
-**Run** counts unfinished tasks using the current draft and the marker in a separate settings resource.
+**Run** counts unchecked tasks using the marker in settings.
 
 ```js file=app.js
 const rules = workspace.createResource(
@@ -329,8 +316,7 @@ button("Run", () => {
 
 #### Compare saved and working text
 
-**Compare saved** opens or refocuses the review. Save refreshes its baseline in place.
-[Review commands](comparison.md#hunk-commands-and-host-tickets)
+Keep the review mounted when Save refreshes the baseline.
 
 ```js file=app.js
 import { mountTextComparison } from "sttropez/browser";
@@ -349,8 +335,7 @@ button("Compare saved", () => {
 
 #### Connect a language server
 
-Supply a Markdown language server at `/lsp` on the same origin for completion. It uses WebSocket,
-LSP 3.17 and UTF-16 positions. [Language server](language-server.md)
+Supply a Markdown LSP server at `/lsp` with WebSocket and UTF-16 positions. [Protocol](language-server.md)
 
 ```js file=app.js
 import { BrowserLspWorkspace, attachEditorLanguage, openWebSocketTransport } from "sttropez/browser";
@@ -362,34 +347,33 @@ const provider = new BrowserLspWorkspace(workspace, {
 });
 ```
 
-Choose **Connect**, focus the first pane and press Ctrl+Space. Use the arrows to select a
-completion and Enter to insert it.
+Choose **Connect**, focus the first pane and press Ctrl+Space. Use the arrows and Enter to accept a
+suggestion.
 
 ```js file=app.js
 const language = attachEditorLanguage(editor, provider, {
-    completion: { autoConnect: false }, diagnostics: { autoConnect: false }
+    completion: { list: true, autoConnect: false }, diagnostics: { autoConnect: false }
 });
 const { completion, diagnostics } = language;
+const languageStatus = document.createElement("output");
+toolbar.append(languageStatus);
 const showLanguage = () => {
     const state = completion.getSnapshot();
-    output.textContent = state.offerText ?? diagnostics.getSnapshot().diagnostics[0]?.message ?? state.message;
+    languageStatus.textContent = diagnostics.getSnapshot().diagnostics[0]?.message ?? state.message;
 };
 const stopLanguage = completion.subscribe(showLanguage);
 const stopDiagnostics = diagnostics.subscribe(showLanguage);
 button("Connect", completion.connect);
 ```
 
-For cross-file rename, supply the participating documents and review the returned edit before
-applying it. [Rename example](language-features.md#rename-and-workspace-edits)
-
 ## Contract
 
-Typing and Undo advance the revision. Undo to the saved text marks the file clean. [Save and conflicts](workspace.md#save-and-conflicts)
+Edits and Undo advance the revision. Undo to the saved text marks the file clean.
 
 ## Host responsibilities
 
-Check pending edits and confirm before discarding a draft. Dispose attachments before their
-provider and mounts before releasing their resources.
+Check all panes for pending edits before close. Confirm draft discard and dispose attachments before
+releasing their owners.
 
 ```js file=app.js
 button("Close", () => {
@@ -416,8 +400,7 @@ button("Close", () => {
 
 ### Mount an editor in React
 
-Create a stable callback ref when the host opens the pane. React supplies the element on mount
-and `null` on detach.
+Create one callback ref per host pane.
 
 ```tsx
 import type { DocumentView, Workspace } from "sttropez";
@@ -436,10 +419,9 @@ export function EditorPane({ bind }: { bind: ReturnType<typeof createEditorRef> 
 }
 ```
 
-Create the view with `workspace.createDocumentView(file.documentId)`. Pass the same
-`createEditorRef(workspace, view)` result to `EditorPane` on each render. The view keeps its
-selection and folds across remounts. Dispose it when the host retires the pane.
-[Document views](workspace.md#document-views) · [React fixture](../tests/fixtures/hosts/react-main.tsx)
+Create the view with `workspace.createDocumentView(file.documentId)`. Pass the same ref to `EditorPane`
+across renders and dispose the view when retiring the pane.
+[React fixture](../tests/fixtures/hosts/react-main.tsx)
 
 ## Not covered
 

@@ -1,6 +1,7 @@
 # Examples
 
-Open the [TypeScript demo](https://lokad.github.io/StTropez/) to edit a project, inspect its JavaScript and review changes. To embed the editor in your own app, start with the [reference host](../examples/reference/main.ts).
+Try the [TypeScript demo](https://lokad.github.io/StTropez/) or use the
+[reference host](../examples/reference/main.ts) to embed StTropez.
 
 ## Development routes
 
@@ -11,62 +12,60 @@ npm ci
 npm run demo
 ```
 
-Open `http://127.0.0.1:4173/`. Set `STTROPEZ_PORT` to choose another port.
+Open `http://127.0.0.1:4173/`. Override the port with `STTROPEZ_PORT`.
 
-| Route | What to try |
+| Route | Purpose |
 | --- | --- |
-| `/` | The TypeScript demo with editing, language tools and local saves. |
-| `/reference/` | Edit `quote.ts`, review it in **Changes** and choose **Save for this tab**. [Reference host walkthrough](getting-started.md#use) |
-
-The development server also serves these test fixtures.
-
-| Route | What it exercises |
-| --- | --- |
-| `/hosts/plain/`, `/hosts/react/` | Two views of one document with deferred saves, conflicts and remounts. Both hosts use the same [controller](../tests/fixtures/hosts/controller.ts). |
-| `/editing/`, `/viewport/` | Input and selection in the editor, or scrolling and layout in a read-only view. |
-| `/comparison/` | Edit the working pane or add `?mode=revisions` to compare two read-only revisions. |
-| `/protocol/` | Exercise the JSON-RPC connection to a local WebSocket server. |
+| `/` | TypeScript playground |
+| `/reference/` | [Embedding walkthrough](getting-started.md#use) |
+| `/hosts/plain/`, `/hosts/react/` | Shared [controller](../tests/fixtures/hosts/controller.ts), two panes, deferred saves and remount |
+| `/editing/`, `/viewport/` | Input, selection, scrolling and layout |
+| `/comparison/` | Edit the working copy or use `?mode=revisions` for two read-only revisions |
+| `/protocol/` | Local JSON-RPC/WebSocket fixture |
 
 ## TypeScript demo
 
-1. In **Shopping cart**, change a quantity in `main.ts`. **JavaScript** shows the emitted code. **Changes** shows your edit beside the saved copy. Ctrl+S (Cmd+S on macOS) saves the sample in this browser. The demo compiles the source without running it.
-2. In **Fix a type error**, select the misspelled property in **Problems**, review the fixes and choose **Change spelling to 'quantity'**. Open **Changes** to see the correction beside the original. In **Unopened files & navigation**, use F12 on a symbol to follow its definition across files or F2 to preview a rename.
-3. In **Large file**, turn on **View → Minimap**, drag to the middle and edit a line. Check the diff in **Changes**, then undo. To try folding on nested rules, choose **Host outline**. [Sample catalogue](../examples/demo/samples.ts)
+1. In **Shopping cart**, change a quantity. **JavaScript** shows emitted code without executing it. **Changes** compares against saved text. Ctrl/Cmd+S saves locally.
+2. In **Fix a type error**, select the misspelled property in **Problems** and apply **Change spelling to 'quantity'**. Inspect **Changes**. In **Unopened files & navigation**, try F12 for definition or F2 for rename.
+3. In **Large file**, enable **View → Minimap**, drag to the middle, edit and Undo. In **Host outline**, fold a nested rule. [Sample catalogue](../examples/demo/samples.ts)
 
-To try regex replacement in Shopping cart, find `quantity:\s*(\d+)`, enable **Use regular expression** and replace all with `quantity: $1 + 1`. One Undo restores both quantities.
+For regex replacement in Shopping cart, enable **Use regular expression**, find `quantity:\s*(\d+)` and
+replace all with `quantity: $1 + 1`. One Undo restores both quantities.
 
-To try a save conflict, make different edits to the same sample in two tabs and save one. In the other,
-choose **Review saved copy** to keep your version or take the saved files. Saving identical files keeps
-the other tab’s edits and Undo history available.
-If the saved copy was removed, **Save locally** recreates it from your open project.
-When a write is pending, you can edit and save again. Each Save keeps the text you chose.
-Edits after the last Save stay in the working copy.
-On reload, recovery selects this tab’s last checkpoint if it is available. Use **Recovery version** to choose another draft for the same sample.
+To try conflicts, edit the same sample in two tabs and save one. In the other, **Review saved copy** lets
+you keep your version or take the saved files. Identical saves preserve the peer’s Undo. **Save locally**
+recreates a removed save. Each Save press captures its text, even during an earlier write. Later edits stay
+dirty. Reload selects this tab’s latest available draft. **Recovery version** lists alternatives for the
+sample.
 
 <a id="provider-ownership-and-adaptations"></a>
 
-The playground runs TypeScript in a browser worker, both locally and on GitHub Pages. The WebSocket test fixture runs a separate language server. [Language server integration](language-server.md)
+The playground runs TypeScript in a browser worker locally and on Pages. The WebSocket fixture runs a
+separate server.
 
 ## Host workflows
 
-Open `/hosts/plain/` or `/hosts/react/`. Edit **Primary source** and undo from **Secondary source**. Each pane keeps its selection. Edit again, then use **Toggle views** twice to detach and remount the editors.
+In either host fixture, edit **Primary source**, undo from **Secondary source** and use **Toggle views**
+twice to remount. Each pane keeps its selection.
 
-For a conflict, edit the source, choose **Simulate external source change**, save, then choose **Finish save**.
-Select **Review remote source** and **Finish remote review** to compare. To keep your edits, choose
-**Save reviewed source**, then **Finish save** again.
+To review a conflict, edit, choose **Simulate external source change**, save and **Finish save**. Choose
+**Review remote source** and **Finish remote review**. To keep your copy, choose **Save reviewed source**
+and **Finish save**.
 
 ### Draft checkpoints
 
-Make an unsaved edit, choose **Keep recovery draft** and reload. Choose **Restore source draft**,
-then **Confirm draft action**. The configuration and transfer form have separate restore actions.
+Edit, choose **Keep recovery draft**, reload and select **Restore source draft** and
+**Confirm draft action**. Configuration and transfer form restore separately.
 
 ### Table conversion
 
-In the demo’s **Host integrations · paste & notes** sample, open **Code → Paste format** and choose **Insert example table**. Undo removes the inserted CSV. In the plain or React fixture, enable **Paste tables as CSV** to try an HTML or tab-separated table.
+In **Host integrations · paste & notes**, choose **Code → Paste format → Insert example table**. Undo
+removes the CSV. In a host fixture enable **Paste tables as CSV** for HTML or tab-separated tables.
 
 ### Source-backed transfer form
 
-In the plain or React fixture, choose **Insert transfer instruction** or **Anchor instruction at caret** on an existing instruction. Change a form field and undo from the editor to see the corresponding source edit. [Host integration](host-integration.md#tokenization-annotations-and-forms)
+In a host fixture choose **Insert transfer instruction** or **Anchor instruction at caret**. Change a field
+and Undo in the editor. [Source-backed forms](host-integration.md#tokenization-annotations-and-forms)
 
 ## Static build and deployment
 
@@ -75,4 +74,6 @@ npm run build:demo
 npm run preview:demo
 ```
 
-Open `http://127.0.0.1:4174/StTropez/` or set `STTROPEZ_DEMO_PORT`. Run `npm run test:demo` to check the static build. The [Pages workflow](../.github/workflows/pages.yml) publishes the root demo after CI passes. The site bundles its compiler separately from the [NuGet package](packaging.md).
+Open `http://127.0.0.1:4174/StTropez/` or set `STTROPEZ_DEMO_PORT`. `npm run test:demo` checks this build.
+The [Pages workflow](../.github/workflows/pages.yml) deploys after CI. The compiler ships separately from
+the [NuGet package](packaging.md).

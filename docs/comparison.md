@@ -1,12 +1,11 @@
 # Text comparison
 
-`mountTextComparison` shows a baseline beside an editable working document. Revert restores
-baseline text in the working document. Accept updates the baseline. The host owns persistence.
+`mountTextComparison` shows a baseline beside a working document. Revert restores baseline text in the
+draft. Accept advances the baseline.
 
 ## Use
 
-Give the container a height and load the [editor stylesheet](getting-started.md#open-the-first-editor).
-Pass a baseline buffer and version, or the ID of a baseline document in the workspace.
+Size the container, load the [stylesheet](getting-started.md#open-the-first-editor) and supply a baseline.
 
 ```ts
 import type { ComparisonBaseline, DocumentId, Workspace } from "sttropez";
@@ -31,41 +30,31 @@ export function showChanges(
 }
 ```
 
-Pass the working `DocumentView` as `view` to retain its selection and folds on close.
-The mount disposes views it creates. Use `settings` for both panes and `configure` for one.
-`strings` translates headings, commands, hints and previews. A formatter can return
-`undefined` for the English default. Set `controls: false` for a custom toolbar.
-[Toolbar example](../tests/fixtures/comparison/controls.ts)
+Pass the working `DocumentView` as `view` to retain selection and folds. The mount disposes views it
+creates. `settings` applies to both panes. Use `configure` on one. `strings` translates controls and
+previews. A formatter returning `undefined` selects English. Use `controls: false` for a
+[custom toolbar](../tests/fixtures/comparison/controls.ts).
 
 ## Contract
 
 ### Identity and comparison state
 
-Mount by working document or tab ID. Moving a tab keeps the review. Replacing or closing it
-expires the captured target. Keep baseline identity, working revision and server version separate.
+Mount by working document or tab ID. Moving the tab keeps the review. Closing or replacing it expires the
+target. A `{ buffer, version }` baseline creates a private read-only document. A `DocumentId` baseline
+follows that workspace document and uses its decimal revision as version.
 
-| Baseline | Lifetime |
-| --- | --- |
-| `{ buffer, version }` | The host supplies the version and refreshes the baseline. StTropez creates a private read-only document. |
-| `DocumentId` | The comparison follows the workspace document, using its decimal revision as the version. Edit that document to change the baseline. |
+Read `getSnapshot()` or `subscribe()`. A `ready` result has exact hunks for its `generation`. During a new
+diff, both panes show mapped provisional markers when history permits. A new baseline clears them.
 
-The controller publishes immutable snapshots through `getSnapshot()` and `subscribe()`.
-A `ready` snapshot has exact hunks for its `generation`. Typing starts another diff. While
-`running`, both panes show mapped markers from the prior result when possible. A new baseline
-or missing revision history clears them. Treat those markers as provisional.
-
-The mounted view also reports `selectedHunk`, `canNavigate` and `canRevert`. Selection follows
-the last focused pane’s caret on a changed line. A point change requires its exact offset.
-A pending diff or unchanged line gives `null`. Observe command availability in a toolbar and
-invoke after notification delivery. Disposal publishes a final snapshot with no available action.
+The mount reports `selectedHunk`, `canNavigate` and `canRevert`. The last focused caret selects a changed
+line or exact point offset. An unchanged line or pending diff yields `null`. Run toolbar commands after
+notification delivery. Disposal publishes a final snapshot with actions disabled.
 
 ### Exact text and scheduling
 
-`TextDiff` compares lines including their endings, then trims equal UTF-16 edges within changed
-blocks. Whitespace and final newlines count. `DiffHunk` ranges have exclusive text and line ends.
-`whitespaceOnly` and `lineEndingOnly` identify changes. Equal-row replacements highlight changed
-characters per row, up to 4,096 UTF-16 units per paired row. Uneven or longer rows use line tints.
-Revert always restores the whole hunk.
+`TextDiff` compares lines including endings, then trims equal UTF-16 edges. Hunk text and line bounds are
+half-open. `whitespaceOnly` and `lineEndingOnly` classify changes. Paired rows up to 4,096 units highlight
+changed characters. Uneven or longer rows use line tints. Revert restores whole hunks.
 
 ```ts
 import { TextDiff } from "sttropez/kernels";
@@ -85,28 +74,26 @@ export function* compareText(baseline: TextBuffer, working: TextBuffer): Generat
 }
 ```
 
-Advance the cursor until `ready`, scheduling between steps. A failed advance records `failed`
-and throws. `dispose()` releases its retained result. Snapshots already held remain valid.
+Schedule turns until `ready`. A failed advance records `failed` and throws. `dispose()` releases the
+retained result. Held snapshots survive.
 
 <a id="hunk-commands-and-host-tickets"></a>
 
 ### Reverting a change or accepting a version
 
-F7 and Shift+F7 wrap through changes from the active caret and reveal both ranges. For custom
-controls call `navigateHunk(1)` or `navigateHunk(-1)`. Capture `comparison.getSnapshot()` on
-button press and pass it to `revertSelectedHunk(shown)` on release. The command focuses the
-working pane before reverting. It returns `false` if the selected hunk or comparison result changed.
+F7/Shift+F7 or `navigateHunk(1)`/`navigateHunk(-1)` wrap from the active caret and reveal both ranges.
+Capture the snapshot on press. `revertSelectedHunk(shown)` on release focuses the working pane and refuses a
+changed selection or result.
 
-For a specific change, bind the row to `comparison.hunkAt(index)`. Its `select()` unfolds and
-reveals both sides. `revert()` restores that hunk in one Undo and puts the working caret at its
-start. An invalid index or pending diff yields no handle. Editing either side or closing the
-view expires it. Browser commands check composition and revert checks write access.
+Bind a row to `hunkAt(index)`. `select()` unfolds both sides. `revert()` restores one hunk in one Undo and
+places the working caret at its start. Invalid indices and pending diffs yield no handle. Editing either
+side or closing expires it. Commands check composition, and revert requires write access.
 
-| Ticket | Completion |
+| Ticket | When to use it |
 | --- | --- |
-| `beginRefresh()` | For an external baseline, capture before fetching. Complete with the fetched buffer and version. |
-| `beginAcceptance()` | For an external baseline, complete with the **captured working buffer** and a version. Later edits appear in the working pane. |
-| `beginReversion()` | Capture a ready result before confirmation. Complete to restore all reviewed hunks in one working transaction. |
+| `beginRefresh()` | Before fetching an external baseline. Complete with its buffer and version. |
+| `beginAcceptance()` | Complete with the captured working buffer and a version. Later edits remain visible. |
+| `beginReversion()` | Before confirming reversion of all reviewed hunks in one transaction. |
 
 ```ts
 import type { ComparisonBaseline, ComparisonCapture, ComparisonController } from "sttropez";
@@ -124,32 +111,30 @@ export async function refreshBaseline(
 }
 ```
 
-A newer refresh supersedes a refresh, and a newer acceptance supersedes an acceptance. Advancing
-the baseline expires tickets for its old epoch. Acceptance needs edit permission at capture and
-completion. Neither refresh nor acceptance saves, changes dirty state or adds an Undo step.
+New refreshes supersede refreshes, acceptances supersede acceptances, and a new baseline epoch expires older
+tickets. Acceptance checks edit permission at capture and completion. Refresh and acceptance leave
+persistence, dirty state and Undo alone.
 
-Reversion captures both versions, the result generation, working selection set and edit authority.
-Ask again after any of them changes, including a lock acquired and released during confirmation.
-A new baseline request or replaced target also expires it. An empty revert creates no history.
+Reversion captures both versions, generation, working selections and edit authority. Renew confirmation if
+any change, even if a temporary lock has since cleared. A new baseline request or target replacement also
+expires it. Empty reversion adds no history.
 
-Capture can throw when unavailable. Stale completion returns `false`. Complete, cancel or finish
-each ticket to release its lease. `finish()` is idempotent. Cancel the host fetch separately.
+Unavailable capture can throw. Stale completion returns `false`. Complete, cancel or `finish()` each ticket.
+`finish()` is idempotent. Cancel host fetches separately.
 
 ### Baseline views and decoration
 
-Attach Find, folding and colors to `comparison.panes.reference` and `comparison.panes.working`.
-An external baseline refresh keeps the same editor and view. Find reruns its query and surviving
-folds follow edits. Publish decorations against each pane’s own revision. The private baseline
-resource has Save disabled and stays out of tabs and public inventory. [Decoration layers](viewport.md#decoration-layers)
+Attach colors, folds and Find to `panes.reference` and `panes.working` using each pane’s revision. Refresh
+preserves the reference editor, reruns Find and maps surviving folds. The private baseline omits Save, tabs
+and public inventory. [Decorations](viewport.md#decoration-layers)
 
-Insertions and deletions mark the empty side with a point. Only changed source rows get a tint.
-Use `--st-comparison-baseline-line` and `--st-comparison-working-line` for row backgrounds, the
-corresponding `-bar` variables for gutters, and `--st-comparison-removed` and
-`--st-comparison-added` for inline changes.
+Only changed source rows get tinted. Insertions and deletions mark a point on the empty side. Theme
+backgrounds with `--st-comparison-baseline-line` and `--st-comparison-working-line`, gutters with the
+corresponding `-bar` variables and spans with `--st-comparison-removed` and `--st-comparison-added`.
 
-`activePane()` returns the last focused editor, initially the working pane. Register a shared
-review command once. A shortcut passes its originating editor. A toolbar’s `commands.run` uses
-the active pane. Each pane has its own keymap and unfinished chords expire on baseline refresh.
+`activePane()` tracks focus and starts on working. Register a shared command once. Shortcuts pass the
+originating editor. Toolbar `commands.run` uses the active pane. Each pane has a keymap. Refresh expires
+unfinished chords.
 
 ```ts
 import type { TextComparison, TextEditor } from "sttropez/browser";
@@ -163,26 +148,23 @@ export function bindReviewNote(comparison: TextComparison, addNote: (pane: TextE
 
 ### Linked scrolling and aligned rows
 
-By default each pane scrolls independently. `rowsAligned: true` aligns changed rows and links
-vertical scrolling. Add `scrollLinked: false` to align without linking. At runtime,
-`setRowsAligned(true)` also enables linking. `setScrollLinked(false)` then decouples scrolling.
-Each pane keeps its own horizontal position and selection.
+Scrolling defaults to independent. `rowsAligned: true` aligns rows and links vertical scroll.
+`scrollLinked: false` keeps alignment alone. `setRowsAligned(true)` enables linking again. Disable with
+`setScrollLinked(false)`. Horizontal scroll and selections stay independent.
 
-Alignment requires equal measured line heights. Inserted lines on one side add padding on the
-other. Rows folded on both sides disappear. A fold on one side can have padding opposite visible
-source. Navigating to a hidden change unfolds it. Padding adds no clipboard text. Arrows skip
-it, Page keys follow the grid, and a click selects an adjacent source boundary. A minimap in
-either pane uses that pane’s projection. [Minimap settings](viewport.md#viewport-settings)
+Alignment needs equal measured line heights. Padding fills insertions and one-sided folds. Rows folded on
+both sides disappear. Navigating to a hidden change unfolds it. Padding contributes no copied text. Arrows
+skip it, Page keys follow the grid and clicks select an adjacent source boundary. Each
+[minimap](viewport.md#viewport-settings) follows its pane.
 
-Linking maps vertical positions through the diff and each pane’s folds. Edits that preserve the
-visible line structure keep the grid until the new diff is ready. Alignment waits for settled
-input and pointer gestures. A ready controller can precede settled panes. Use `getDiagnostics()`
-to inspect pending scroll and alignment work.
+Linking maps through the diff and folds. Edits preserving visible line structure retain the grid during
+recompute. Alignment waits for input and gestures to settle. A ready diff can precede settled panes.
+`getDiagnostics()` reports pending scroll and alignment.
 
 ## Host responsibilities
 
-Choose and retain the baseline. Save or Run targets the explicit working resource, even when
-the baseline has focus. Finish tickets and dispose the comparison before releasing retained views.
+Retain the baseline. Target Save and Run at the working resource regardless of focus. Finish tickets and
+dispose the comparison before releasing retained views.
 
 ## Not covered
 

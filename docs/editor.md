@@ -4,8 +4,8 @@ Editors on the same document share text and Undo. Each view has its own carets, 
 
 ## Use
 
-Load the stylesheet and give the container a height. Supply a `DocumentView` to keep the selection
-and folds across mounts. [First editor](getting-started.md#open-the-first-editor)
+Load the stylesheet, size the container and supply a `DocumentView` to retain selections and folds.
+[First editor](getting-started.md#open-the-first-editor)
 
 ```ts
 import type { DocumentId, DocumentView, Workspace } from "sttropez";
@@ -34,27 +34,26 @@ export function attachSource(
 }
 ```
 
-Save `captureView()` on detach and key it by document and view. Dispose the retained view when
-its owner closes.
+On detach, store `captureView()` by document and view. Dispose the view when its owner closes.
 
 ## Contract
 
 ### Mounting and presentation
 
-`mountTextEditor` accepts a document or tab ID. If you omit `view`, the mount owns the view.
-Closing or replacing a tab expires pending input. `ariaLabel` defaults to the document title.
+Mount by document or tab ID. Omitting `view` gives the mount ownership. Closing or replacing the tab
+expires pending input. `ariaLabel` defaults to the document title.
 
-Set `readOnly: true` at mount for navigation, copy and Find. Remount the same view to change it.
-Update display and editing settings with `configure()` and read them with `settings()`.
+Set `readOnly: true` at mount for navigation, copy and Find. Remount to change it. Use `configure()`
+and `settings()` for display and editing options.
 [Viewport settings](viewport.md#viewport-settings) · [Character warnings](unicode.md#character-warnings)
 
 `getSnapshot()` and `subscribe()` report focus, composition, disabled state and `readOnlyReason`.
-Call `editor.focus()` to resume typing without scrolling the page. A disabled input cannot take focus.
+`editor.focus()` resumes typing without scrolling. Disabled input cannot take focus.
 
 ### Reveal a destination
 
-`reveal` accepts a zero-based `{ line, column }`, a directed `{ start, end }` or an ordered UTF-16
-range `{ from, to }`. It clamps integer coordinates, opens folds and scrolls to the destination.
+`reveal` takes zero-based `{ line, column }`, directed `{ start, end }` or ordered `{ from, to }`
+UTF-16 coordinates. It clamps integers, opens folds and scrolls.
 
 ```ts
 import type { TextEditor } from "sttropez/browser";
@@ -70,38 +69,37 @@ Select and focus are opt-in, including in read-only panes. `align` accepts `"nea
 
 ### What happens when you type during a command
 
-Type during a long caret move and the text lands at the new caret. A following paste gets its
-own Undo step. Escape, composition, a changed selection or an expired view can interrupt the queue.
-Keep an `inputConflictEvent` listener on the original editor through disposal to recover unapplied
-text. Before Save or Run, check pending input on that pane. [Input recovery](host-integration.md#input-conflict-recovery)
+Typing during a long move lands at the new caret. A following paste has its own Undo step.
+Escape, composition, selection changes or a closed view can interrupt the queue. Listen for
+`inputConflictEvent` through disposal to recover unapplied text. Before saving or running the
+current draft, check composition, pending input and pending commands in every pane that can
+edit it. [Runnable checklist](getting-started.md#add-features-to-a-browser-ide)
 
 ### Selections and history
 
-Typing replaces every selected range. The native input mirrors the primary range. Shift extends
-each selection from its anchor. Vertical moves keep each range's preferred column across short lines.
+Typing replaces every selection. Native input mirrors the primary range. Shift extends from each anchor.
+Vertical moves retain preferred columns across short lines.
 [Selection sets](text-model.md#selection-sets)
 
-Undo works from either editable pane. Typing groups by word across pauses. One space joins the
-following word. A longer space run gets its own step. Caret movement, blur, a command, newline,
-paste, composition or an edit from another origin breaks the group. A committed dead key takes
-one Undo. Undo and Redo reveal an off-screen caret. [Shared history](workspace.md#transactions-and-history)
+Undo from either editable pane. Typing groups by word across pauses. One space joins the next word,
+longer runs get their own step. Moving the caret, blur, commands, newline, paste, composition and
+other edit origins break the group. One Undo removes a committed dead key. Undo/Redo reveal the caret.
+[Shared history](workspace.md#transactions-and-history)
 
 ### Selecting lines in the gutter
 
-Click a number to select the line, its ending and any folded body. Drag for whole lines or
-Shift+click to extend. In Changes, each pane shows its own line numbers. Alignment gaps are blank.
+Click a number to select the line, ending and folded body. Drag for whole lines, Shift+click to extend.
+Each comparison pane numbers its own lines and leaves alignment gaps blank.
 
 ### Pointer dwell
 
-`observePointerDwell(editor, listener, options)` reports the painted offset, affinity, document
-and revision after a mouse or pen rests for 300 ms by default. Use `onMiss` to clear a hint,
-`cancel()` to forget a visit and `dispose()` to stop observing.
+`observePointerDwell(editor, listener, options)` reports offset, affinity, document and painted revision
+after a mouse or pen rests (default 300 ms). Use `onMiss` to clear hints, `cancel()` to forget a visit.
 
 ### Shortcuts
 
-`Mod` is Cmd on Apple and Ctrl elsewhere. The word modifier is Option on Apple and Ctrl
-elsewhere. Query `editor.keymap.getShortcuts(id)` for the current pane, including host bindings.
-To display the defaults, use the platform's shortcut table.
+`Mod` is Cmd on Apple and Ctrl elsewhere. The word modifier is Option on Apple and Ctrl elsewhere.
+`editor.keymap.getShortcuts(id)` includes host bindings. For defaults, use the platform table.
 
 ```ts
 import { defaultEditorShortcuts, type TextEditorCommand } from "sttropez/browser";
@@ -137,9 +135,8 @@ export function defaultKeys(command: TextEditorCommand, platform: keyof typeof d
 | Mod+Enter / Mod+Shift+Enter | Insert a line below / above with its indentation. |
 | Escape then Tab / Shift+Tab | Leave the editor forward / backward. With multiple ranges, the first Escape keeps the primary range. |
 
-Go to line calls `requestLine` with one-based `currentLine`, `lineCount` and an abort signal.
-Return a line or `undefined`, synchronously or in a promise. A changed selection, revision or
-mount expires the prompt. On French AZERTY, `Ctrl+:` toggles line comments and `Ctrl+;` opens fixes.
+Go to line passes `requestLine` one-based `currentLine`, `lineCount` and an abort signal.
+Return a line or `undefined`, directly or in a promise. Selection, revision or mount changes expire it. On French AZERTY, `Ctrl+:` toggles line comments and `Ctrl+;` opens fixes.
 [Keyboard support](README.md#support-matrix)
 
 Shift+click extends the primary selection. Alt+click toggles a caret and Alt+drag adds a range.
@@ -149,13 +146,12 @@ rows reaching the nearer edge participate. If all fall short, each gets an end-o
 
 ### Clipboard and text drag
 
-Copy joins selections in source order with LF. With carets only, it copies distinct whole lines,
-including folded bodies and line endings. Cut removes them in one Undo. Pasting editor-marked
-lines at a caret inserts them above and keeps the column.
+Copy joins selections in order with LF. Carets alone copy distinct whole lines, including folded bodies
+and endings. Cut takes one Undo. Paste editor-marked lines at a caret to insert above and keep its column.
 
-When line and selection counts match, paste distributes one line per selection. Otherwise each
-range gets the full text. Endings follow the destination unless `pasteLineEndings` is `"preserve"`.
-Read custom clipboard formats during dispatch. [Structured paste](host-integration.md#captured-insertion-and-structured-paste)
+Matching line and selection counts distribute one line per range. Otherwise each gets the full text.
+Endings follow the destination unless `pasteLineEndings` is `"preserve"`. Read custom formats during
+[the paste event](host-integration.md#captured-insertion-and-structured-paste).
 
 A drag between writable documents in the same workspace moves the text in one Undo. Ctrl
 (Option on Apple), a read-only source or another workspace copies. Moves require the original
@@ -178,8 +174,7 @@ once. Backspace between untouched delimiters removes both. Composition inserts l
 
 ### Running and binding commands
 
-Build a menu item for a specific pane. Use the same pane and argument when invoking it.
-`commands.run` rechecks availability when clicked.
+Bind menu items to their pane and argument. `commands.run` rechecks availability.
 
 ```ts
 import type { TextEditor } from "sttropez/browser";
@@ -191,9 +186,9 @@ export function undoMenuItem(editor: TextEditor) {
 }
 ```
 
-`commands.register(command, { keys, priority })` returns a registration whose `dispose()` removes
-the command and its bindings. Translate editor commands with `settings.commandLabel(id, fallback)`.
-`keymap.bind("Mod+k Mod+i", id)` adds a chord. `keymap.unbind(keys)` clears that sequence.
+`commands.register(command, { keys, priority })` returns a disposable command and bindings.
+Translate with `settings.commandLabel(id, fallback)`. `keymap.bind("Mod+k Mod+i", id)` adds a chord,
+`keymap.unbind(keys)` clears it.
 
 - Bind a logical key or a physical `Code:BracketLeft`. A matching logical key wins. `Space` and
   `Plus` name literal keys. Higher priorities run first. Returning `false` tries the next choice.
@@ -203,8 +198,8 @@ the command and its bindings. Translate editor commands with `settings.commandLa
   `shared: true` and forward its event to that pane's `keymap.handle`.
   [Host commands](host-integration.md#navigation-commands-and-lifecycle)
 
-For a headless edit, give `planLanguageEdit` the captured buffer, selections and rules. Pass
-a fold index to treat folded blocks as lines. Yield between advances and dispose on cancellation.
+`planLanguageEdit` takes the captured buffer, selections and rules. A fold index treats blocks as
+lines. Yield between advances and dispose on cancellation.
 
 ```ts
 import { planLanguageEdit, resolveLanguageConfiguration } from "sttropez";
@@ -263,9 +258,9 @@ new text, colors and carets are painted. `getDiagnostics()` times input handlers
 
 ## Host responsibilities
 
-Keep host commands tied to their pane and callbacks bounded. Submit host edits after notifications
-in revision-checked transactions. Dispose the editor on detach. [React mounting](getting-started.md#mount-an-editor-in-react)
+Bind commands to their pane. Submit revision-checked edits after notifications. Dispose the editor
+on detach. [React mounting](getting-started.md#mount-an-editor-in-react)
 
 ## Not covered
 
-Device checks for dead keys, AltGr, clipboard and touch are listed in the [support matrix](README.md#support-matrix).
+[Dead keys, AltGr, clipboard and touch](README.md#support-matrix)

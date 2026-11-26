@@ -1,11 +1,10 @@
 # Folding
 
-A folded block shows its header and hides its body in one view. Its text, offsets and Undo history
-stay available. Two panes of the same document can fold different blocks.
+Folding hides a block’s body in one pane. Its text, offsets and Undo history stay available.
 
 ## Use
 
-Attach indentation and region-marker discovery to a mounted editor.
+Attach indentation and region-marker discovery to an editor.
 
 ```ts
 import { discoverIndentationFolds } from "sttropez";
@@ -22,12 +21,11 @@ export function attachFolding(editor: TextEditor): FoldingController {
 }
 ```
 
-`controller.setCollapsed(true, "regions")` collapses that group while preserving focus and logical
-selection. Omit the group to act on all folds. Bind a toolbar to `getSnapshot()` and `subscribe()`.
-Call `refresh()` when discovery rules change.
+`controller.setCollapsed(true, "regions")` collapses a group, preserving focus and logical selection. Omit
+the group for all folds. Bind controls to `getSnapshot()` and `subscribe()`. Call `refresh()` after changing
+discovery rules.
 
-Use `settings.foldLabels` to customize gutter buttons and collapsed summaries. This example labels
-import groups in French and shows whether hidden lines contain changes.
+Customize gutter buttons and summaries with `settings.foldLabels`.
 
 ```ts
 import type { FoldLabels } from "sttropez/browser";
@@ -41,13 +39,12 @@ export const frenchFolds: FoldLabels = {
 };
 ```
 
-`lineFrom` and `lineTo` are zero-based with an exclusive end. Hidden gutter numbers run from
-`lineFrom + 2` through `lineTo`. Return plain text or `undefined` for the default. Use
-`foldLabels: {}` to reset both labels. Comparison settings apply to both panes. Configure one
-editor to override that pane.
+`[lineFrom, lineTo)` is zero-based. Hidden gutter numbers run from `lineFrom + 2` through `lineTo`. Return
+text or `undefined` for the default. `foldLabels: {}` resets both. Comparison settings apply to both panes
+unless overridden on one editor.
 
-For a host outline, capture the document, view and fold version before starting discovery. Publish
-the complete outline to that view. Keep IDs stable and omit `collapsed` to retain the user's choices.
+Capture document, view and fold version before asynchronous discovery. Publish a complete outline with
+stable IDs. Omit `collapsed` to retain user choices.
 
 ```ts
 import type { DocumentView, FoldVersion } from "sttropez";
@@ -67,76 +64,71 @@ export function publishSection(
 
 ### How fold ranges map to visible rows
 
-A `FoldRange` covers `[from, to)` in UTF-16 offsets. Its first row is the header. Include at least
-one body row. Ending at the next line's start leaves that line visible. Folds must nest or stay
-disjoint, with one ID per header. Give each a unique nonempty ID of at most 256 units and an
-optional nonempty group. New folds default to expanded.
+A `FoldRange` spans `[from, to)` UTF-16 units with a header and at least one body row. Ending at a line
+start leaves that line visible. Folds must nest or stay disjoint, one per header. IDs are unique, nonempty
+and at most 256 units. Optional groups must be nonempty. New folds start expanded.
 
-`view.folding.setRanges(expected, ranges)` checks the view's revision and fold generation. A
-stale target returns `false`. Invalid ranges throw before publication. `setCollapsed` accepts
-one ID or an array. An empty array or unknown ID returns `false` for the whole request.
-`{ moveHiddenCarets: true }` gathers hidden carets at their header's end and merges coincident
-carets. Nonempty selections keep both endpoints. The view publishes folds and selections together.
+`view.folding.setRanges(expected, ranges)` returns `false` on stale revision or generation. Invalid ranges
+throw before publication. `setCollapsed` accepts one ID or an array. An empty array or any unknown ID
+refuses the whole request. `{ moveHiddenCarets: true }` gathers hidden carets at header ends and merges
+duplicates. Nonempty selections retain both endpoints. Folds and selections publish together.
 
-`FoldIndex.rowAt` maps a source line to its visible row. `lineAt` maps back, `headerAt` finds a
-header and `hiddenBy` finds the block concealing a line. `sameProjection` compares hidden rows.
-Reading `snapshot.regions` resolves the full list at the captured revision. Editing a boundary
-can expand or invalidate a fold. Folding leaves dirty state and document history unchanged.
+`FoldIndex.rowAt` maps source to visible row, `lineAt` maps back, `headerAt` finds a header, and `hiddenBy`
+identifies its containing fold. `sameProjection` compares hidden rows. `snapshot.regions` resolves all
+ranges at that revision. Boundary edits may expand or remove folds. Folding preserves dirty state and
+history.
 
 ### Discovery
 
-`discoverIndentationFolds` groups indented blocks, including interior blank lines and excluding
-trailing blank lines. Defaults are tab size 4 (range 1–256) and group `"indentation"`. Marker
-prefixes follow indentation and must end at whitespace or line end. Give both markers nonempty,
-single-line prefixes. Unclosed markers produce no fold.
+`discoverIndentationFolds` includes interior blanks and excludes trailing blanks. Tab size defaults to 4
+(1–256), group to `"indentation"`. Both marker prefixes must be nonempty and single-line. They follow
+indentation and end at whitespace or line end. Unclosed markers yield no fold.
 
-`createFoldingController` passes the captured document and an `AbortSignal` to discovery after
-`delayMs` (default 100, finite and nonnegative). Return ranges, `{ ranges, isCurrent }`, a cursor
-or a promise for any of these. The controller keeps the outer range at a shared header and drops
-crossing ranges. `initiallyCollapsed` applies to new folds. A block that grows over a visible
-selection endpoint opens. A late reply for an edited document or expired provider cannot replace
-the outline. Pending input settles before publication. On failure the mapped folds stay visible.
+`createFoldingController` supplies a captured document and `AbortSignal` after `delayMs` (default 100,
+finite and nonnegative). Return ranges, `{ ranges, isCurrent }`, a cursor or a promise for any. The
+controller retains the outer range at a shared header and drops crossings. `initiallyCollapsed` affects new
+folds. A block growing over a visible selection endpoint opens. Pending input settles before publication.
+Stale replies expire and failure leaves mapped folds visible.
 
-A discovery cursor supplies `next(budget)`, `snapshot()` and `dispose()`. Keep its options stable
-until completion and return the ranges at `ready`. The controller disposes late cursors too.
-Indentation discovery defaults to 4,096 work units per advance and accepts safe integers of at
-least 256. Reads, row visits and output contribute to the count. Long whitespace scans, native
-calls or host callbacks can exceed a turn. [Interaction clocks](README.md#measuring-an-interaction)
+A cursor returns ranges at `ready` via `next(budget)` and `snapshot()`. Keep options stable. The controller
+calls `dispose()` even for late cursors. Indentation discovery budgets visits, reads and output. Default
+4,096 units, minimum 256, safe integers. Whitespace scans, native calls and host callbacks can exceed a
+turn.
 
 ### Language-server discovery
 
-Use `createLspFoldingClient(provider)` for `textDocument/foldingRange`. Call `client.run({ document })`,
-cancel on abort and pass the resolved batch to the controller with its `isCurrent` guard intact.
-Dispose the client with its attachment. [Language server](language-server.md)
+`createLspFoldingClient(provider)` requests `textDocument/foldingRange` via `client.run({ document })`.
+Cancel on abort, pass its `isCurrent` guard to the controller and dispose with the attachment.
+[Language server](language-server.md)
 
-The client turns inclusive LSP end lines into exclusive source offsets and uses server kinds as
-groups. It ignores character positions, collapsed text and ranges outside the document or with no
-body row. Bare CR divides LSP lines, but the editor needs an LF to show a second row. A malformed
-reply rejects the batch. An expired capture rejects with RPC code `-32801`.
+Inclusive LSP end lines become exclusive offsets. Server kinds become groups. Character positions, collapsed
+text, out-of-document ranges and ranges without body rows are ignored. Bare CR divides LSP lines, while the
+editor needs LF for a second row. Malformed replies reject the batch. Expired captures reject with RPC code
+`-32801`.
 
 ### Commands and interaction
 
-- **Toggle.** Ctrl/Cmd+Shift+[ collapses at the caret and Ctrl/Cmd+Shift+] expands. The commands
-  are `fold.collapse` and `fold.expand`. `fold.collapse-all` and `fold.expand-all` act across the
-  view. Pass a group to limit a command, for example `editor.commands.run("fold.collapse-all", "imports")`.
-- **Type and navigate.** A gutter click or collapse command moves a hidden insertion caret to
-  the header's end. Typing there edits the header. Arrow and Page keys skip hidden rows. Find or
-  an explicit reveal opens the target. A host can keep a logical caret inside a fold.
-- **Select and move lines.** Selecting the header with the gutter, a triple-click or Ctrl/Cmd+L
-  includes its body and following line ending. Moving a folded block carries its folds through
-  Undo and Redo. Duplicating it leaves the copy expanded. Undoing Delete Lines restores the block
-  and each pane's fold choices.
-- **Gutter and review.** Clicking the disclosure returns focus to the editor. A focused button
-  handles Enter or Space, and Escape returns to the input. Clicking a hidden-line count opens the
-  fold and preserves selection. The count adds no clipboard text. Revealing a hunk opens the target
-  in its pane.
+Ctrl/Cmd+Shift+[ and Ctrl/Cmd+Shift+] run `fold.collapse` and `fold.expand` at the caret.
+`fold.collapse-all` and `fold.expand-all` take an optional group, e.g.
+`editor.commands.run("fold.collapse-all", "imports")`.
+
+Gutter and command collapse move a hidden caret to the header end, where typing edits the header. Arrows and
+Page keys skip hidden rows. Find, hunk navigation and explicit reveal open their target. A host may retain a
+logical caret inside a fold.
+
+Gutter line selection, triple-click and Ctrl/Cmd+L include the body and following ending. Moving a block
+retains folds through Undo/Redo. A duplicate starts expanded. Undoing Delete Lines restores each pane’s fold
+choices.
+
+Clicking the disclosure returns editor focus. A focused disclosure handles Enter or Space. Escape returns to
+the input. Clicking the hidden-line count expands while preserving selection. Counts add no clipboard text.
 
 ## Host responsibilities
 
-Combine outline sources before `setRanges`. Abort superseded work, publish after workspace
-notifications and dispose controllers and subscriptions on detach. Retain the `DocumentView`
-to keep its folds across remounts. [Restoring a saved view](viewport.md#scrolling-and-saved-views)
+Combine outline sources before `setRanges`. Abort superseded work. Publish after workspace notifications and
+dispose subscriptions and controllers on detach. Retain the `DocumentView` for remount.
+[View restoration](viewport.md#scrolling-and-saved-views)
 
 ## Not covered
 
-See the [support matrix](README.md#support-matrix) for display limits.
+[Display limits](README.md#support-matrix)
