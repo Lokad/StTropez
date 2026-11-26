@@ -189,8 +189,11 @@ function save(review?: SaveReview): boolean {
         showSaveState();
     } else {
         competingText = undefined;
-        baseline = { buffer, version: String(ticket.revision) };
-        refreshBaseline();
+        saveReviewed.hidden = true;
+        if (!baseline.buffer.equals(buffer)) {
+            baseline = { buffer, version: String(ticket.revision) };
+            refreshBaseline();
+        }
         saved.value = "Saved";
     }
     if (review) current.editor.focus();

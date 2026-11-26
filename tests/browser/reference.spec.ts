@@ -384,6 +384,8 @@ test("returning to Changes restores the saved view and layout across working edi
     await page.goto("/reference/");
     const changes = page.getByRole("button", { name: "Changes", exact: true });
     const source = page.getByRole("button", { name: "Source", exact: true });
+    const save = page.getByRole("button", { name: "Save for this tab" });
+    await save.click();
     await changes.click();
     const panes = page.locator(".st-comparison-panes > section");
     const baseline = panes.first().getByRole("textbox");
@@ -402,8 +404,12 @@ test("returning to Changes restores the saved view and layout across working edi
     expect(original).toEqual(['export const accent = "#5fae99";', "backward"]);
 
     await source.click();
-    await page.getByRole("textbox", { name: "quote.ts" }).press("Control+End");
+    const input = page.getByRole("textbox", { name: "quote.ts" });
+    await input.press("Control+End");
     await page.keyboard.insertText("// later edit");
+    await input.press("Control+z");
+    await save.click();
+    await input.press("Control+y");
     await changes.click();
     await expect(working).toBeFocused();
     await expect.poll(selection).toEqual(original);
@@ -414,7 +420,7 @@ test("returning to Changes restores the saved view and layout across working edi
 
     await link.uncheck();
     await source.click();
-    await page.getByRole("button", { name: "Save for this tab" }).click();
+    await save.click();
     await changes.click();
     await expect(baseline).toHaveValue(/later edit$/);
     await expect(baseline).toHaveJSProperty("selectionEnd", 0);
