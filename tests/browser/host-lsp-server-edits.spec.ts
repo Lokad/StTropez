@@ -81,9 +81,9 @@ test.describe(`plain LSP server edits`, () => {
         await expect(page.getByLabel("Workspace provider status", { exact: true })).toHaveText("An edit target is read-only or locked.");
         await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
         await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
-        for (const mode of ["selection", "typing", "remount"] as const) {
+        for (const mode of ["typing", "remount"] as const) {
             await select(page); if (!(await snapshot(page)).bindings.project.registered) await register(page); await request(page); const captured = await page.evaluateHandle(() => window.hostFixture.snapshot().bindings.project.state.review!);
-            if (mode === "selection") await select(page, 8); else if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); await editors(page); await input(page).press("Control+z"); } else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
+            if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("x"); await editors(page); await input(page).press("Control+z"); } else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
             await done(page); await captured.evaluate(review => review.apply()); await exact(page, raw);
         }
         expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth);
@@ -137,10 +137,9 @@ test.describe(`plain LSP server edits`, () => {
             expect((await snapshot(page)).bindings.project).toMatchObject({ pending: true, applied: 0, state: { review: null } });
         };
         const deliver = async () => { expect(release).toBeDefined(); release!(); release = undefined; await page.evaluate(() => window.hostFixture.providerCustom("fixture/state", {})); };
-        for (const mode of ["typing", "selection", "authority", "lease", "remount"] as const) {
+        for (const mode of ["typing", "authority", "lease", "remount"] as const) {
             await hold();
             if (mode === "typing") { await input(page).press("Control+End"); await input(page).pressSequentially("X"); current += "X"; }
-            else if (mode === "selection") await select(page, 8);
             else if (mode === "authority") await page.evaluate(() => { window.hostFixture.setSourceReadOnly(true); window.hostFixture.setSourceReadOnly(false); });
             else if (mode === "lease") await page.evaluate(() => window.hostFixture.cycleSourceEditLease());
             else await page.evaluate(() => { window.hostFixture.unmount(); window.hostFixture.mount(); });
@@ -151,7 +150,8 @@ test.describe(`plain LSP server edits`, () => {
             expect(after.bindings.project).toMatchObject({ pending: false, applied: 0, state: { review: null } }); await expect(button(page, "Apply captured provider edits")).toBeDisabled();
             expect(await page.evaluate(id => window.hostFixture.navigationDocument(id).text, companion)).toBe(companionText);
         }
-        await hold(); const before = await snapshot(page), form = input(page, "Configuration path"); await form.fill("during-provider.csv");
+        await hold(); await select(page, 8);
+        const before = await snapshot(page), form = input(page, "Configuration path"); await form.fill("during-provider.csv");
         await deliver(); await expect.poll(async () => !!(await snapshot(page)).bindings.project.state.review).toBe(true); await expect(form).toBeFocused(); await exact(page, current);
         expect((await snapshot(page)).history).toEqual(before.history); await button(page, "Apply captured provider edits").click(); await done(page);
         await exact(page, header + current + footer); expect((await snapshot(page)).history.undoDepth).toBe(before.history.undoDepth + 1);

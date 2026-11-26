@@ -472,7 +472,13 @@ test("command review is exclusive and cancellation quarantines uncorrelated edit
     await a.ensureConnected();
     const reservation = a.reserveCommand(async (_value, captured) => { context = captured; const stop = captured.onCancel(() => cancelled.resolve()); entered.resolve(); try { return await decision.promise; } finally { stop(); } });
     assert.throws(() => a.requestCommand("test.edit"), RpcError);
-    const peer = f.peers[0]!; peer.rpc.onRequest("workspace/executeCommand", async () => peer.rpc.sendRequest("workspace/applyEdit", { edit: { changes: {} } }));
+    const peer = f.peers[0]!;
+    const finish = latch<void>();
+    peer.rpc.onRequest("workspace/executeCommand", async () => {
+        await peer.rpc.sendRequest("workspace/applyEdit", { edit: { changes: {} } });
+        await finish.promise;
+        return "done";
+    });
     const call = reservation.requestCommand("test.edit"), rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32800); await entered.promise;
     assert.ok(context!.isCurrent()); assert.throws(() => b.requestCommand("test.edit"), RpcError);
     assert.deepEqual(await b.requestDocument("textDocument/definition", b.attachDocument(f.source.documentId), index => ({ position: index.at(0) })).result, []);
@@ -481,8 +487,17 @@ test("command review is exclusive and cancellation quarantines uncorrelated edit
     assert.deepEqual(await peer.rpc.sendRequest("workspace/applyEdit", { edit: { changes: {} } }), { applied: false, failureReason: "No available captured command review intent." });
     assert.equal(f.provider.getSnapshot().phase, "ready");
     assert.ok(b.synchronized(b.attachDocument(f.source.documentId))!.isCurrent()); assert.equal(doc.getSnapshot().buffer.length, "a😀\r\nsource".length);
-    await f.provider.reconnect(); assert.equal(f.provider.snapshot().commandQuarantined, false); assert.equal(f.provider.getSnapshot().commandAvailable, true);
-    f.peers[1]!.rpc.onRequest("workspace/executeCommand", () => "done"); const next = b.requestCommand("test.edit"); assert.equal(await next.result, "done"); assert.equal(next.isCurrent(), true);
+    const epoch = f.provider.getSnapshot().epoch;
+    const available = latch<void>();
+    const stop = f.provider.subscribe(() => { if (f.provider.getSnapshot().commandAvailable) available.resolve(); });
+    finish.resolve();
+    await available.promise;
+    stop();
+    assert.equal(f.provider.getSnapshot().epoch, epoch);
+    assert.equal(f.provider.snapshot().commandQuarantined, false);
+    const next = b.requestCommand("test.edit");
+    assert.equal(await next.result, "done");
+    assert.equal(next.isCurrent(), true);
 });
 
 test("a rejected oversized update expires associations but preserves unrelated documents and local text", async t => {
@@ -609,9 +624,10 @@ test("command reservation blocks competing preparation before sync and preserves
     const pending = first.run("test.edit", [], scope("A")), rejected = assert.rejects(pending, error => error instanceof RpcError && error.code === -32800);
     await assert.rejects(second.run("test.edit", [], scope("B")), RpcError); assert.equal(prepared, 1); await entered.promise;
     assert.deepEqual(await b.requestDocument("textDocument/definition", b.attachDocument(f.source.documentId), index => ({ position: index.at(0) })).result, []);
-    first.dispose(); await rejected; answer.resolve("late"); await settled();
+    first.dispose(); await rejected;
     await assert.rejects(second.run("test.edit", [], scope("B")), RpcError); assert.equal(prepared, 1); assert.equal(f.provider.getSnapshot().phase, "ready");
     await f.provider.reconnect(); f.peers[1]!.rpc.onRequest("workspace/executeCommand", () => "done"); await second.run("test.edit", [], scope("B"));
+    answer.resolve("late");
     const buffer = f.workspace.document(f.source.documentId).buffer; assert.equal(buffer.slice(0, buffer.length), "a😀\r\nsourceAB"); assert.equal(prepared, 2);
     const reservation = b.reserveCommand(); assert.equal(reservation.isCurrent(), true); reservation.release(); assert.equal(f.provider.getSnapshot().commandAvailable, true);
     assert.equal(f.provider.getSnapshot().commandRequiresReconnect, false); assert.ok(a.synchronized(doc)!.isCurrent()); assert.deepEqual(f.errors, []);

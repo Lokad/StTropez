@@ -53,6 +53,11 @@ export function sameEditAuthority(before: ResourceMetadata, after: ResourceMetad
 /** One retained view context. Observable interruptions latch even if the original state returns. */
 export function captureViewRequest<T extends TabTarget | undefined>(workspace: Workspace, target: T, view: DocumentView,
     options: CapturedViewOptions = {}): CapturedViewRequest<T> | undefined {
+    return captureRequest(workspace, target, view, options, true);
+}
+
+export function captureRequest<T extends TabTarget | undefined>(workspace: Workspace, target: T, view: DocumentView,
+    options: CapturedViewOptions, selectionBound: boolean): CapturedViewRequest<T> | undefined {
     const { editOrigin, available = () => true } = options;
     const capturedTarget = target && Object.freeze({ ...target });
     if (!workspace.ownsDocumentView(view, capturedTarget) || !available()) return;
@@ -71,8 +76,9 @@ export function captureViewRequest<T extends TabTarget | undefined>(workspace: W
     };
     const matches = () => {
         return lease.active() && workspace.ownsDocumentView(view, capturedTarget)
-            && workspace.observeDocument(document.id).getSnapshot()?.revision === document.revision && view.getSnapshot().selectionSet === selectionSet
-            && folding.index.sameProjection(view.folding.getSnapshot().index) && sameEditAuthority(permission, resource.metadata.getSnapshot()) && available();
+            && workspace.observeDocument(document.id).getSnapshot()?.revision === document.revision
+            && (!selectionBound || view.getSnapshot().selectionSet === selectionSet && folding.index.sameProjection(view.folding.getSnapshot().index))
+            && sameEditAuthority(permission, resource.metadata.getSnapshot()) && available();
     };
     const isCurrent = () => {
         if (!active) return false;

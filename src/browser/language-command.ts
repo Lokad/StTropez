@@ -9,7 +9,7 @@ import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspApplyEdit, LspWorkspaceEdit } from "../protocol/lsp-features.ts";
 import type { LspDocument, LspRequestContext } from "../protocol/lsp-session.ts";
 import { isStaleRequest, staleRequest, type JsonValue } from "../protocol/wire.ts";
-import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
+import { captureRequest, editorReadyForRequest } from "./captured-view.ts";
 import { retainEditProject, writableEdit } from "./edit-project.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -32,14 +32,14 @@ export type LanguageCommands = Observable<readonly ChangedDocument[]> & Readonly
 }>;
 
 /** Retain the requesting view and its exact edit targets until the caller releases the operation. */
-export function captureEditCommand(editor: TextEditor, options: LanguageCommandOptions, expire: () => void) {
+export function captureEditCommand(editor: TextEditor, options: LanguageCommandOptions, expire: () => void, selectionBound = true) {
     const { workspace, view, tab } = editor;
     function available(id: DocumentId) {
         const activity = editor.activity();
         return editorReadyForRequest(editor, activity) && !activity.pendingGrapheme && !activity.pendingWord
             && (options.canCapture?.(id) ?? true);
     }
-    const capture = () => captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) });
+    const capture = () => captureRequest(workspace, tab, view, { available: () => available(view.documentId) }, selectionBound);
     const first = capture();
     if (!first) return;
     let source = first;
@@ -149,7 +149,7 @@ export function mountLanguageCommands(editor: TextEditor, owner: LspDocumentOwne
         try {
             captured = captureEditCommand(editor, options, () => queueMicrotask(() => {
                 if (captured && active === captured) cancel();
-            }));
+            }), false);
             if (!captured) return refused("unavailable-view");
             active = captured;
             captured.collectDocuments();

@@ -97,6 +97,7 @@ const reservedIncoming = (method: string) => ["initialize", "initialized", "shut
 
 /** Host-driven LSP 3.17 session. This module owns no sockets, timers, documents or editor UI. */
 export class LspSession {
+    readonly #onReply: ((epoch: number, id: number) => boolean) | undefined;
     readonly #options: LspSessionOptions;
     readonly #scope: NotificationScope;
     readonly #store: Store<LspSessionSnapshot>;
@@ -136,7 +137,8 @@ export class LspSession {
     readonly #waiters = new Set<SyncWaiter>();
     readonly #documentCalls = new Set<LspCall<unknown>>();
 
-    constructor(options: LspSessionOptions) {
+    constructor(options: LspSessionOptions, onReply?: (epoch: number, id: number) => boolean) {
+        this.#onReply = onReply;
         this.#options = Object.freeze({ ...options,
             ...(options.features ? { features: Object.freeze([...options.features]) } : {}),
             ...(options.rpc ? { rpc: Object.freeze({ ...options.rpc }) } : {}) });
@@ -238,6 +240,7 @@ export class LspSession {
         catch (error) { void raced.catch(() => {}); throw error; } finally { this.#release(stopDeadline); }
         if (!this.#current(epoch)) { this.#release(() => transport.dispose()); throw closed(); }
         const rpc = new JsonRpcConnection(transport, { ...this.#options.rpc, schedule: this.#options.schedule, onError: error => this.#report(error),
+            onReply: id => this.#onReply?.(epoch, id),
             notifyCancellation: () => this.#current(epoch) && this.#phase !== "stopping",
             onClose: error => { void Promise.resolve().then(() => { if (this.#current(epoch)) this.#drop(error); }); } });
         if (!this.#current(epoch)) {

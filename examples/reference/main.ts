@@ -107,7 +107,8 @@ function renderConnection() {
     connect.disabled = !(phase === "disconnected" || (ready && commandRequiresReconnect));
     connect.textContent = !ready ? "Connect language server"
         : commandRequiresReconnect ? "Reconnect language server" : "Language server connected";
-    connection.value = error ?? (commandRequiresReconnect ? "Reconnect to run another server command."
+    connection.value = error ?? (commandRequiresReconnect ? "Waiting for the cancelled command’s reply. Reconnect to run another command now."
+        : ready && !commandAvailable ? "Server command running…"
         : phase === "connecting" || phase === "initializing" ? "Connecting…" : "");
 }
 const stopConnection = provider.subscribe(renderConnection);

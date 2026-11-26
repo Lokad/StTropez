@@ -55,7 +55,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
         if (request !== intent || events.signal.aborted) return;
         if (outcome.status === "done") render(outcome.value);
         else if (outcome.status === "failed") result.value = String(outcome.error);
-        else result.value = outcome.status === "stale" ? "The source changed. Try again." : outcome.reason;
+        else result.value = outcome.status === "stale" ? "Request cancelled." : outcome.reason;
     }
     function renderDiagnostics() {
         problems.replaceChildren(...language.diagnostics.getSnapshot().diagnostics.map(item =>

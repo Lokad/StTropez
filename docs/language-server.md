@@ -188,9 +188,10 @@ Use `runner.sync(scope, prepare)` for synchronized extensions. For raw review, r
 `scope.reserveCommand(handler)` in `finally`. Use `scope.request` independently only if the server
 guarantees the command sends no edits.
 
-After interruption check `commandRequiresReconnect`. Cancellation before send frees the reservation. After
-send, late edits lack a command ID. Even a ready connection can require `provider.reconnect()` and a fresh
-choice for further commands. Committed edits remain undoable.
+Moving the caret preserves standalone commands. Cancelling before send frees the reservation. After send,
+edits lack a command ID. StTropez declines them until the matching reply arrives. While
+`commandRequiresReconnect` is true, wait or call `provider.reconnect()` for a fresh command. Earlier edits
+remain undoable.
 
 ### Limits and failures
 

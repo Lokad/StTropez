@@ -21,6 +21,7 @@ type RequestHandler = (params: unknown, context: RpcRequestContext) => unknown |
 type NotificationHandler = (params: unknown) => void | Promise<void>;
 type Message = Record<string, unknown>;
 type Pending = { resolve: (value: JsonValue) => void; reject: (error: Error) => void; stop: () => void };
+type ConnectionOptions = RpcOptions & { onReply?: (id: number) => boolean | undefined };
 type Incoming = { context: RpcRequestContext; cancel: () => void };
 
 const has = (value: Message, key: string) => Object.prototype.hasOwnProperty.call(value, key);
@@ -34,7 +35,7 @@ const failure = (id: RpcId, code: number, message: string, data?: JsonValue) => 
 /** Bidirectional JSON-RPC 2.0 over an ordered, message-delimited host transport. */
 export class JsonRpcConnection {
     readonly #transport: RpcTransport;
-    readonly #options: RpcOptions;
+    readonly #options: ConnectionOptions;
     readonly #timeoutMs: number;
     readonly #maxPending: number;
     readonly #maxMessageUnits: number;
@@ -47,7 +48,7 @@ export class JsonRpcConnection {
     #serial = 0;
     #disposed = false;
 
-    constructor(transport: RpcTransport, options: RpcOptions) {
+    constructor(transport: RpcTransport, options: ConnectionOptions) {
         this.#transport = transport; this.#options = options;
         this.#timeoutMs = options.timeoutMs ?? wireLimits.timeoutMs; this.#maxPending = options.maxPending ?? wireLimits.pendingRequests; this.#maxMessageUnits = options.maxMessageUnits ?? wireLimits.messageUnits;
         this.#maxJsonNodes = options.maxJsonNodes ?? this.#maxMessageUnits;
@@ -158,8 +159,9 @@ export class JsonRpcConnection {
             }
             const entry = typeof value.id === "number" ? this.#pending.get(value.id) : undefined;
             const error = has(value, "error") ? value.error as Message : undefined;
+            const expected = typeof value.id === "number" && this.#options.onReply?.(value.id);
             const rejected = error && new RpcError(error.code as number, error.message as string, error.data as JsonValue | undefined);
-            if (!entry) { if (rejected) this.#report(rejected); return; } // Late replies cannot complete another request.
+            if (!entry) { if (rejected && !expected) this.#report(rejected); return; }
             this.#pending.delete(value.id as number); this.#release(entry.stop);
             if (rejected) entry.reject(rejected);
             else entry.resolve(value.result as JsonValue);

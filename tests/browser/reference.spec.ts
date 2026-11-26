@@ -287,7 +287,7 @@ test("reconnecting the reference host requires a fresh server command choice", a
             const request = JSON.parse(packet.toString());
             if (request.method === "workspace/executeCommand") {
                 executions.push(connection);
-                if (connection === 2) heldId = request.id;
+                if (connection === 2 && executions.length <= 2) heldId = request.id;
             }
             server.send(packet);
         });
@@ -308,20 +308,28 @@ test("reconnecting the reference host requires a fresh server command choice", a
     await run.click();
     await command.click();
     await expect.poll(() => !!lateReply).toBe(true);
+    const source = page.getByRole("textbox", { name: "quote.ts" });
+    await source.press("ArrowRight");
+    await expect(page.getByText("Server command running…")).toBeVisible();
+    lateReply!();
+    await expect(page.locator("#result")).toHaveText("Command completed");
+    lateReply = undefined;
+    await run.click();
+    await command.click();
+    await expect.poll(() => !!lateReply).toBe(true);
     await page.getByRole("button", { name: "Changes", exact: true }).click();
     const working = page.getByRole("textbox", { name: "Comparison working source" });
     const reconnect = page.getByRole("button", { name: "Reconnect language server", exact: true });
     await expect(reconnect).toBeEnabled();
     await expect(run).toBeDisabled();
-    lateReply!();
     await working.press("Control+End");
     const original = await working.inputValue();
     await page.keyboard.type("X");
     await expect(working).toHaveValue(original + "X");
-    await reconnect.click();
+    lateReply!();
     await expect(run).toBeEnabled();
     await expect(command).toHaveCount(0);
-    expect(executions).toEqual([2]);
+    expect(executions).toEqual([2, 2]);
     await run.focus();
     await page.keyboard.press("Enter");
     await page.keyboard.press("Tab");
@@ -332,7 +340,7 @@ test("reconnecting the reference host requires a fresh server command choice", a
     await page.keyboard.type("X");
     await expect(working).toHaveValue(original + "X\nX");
     await expect(page.getByRole("textbox", { name: "Comparison baseline source" })).toHaveValue(original);
-    expect(executions).toEqual([2, 3]);
+    expect(executions).toEqual([2, 2, 2]);
 });
 
 test("two reference hosts review a competing save before replacing it", async ({ page }) => {
