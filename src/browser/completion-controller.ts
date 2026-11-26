@@ -13,7 +13,7 @@ import { controllerObservable } from "./controller-observable.ts";
 import { isStaleRequest, ProtocolDecodeError, staleRequest } from "../protocol/wire.ts";
 import { lspCompletionPlan } from "../protocol/lsp-features.ts";
 import { acceptedTypedText, dispatchTypedText, typedTextEvent } from "./input-events.ts";
-import { codeWordConstituentPattern } from "../core/word-patterns.ts";
+import { completionWordRange, filterCompletions, hasNamedPrefix, isCompletionWord } from "./completion-prefix.ts";
 import type { DocumentViewSnapshot, ResourceLease, ResourceMetadata } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { planSnippetEdit, planSnippetChoice, snippetChoiceText } from "../core/snippets.ts";
@@ -25,7 +25,7 @@ import type { TextEditor } from "./text-editor.ts";
 import { editorInput } from "./editor-input.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
 import { isMountedEditor, sameEditAuthority } from "./captured-view.ts";
-import type { LspCall, LspCompletion, LspCompletions, LspCompletionFallback, LspScopeAccess, LspWorkspaceSnapshot } from "../protocol/index.ts";
+import type { LspCall, LspCompletion, LspCompletions, LspScopeAccess, LspWorkspaceSnapshot } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 
@@ -57,11 +57,6 @@ export type CompletionControllerOptions = Readonly<{ autoConnect?: boolean; auto
 export type CompletionController = Observable<CompletionSnapshot> & Readonly<{ request: () => Promise<Outcome<CompletionSnapshot>>; cancel: () => void; connect: () => void;
     dispose: () => void;
     getDiagnostics: () => Readonly<{ lastCompletionBeforeInputMs: number; lastCompletionCommandMs: number }> }>;
-const word = new RegExp(`^(?:${codeWordConstituentPattern})$`, "u");
-// A word prefix can end in digits. A run of decimal digits on its own has no name to complete.
-const namedPrefix = new RegExp(`(?:\\$|(?!\\p{Nd})${codeWordConstituentPattern})\\p{Nd}*$`, "u");
-const hasNamedPrefix = (buffer: TextBuffer, head: number) => namedPrefix.test(buffer.slice(Math.max(0, head - 2048), head));
-
 function connectionStatus(phase: LspWorkspaceSnapshot["phase"]): CompletionSnapshot["status"] {
     if (phase === "ready") return "idle";
     if (phase === "connecting" || phase === "initializing") return "connecting";
@@ -180,27 +175,12 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             closeList("failed");
         });
     };
-    const wordRange = (buffer: TextBuffer, offset: number): LspCompletionFallback => {
-        const from = Math.max(0, offset - 2048), to = Math.min(buffer.length, offset + 2048), text = buffer.slice(from, to), at = offset - from;
-        let low = at, high = at;
-        for (const point of Array.from(text.slice(0, at)).reverse()) { if (!word.test(point)) break; low -= point.length; }
-        for (const point of text.slice(at)) { if (!word.test(point)) break; high += point.length; }
-        if (low === 0 && from > 0 || high === text.length && to < buffer.length) throw new RangeError("Completion word extends beyond the bounded window.");
-        return { from: from + low, to: offset, replaceTo: from + high };
-    };
-    const filter = (captured: Job, prefix: boolean) => {
-        const selected = captured.visible[captured.choice], prefixes = new Map<number, string>();
-        captured.visible = Object.freeze((captured.batch?.items ?? []).filter(item => {
-            // Providers may include punctuation (for example the member-access dot) in their
-            // edit/filter prefix. Query that exact range, with the same bounded word-read limit.
-            const from = item.primary.from, units = captured.caret - from;
-            if (!prefixes.has(from)) prefixes.set(from, prefix && units >= 0 && units <= 2048 ? captured.buffer.slice(from, captured.caret).toLowerCase() : "");
-            const content = prefixes.get(from)!;
-            return !content || item.filterText.toLowerCase().startsWith(content);
-        }));
-        const previous = selected && captured.visible.findIndex(item => item === selected); captured.choice = previous !== undefined && previous >= 0 ? previous : Math.max(0, captured.visible.findIndex(item => item.preselect));
+    function filter(captured: Job, prefix: boolean, selected = captured.visible[captured.choice]) {
+        const result = filterCompletions(captured.batch?.items ?? emptyList, captured.buffer, captured.caret, prefix, selected);
+        captured.visible = result.visible;
+        captured.choice = result.choice;
         captured.id = workspace.allocateIdentity();
-    };
+    }
     const request = async (invocation: Invocation = { kind: 1 }, moving?: Job): Promise<Outcome<CompletionSnapshot>> => {
         notifications.assertWritable();
         let owned: Job | undefined;
@@ -246,7 +226,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
                 context: invocation.kind === 2 ? { triggerKind: 2, triggerCharacter: invocation.character! } : { triggerKind: invocation.kind },
                 fallback: () => {
                     if (selected.anchor !== selected.head) return { from: Math.min(selected.anchor, selected.head), to: caret, replaceTo: caret };
-                    const fallback = wordRange(document.buffer, caret);
+                    const fallback = completionWordRange(document.buffer, caret);
                     return field ? { from: Math.max(field.from, fallback.from), to: caret, replaceTo: Math.min(field.to, fallback.replaceTo) } : fallback;
                 }, indentation: captured.indentation,
                 ...(previous?.batch ? { retain: previous.batch } : {}),
@@ -428,9 +408,9 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             if (following && change && edit.edits.length === 1 && before.selectionSet.ranges.length === 1 && caret.anchor === caret.head
                 && change.to === caret.head && edit.expectedRevision === before.revision) {
                 const typing = edit.kind === "typing" && change.from === caret.head && change.insert.length > 0 && change.insert.length <= 2048
-                    && Array.from(change.insert).every(point => word.test(point));
+                    && isCompletionWord(change.insert);
                 const backspace = edit.kind === "delete" && change.insert === "" && change.from < change.to && change.to - change.from <= 2048
-                    && Array.from(currentDocument().buffer.slice(change.from, change.to)).every(point => word.test(point));
+                    && isCompletionWord(currentDocument().buffer.slice(change.from, change.to));
                 if (typing || backspace) {
                     prefixEdit = { before, head: change.from + change.insert.length, backspace };
                     return { edits: edit.edits, selectionSet: edit.selectionSet, complete: () => { prefixEdit = undefined; } };
@@ -482,7 +462,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         const tail = text.slice(-8), head = after.selection.head;
         const buffer = currentDocument().buffer;
         if (head < tail.length || buffer.slice(head - tail.length, head) !== tail) return;
-        const isWord = text.length <= 2048 && Array.from(text).every(point => word.test(point))
+        const isWord = text.length <= 2048 && isCompletionWord(text)
             && (!/\p{Nd}$/u.test(text) || hasNamedPrefix(buffer, head));
         inputIntent = { target: after, text: tail, word: isWord, backspace: false }; scheduleAuto();
     }
@@ -528,8 +508,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
                 captured.batch = rebased; captured.revision = document.revision; captured.buffer = document.buffer;
                 captured.caret = caret.head; captured.selections = selected; captured.folding = currentFolding();
                 stopListRefresh(captured);
-                filter(captured, true);
-                const choice = selectedIndex < 0 ? -1 : captured.visible.indexOf(rebased.items[selectedIndex]!); if (choice >= 0) captured.choice = choice;
+                filter(captured, true, rebased.items[selectedIndex]);
                 publish("ready"); return;
             }
         }
@@ -600,7 +579,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         const to = Math.max(before.head, selection.head);
         if (moved && captured.selections.ranges.length === 1 && selectionSet.ranges.length === 1
             && before.head === before.anchor && selection.head === selection.anchor && current(captured, selectionSet)
-            && from < to && to - from <= 2048 && Array.from(captured.buffer.slice(from, to)).every(point => word.test(point))) {
+            && from < to && to - from <= 2048 && isCompletionWord(captured.buffer.slice(from, to))) {
             void request({ kind: 1, automatic: true }, captured);
         } else closeList("expired");
         return moved;
