@@ -19,7 +19,7 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [core/graphemes.ts](../src/core/graphemes.ts) | `GraphemeCursor`, `GraphemeOptions`, `GraphemeProgress`, `GraphemeRange`, `GraphemeSource` |
 | [core/history.ts](../src/core/history.ts) | `EditKind`, `HistoryOptions`, `HistorySnapshot` |
 | [core/language-configuration.ts](../src/core/language-configuration.ts) | `EditingPair`, `EnterIndent`, `LanguageConfiguration`, `LanguageEditContext`, `PairingContext`, `ResolvedLanguageConfiguration`, `resolveLanguageConfiguration` |
-| [core/language-edits.ts](../src/core/language-edits.ts) | `EditingCommand`, `LanguageEditCursor`, `LanguageEditProgress`, `planLanguageEdit` |
+| [core/language-edits.ts](../src/core/language-edits.ts) | `EditingCommand`, `planLanguageEdit` |
 | [core/newlines.ts](../src/core/newlines.ts) | `ImportedText`, `LineEnding`, `exportText`, `importText` |
 | [core/observable.ts](../src/core/observable.ts) | `AfterDelivery`, `Observable`, `ObservableListener` |
 | [core/positions.ts](../src/core/positions.ts) | `Affinity`, `AnchoredRange`, `MappedPosition`, `PositionMapping`, `anchoredRange` |

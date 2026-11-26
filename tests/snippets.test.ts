@@ -125,9 +125,7 @@ test("deleting generated indentation changes each mirror instead of collapsing t
 test("editor newline plans mirror current local indentation, including after literal paste changed it", () => {
     for (const enter of [undefined, "keep"] as const) for (const values of [["a\n        b", "a\n    b"], ["raw\nb", "raw\nb"]]) {
         const { buffer, stops } = contextual(values), selections = createSelectionSet(buffer.length, stops[0]!.ranges.map(range => ({ anchor: range.to, head: range.to })), 1);
-        const command = planLanguageEdit(buffer, selections, "newline", resolveLanguageConfiguration(enter ? { enter } : {}));
-        let step = command.next(); while (step.status === "running") step = command.next();
-        assert.ok(step.result); const result = step.result; command.dispose();
+        const result = planLanguageEdit(buffer, selections, "newline", resolveLanguageConfiguration(enter ? { enter } : {}));
         const plan = planSnippetEdit(buffer, stops, 0, result.edits, selections, result.selectionSet, !!enter)!;
         assert.ok(plan, JSON.stringify({ values, edits: result.edits, selections, after: result.selectionSet })); const next = buffer.apply(plan.edits).buffer;
         assert.equal(next.text(), buffer.apply(result.edits).buffer.text());

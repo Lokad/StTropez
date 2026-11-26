@@ -72,13 +72,10 @@ test("rediscovery keeps the moved block collapsed through repeated moves, Undo a
     }
     function move(command: "move-line-up" | "move-line-down") {
         const { revision, buffer } = document();
-        const planner = planLanguageEdit(buffer, view.getSnapshot().selectionSet, command,
+        const plan = planLanguageEdit(buffer, view.getSnapshot().selectionSet, command,
             resolveLanguageConfiguration(), folds.getSnapshot().index);
-        try {
-            const plan = planner.next(4096).result!;
-            assert.ok(workspace.edit({ documentId: id, view, expectedRevision: revision, origin: "human",
-                edits: plan.edits, selectionSet: plan.selectionSet }).applied);
-        } finally { planner.dispose(); }
+        assert.ok(workspace.edit({ documentId: id, view, expectedRevision: revision, origin: "human",
+            edits: plan.edits, selectionSet: plan.selectionSet }).applied);
     }
     discover();
     const header = folds.getSnapshot().index.headerAt(1)!;

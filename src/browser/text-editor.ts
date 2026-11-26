@@ -638,13 +638,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (direction > 0 || !offset || !/[ \t]/.test(capture.buffer.slice(offset - 1, offset))) { adjacent(); return; }
             const start = capture.buffer.offsetAt(capture.buffer.lineAt(offset));
             const columns = scanColumns(start, offset, true);
-            const step = () => commandTurn(() => {
-                if (!validCommand(capture)) { cancelPendingCommand(); return; }
-                const result = commandRunner.slice(() => columns.next(), result => !result.done, commandBudget.wordCalls);
-                if (!result.done) { cancelRangeTask = commandRunner.schedule(() => { cancelRangeTask = undefined; step(); }); return; }
-                if (result.value.indentation) done({ anchor: result.value.previousStop, head: offset }); else adjacent();
-            });
-            step();
+            if (columns.indentation) done({ anchor: columns.previousStop, head: offset });
+            else adjacent();
         }, ranges => finishRanges(capture, ranges, direction < 0 ? "deleteContentBackward" : "deleteContentForward"));
         return true;
     }
@@ -987,20 +982,17 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const folds = typeof command === "string" && command !== "newline" && command !== "block-comment"
             ? currentFolds() : undefined;
         const opening = typeof command === "object" ? language.pairs.find(pair => pair.open === command.character) : undefined;
-        const planner = planLanguageEdit(capture.buffer, capture.selectionSet, typeof command === "string" ? command : {
-            character: command.character, canOvertype: at => {
-                if (!paired.has(at)) return false;
-                overtyped.push(at); return true;
-            },
-        }, language, folds);
         const acceptPairs = (edits: readonly TextEdit[]) => paired.accept(currentDocument(), capture.revision, edits, capture.selectionSet, opening, overtyped);
         const configuration = language;
         group = undefined;
         commandTurn(() => {
-            let plan;
-            try { plan = planner.next(Number.MAX_SAFE_INTEGER).result; }
-            finally { planner.dispose(); }
-            if (!plan || language !== configuration || folds && !folds.sameProjection(currentFolds())) return;
+            const plan = planLanguageEdit(capture.buffer, capture.selectionSet, typeof command === "string" ? command : {
+                character: command.character, canOvertype: at => {
+                    if (!paired.has(at)) return false;
+                    overtyped.push(at); return true;
+                },
+            }, configuration, folds);
+            if (language !== configuration || folds && !folds.sameProjection(currentFolds())) return;
             completeCaptured(capture, () => {
                 const autoIndent = language.enter !== undefined && (command === "newline" || command === "insert-line-above" || command === "insert-line-below");
                 if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", {

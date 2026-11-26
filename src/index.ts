@@ -20,7 +20,7 @@ export type { ComparisonBaseline, ComparisonCapture, ComparisonController, Compa
 export type { EditKind, HistoryOptions, HistorySnapshot, Selection } from "./core/history.ts";
 export type { SelectionSet, SelectionEditPlan } from "./core/selections.ts";
 export { resolveLanguageConfiguration, planLanguageEdit } from "./core/language-edits.ts";
-export type { LanguageConfiguration, ResolvedLanguageConfiguration, EditingCommand, EditingPair, LanguageEditContext, PairingContext, EnterIndent, LanguageEditProgress, LanguageEditCursor } from "./core/language-edits.ts";
+export type { LanguageConfiguration, ResolvedLanguageConfiguration, EditingCommand, EditingPair, LanguageEditContext, PairingContext, EnterIndent } from "./core/language-edits.ts";
 export type { BracketMatchOptions, BracketMatchResult } from "./core/bracket-matching.ts";
 export { characterWarningLabel } from "./core/character-warnings.ts";
 export type { CharacterWarningKind, CharacterWarningOptions, CharacterWarningConfiguration, CharacterWarning, CharacterWarningLimits, CharacterWarningBatch } from "./core/character-warnings.ts";

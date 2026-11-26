@@ -65,10 +65,9 @@ test("composed host edits replay folded moves in order and preserve later fold c
         append();
         for (let i = 0; i < 2; i++) {
             const { revision, buffer } = document();
-            const planner = planLanguageEdit(buffer, view.getSnapshot().selectionSet, "move-line-down",
+            const proposal = planLanguageEdit(buffer, view.getSnapshot().selectionSet, "move-line-down",
                 resolveLanguageConfiguration(), snapshot().index);
-            const plan = structuredClone(planner.next(4096).result!);
-            planner.dispose();
+            const plan = structuredClone(proposal);
             assert.ok(workspace.edit({ documentId: id, expectedRevision: revision, origin: "host", history, view,
                 edits: plan.edits, selectionSet: plan.selectionSet }).applied);
         }
@@ -87,10 +86,9 @@ test("composed host edits replay folded moves in order and preserve later fold c
         // A synchronous transaction can stage the same kind of move before a second edit.
         assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).applied);
         view.folding.setCollapsed(snapshot(), "b", true);
-        const planner = planLanguageEdit(buffer, view.getSnapshot().selectionSet, "move-line-down",
+        const proposal = planLanguageEdit(buffer, view.getSnapshot().selectionSet, "move-line-down",
             resolveLanguageConfiguration(), snapshot().index);
-        const move = planner.next(4096).result!.edits;
-        planner.dispose();
+        const move = proposal.edits;
         workspace.transact(id, document().revision, tx => {
             tx.edit(move);
             tx.edit([{ from: tx.buffer.length, to: tx.buffer.length, insert: "!" }]);
@@ -128,10 +126,9 @@ test("copied line moves carry each view's folds through undo and redo", () => {
         }
         main.setSelections(original.revision, heads.map(head => ({ head, anchor: head })), 0);
         const before = states();
-        const planner = planLanguageEdit(original.buffer, main.getSnapshot().selectionSet, "move-line-down",
+        const proposal = planLanguageEdit(original.buffer, main.getSnapshot().selectionSet, "move-line-down",
             resolveLanguageConfiguration(), main.folding.getSnapshot().index);
-        const plan = structuredClone(planner.next(4096).result!);
-        planner.dispose();
+        const plan = structuredClone(proposal);
         const apply = (edits: typeof plan.edits) => workspace.edit({ documentId, view: main, origin: "host",
             expectedRevision: workspace.document(documentId).revision, edits, selectionSet: plan.selectionSet });
         const history = () => ({ documentId, expectedRevision: workspace.document(documentId).revision });

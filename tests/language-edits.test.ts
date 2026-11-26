@@ -5,7 +5,7 @@ import { FoldIndex } from "../src/core/folding.ts";
 import { TextBuffer, createFoldRegions, resolveLanguageConfiguration, planLanguageEdit, Workspace } from "../src/index.ts";
 import { createSelectionSet } from "../src/core/selections.ts";
 import { nextSeed } from "./fixtures/workloads.ts";
-import type { LanguageConfiguration, LanguageEditProgress, Selection } from "../src/index.ts";
+import type { LanguageConfiguration, Selection } from "../src/index.ts";
 
 const configuration: LanguageConfiguration = { tabSize: 2, lineComment: "//", blockComment: { open: "/*", close: "*/" }, enter: "keep",
     pairs: [{ open: "{", close: "}" }, { open: '"', close: '"' }] };
@@ -13,27 +13,21 @@ test("deleting the last visible line leaves the caret on the preceding collapsed
     const buffer = TextBuffer.from("head\r\ninner\r\nlast"), config = resolveLanguageConfiguration();
     const folds = new FoldIndex(3, createFoldRegions(buffer, [{ id: "section", from: 0, to: 13, collapsed: true }]));
     const at = buffer.length - 1, carets = createSelectionSet(buffer.length, [{ anchor: at, head: at }]);
-    const cursor = planLanguageEdit(buffer, carets, "delete-lines", config, folds);
-    const result = cursor.next(4096).result!;
+    const result = planLanguageEdit(buffer, carets, "delete-lines", config, folds);
     assert.equal(buffer.apply(result.edits).buffer.text(), "head\r\ninner");
-    assert.equal(result.selectionSet.ranges[0]!.head, 3); cursor.dispose();
-    const mismatch = planLanguageEdit(buffer, carets, "delete-lines", config, new FoldIndex(2, []));
-    assert.throws(() => mismatch.next(), /planning buffer/); mismatch.dispose();
+    assert.equal(result.selectionSet.ranges[0]!.head, 3);
+    assert.throws(() => planLanguageEdit(buffer, carets, "delete-lines", config, new FoldIndex(2, [])), /planning buffer/);
 });
 
 function plan(text: string, ranges: readonly Selection[], command: Parameters<typeof planLanguageEdit>[2], config = configuration) {
     const buffer = TextBuffer.from(text), selections = createSelectionSet(text.length, ranges, ranges.length - 1);
-    const iterator = planLanguageEdit(buffer, selections, command, resolveLanguageConfiguration(config));
-    let step = iterator.next(256), turns = 1;
-    while (step.status === "running") { turns++; step = iterator.next(256); }
-    assert.equal(step.status, "ready");
-    const value = step.result!; iterator.dispose();
+    const value = planLanguageEdit(buffer, selections, command, resolveLanguageConfiguration(config));
     const after = buffer.apply(value.edits).buffer;
     assert.equal(bufferReads(buffer).textExports, 0);
     assert.ok(Object.isFrozen(value));
     assert.ok(Object.isFrozen(value.edits));
     assert.ok(value.edits.every(Object.isFrozen));
-    return { value, turns, text: after.slice(0, after.length), ranges: value.selectionSet.ranges.map(range => [range.anchor, range.head]) };
+    return { value, text: after.slice(0, after.length), ranges: value.selectionSet.ranges.map(range => [range.anchor, range.head]) };
 }
 const selection = (anchor: number, head = anchor) => [{ anchor, head }];
 
@@ -51,9 +45,7 @@ test("indentation and line comments edit a folded block once for carets on its h
         ]));
         const ranges = [...selection(before.indexOf("steps") + 2), ...selection(before.indexOf("validate") + 3)];
         const config = resolveLanguageConfiguration(configuration);
-        const cursor = planLanguageEdit(buffer, createSelectionSet(buffer.length, ranges), command, config, folds);
-        const result = cursor.next(4096).result!;
-        cursor.dispose();
+        const result = planLanguageEdit(buffer, createSelectionSet(buffer.length, ranges), command, config, folds);
         assert.equal(buffer.apply(result.edits).buffer.text(), after, command);
         const heads = [after.indexOf("steps") + 2, after.indexOf("validate") + 3];
         assert.deepEqual(result.selectionSet.ranges.map(r => r.head), heads, command);
@@ -110,10 +102,8 @@ test("configured line indentation and comments preserve reversed selections, bla
     assert.deepEqual(multiple.ranges, [[8, 5], [12, 15]]);
     assert.ok(multiple.value.selectionSet.ranges.every(range => range.anchorAffinity === "before" && range.headAffinity === "before"));
     // Raw public input defaults affinities after mapping, including a collapsed reversed range.
-    const raw = planLanguageEdit(TextBuffer.from("  x"), { ranges: [{ anchor: 2, head: 0 }], primary: 0 }, "outdent", resolveLanguageConfiguration(configuration));
-    const result = raw.next(); raw.dispose();
-    assert.equal(result.status, "ready");
-    assert.deepEqual(result.result!.selectionSet.ranges, [{ anchor: 0, head: 0, anchorAffinity: "after", headAffinity: "after" }]);
+    const result = planLanguageEdit(TextBuffer.from("  x"), { ranges: [{ anchor: 2, head: 0 }], primary: 0 }, "outdent", resolveLanguageConfiguration(configuration));
+    assert.deepEqual(result.selectionSet.ranges, [{ anchor: 0, head: 0, anchorAffinity: "after", headAffinity: "after" }]);
 });
 
 test("line comments read a whole marker across a scan boundary", () => {
@@ -139,8 +129,7 @@ test("line shifts step over visible blocks and keep the caret column, including 
     for (const command of ["move-line-up", "move-line-down", "copy-line-up", "copy-line-down"] as const) {
         for (const [i, block] of blocks.entries()) {
             const at = offsets[i]! + 1, selection = createSelectionSet(buffer.length, [{ anchor: at, head: at }]);
-            const cursor = planLanguageEdit(buffer, selection, command, config, folds);
-            const result = cursor.next(4096).result!; cursor.dispose();
+            const result = planLanguageEdit(buffer, selection, command, config, folds);
             const expected = blocks.slice(), delta = command.endsWith("up") ? -1 : 1;
             let target = i;
             if (command.startsWith("copy")) { target = delta < 0 ? i : i + 1; expected.splice(target, 0, block); }
@@ -165,9 +154,9 @@ test("moving and copying line blocks retains directed selections, mixed endings 
     const adjacent = plan("a\nb\nc", [{ anchor: 2, head: 2 }, { anchor: 4, head: 4 }], "move-line-up");
     assert.equal(adjacent.text, "b\nc\na"); assert.deepEqual(adjacent.ranges, [[0, 0], [2, 2]]);
     const buffer = TextBuffer.from("a\n" + "b\n".repeat(100_000) + "c");
-    const cursor = planLanguageEdit(buffer, createSelectionSet(buffer.length, selection(2, buffer.length - 1)), "move-line-up", resolveLanguageConfiguration());
-    const result = cursor.next(256); cursor.dispose();
-    assert.equal(result.status, "ready"); assert.equal(result.result!.edits.length, 2); assert.ok(result.readUnits < 10);
+    const result = planLanguageEdit(buffer, createSelectionSet(buffer.length, selection(2, buffer.length - 1)), "move-line-up", resolveLanguageConfiguration());
+    assert.equal(result.edits.length, 2);
+    assert.ok(bufferReads(buffer).sliceUnits < 10);
 });
 
 test("line commands apply once per selected row and preserve directed moves through EOF", () => {
@@ -295,18 +284,11 @@ test("block comments and pair surrounds retain directed and adjacent selections 
 test("block comment discovery shares bounded scans across distant and adjacent carets", () => {
     const source = "x".repeat(2048) + "<!--" + "y".repeat(30000) + "-->", buffer = TextBuffer.from(source);
     const ranges = Array.from({ length: 120 }, (_, i) => ({ anchor: 2060 + 200 * i, head: 2060 + 200 * i }));
-    const cursor = planLanguageEdit(buffer, createSelectionSet(source.length, ranges), "block-comment",
+    const result = planLanguageEdit(buffer, createSelectionSet(source.length, ranges), "block-comment",
         resolveLanguageConfiguration({ blockComment: { open: "<!--", close: "-->" } }));
-    let last = cursor.snapshot(), turns = 0;
-    while (last.status === "running") {
-        const next = cursor.next(256);
-        assert.ok(next.readUnits - last.readUnits <= 2600); assert.equal(next.readUnits, bufferReads(buffer).sliceUnits);
-        if (next.status === "running") assert.equal(next.result, null);
-        last = next; turns++;
-    }
-    assert.ok(turns > 10); assert.ok(last.readUnits < source.length * 2);
-    assert.equal(buffer.apply(last.result!.edits).buffer.length, source.length - 7);
-    assert.equal(last.result!.selectionSet.ranges.length, ranges.length); cursor.dispose();
+    assert.ok(bufferReads(buffer).sliceUnits < source.length * 2);
+    assert.equal(buffer.apply(result.edits).buffer.length, source.length - 7);
+    assert.equal(result.selectionSet.ranges.length, ranges.length);
 });
 
 test("host pairing and Enter rules see exact buffers and can reject string/comment contexts", () => {
@@ -370,11 +352,11 @@ test("line commands use visual stops and Enter follows its configured indentatio
     }
 });
 
-test("large comments and whitespace yield without partial edits and form one shared undo transaction", () => {
+test("large comment and indentation edits form one shared undo transaction", () => {
     const text = "x\n".repeat(2048), result = plan(text, selection(0, text.length), "line-comment");
-    assert.ok(result.turns > 8); assert.equal(result.text, "// x\n".repeat(2048));
+    assert.equal(result.text, "// x\n".repeat(2048));
     const spaces = plan(" ".repeat(20000) + "x", selection(20000), "newline");
-    assert.ok(spaces.turns > 4); assert.equal(spaces.text, " ".repeat(20000) + "\n" + " ".repeat(20000) + "x");
+    assert.equal(spaces.text, " ".repeat(20000) + "\n" + " ".repeat(20000) + "x");
     const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "comments", variant: "working" }, "Comments", { value: text });
     const view = workspace.createDocumentView(resource.documentId); view.setSelection(0, { anchor: 0, head: text.length });
     assert.equal(workspace.edit({ documentId: resource.documentId, expectedRevision: 0, origin: "human", view, ...result.value, history: { kind: "replace" } }).applied, true);
@@ -384,47 +366,11 @@ test("large comments and whitespace yield without partial edits and form one sha
     view.dispose(); workspace.releaseResource(resource.id, true);
 });
 
-test("language cursor charges reads, blank comment records and final assembly without publishing partial plans", () => {
-    for (const [text, command, expected] of [
-        ["x\n" + "\n".repeat(4096), "line-comment", "// x\n" + "\n".repeat(4096)],
-        [" ".repeat(20000), "newline", " ".repeat(20000) + "\n" + " ".repeat(20000)],
-    ] as const) {
-        const buffer = TextBuffer.from(text), selections = createSelectionSet(text.length,
-            [{ anchor: command === "newline" ? text.length : 0, head: text.length }]);
-        const cursor = planLanguageEdit(buffer, selections, command, resolveLanguageConfiguration(configuration));
-        let previous = cursor.snapshot(), planningWithoutReads = 0;
-        assert.equal(previous.phase, "validate"); assert.equal(previous.workUnits, 0);
-        assert.deepEqual(bufferReads(buffer), { textExports: 0, sliceUnits: 0 });
-        const phases = new Set<LanguageEditProgress["phase"]>([previous.phase]);
-        while (previous.status === "running") {
-            const current = cursor.next(256); phases.add(current.phase);
-            assert.ok(Object.isFrozen(current)); assert.equal(current.readUnits, bufferReads(buffer).sliceUnits);
-            assert.ok(current.workUnits >= previous.workUnits); assert.ok(current.bulkWorkUnits >= previous.bulkWorkUnits);
-            // These fixtures have bounded scan/record steps; bulk assembly is deliberately separate.
-            assert.ok(current.workUnits - previous.workUnits - (current.bulkWorkUnits - previous.bulkWorkUnits) <= 256 + 4096 + 8);
-            if (current.status === "running") assert.equal(current.result, null);
-            if (current.phase === "plan" && previous.phase === "plan" && current.readUnits === previous.readUnits
-                && current.bulkWorkUnits === previous.bulkWorkUnits && current.workUnits > previous.workUnits) planningWithoutReads++;
-            previous = current;
-        }
-        assert.equal(previous.status, "ready"); assert.ok(phases.has("plan")); assert.ok(phases.has("publish"));
-        assert.equal(buffer.apply(previous.result!.edits).buffer.text(), expected);
-        if (command === "line-comment") assert.ok(planningWithoutReads >= 10, "Skipped blank records still yield charged work");
-        else assert.ok(previous.bulkWorkUnits >= 40000, "Long indentation read and output remain visible bulk work");
-        assert.ok(previous.result!.edits.every(Object.isFrozen));
-        cursor.dispose(); assert.equal(cursor.snapshot().result, null);
-        assert.equal(previous.result!.edits.length, 1, "A returned immutable plan survives cursor disposal");
-    }
-});
-
-test("a no-op language plan keeps its raw selections across advances and after disposal", () => {
+test("a no-op language plan owns its raw selections", () => {
     const ranges = Array.from({ length: 300 }, (_, i) => ({ anchor: 2 * i + 1, head: 2 * i }));
     const input = { ranges, primary: 1 };
-    const cursor = planLanguageEdit(TextBuffer.from("ab".repeat(300)), input, "remove-line-comment", resolveLanguageConfiguration());
-    assert.equal(cursor.next(256).status, "running");
+    const plan = planLanguageEdit(TextBuffer.from("ab".repeat(300)), input, "remove-line-comment", resolveLanguageConfiguration());
     input.primary = 0;
-    const plan = cursor.next().result!;
-    cursor.dispose();
     ranges[1]!.head = 0;
     assert.deepEqual(plan.edits, []);
     assert.equal(plan.selectionSet.primary, 1);
@@ -432,23 +378,11 @@ test("a no-op language plan keeps its raw selections across advances and after d
     assert.ok(Object.isFrozen(plan.selectionSet.ranges[1]));
 });
 
-test("language cursor releases cancelled planning and records validation or host callback failure", () => {
-    const buffer = TextBuffer.from("x\n".repeat(2048)), selections = createSelectionSet(buffer.length, [{ anchor: 0, head: buffer.length }]);
-    for (const advance of [false, true]) {
-        const cursor = planLanguageEdit(buffer, selections, "line-comment", resolveLanguageConfiguration(configuration));
-        if (advance) assert.equal(cursor.next(256).status, "running");
-        const before = bufferReads(buffer); cursor.dispose();
-        assert.equal(cursor.next().status, "disposed"); assert.equal(cursor.snapshot().result, null);
-        assert.deepEqual(bufferReads(buffer), before);
-    }
-    const invalid = planLanguageEdit(buffer, { ranges: [{ anchor: 4, head: 4 }, { anchor: 0, head: 0 }], primary: 0 }, "indent", resolveLanguageConfiguration());
-    assert.equal(invalid.snapshot().status, "running");
-    assert.throws(() => invalid.next(), /normalized range order/);
-    assert.equal(invalid.snapshot().status, "failed"); assert.match(invalid.snapshot().failure!, /normalized range order/); invalid.dispose();
+test("language planning reports invalid selections and propagates a host rule failure", () => {
+    const buffer = TextBuffer.from("x");
+    assert.throws(() => planLanguageEdit(buffer, { ranges: [{ anchor: 1, head: 1 }, { anchor: 0, head: 0 }], primary: 0 },
+        "indent", resolveLanguageConfiguration()), /normalized range order/);
     const failure = new Error("host rule failed");
-    const cursor = planLanguageEdit(buffer, createSelectionSet(buffer.length, [{ anchor: 0, head: 0 }]), "newline",
-        resolveLanguageConfiguration({ enter: () => { assert.throws(() => cursor.dispose(), /busy/); throw failure; } }));
-    assert.throws(() => cursor.next(), error => error === failure);
-    assert.equal(cursor.snapshot().status, "failed"); assert.equal(cursor.snapshot().failure, failure.message);
-    assert.equal(cursor.snapshot().result, null); cursor.dispose();
+    assert.throws(() => planLanguageEdit(buffer, createSelectionSet(1, [{ anchor: 0, head: 0 }]), "newline",
+        resolveLanguageConfiguration({ enter: () => { throw failure; } })), error => error === failure);
 });

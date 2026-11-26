@@ -201,28 +201,14 @@ Translate with `settings.commandLabel(id, fallback)`. Bind chords with `keymap.b
   [Host commands](host-integration.md#navigation-commands-and-lifecycle)
 
 `planLanguageEdit` plans against captured text, selections and folds. The editor commits inside the key handler.
-Hosts can yield between planner advances.
+The result contains the edits and final selections. Invalid input or a failing host rule throws.
 
 ```ts
 import { planLanguageEdit, resolveLanguageConfiguration } from "sttropez";
 import type { SelectionSet, TextBuffer } from "sttropez";
 
-export async function planIndent(
-    buffer: TextBuffer, selections: SelectionSet,
-    yieldTurn: () => Promise<void>, signal: AbortSignal
-) {
-    const planner = planLanguageEdit(buffer, selections, "indent",
-        resolveLanguageConfiguration({ tabSize: 2 }));
-    try {
-        while (!signal.aborted) {
-            const step = planner.next();
-            if (step.status === "ready") return step.result!;
-            await yieldTurn();
-        }
-        return undefined;
-    } finally {
-        planner.dispose();
-    }
+export function planIndent(buffer: TextBuffer, selections: SelectionSet) {
+    return planLanguageEdit(buffer, selections, "indent", resolveLanguageConfiguration({ tabSize: 2 }));
 }
 ```
 

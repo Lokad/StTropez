@@ -18,13 +18,10 @@ function measureCommentPlanning() {
         const elapsed = [], cpu = [];
         for (let sample = 0; sample < 6; sample++) {
             const before = process.threadCpuUsage(), start = performance.now();
-            const cursor = planLanguageEdit(buffer, ranges, "remove-line-comment", config);
-            const plan = cursor.next(Number.MAX_SAFE_INTEGER);
+            const plan = planLanguageEdit(buffer, ranges, "remove-line-comment", config);
             const ms = performance.now() - start, usage = process.threadCpuUsage(before);
-            assert.equal(plan.status, "ready");
-            assert.equal(plan.result?.edits.length, caret ? 1 : rows);
-            assert.deepEqual(plan.result.edits[0], { from, to: from + 2, insert: "" });
-            cursor.dispose();
+            assert.equal(plan.edits.length, caret ? 1 : rows);
+            assert.deepEqual(plan.edits[0], { from, to: from + 2, insert: "" });
             if (sample) { elapsed.push(ms); cpu.push((usage.user + usage.system) / 1000); }
         }
         const plannerElapsedMs = distribution(elapsed), withinBudget = plannerElapsedMs.max <= budgetMs;
