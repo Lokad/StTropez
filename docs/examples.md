@@ -38,7 +38,7 @@ To try regex replacement in Shopping cart, find `quantity:\s*(\d+)`, enable **Us
 To try a save conflict, open the same sample in two tabs. Edit both and save one. In the other,
 choose **Review saved copy** to compare before saving your version or accepting the saved files.
 If the saved copy was removed, **Save locally** recreates it from your open project.
-On reload, recovery selects this tab’s last checkpoint if it is still available. Use **Recovery version** to choose another draft for the same sample.
+On reload, recovery selects this tab’s last checkpoint if it is available. Use **Recovery version** to choose another draft for the same sample.
 
 <a id="provider-ownership-and-adaptations"></a>
 
