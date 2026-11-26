@@ -297,7 +297,9 @@ export class DemoRecovery {
     restore(): Promise<void> {
         if (!this.canRestore()) return Promise.resolve();
         const offer = this.offer!, token = crypto.randomUUID(), expected = this.token;
-        const draft = { ...offer.drafts[offer.selected]!, id: token }, remaining = offer.drafts.filter((_, index) => index !== offer.selected);
+        const selected = offer.drafts[offer.selected]!;
+        const draft = { ...selected, id: selected.id ?? token };
+        const remaining = offer.drafts.filter((_, index) => index !== offer.selected);
         if (offer.working) remaining.unshift(offer.working);
         return this.run(async () => {
             this.publish("offer", "Restoring the captured draft…");
@@ -305,7 +307,6 @@ export class DemoRecovery {
             await this.store.write({ token, value: encode([draft, ...remaining]) }, expected);
             if (this.disposed) return;
             this.token = token;
-            this.rememberCheckpoint(token);
             if (!this.targetsCurrent(offer.capture)) {
                 this.offer = { ...offer, restoreInterrupted: true };
                 this.publish("offer", this.offerMessage()); return;
@@ -313,6 +314,7 @@ export class DemoRecovery {
             const result = this.workspace.editDocuments(offer.capture.map(item => ({ documentId: item.document.id, expectedRevision: item.document.revision,
                 origin: "host", history: { kind: "replace" }, text: draft.files[item.file.name]! })));
             if (!result.applied) { this.publish("offer", "Restore is unavailable. Your current files are intact."); return; }
+            this.rememberCheckpoint(draft.id);
             this.checkpointed = this.capture();
             this.offer = remaining.length ? { drafts: remaining, selected: 0, capture: this.checkpointed, working: draft } : undefined;
             if (this.offer) this.publish("offer", "Draft restored. Other recovery versions are still available.");

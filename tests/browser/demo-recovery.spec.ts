@@ -14,6 +14,12 @@ test("reloading each tab selects its own recovery draft when both edited the sam
     await peer.keyboard.insertText("// Second tab\n");
     await expect(peer.locator("#recovery-message")).toContainText("Your current edits have a recovery copy.");
 
+    const reader = await context.newPage();
+    await reader.goto("./?provider=browser");
+    await reader.getByRole("button", { name: "Review draft", exact: true }).click();
+    await reader.getByRole("button", { name: "Restore draft", exact: true }).click();
+    await expect(reader.locator("#editor .st-viewport-row").first()).toHaveText(/^\/\/ (First|Second) tab$/);
+
     for (const [tab, prefix] of [[page, "// First tab"], [peer, "// Second tab"]] as const) {
         tab.on("dialog", dialog => dialog.accept());
         await tab.reload();
