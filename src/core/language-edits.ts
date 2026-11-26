@@ -27,6 +27,10 @@ function checkpoint(state: MutablePlanning, workUnits = 0): boolean {
     state.checkpoint = state.workUnits; return true;
 }
 
+function textEdit(from: number, to: number, insert: string): TextEdit {
+    return Object.freeze({ from, to, insert });
+}
+
 function publishRanges(edits: TextEdit[], length: number, ranges: Selection[], primary: number, state: MutablePlanning) {
     state.phase = "map";
     bulk(state, ranges.length);
@@ -67,7 +71,7 @@ function* closerIndent(buffer: TextBuffer, at: number, key: string, config: Reso
             const openIndent = yield* whitespace(read, state, openStart, next.result.match);
             const indent = read(openStart, openIndent);
             if (indent === read(start, at)) return;
-            return { from: start, to: at, insert: indent };
+            return textEdit(start, at, indent);
         }
     } finally { cursor.dispose(); }
 }
@@ -110,10 +114,6 @@ export function lineColumnScanner(read: (from: number, to: number) => string, ta
 function* publish(edits: TextEdit[], selectionSet: SelectionSet, state: MutablePlanning): Generator<void, SelectionEditPlan> {
     if (checkpoint(state)) yield;
     state.phase = "publish";
-    for (const edit of edits) {
-        Object.freeze(edit);
-        if (checkpoint(state, 1)) yield;
-    }
     bulk(state, edits.length);
     const result = Object.freeze({ edits: Object.freeze(edits), selectionSet });
     if (checkpoint(state)) yield;
@@ -179,7 +179,7 @@ function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: Edit
             let innerFrom = enclosing.from + open.length, innerTo = enclosing.to - close.length;
             if (innerFrom < innerTo && read(innerFrom, innerFrom + 1) === " ") innerFrom++;
             if (innerFrom < innerTo && read(innerTo - 1, innerTo) === " ") innerTo--;
-            edits.push({ from: enclosing.from, to: innerFrom, insert: "" }, { from: innerTo, to: enclosing.to, insert: "" });
+            edits.push(textEdit(enclosing.from, innerFrom, ""), textEdit(innerTo, enclosing.to, ""));
         }
         if (checkpoint(state, 1)) yield;
     }
@@ -195,8 +195,8 @@ function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: Edit
         let low = map(from).offset + inserted, high = map(to).offset + inserted;
         // Unwrap once. A neighboring caret inside the delimiter follows that deletion.
         if (!comment || comment.from >= to) {
-            if (from === to) edits.push({ from, to, insert: opening + closing });
-            else edits.push({ from, to: from, insert: opening }, { from: to, to, insert: closing });
+            if (from === to) edits.push(textEdit(from, to, opening + closing));
+            else edits.push(textEdit(from, from, opening), textEdit(to, to, closing));
             low += opening.length;
             high += opening.length;
             inserted += opening.length + closing.length;
@@ -266,7 +266,7 @@ function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "l
             const next = readAhead(offset, Math.min(end, offset + marker.length + 1));
             const markerEnd = next.startsWith(marker) ? offset + marker.length + Number(next[marker.length] === " ") : 0;
             if (command === "remove-line-comment") {
-                if (markerEnd) edits.push({ from: offset, to: markerEnd, insert: "" });
+                if (markerEnd) edits.push(textEdit(offset, markerEnd, ""));
             } else {
                 const blank = !next || /^\r?\n/.test(next);
                 if (!blank) {
@@ -292,12 +292,12 @@ function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "l
         for (const line of lines) {
             if (checkpoint(state, 1)) yield;
             if (line.blank && minimum !== Infinity) continue;
-            if (uncomment) edits.push({ from: line.offset, to: line.markerEnd, insert: "" });
+            if (uncomment) edits.push(textEdit(line.offset, line.markerEnd, ""));
             else {
                 // If a tab straddled the minimum, every column back to its start lies
                 // in this same tab stop. Only literal spaces need to be stepped over.
                 const from = common === 0 ? line.start : common === Infinity ? line.offset : line.offset - (line.column - common);
-                edits.push({ from, to: from, insert: marker + " " });
+                edits.push(textEdit(from, from, marker + " "));
             }
         }
     }
@@ -333,7 +333,7 @@ function* insertOrDeleteLines(buffer: TextBuffer, selections: SelectionSet, comm
             const survivor = neighbor < 0 ? neighbor : collapsedLineBlock(folds, neighbor)?.lineFrom ?? neighbor;
             rowLength = survivor < 0 ? 0 : lineContentEnd(buffer, survivor) - buffer.offsetAt(survivor);
             rowStart = delta + (!following && survivor >= 0 ? buffer.offsetAt(survivor) : start);
-            if (from !== to) edits.push({ from, to, insert: "" });
+            if (from !== to) edits.push(textEdit(from, to, ""));
             delta -= to - from;
         } else {
             const above = command === "insert-line-above", preceding = above ? group.first - 1 : group.last;
@@ -342,7 +342,7 @@ function* insertOrDeleteLines(buffer: TextBuffer, selections: SelectionSet, comm
             const context = preceding < 0 ? 0 : lineContentEnd(buffer, preceding);
             const indent = preceding < 0 ? "" : (yield* enterIndent(buffer, context, context, config, unit, read, state)).inner;
             const ending = lineEnding(buffer, Math.max(0, preceding)), insert = beforeLine ? indent + ending : ending + indent;
-            edits.push({ from: at, to: at, insert });
+            edits.push(textEdit(at, at, insert));
             rowStart = at + delta + indent.length + (beforeLine ? 0 : ending.length);
             delta += insert.length; bulk(state, insert.length);
         }
@@ -380,7 +380,7 @@ function* shiftLines(buffer: TextBuffer, selections: SelectionSet, command: Line
             const body = yield* blockText(read, state, start, end), separator = lineEnding(buffer, group.last);
             const beforeNext = !up && after > end && !!collapsedLineBlock(folds, group.last);
             const at = up ? start : beforeNext ? after : end;
-            edits.push({ from: at, to: at, insert: up || beforeNext ? body + separator : separator + body });
+            edits.push(textEdit(at, at, up || beforeNext ? body + separator : separator + body));
             if (up) newEnding = separator.length;
             else destination += body.length + separator.length;
             delta += body.length + separator.length;
@@ -390,15 +390,15 @@ function* shiftLines(buffer: TextBuffer, selections: SelectionSet, command: Line
             const first = collapsedLineBlock(folds, group.first - 1)?.lineFrom ?? group.first - 1;
             const before = buffer.offsetAt(first), beforeEnd = lineContentEnd(buffer, group.first - 1);
             const neighbour = yield* blockText(read, state, before, beforeEnd);
-            edits.push({ from: before, to: start, insert: "", lineMove: true },
-                { from: end, to: end, insert: read(beforeEnd, start) + neighbour });
+            edits.push(Object.freeze({ from: before, to: start, insert: "", lineMove: true }),
+                textEdit(end, end, read(beforeEnd, start) + neighbour));
             destination = before; newEnding = start - beforeEnd;
         } else if (!up && group.last + 1 < buffer.lineCount) {
             const through = collapsedLineBlock(folds, group.last + 1)?.lineTo ?? group.last + 2;
             const nextEnd = lineContentEnd(buffer, through - 1);
             const neighbour = yield* blockText(read, state, after, nextEnd);
-            edits.push({ from: start, to: start, insert: neighbour + read(end, after), lineMove: true },
-                { from: end, to: nextEnd, insert: "" });
+            edits.push(Object.freeze({ from: start, to: start, insert: neighbour + read(end, after), lineMove: true }),
+                textEdit(end, nextEnd, ""));
             destination += nextEnd - end;
             newEnding = lineBoundary(buffer, through) - nextEnd;
         }
@@ -435,9 +435,10 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent"
                 const prefix = yield* scan(buffer.offsetAt(line), line === first ? end : lineContentEnd(reader, line), true);
                 if ((first === last && !folded) || !prefix.indentation) {
                     if (command !== "outdent") {
-                        edits.push({ from: prefix.offset, to: prefix.offset, insert: insertSpaces ? " ".repeat(tabSize - prefix.column % tabSize) : "\t" });
+                        edits.push(textEdit(prefix.offset, prefix.offset,
+                            insertSpaces ? " ".repeat(tabSize - prefix.column % tabSize) : "\t"));
                     } else if (prefix.previousStop < prefix.offset) {
-                        edits.push({ from: prefix.previousStop, to: prefix.offset, insert: "" });
+                        edits.push(textEdit(prefix.previousStop, prefix.offset, ""));
                     }
                 }
                 if (checkpoint(state, 1)) yield;
@@ -446,7 +447,7 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent"
             continue;
         }
         const { column, indentation } = yield* scan(start, from);
-        let edit: TextEdit = { from, to, insert: insertSpaces ? " ".repeat(tabSize - column % tabSize) : "\t" };
+        let edit = textEdit(from, to, insertSpaces ? " ".repeat(tabSize - column % tabSize) : "\t");
         if (config.enter && first > 0 && from === to && indentation) {
             const before = selections.ranges[index - 1], after = selections.ranges[index + 1];
             const shared = before && Math.max(before.anchor, before.head) >= start || after && Math.min(after.anchor, after.head) <= end;
@@ -459,7 +460,9 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent"
                     const skip = rule === -1 ? outdentLength(read(previousStart, Math.min(previousIndent, previousStart + tabSize)), tabSize) : 0;
                     const prefix = previousStart + skip, previous = yield* scan(prefix, previousIndent);
                     const extra = rule === 1 ? (insertSpaces ? tabSize : tabSize - previous.column % tabSize) : 0;
-                    if (whole.column < previous.column + extra) edit = { from: start, to: end, insert: read(prefix, previousIndent) + (rule === 1 ? unit : "") };
+                    if (whole.column < previous.column + extra) {
+                        edit = textEdit(start, end, read(prefix, previousIndent) + (rule === 1 ? unit : ""));
+                    }
                 }
             }
         }
@@ -550,19 +553,23 @@ function* plan(buffer: TextBuffer, input: SelectionSet, command: EditingCommand 
             const atCloser = from === to && closing !== undefined && next === key;
             if (atCloser && allowed(closing, "close") && command.canOvertype?.(from)) { anchor = head = from + delta + 1; }
             else if (opening && from !== to && allowed(opening, "surround")) {
-                edits.push({ from, to: from, insert: opening.open }, { from: to, to, insert: opening.close });
+                edits.push(textEdit(from, from, opening.open), textEdit(to, to, opening.close));
                 anchor = range.anchor + delta + 1; head = range.head + delta + 1; delta += 2;
             } else {
                 const pair = from === to && !atCloser && opening && (!next || /[\s)\]}"'`]/.test(next)) && allowed(opening, "open");
                 const insert = pair ? key + opening.close : key;
-                edits.push({ from, to, insert }); anchor = head = from + delta + key.length; delta += insert.length - (to - from);
+                edits.push(textEdit(from, to, insert));
+                anchor = head = from + delta + key.length;
+                delta += insert.length - (to - from);
             }
         } else if (command === "newline") {
             const indent = yield* enterIndent(buffer, from, to, config, unit, read, state);
             const ending = lineEnding(reader, buffer.lineAt(from)), first = ending + indent.inner;
             const insert = first + (indent.split ? ending + indent.outer : "");
             bulk(state, insert.length);
-            edits.push({ from, to, insert }); anchor = head = from + delta + first.length; delta += insert.length - (to - from);
+            edits.push(textEdit(from, to, insert));
+            anchor = head = from + delta + first.length;
+            delta += insert.length - (to - from);
         } else { anchor = range.anchor + delta; head = range.head + delta; }
         ranges.push({ anchor, head });
         if (checkpoint(state, 1)) yield;

@@ -30,7 +30,9 @@ function plan(text: string, ranges: readonly Selection[], command: Parameters<ty
     const value = step.result!; iterator.dispose();
     const after = buffer.apply(value.edits).buffer;
     assert.equal(bufferReads(buffer).textExports, 0);
-    assert.ok(Object.isFrozen(value)); assert.ok(Object.isFrozen(value.edits));
+    assert.ok(Object.isFrozen(value));
+    assert.ok(Object.isFrozen(value.edits));
+    assert.ok(value.edits.every(Object.isFrozen));
     return { value, turns, text: after.slice(0, after.length), ranges: value.selectionSet.ranges.map(range => [range.anchor, range.head]) };
 }
 const selection = (anchor: number, head = anchor) => [{ anchor, head }];
