@@ -994,39 +994,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             },
         }, language, folds);
         const acceptPairs = (edits: readonly TextEdit[]) => paired.accept(currentDocument(), capture.revision, edits, capture.selectionSet, opening, overtyped);
-        let planning = false;
-        let cancelNextSlice: (() => void) | undefined;
-        const job = {
-            capture,
-            purpose: "grapheme" as const,
-            release() {
-                cancelNextSlice?.();
-                if (!planning) planner.dispose();
-            },
-        };
-        rangeCommand = job;
-        const step = () => commandTurn(() => {
-            if (rangeCommand !== job) return;
-            if (!validCommand(capture) || folds && !folds.sameProjection(currentFolds())) { cancelPendingCommand(); return; }
-            // Keep the key handler short. On later slices the next timer can elapse while the planner works.
-            const calls = cancelNextSlice ? commandBudget.maxCalls : commandBudget.initialLanguageCalls;
-            if (cancelNextSlice) cancelNextSlice = commandRunner.schedule(step);
-            let result;
-            try {
-                planning = true;
-                result = commandRunner.slice(() => planner.next(commandBudget.languageUnits),
-                    result => result.status === "running" && rangeCommand === job, calls);
-            }
-            finally { planning = false; }
-            if (rangeCommand !== job) { planner.dispose(); return; }
-            if (result.status === "running") {
-                cancelNextSlice ??= commandRunner.schedule(step);
-                return;
-            }
-            rangeCommand = undefined;
-            job.release();
+        const configuration = language;
+        group = undefined;
+        commandTurn(() => {
+            let plan;
+            try { plan = planner.next(Number.MAX_SAFE_INTEGER).result; }
+            finally { planner.dispose(); }
+            if (!plan || language !== configuration || folds && !folds.sameProjection(currentFolds())) return;
             completeCaptured(capture, () => {
-                const plan = result.result!;
                 const autoIndent = language.enter !== undefined && (command === "newline" || command === "insert-line-above" || command === "insert-line-below");
                 if (plan.edits.length) return apply(plan.edits, plan.selectionSet, typeof command === "object" ? "typing" : "replace", {
                     expectedRevision: capture.revision, adjustNewlines: autoIndent, typedText: typeof command === "object" ? command.character : undefined,
@@ -1041,8 +1016,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 return true;
             });
         }, typeof command === "object" ? command.character : "");
-        group = undefined;
-        step();
         return true;
     }
     function runCommand(command: TextEditorCommand): boolean {

@@ -9,7 +9,7 @@ export type CooperativeRunner = Readonly<{
 const direct: Turn = work => work();
 
 export const commandBudget = Object.freeze({ sliceMs: 4, cursorUnits: 4096, wordCalls: 32, graphemeCalls: 8,
-    foldCalls: 64, languageUnits: 256, initialLanguageCalls: 64, maxCalls: 512, columnCalls: 64,
+    foldCalls: 64, languageUnits: 256, maxCalls: 512, columnCalls: 64,
     inlineRanges: 32,
     queuedCalls: 8, queuedActions: 256, queuedUnits: 65536 });
 

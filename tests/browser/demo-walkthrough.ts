@@ -616,7 +616,7 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     const line = page.getByRole("dialog", { name: "Go to line" }).getByRole("textbox");
     await line.fill("2"); await line.press("Enter");
     await expect(generated).toBeFocused(); await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 1");
-    // Reading and removing the outer comment on every row takes several planning turns.
+    // Save in the same task as the edit. Reload must recover the uncommented revision.
     await replace("// // pending\n".repeat(4096));
     await expect(page.locator("#recovery-status")).toHaveText("Recovery draft captured in this browser.");
     await source.press("Control+a");
@@ -626,8 +626,6 @@ export async function runDemoEditingRules(page: Page, url = "/") {
     });
     await source.press("Control+Home"); await expect(page.locator("#cursor")).toHaveText("Ln 1, Col 1");
     await expect.poll(async () => (await source.inputValue()).startsWith("// pending")).toBe(true);
-    await expect(page.locator("#status")).toHaveText("Unsaved changes.");
-    await page.getByRole("button", { name: "Save locally", exact: true }).click();
     await expect(page.locator("#status")).toContainText("Saved in this browser");
     await expect(page.locator("#files")).not.toContainText("●");
     await page.reload(); await expect.poll(async () => (await source.inputValue()).startsWith("// pending")).toBe(true);

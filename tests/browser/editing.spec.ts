@@ -787,77 +787,52 @@ test("leaving an automatically indented blank line trims it with the next edit",
     await expect(page.locator("#primary .st-viewport-row").last()).toHaveJSProperty("textContent", "z?");
 });
 
-test("very long graphemes delete whole and stale yielding indentation cannot retarget later input", async ({ page }) => {
+test("very long graphemes delete whole", async ({ page }) => {
     await page.evaluate(() => { window.editingFixture.setText("x" + "\u0301".repeat(5000)); window.editingFixture.select("primary", { anchor: 5001, head: 5001 }); window.editingFixture.focus("primary"); });
     await page.keyboard.press("Backspace"); await expect.poll(async () => (await state(page)).document!.length).toBe(0);
     await page.keyboard.press("ControlOrMeta+z"); expect((await state(page)).document!.length).toBe(5001);
-    await page.evaluate(() => {
-        window.editingFixture.load("lines-10000"); window.editingFixture.select("primary", { anchor: 0, head: 240_000 });
-        const input = document.querySelector("#primary textarea")!;
-        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
-        window.editingFixture.edit([{ from: 0, to: 0, insert: "later " }]);
+});
+
+test("indent commits before the next pointer action and undoes in one step", async ({ page }) => {
+    const before = await page.evaluate(() => {
+        const f = window.editingFixture;
+        f.load("lines-10000");
+        const doc = f.snapshot().document!;
+        f.select("primary", { anchor: 0, head: doc.length });
+        f.focus("primary");
+        return { revision: doc.revision, length: doc.length, prefix: f.range(0, 24) };
     });
-    await expect.poll(async () => (await state(page)).primary.pendingGrapheme).toBe(false);
-    expect((await state(page)).document!.length).toBe(240_006);
-    expect(await page.evaluate(() => window.editingFixture.range(0, 6))).toBe("later ");
+    const source = page.locator("#primary textarea");
+    const row = page.locator("#primary .st-viewport-row").first();
+    await source.evaluate(input => document.addEventListener("keydown", () => {
+        input.dataset.revisionAfterKey = String(window.editingFixture.snapshot().document!.revision);
+    }, { once: true }));
+    await source.press("Tab");
+    await row.click({ position: { x: 50, y: 4 } });
+    await expect(source).toHaveAttribute("data-revision-after-key", String(before.revision + 1));
+    const after = await state(page);
+    expect(after.document!.revision).toBe(before.revision + 1);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 28))).toBe("    " + before.prefix);
+    await source.press("ControlOrMeta+z");
+    expect((await state(page)).document!.length).toBe(before.length);
+    expect(await page.evaluate(() => window.editingFixture.range(0, 24))).toBe(before.prefix);
 });
 
-test("yielding multiline indentation publishes one reversible transaction", async ({ page }) => {
-    await page.evaluate(() => { window.editingFixture.setText("x\n".repeat(1024)); window.editingFixture.select("primary", { anchor: 0, head: 2048 }); window.editingFixture.focus("primary"); });
-    const before = await state(page); await page.keyboard.press("Tab");
-    await expect.poll(async () => (await state(page)).document!.length).toBe(6144);
-    expect((await state(page)).document!.revision).toBe(before.document!.revision + 1);
-    expect(await page.evaluate(() => window.editingFixture.range(0, 12))).toBe("    x\n    x\n");
-    await page.keyboard.press("ControlOrMeta+z"); await ready(page);
-    expect((await state(page)).document!.length).toBe(2048); expect((await state(page)).primary.selection).toMatchObject({ anchor: 0, head: 2048 });
-});
-
-test("configured commands retain native ordering and expire on configuration changes", async ({ page }) => {
-    // Both interactions need an outstanding command, even when a planning slice runs quickly.
-    const rows = 65_536;
-    await page.evaluate(rows => {
-        window.editingFixture.configure({ language: { tabSize: 2, lineComment: "//" } });
-        const source = "x\n".repeat(rows);
-        window.editingFixture.setText(source);
-        window.editingFixture.select("primary", { anchor: 0, head: source.length });
-        window.editingFixture.focus("primary");
-        window.editingFixture.command("line-comment");
-        if (!window.editingFixture.snapshot().primary.pendingCommand) throw new Error("Expected deferred comment planning");
-        const input = document.querySelector<HTMLTextAreaElement>("#primary textarea")!;
-        input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
-        input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "(", bubbles: true }));
-        input.setRangeText("(", input.selectionStart, input.selectionEnd, "end");
-        input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "(", bubbles: true }));
-        const enter = new InputEvent("beforeinput", { inputType: "insertLineBreak", bubbles: true, cancelable: true });
-        input.dispatchEvent(enter); if (!enter.defaultPrevented) throw new Error("Expected configured Enter capture");
-        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
-        const event = new InputEvent("beforeinput", { inputType: "insertText", data: "z", bubbles: true, cancelable: true });
-        input.dispatchEvent(event); if (!event.defaultPrevented) throw new Error("Expected captured input");
-    }, rows);
-    await expect.poll(async () => (await state(page)).primary.pendingInput).toBe(false);
-    expect((await state(page)).conflicts).toEqual([]);
-    expect(await page.evaluate(rows => {
+test("a new language configuration applies only to subsequent commands", async ({ page }) => {
+    const result = await page.evaluate(() => {
         const f = window.editingFixture;
-        return f.range(0, f.snapshot().document!.length) === "// x\n".repeat(rows) + "(\n  z";
-    }, rows)).toBe(true);
-    await page.evaluate(async rows => {
-        const f = window.editingFixture;
-        const source = "x\n".repeat(rows);
-        f.setText(source);
-        f.select("primary", { anchor: 0, head: source.length });
+        const text = "x\n".repeat(8192);
+        f.setText(text);
+        f.configure({ language: { tabSize: 2, lineComment: "//" } });
+        f.select("primary", { anchor: 0, head: text.length });
         f.command("line-comment");
-        await new Promise<void>(resolve => setTimeout(resolve, 0));
-        if (!f.snapshot().primary.pendingCommand) throw new Error("Expected comment planning to span two turns");
+        const length = f.snapshot().document!.length;
         f.configure({ language: { tabSize: 4 } });
         f.select("primary", { anchor: 0, head: 0 });
         f.command("indent");
-    }, rows);
-    await ready(page);
-    expect(await page.evaluate(rows => {
-        const f = window.editingFixture;
-        return f.range(0, f.snapshot().document!.length) === "    " + "x\n".repeat(rows);
-    }, rows)).toBe(true);
-    expect(await page.locator("#primary .st-viewport").evaluate(node => getComputedStyle(node).tabSize)).toBe("4");
+        return { length, prefix: f.range(0, 9) };
+    });
+    expect(result).toEqual({ length: 8192 * 5, prefix: "    // x\n" });
 });
 
 test("short shaped rows grow horizontal extent and a later revision discards obsolete measurements", async ({ page }) => {

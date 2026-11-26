@@ -200,8 +200,8 @@ Translate with `settings.commandLabel(id, fallback)`. Bind chords with `keymap.b
   `shared: true` and forward its event to that pane's `keymap.handle`.
   [Host commands](host-integration.md#navigation-commands-and-lifecycle)
 
-`planLanguageEdit` takes the captured buffer, selections and rules. A fold index treats blocks as
-lines. Yield between advances and dispose on cancellation.
+`planLanguageEdit` plans against captured text, selections and folds. The editor commits inside the key handler.
+Hosts can yield between planner advances.
 
 ```ts
 import { planLanguageEdit, resolveLanguageConfiguration } from "sttropez";
