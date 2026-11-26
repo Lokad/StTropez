@@ -73,9 +73,9 @@ test("captured whole-review reversion preserves distant changes and complete sha
     assert.equal(workspace.document(resource.id).buffer.equals(reference), true); assert.equal(workspace.observeHistory(resource.id).getSnapshot().undoDepth, history.undoDepth + 1);
 
     assert.equal(resource.metadata.getSnapshot().serverVersion, "saved-1"); assert.equal(resource.metadata.getSnapshot().dirty, false);
-    assert.equal(workspace.undo({ documentId: resource.id, expectedRevision: 2 }).applied, true);
+    assert.equal(workspace.undo({ documentId: resource.id, expectedRevision: 2 }).status, "done");
     assert.equal(workspace.document(resource.id).buffer, buffer); assert.deepEqual(comparison.view.getSnapshot().selectionSet, before); assert.deepEqual(peer.getSnapshot().selectionSet, peerBefore);
-    assert.equal(workspace.redo({ documentId: resource.id, expectedRevision: 3 }).applied, true); assert.equal(workspace.document(resource.id).buffer.equals(reference), true);
+    assert.equal(workspace.redo({ documentId: resource.id, expectedRevision: 3 }).status, "done"); assert.equal(workspace.document(resource.id).buffer.equals(reference), true);
     assert.equal(ticket.complete(), false); peer.dispose(); comparison.dispose(); assert.equal(workspace.diagnostics().leases, 0);
 });
 
@@ -128,7 +128,7 @@ test("comparison hunk reversion is revision-guarded, undoable and shared across 
     assert.equal(workspace.document(resource.id).buffer.equals(reference.buffer), true);
     assert.equal(sibling.getSnapshot().revision, 1);
     assert.equal(hunk.revert(), false);
-    assert.equal(workspace.undo({ documentId: resource.id, expectedRevision: 1 }).applied, true);
+    assert.equal(workspace.undo({ documentId: resource.id, expectedRevision: 1 }).status, "done");
     assert.deepEqual(comparison.view.getSnapshot().selection, { anchor: 2, head: 4, anchorAffinity: "after", headAffinity: "before" });
     ready(comparison); const stale = comparison.hunkAt(0)!; edit("later"); assert.equal(stale.revert(), false);
     assert.equal(reference.buffer.slice(0, reference.buffer.length), "first\nbaseline\nlast\n");
@@ -245,7 +245,7 @@ test("supplied views remain owned by the host and buffer resources retain their 
         capabilities: { edit: [], save: false },
     });
     assert.equal(workspace.document(display.id).buffer, buffer);
-    for (const origin of ["human", "agent", "host"] as const) assert.equal(workspace.edit({ documentId: display.id, expectedRevision: 0, origin, edits: [{ from: 0, to: 0, insert: "bad" }] }).applied, false);
+    for (const origin of ["human", "agent", "host"] as const) assert.notEqual(workspace.edit({ documentId: display.id, expectedRevision: 0, origin, edits: [{ from: 0, to: 0, insert: "bad" }] }).status, "done");
     workspace.releaseResource(display.id); assert.equal(workspace.diagnostics().leases, 0);
 });
 
@@ -269,7 +269,7 @@ test("saving a captured revision changes the saved version independently of refe
     assert.equal(acceptance.complete({ buffer: acceptance.capture.working.buffer, version: "reference-2" }), true);
     assert.equal(resource.metadata.getSnapshot().serverVersion, "saved-2"); assert.equal(resource.metadata.getSnapshot().dirty, true);
     const revision = workspace.document(resource.id).revision;
-    assert.equal(workspace.undo({ documentId: resource.id, expectedRevision: revision }).applied, true);
+    assert.equal(workspace.undo({ documentId: resource.id, expectedRevision: revision }).status, "done");
     assert.equal(resource.metadata.getSnapshot().dirty, false);
     assert.equal(comparison.getSnapshot().baseline!.version, "reference-2"); comparison.dispose();
 });

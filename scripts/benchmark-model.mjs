@@ -52,7 +52,7 @@ export async function benchmarkModel() {
             const start = performance.now();
             const result = workspace.edit({ documentId, expectedRevision, origin: "human", edits: [edit] });
             const elapsed = performance.now() - start;
-            assert.equal(result.applied, true);
+            assert.equal(result.status, "done");
             if (next !== oracle) {
                 expectedRevision++; roots.push(before);
             }
@@ -70,7 +70,7 @@ export async function benchmarkModel() {
             const revision = workspace.document(documentId).revision, start = performance.now();
             const result = workspace.undo({ documentId, expectedRevision: revision });
             const elapsed = performance.now() - start;
-            assert.equal(result.applied, true); assert.equal(workspace.document(documentId).buffer, roots[index]);
+            assert.equal(result.status, "done"); assert.equal(workspace.document(documentId).buffer, roots[index]);
             if (index < roots.length - 5) undo.push(elapsed);
         }
         assert.equal(workspace.resource(documentId).metadata.getSnapshot().dirty, false);
@@ -78,7 +78,7 @@ export async function benchmarkModel() {
             const revision = workspace.document(documentId).revision, start = performance.now();
             const result = workspace.redo({ documentId, expectedRevision: revision });
             const elapsed = performance.now() - start;
-            assert.equal(result.applied, true); assert.equal(workspace.document(documentId).buffer, roots[index + 1] ?? final);
+            assert.equal(result.status, "done"); assert.equal(workspace.document(documentId).buffer, roots[index + 1] ?? final);
             if (index >= 5) redo.push(elapsed);
         }
         assert.equal(workspace.document(documentId).text(), oracle);
@@ -113,7 +113,7 @@ export async function benchmarkModel() {
                 const start = performance.now();
                 const result = write(`edit-${index}`);
                 const elapsed = performance.now() - start;
-                assert.equal(result.applied, true);
+                assert.equal(result.status, "done");
                 if (index >= 5) samples.push(elapsed);
             }
             assert.equal(viewCalls, views * 65); assert.equal(coarseCalls, 65);

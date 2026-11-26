@@ -60,7 +60,7 @@ test("composed host edits replay folded moves in order and preserve later fold c
         const append = () => {
             const { revision, buffer } = document();
             assert.ok(workspace.edit({ documentId: id, expectedRevision: revision, origin: "host", history, view,
-                edits: [{ from: buffer.length, to: buffer.length, insert: "!" }] }).applied);
+                edits: [{ from: buffer.length, to: buffer.length, insert: "!" }] }).status === "done");
         };
         append();
         for (let i = 0; i < 2; i++) {
@@ -69,22 +69,22 @@ test("composed host edits replay folded moves in order and preserve later fold c
                 resolveLanguageConfiguration(), snapshot().index);
             const plan = structuredClone(proposal);
             assert.ok(workspace.edit({ documentId: id, expectedRevision: revision, origin: "host", history, view,
-                edits: plan.edits, selectionSet: plan.selectionSet }).applied);
+                edits: plan.edits, selectionSet: plan.selectionSet }).status === "done");
         }
         append();
         view.folding.setCollapsed(snapshot(), "b", false);
         const moved = [["b", 0, false], ["c", 2, true], ["a", 4, true]];
         assert.deepEqual(state(), moved);
         assert.equal(workspace.observeHistory(id).getSnapshot().undoDepth, 1);
-        assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).applied);
+        assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).status === "done");
         assert.equal(document().buffer.text(), buffer.text());
         assert.deepEqual(state(), [["a", 0, true], ["b", 2, false], ["c", 4, true]]);
-        assert.ok(workspace.redo({ documentId: id, expectedRevision: document().revision }).applied);
+        assert.ok(workspace.redo({ documentId: id, expectedRevision: document().revision }).status === "done");
         assert.equal(document().buffer.text(), "b\n  B\nc\n  C\na\n  A\ntail!!");
         assert.deepEqual(state(), moved);
 
         // A synchronous transaction can stage the same kind of move before a second edit.
-        assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).applied);
+        assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).status === "done");
         view.folding.setCollapsed(snapshot(), "b", true);
         const proposal = planLanguageEdit(buffer, view.getSnapshot().selectionSet, "move-line-down",
             resolveLanguageConfiguration(), snapshot().index);
@@ -95,9 +95,9 @@ test("composed host edits replay folded moves in order and preserve later fold c
         }, { origin: "host", history: "record", kind: "refactor" });
         const swapped = [["b", 0, true], ["a", 2, true], ["c", 4, true]];
         assert.deepEqual(state(), swapped);
-        assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).applied);
+        assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).status === "done");
         assert.deepEqual(state(), [["a", 0, true], ["b", 2, true], ["c", 4, true]]);
-        assert.ok(workspace.redo({ documentId: id, expectedRevision: document().revision }).applied);
+        assert.ok(workspace.redo({ documentId: id, expectedRevision: document().revision }).status === "done");
         assert.deepEqual(state(), swapped);
     } finally {
         view.dispose();
@@ -132,22 +132,22 @@ test("copied line moves carry each view's folds through undo and redo", () => {
         const apply = (edits: typeof plan.edits) => workspace.edit({ documentId, view: main, origin: "host",
             expectedRevision: workspace.document(documentId).revision, edits, selectionSet: plan.selectionSet });
         const history = () => ({ documentId, expectedRevision: workspace.document(documentId).revision });
-        assert.ok(apply(plan.edits).applied);
+        assert.ok(apply(plan.edits).status === "done");
         const after = states();
         assert.deepEqual(after, [main, peer].map(view => ["b", "a", "d", "c"].map((id, i) => [id, 2 * i, view === main || id === "c"])));
-        assert.ok(workspace.undo(history()).applied);
+        assert.ok(workspace.undo(history()).status === "done");
         assert.deepEqual(states(), before);
-        assert.ok(workspace.redo(history()).applied);
+        assert.ok(workspace.redo(history()).status === "done");
         assert.deepEqual(states(), after);
-        assert.ok(workspace.undo(history()).applied);
+        assert.ok(workspace.undo(history()).status === "done");
         // An ordinary cut and paste has no move intent. Retaining the marker while changing
         // the transferred text must not attach the discarded block's fold to different text.
         const plain = plan.edits.map(({ from, to, insert }) => ({ from, to, insert }));
-        assert.ok(apply(plain).applied);
+        assert.ok(apply(plain).status === "done");
         const ordinary = states();
         assert.notDeepEqual(ordinary, after);
-        assert.ok(workspace.undo(history()).applied);
-        assert.ok(apply(plan.edits.map(edit => ({ ...edit, insert: edit.insert.replace("B", "X") }))).applied);
+        assert.ok(workspace.undo(history()).status === "done");
+        assert.ok(apply(plan.edits.map(edit => ({ ...edit, insert: edit.insert.replace("B", "X") }))).status === "done");
         assert.deepEqual(states(), ordinary);
     } finally {
         main.dispose();
@@ -288,10 +288,10 @@ for (const origin of ["edit", "proposal", "canonical"] as const) test(`${origin}
     try {
         const edits = [{ from: 9, to: 9, insert: "new\n" }];
         if (ticket) assert.equal(ticket.accept({ serverVersion: "saved", canonical: updated }).canonicalApplied, true);
-        else if (origin === "proposal") assert.equal(model.edit({ documentId: source.id, expectedRevision: source.getSnapshot().revision, origin: "agent", history: { kind: "proposal" }, edits }).applied, true);
-        else assert.equal(model.edit({ documentId: source.id, expectedRevision: 0, origin: "host", edits }).applied, true);
-        expectedRevision = 2; assert.equal(model.undo({ documentId: source.id, expectedRevision: 1 }).applied, true);
-        expectedRevision = 3; assert.equal(model.redo({ documentId: source.id, expectedRevision: 2 }).applied, true);
+        else if (origin === "proposal") assert.equal(model.edit({ documentId: source.id, expectedRevision: source.getSnapshot().revision, origin: "agent", history: { kind: "proposal" }, edits }).status, "done");
+        else assert.equal(model.edit({ documentId: source.id, expectedRevision: 0, origin: "host", edits }).status, "done");
+        expectedRevision = 2; assert.equal(model.undo({ documentId: source.id, expectedRevision: 1 }).status, "done");
+        expectedRevision = 3; assert.equal(model.redo({ documentId: source.id, expectedRevision: 2 }).status, "done");
         assert.equal(notifications, 3); assert.deepEqual(errors, []);
     } finally {
         subscriptions.forEach(unsubscribe => unsubscribe()); ticket?.finish(); view.dispose(); peer.dispose();
@@ -304,7 +304,7 @@ test("boundary newline removal cannot publish crossing folds or interrupt an ato
     const f = fixture(); try {
         const b = f.model.document(f.source.id).buffer;
         f.view.folding.setRanges(f.view.folding.getSnapshot(), [{ id: "left", from: 0, to: b.offsetAt(2), collapsed: true }, { id: "right", from: b.offsetAt(2), to: b.length, collapsed: true }]);
-        const at = b.offsetAt(2); assert.equal(f.model.edit({ documentId: f.source.id, expectedRevision: 0, origin: "host", edits: [{ from: at - 2, to: at, insert: "" }] }).applied, true);
+        const at = b.offsetAt(2); assert.equal(f.model.edit({ documentId: f.source.id, expectedRevision: 0, origin: "host", edits: [{ from: at - 2, to: at, insert: "" }] }).status, "done");
         assert.equal(f.text(), "header\r\nbody onebody two\r\nend"); assert.equal(f.view.getSnapshot().revision, 1); assert.equal(f.view.folding.getSnapshot().revision, 1);
         assert.equal(f.view.folding.getSnapshot().regions.length, 1); assert.equal(f.view.folding.getSnapshot().regions[0]!.collapsed, false);
         f.model.undo({ documentId: f.source.id, expectedRevision: 1 }); assert.equal(f.text(), "header\r\nbody one\r\nbody two\r\nend");

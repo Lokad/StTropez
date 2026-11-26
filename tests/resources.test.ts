@@ -36,9 +36,9 @@ test("internal resources keep captured ownership while workspace inventories con
     assert.equal(reference.metadata.getSnapshot().visibility, "internal");
     assert.equal(workspace.resolveResource(resourceTarget), reference);
     assert.equal(workspace.document(reference.id).buffer, buffer);
-    assert.equal(workspace.edit({ documentId: reference.id, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "x" }], origin: "human" }).applied, false);
+    assert.notEqual(workspace.edit({ documentId: reference.id, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "x" }], origin: "human" }).status, "done");
     // Inventory visibility is independent of edit permissions.
-    assert.equal(workspace.edit({ documentId: scratch.id, expectedRevision: 0, edits: [{ from: 0, to: 1, insert: "y" }], origin: "human" }).applied, true);
+    assert.equal(workspace.edit({ documentId: scratch.id, expectedRevision: 0, edits: [{ from: 0, to: 1, insert: "y" }], origin: "human" }).status, "done");
     const view = workspace.createDocumentView(reference.id), lease = workspace.acquire(reference.id);
     workspace.releaseResourceWhenUnowned(reference.id);
     await Promise.resolve(); assert.equal(reference.getSnapshot().state, "ready");
@@ -113,7 +113,7 @@ test("loads distinguish readiness, ignore superseded responses and release owner
     const handle = workspace.createTextResource({ scope: "probe", resource: "loading", variant: "working" }, "Loading");
     assert.equal(handle.getSnapshot().state, "loading");
     assert.throws(() => workspace.document(handle.id));
-    assert.equal(workspace.edit({ documentId: handle.id, expectedRevision: 0, origin: "human", edits: [] }).applied, false);
+    assert.notEqual(workspace.edit({ documentId: handle.id, expectedRevision: 0, origin: "human", edits: [] }).status, "done");
     const abandoned = workspace.beginLoad(handle); abandoned.dispose();
     assert.equal(handle.getSnapshot().state, "failed"); assert.ok(handle.metadata.getSnapshot().failure);
     abandoned.dispose(); assert.equal(workspace.ownership(handle.id).leases, 0);
@@ -245,7 +245,7 @@ test("deferred resource release follows final ownership and preserves later unsa
 test("capabilities reject all edit origins and prevent stale refresh from erasing local work", () => {
     const { workspace, source, edit } = fixture();
     workspace.setCapabilities(source.id, { edit: [], save: false });
-    for (const origin of ["human", "agent", "host"] as const) assert.deepEqual(edit("blocked", origin), { applied: false, reason: "read-only" });
+    for (const origin of ["human", "agent", "host"] as const) assert.deepEqual(edit("blocked", origin), { status: "refused", reason: "read-only" });
     assert.throws(() => workspace.captureSave(source));
     workspace.setCapabilities(source.id, { edit: ["human"], save: true });
     edit("new work");
@@ -363,10 +363,10 @@ test("subscription diagnostics count independent registrations even after a reso
     let calls = 0; const listener = () => { calls++; };
     const first = other.subscribe(listener), second = other.subscribe(listener);
     assert.equal(workspace.diagnostics().subscriptions, 2);
-    assert.equal(workspace.replaceText(other.id, "y", { expectedRevision: 0, origin: "human", history: "record" }).applied, true);
+    assert.equal(workspace.replaceText(other.id, "y", { expectedRevision: 0, origin: "human", history: "record" }).status, "done");
     assert.equal(calls, 1);
     first(); first(); assert.equal(workspace.diagnostics().subscriptions, 1);
-    assert.equal(workspace.replaceText(other.id, "z", { expectedRevision: 1, origin: "human", history: "record" }).applied, true);
+    assert.equal(workspace.replaceText(other.id, "z", { expectedRevision: 1, origin: "human", history: "record" }).status, "done");
     assert.equal(calls, 2); const third = other.subscribe(listener);
     workspace.releaseResource(other.id, true); assert.equal(calls, 3); assert.equal(workspace.diagnostics().subscriptions, 2);
     second(); second(); assert.equal(workspace.diagnostics().subscriptions, 1);

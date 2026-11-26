@@ -69,7 +69,7 @@ test("explicit server route retains captured applyEdit ownership and does not au
     assert.equal(receipt.decision?.applied, true); assert.equal(f.document().buffer.slice(0, 7), "changed");
     const changed = f.workspace.document(other.id);
     assert.equal(changed.buffer.line(0).text, "second delta");
-    assert.ok(f.workspace.undo({ documentId: other.id, expectedRevision: changed.revision }).applied);
+    assert.ok(f.workspace.undo({ documentId: other.id, expectedRevision: changed.revision }).status === "done");
     assert.equal(f.document().buffer.line(0).text, "alpha beta");
     assert.equal(f.workspace.document(other.id).buffer, other.buffer);
     assert.equal((await f.peer.sendRequest("workspace/applyEdit", edit) as { applied: boolean }).applied, false);

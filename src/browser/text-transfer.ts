@@ -61,8 +61,8 @@ export function applyTextDrop(request: TextDropRequest): TextDropResult {
         { documentId: source!.documentId, expectedRevision: source!.revision, origin: "human", edits: removals,
             view: source!.view, selectionSet: removed!.selectionSet, history: { kind: "replace" } }, targetRequest,
     ]) : workspace.editDocuments([targetRequest]);
-    if (!result.applied) return Object.freeze({ applied: false, reason: result.reason });
-    const revision = result.revisions.find(item => item.documentId === view.documentId)!.revision;
+    if (result.status !== "done") return Object.freeze({ applied: false, reason: result.reason });
+    const revision = result.value.find(item => item.documentId === view.documentId)!.revision;
     // Same-document history restores the drag-initiating view; other retained views map normally.
     // The drop view selects the inserted text, independently of whichever view has focus.
     if (initiator !== view && workspace.ownsDocumentView(view)) view.setSelections(revision, after.ranges, after.primary);

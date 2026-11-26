@@ -143,7 +143,7 @@ export function compareText(workspace: Workspace, documentId: DocumentId, initia
                 const edits = current.hunks.map(hunk => ({ from: hunk.working.from, to: hunk.working.to,
                     insert: current.baseline!.buffer.slice(hunk.baseline.from, hunk.baseline.to) }));
                 return workspace.edit({ documentId, expectedRevision: capture.working.revision, origin: "human", view,
-                    history: { kind: "replace" }, edits }).applied;
+                    history: { kind: "replace" }, edits }).status === "done";
             } finally { finish(); }
         }, cancel: finish, finish });
     }
@@ -171,7 +171,7 @@ export function compareText(workspace: Workspace, documentId: DocumentId, initia
             const insert = current.baseline.buffer.slice(hunk.baseline.from, hunk.baseline.to);
             return workspace.edit({ documentId, expectedRevision: current.working.revision, origin: "human", view,
                 history: { kind: "replace" }, edits: [{ from: hunk.working.from, to: hunk.working.to, insert }],
-                selection: { anchor: hunk.working.from, head: hunk.working.from } }).applied;
+                selection: { anchor: hunk.working.from, head: hunk.working.from } }).status === "done";
         } });
     }, replaceBaseline: value => begin("refresh").complete(value),
     beginRefresh: () => begin("refresh"), beginAcceptance: () => begin("accept"), beginReversion, dispose: () => {

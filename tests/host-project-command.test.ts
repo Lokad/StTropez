@@ -55,7 +55,7 @@ test("a command acknowledges a batch with a newly resolved companion and undoes 
         assert.equal(document().buffer.slice(0, 8), "// note\n");
         assert.equal(result.status, "done");
         assert.deepEqual(result.value.map(change => change.document).sort(), [original.id, companion.id].sort());
-        assert.ok(workspace.undo({ documentId: companion.id, expectedRevision: after.revision }).applied);
+        assert.ok(workspace.undo({ documentId: companion.id, expectedRevision: after.revision }).status === "done");
         assert.equal(workspace.document(companion.id).buffer, companion.buffer);
         assert.equal(document().buffer, original.buffer);
     } finally {
@@ -192,9 +192,9 @@ for (const [cause, interrupt] of Object.entries(interruptions)) {
         if (cause !== "disconnect") assert.equal(decision?.applied, false);
         assert.equal(f.workspace.document(f.companion.id).buffer, f.companion.buffer);
         const undo = () => f.workspace.undo({ documentId: origin.id, expectedRevision: f.document().revision });
-        if (cause === "typing") assert.ok(undo().applied);
+        if (cause === "typing") assert.ok(undo().status === "done");
         assert.equal(f.document().buffer, committed.buffer);
-        assert.ok(undo().applied);
+        assert.ok(undo().status === "done");
         assert.equal(f.document().buffer, origin.buffer);
     });
 }

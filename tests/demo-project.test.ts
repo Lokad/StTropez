@@ -185,7 +185,7 @@ test("equivalent peer saves preserve the draft and distinct unopened files requi
         assert.equal(project.dirty(), false);
         assert.equal(file.resource.metadata.getSnapshot().serverVersion, "matches-working");
         assert.equal(workspace.document(id).revision, revision);
-        assert.ok(workspace.undo({ documentId: id, expectedRevision: revision }).applied);
+        assert.ok(workspace.undo({ documentId: id, expectedRevision: revision }).status === "done");
         assert.equal(workspace.document(id).text(), local);
         const unopened = Object.keys(originals).find(name => !project.files.some(item => item.name === name))!;
         assert.ok(unopened);
@@ -336,7 +336,7 @@ test("demo startup falls back only for unreadable storage and preserves the stor
             assert.match(project.message, failure === "read" ? /Storage is unavailable/ : /stored copy has been left untouched/);
             const doc = project.workspace.document(project.files[0]!.resource.id);
             assert.equal(project.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "human",
-                edits: [{ from: 0, to: 0, insert: "// still editable\n" }] }).applied, true);
+                edits: [{ from: 0, to: 0, insert: "// still editable\n" }] }).status, "done");
             await project.save(() => {});
             assert.equal(store.row, original); assert.equal(store.writes, 0); assert.equal(project.dirty(), true);
         } finally { project.dispose(); await project.language.dispose(); }

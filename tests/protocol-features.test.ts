@@ -324,7 +324,7 @@ test("several-caret completion formats each context and restores the full transa
     let publications = 0; const stop = workspace.observeDocument(resource.id).subscribe(() => publications++); t.after(stop);
     const root = document().buffer;
     assert.ok(workspace.edit({ documentId: resource.id, expectedRevision: 0, origin: "human", edits: plan.edits,
-        selectionSet: plan.selectionSet, view, history: { kind: "replace" } }).applied);
+        selectionSet: plan.selectionSet, view, history: { kind: "replace" } }).status === "done");
     assert.equal(publications, 1); assert.equal(document().buffer.text(), expected);
     assert.equal(workspace.observeHistory(resource.id).getSnapshot().undoDepth, 1);
     assert.deepEqual(plan.snippet![0]!.ranges.map(range => document().buffer.slice(range.from, range.to)), Array(6).fill("ok"));
@@ -333,9 +333,9 @@ test("several-caret completion formats each context and restores the full transa
     const ordered = plan.snippet!.flatMap(stop => stop.ranges).sort((a, b) => a.order - b.order);
     assert.equal(new Set(ordered.map(range => range.order)).size, ordered.length);
     assert.ok(ordered.every((range, index) => !index || range.from >= ordered[index - 1]!.to));
-    assert.ok(workspace.undo({ documentId: resource.id, expectedRevision: 1 }).applied);
+    assert.ok(workspace.undo({ documentId: resource.id, expectedRevision: 1 }).status === "done");
     assert.equal(document().buffer, root); assert.deepEqual(view.getSnapshot().selectionSet, before);
-    assert.ok(workspace.redo({ documentId: resource.id, expectedRevision: 2 }).applied);
+    assert.ok(workspace.redo({ documentId: resource.id, expectedRevision: 2 }).status === "done");
     assert.equal(document().buffer.text(), expected); assert.deepEqual(view.getSnapshot().selectionSet, plan.selectionSet);
     const at = plan.snippet![0]!.ranges[2]!.from + 1, mirrored = planSnippetEdit(document().buffer, plan.snippet!, 0, [{ from: at, to: at, insert: "!" }],
         createSelectionSet(document().buffer.length, [{ anchor: at, head: at }]), createSelectionSet(document().buffer.length + 1, [{ anchor: at + 1, head: at + 1 }]))!;

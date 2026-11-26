@@ -75,7 +75,7 @@ test("rediscovery keeps the moved block collapsed through repeated moves, Undo a
         const plan = planLanguageEdit(buffer, view.getSnapshot().selectionSet, command,
             resolveLanguageConfiguration(), folds.getSnapshot().index);
         assert.ok(workspace.edit({ documentId: id, view, expectedRevision: revision, origin: "human",
-            edits: plan.edits, selectionSet: plan.selectionSet }).applied);
+            edits: plan.edits, selectionSet: plan.selectionSet }).status === "done");
     }
     discover();
     const header = folds.getSnapshot().index.headerAt(1)!;
@@ -92,7 +92,7 @@ test("rediscovery keeps the moved block collapsed through repeated moves, Undo a
     move("move-line-down");
     check(2);
     assert.equal(peer.folding.getSnapshot().regions.length, 0);
-    assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).applied);
+    assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).status === "done");
     check(1);
     assert.deepEqual(peer.folding.getSnapshot().regions, [{ ...publish, collapsed: true }]);
     for (const [key, line] of [["move-line-down", 2], ["move-line-down", 3], ["move-line-up", 2], ["move-line-up", 1]] as const) {
@@ -100,9 +100,9 @@ test("rediscovery keeps the moved block collapsed through repeated moves, Undo a
         check(line);
     }
     assert.equal(document().text(), original);
-    assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).applied);
+    assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).status === "done");
     check(2);
-    assert.ok(workspace.redo({ documentId: id, expectedRevision: document().revision }).applied);
+    assert.ok(workspace.redo({ documentId: id, expectedRevision: document().revision }).status === "done");
     check(1);
     assert.equal(document().text(), original);
     peer.dispose();

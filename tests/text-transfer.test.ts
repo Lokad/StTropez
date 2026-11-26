@@ -17,9 +17,9 @@ test("same-document movement preserves raw fragments and restores the complete i
     const before = f.sourceView.getSnapshot().selectionSet, transfer = f.capture(); assert.equal(transfer.text, "ab\n😀");
     const result = applyTextDrop({ workspace: f.workspace, view: f.sourceView, expectedRevision: 0, offset: 10, source: transfer });
     assert.equal(result.applied, true); assert.equal(f.text(), "\r\ncdefab\n😀");
-    assert.equal(f.workspace.undo({ documentId: f.source.id, expectedRevision: 1 }).applied, true);
+    assert.equal(f.workspace.undo({ documentId: f.source.id, expectedRevision: 1 }).status, "done");
     assert.equal(f.text(), "ab\r\ncd😀ef"); assert.deepEqual(f.sourceView.getSnapshot().selectionSet, before);
-    assert.equal(f.workspace.redo({ documentId: f.source.id, expectedRevision: 2 }).applied, true); assert.equal(f.text(), "\r\ncdefab\n😀");
+    assert.equal(f.workspace.redo({ documentId: f.source.id, expectedRevision: 2 }).status, "done"); assert.equal(f.text(), "\r\ncdefab\n😀");
 });
 
 test("cross-document move is atomic and has one linked undo unit, including both view sets", () => {
@@ -30,10 +30,10 @@ test("cross-document move is atomic and has one linked undo unit, including both
     const result = applyTextDrop({ workspace: f.workspace, view: f.targetView, expectedRevision: 0, offset: 2, source: f.capture() });
     off(); assert.equal(result.applied, true); assert.deepEqual(seen, [[" ", "tafirst\nsecondil"]]);
     assert.equal(f.workspace.observeHistory(f.source.id).getSnapshot().undoDepth, 1); assert.equal(f.workspace.observeHistory(f.destination.id).getSnapshot().undoDepth, 1);
-    assert.equal(f.workspace.undo({ documentId: f.destination.id, expectedRevision: 1 }).applied, true);
+    assert.equal(f.workspace.undo({ documentId: f.destination.id, expectedRevision: 1 }).status, "done");
     assert.equal(f.text(), "first second"); assert.equal(f.text(f.destination.id), "tail");
     assert.deepEqual([f.sourceView.getSnapshot().selectionSet, f.targetView.getSnapshot().selectionSet], before);
-    assert.equal(f.workspace.redo({ documentId: f.source.id, expectedRevision: 2 }).applied, true); assert.equal(f.text(), " ");
+    assert.equal(f.workspace.redo({ documentId: f.source.id, expectedRevision: 2 }).status, "done"); assert.equal(f.text(), " ");
 });
 
 test("copy and own-source no-op do not delete source text or create spurious history", () => {
@@ -87,7 +87,7 @@ test("a move between views retains source history ownership and explicitly posit
     const result = applyTextDrop({ workspace: f.workspace, view: dropView, expectedRevision: 0, offset: 6, source: f.capture() });
     assert.equal(result.applied, true); assert.equal(f.text(), "adefbc"); assert.equal(dropView.getSnapshot().selection.head, 6);
     assert.equal(dropView.getSnapshot().selection.anchor, 4);
-    assert.equal(f.workspace.undo({ documentId: f.source.id, expectedRevision: 1 }).applied, true);
+    assert.equal(f.workspace.undo({ documentId: f.source.id, expectedRevision: 1 }).status, "done");
     assert.equal(f.text(), "abcdef"); assert.deepEqual(f.sourceView.getSnapshot().selectionSet, before);
 });
 
@@ -96,7 +96,7 @@ test("external text inserts at the captured drop position instead of replacing t
     const result = applyTextDrop({ workspace: f.workspace, view: f.targetView, expectedRevision: 0, offset: 3, text });
     assert.equal(result.applied, true); assert.equal(f.text(f.destination.id), "tar" + text + "get");
     assert.equal(f.targetView.getSnapshot().selection.anchor, 3); assert.equal(f.targetView.getSnapshot().selection.head, 3 + text.length);
-    assert.equal(f.workspace.undo({ documentId: f.destination.id, expectedRevision: 1 }).applied, true); assert.deepEqual(f.targetView.getSnapshot().selectionSet, before);
+    assert.equal(f.workspace.undo({ documentId: f.destination.id, expectedRevision: 1 }).status, "done"); assert.deepEqual(f.targetView.getSnapshot().selectionSet, before);
 });
 
 test("workspace identity prevents cross-workspace deletion, and internal payloads do not retarget to supplied plain text", () => {

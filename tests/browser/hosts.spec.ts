@@ -184,7 +184,7 @@ for (const mode of ["plain", "react"] as const) {
             await secondary.evaluate((node: HTMLTextAreaElement) => node.setSelectionRange(5, 8, "backward"));
             await page.evaluate(() => window.hostFixture.unmount());
             const edited = await page.evaluate(() => window.hostFixture.editSource(window.hostFixture.snapshot().source.revision, [{ from: 0, to: 0, insert: "XY" }]));
-            expect(edited.applied).toBe(true); await page.evaluate(() => window.hostFixture.mount());
+            expect(edited.status === "done").toBe(true); await page.evaluate(() => window.hostFixture.mount());
             await expect(primary).toHaveValue("XYabcdefghij");
             expect(await primary.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd])).toEqual([3, 5]);
             expect(await secondary.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd, node.selectionDirection])).toEqual([7, 10, "backward"]);

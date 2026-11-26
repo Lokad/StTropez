@@ -97,7 +97,7 @@ test("recovery restores the named files atomically with one linked undo unit", a
     assert.deepEqual(f.text(), ["draft A", "draft B"]);
     assert.ok(f.files.every(file => file.resource.metadata.getSnapshot().dirty));
     const file = f.files[1]!, document = f.workspace.document(file.resource.id);
-    assert.equal(f.workspace.undo({ documentId: document.id, expectedRevision: document.revision }).applied, true);
+    assert.equal(f.workspace.undo({ documentId: document.id, expectedRevision: document.revision }).status, "done");
     assert.deepEqual(f.text(), ["original a.ts", "original b.ts"]);
 });
 
@@ -231,7 +231,7 @@ test("automatic recovery settles after Undo, reuses a protected draft and clears
     const f = fixture(store); t.after(() => f.recovery.dispose()); await ready(f.recovery);
     const undo = () => {
         const document = f.workspace.document(f.files[0]!.resource.id);
-        assert.equal(f.workspace.undo({ documentId: document.id, expectedRevision: document.revision }).applied, true);
+        assert.equal(f.workspace.undo({ documentId: document.id, expectedRevision: document.revision }).status, "done");
     };
     f.edit();
     undo();

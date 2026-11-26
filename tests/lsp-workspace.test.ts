@@ -259,7 +259,7 @@ function fixture(t: test.TestContext, extra: Partial<Pick<LspWorkspaceOptions,
         connect: async () => { const next = peer(); peers.push(next); return next.transport; },
         onError: error => errors.push(error.message) });
     t.after(async () => { provider.dispose(); await settled(); for (const peer of peers) peer.rpc.dispose(); for (const timer of timers) clearTimeout(timer); });
-    const edit = (id = source.id, insert = "!") => { const doc = workspace.document(id); assert.equal(workspace.edit({ documentId: id, expectedRevision: doc.revision, edits: [{ from: doc.buffer.length, to: doc.buffer.length, insert }], origin: "human" }).applied, true); };
+    const edit = (id = source.id, insert = "!") => { const doc = workspace.document(id); assert.equal(workspace.edit({ documentId: id, expectedRevision: doc.revision, edits: [{ from: doc.buffer.length, to: doc.buffer.length, insert }], origin: "human" }).status, "done"); };
     return { workspace, provider, source, companion, peers, errors, timers, edit };
 }
 
@@ -277,15 +277,15 @@ test("workspace batches and grouped history retain bounded wire edits; skipped r
     const type = (insert: string, step: number) => {
         const doc = f.workspace.document(id), far = doc.buffer.offsetAt(9_998) + 2 + step;
         assert.equal(f.workspace.edit({ documentId: id, expectedRevision: doc.revision, origin: "human", history: { kind: "typing", group: "batch" },
-            edits: [{ from: 2 + step, to: 2 + step, insert }, { from: far, to: far, insert }] }).applied, true);
+            edits: [{ from: 2 + step, to: 2 + step, insert }, { from: far, to: far, insert }] }).status, "done");
     };
     type("a", 0); await verify(true); type("b", 1); await verify(true);
-    assert.equal(f.workspace.undo({ documentId: id, expectedRevision: f.workspace.document(id).revision }).applied, true); await verify(true);
+    assert.equal(f.workspace.undo({ documentId: id, expectedRevision: f.workspace.document(id).revision }).status, "done"); await verify(true);
     assert.equal(peer.documents.get(uri)!.getText(), text);
-    assert.equal(f.workspace.redo({ documentId: id, expectedRevision: f.workspace.document(id).revision }).applied, true); await verify(true);
+    assert.equal(f.workspace.redo({ documentId: id, expectedRevision: f.workspace.document(id).revision }).status, "done"); await verify(true);
     const acknowledged = f.workspace.document(id), version = peer.documents.get(uri)!.version, updates = peer.changes.length;
-    assert.equal(f.workspace.undo({ documentId: id, expectedRevision: acknowledged.revision }).applied, true);
-    assert.equal(f.workspace.redo({ documentId: id, expectedRevision: f.workspace.document(id).revision }).applied, true);
+    assert.equal(f.workspace.undo({ documentId: id, expectedRevision: acknowledged.revision }).status, "done");
+    assert.equal(f.workspace.redo({ documentId: id, expectedRevision: f.workspace.document(id).revision }).status, "done");
     const restored = f.workspace.document(id);
     assert.equal(restored.buffer, acknowledged.buffer); assert.equal(restored.revision, acknowledged.revision + 2);
     await verify(false);
@@ -314,7 +314,7 @@ test("a connected workspace reads individual edits only when the compact change 
         f.edit(id, half);
         await scope.flush();
         const before = f.workspace.document(id);
-        assert.ok(f.workspace.edit({ documentId: id, expectedRevision: before.revision, origin: "human", edits }).applied);
+        assert.ok(f.workspace.edit({ documentId: id, expectedRevision: before.revision, origin: "human", edits }).status === "done");
         const after = f.workspace.document(id), reads = bufferReads(before.buffer);
         await Promise.resolve();
         assert.equal(binding.getSnapshot().buffer, after.buffer);
@@ -514,7 +514,7 @@ test("a rejected oversized update expires associations but preserves unrelated d
     const ownership = f.workspace.diagnostics();
     assert.throws(() => a.attachDocument(resource), /document size limit/);
     assert.equal(f.workspace.diagnostics().leases, ownership.leases);
-    assert.ok(f.workspace.undo({ documentId: resource, expectedRevision: f.workspace.document(resource).revision }).applied);
+    assert.ok(f.workspace.undo({ documentId: resource, expectedRevision: f.workspace.document(resource).revision }).status === "done");
     const retry = a.attachDocument(resource);
     await a.flush([retry]);
     const reply = await a.requestDocument("textDocument/hover", retry, index => ({ position: index.at(0) })).result;
@@ -581,7 +581,7 @@ test("pending diagnostics map consecutive edits and undo without renewing provid
     const fresh = state.getSnapshot(), initial = fresh.result!;
     const edit = (from: number, to: number, insert: string) => {
         const doc = f.workspace.document(f.source.id);
-        assert.equal(f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, edits: [{ from, to, insert }], origin: "human" }).applied, true);
+        assert.equal(f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, edits: [{ from, to, insert }], origin: "human" }).status, "done");
     };
     const check = (from: number, to: number) => {
         const pending = state.getSnapshot(); assert.equal(pending.status, "pending"); assert.equal(pending.isCurrent(), false); assert.equal(pending.isPlacementCurrent(), true);
@@ -594,7 +594,7 @@ test("pending diagnostics map consecutive edits and undo without renewing provid
     };
     edit(0, 0, "head\r\n"); const first = check(11, 17); assert.equal(fresh.isCurrent(), false); assert.equal(fresh.isPlacementCurrent(), false);
     edit(0, 0, "😀"); check(13, 19); assert.equal(first.isPlacementCurrent(), false);
-    const undo = () => { assert.equal(f.workspace.undo({ documentId: f.source.id, expectedRevision: f.workspace.document(f.source.id).revision }).applied, true); };
+    const undo = () => { assert.equal(f.workspace.undo({ documentId: f.source.id, expectedRevision: f.workspace.document(f.source.id).revision }).status, "done"); };
     undo(); check(11, 17); undo(); check(5, 11);
     assert.deepEqual(initial.items.map(item => [item.from, item.to]), [[5, 11], [7, 7], [null, null]], "Retained snapshots never mutate.");
     await scope.flush();

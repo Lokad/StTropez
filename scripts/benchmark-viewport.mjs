@@ -28,12 +28,12 @@ try {
                 if (!before.document) throw new Error("Viewport measurement requires a document.");
                 const start = performance.now();
                 const result = window.viewportFixture.edit(before.document.revision, [{ from: offset, to: offset, insert: "z" }]);
-                if (!result.applied) throw new Error("Viewport edit failed.");
+                if (result.status !== "done") throw new Error("Viewport edit failed.");
                 const committed = performance.now();
                 const check = () => {
                     const state = window.viewportFixture.snapshot();
                     if (!state.document) { reject(new Error("Viewport document detached during measurement.")); return; }
-                    if (state.primary.revision !== result.revision || state.secondary.revision !== result.revision || state.primary.pending || state.secondary.pending) { requestAnimationFrame(check); return; }
+                    if (state.primary.revision !== result.value || state.secondary.revision !== result.value || state.primary.pending || state.secondary.pending) { requestAnimationFrame(check); return; }
                     resolve({ modelMs: committed - start, frameReadyProxyMs: performance.now() - start,
                         primary: state.primary, secondary: state.secondary, length: state.document.length });
                 }; requestAnimationFrame(check);

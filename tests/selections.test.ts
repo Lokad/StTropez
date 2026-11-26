@@ -81,15 +81,15 @@ test("atomic multi-range typing groups shared undo and maps independent retained
     const stop = primary.subscribe(() => { deliveries.push({ state: primary.getSnapshot(), revision: document().revision, length: document().buffer.length }); });
     const edit = (insert: string) => { const current = document(), plan = planSelectionEdits(current.buffer.length, primary.getSnapshot().selectionSet, insert);
         return workspace.edit({ documentId: source.id, expectedRevision: current.revision, origin: "human", view: primary, ...plan, history: { kind: "typing", group: "continuous" } }); };
-    assert.equal(edit("X").applied, true); assert.deepEqual(endpoints(secondary.getSnapshot().selectionSet), [[1, 1], [2, 6]]);
-    assert.equal(edit("Y").applied, true); assert.equal(deliveries.length, 2);
+    assert.equal(edit("X").status, "done"); assert.deepEqual(endpoints(secondary.getSnapshot().selectionSet), [[1, 1], [2, 6]]);
+    assert.equal(edit("Y").status, "done"); assert.equal(deliveries.length, 2);
     assert.equal(document().buffer.slice(0, document().buffer.length), "XY beta XY"); assert.deepEqual(endpoints(primary.getSnapshot().selectionSet), [[2, 2], [10, 10]]);
     assert.equal(primary.getSnapshot().selectionSet.primary, 1); assert.equal(workspace.observeHistory(source.id).getSnapshot().undoDepth, 1);
     assert.equal(source.metadata.getSnapshot().dirty, true);
-    assert.equal(workspace.undo({ documentId: source.id, expectedRevision: document().revision }).applied, true);
+    assert.equal(workspace.undo({ documentId: source.id, expectedRevision: document().revision }).status, "done");
     assert.equal(document().buffer.slice(0, 16), "alpha beta gamma"); assert.deepEqual(primary.getSnapshot().selectionSet, before); assert.deepEqual(secondary.getSnapshot().selectionSet, otherBefore);
     assert.equal(source.metadata.getSnapshot().dirty, false);
-    assert.equal(workspace.redo({ documentId: source.id, expectedRevision: document().revision }).applied, true);
+    assert.equal(workspace.redo({ documentId: source.id, expectedRevision: document().revision }).status, "done");
     assert.deepEqual(endpoints(primary.getSnapshot().selectionSet), [[2, 2], [10, 10]]);
     assert.equal(primary.setSelections(0, [{ anchor: 0, head: 0 }]), false);
     for (const { state, revision, length } of deliveries) {
@@ -111,9 +111,9 @@ test("invalid, stale and unauthorized multi-range results cannot partially publi
     assert.equal(workspace.observeHistory(first.id).getSnapshot().undoDepth, 0);
     assert.throws(() => workspace.edit({ ...request, view: b, selectionSet: createSelectionSet(4, [{ anchor: 1, head: 1 }]) }));
     assert.throws(() => workspace.edit({ ...request, selection: { anchor: 0, head: 0 }, selectionSet: createSelectionSet(4, [{ anchor: 1, head: 1 }]) }));
-    assert.deepEqual(workspace.edit({ ...request, expectedRevision: 1 }), { applied: false, reason: "stale-revision" });
+    assert.deepEqual(workspace.edit({ ...request, expectedRevision: 1 }), { status: "stale", reason: "stale-revision" });
     workspace.setCapabilities(first.id, { edit: ["host"], save: true });
-    const locked = workspace.getSnapshot(); assert.deepEqual(workspace.edit(request), { applied: false, reason: "read-only" }); assert.strictEqual(workspace.getSnapshot(), locked);
+    const locked = workspace.getSnapshot(); assert.deepEqual(workspace.edit(request), { status: "refused", reason: "read-only" }); assert.strictEqual(workspace.getSnapshot(), locked);
     a.dispose(); b.dispose(); workspace.releaseResource(first.id, true); workspace.releaseResource(second.id, true);
 });
 
@@ -168,7 +168,7 @@ test("seeded selection replacements and shared history match an independent stri
         const current = workspace.document(source.id); view.setSelections(current.revision, ranges, next() % ranges.length);
         const beforeSet = view.getSnapshot().selectionSet, insert = String.fromCharCode(0xe000 + step), plan = planSelectionEdits(text.length, beforeSet, insert);
         let expected = text; for (const range of [...beforeSet.ranges].reverse()) { const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head); expected = expected.slice(0, from) + insert + expected.slice(to); }
-        assert.equal(workspace.edit({ documentId: source.id, expectedRevision: current.revision, origin: "human", view, ...plan }).applied, true);
+        assert.equal(workspace.edit({ documentId: source.id, expectedRevision: current.revision, origin: "human", view, ...plan }).status, "done");
         assert.equal(workspace.document(source.id).buffer.slice(0, expected.length), expected);
         const afterSet = view.getSnapshot().selectionSet; states.push({ before: text, after: expected, beforeSet, afterSet }); text = expected;
     }

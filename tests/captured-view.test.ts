@@ -26,7 +26,7 @@ test("read captures survive expanded fold metadata and defer abort handlers beyo
     let aborted = 0;
     captured.signal.addEventListener("abort", () => {
         aborted++;
-        assert.ok(f.workspace.edit({ documentId: f.source.id, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "!" }] }).applied);
+        assert.ok(f.workspace.edit({ documentId: f.source.id, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "!" }] }).status === "done");
     }, { once: true });
     f.workspace.setCapabilities(f.source.id, { edit: [], save: false });
     assert.equal(captured.isCurrent(), false); assert.equal(aborted, 0);
@@ -44,7 +44,7 @@ test("a capture commits once, retains its source during the operation and cleans
         assert.equal(f.workspace.diagnostics().subscriptions, before.subscriptions);
         assert.equal(f.workspace.diagnostics().leases, before.leases + 1);
         assert.equal(captured.commit(() => { throw new Error("Reentered operation"); }), false);
-        return f.workspace.edit({ documentId: f.source.id, expectedRevision: captured.document.revision, origin: "human", edits: [{ from: 0, to: 5, insert: "changed" }] }).applied;
+        return f.workspace.edit({ documentId: f.source.id, expectedRevision: captured.document.revision, origin: "human", edits: [{ from: 0, to: 5, insert: "changed" }] }).status === "done";
     }), true);
     assert.equal(captured.signal.aborted, true); assert.equal(f.workspace.diagnostics().leases, before.leases);
     assert.equal(captured.commit(() => { throw new Error("Repeated operation"); }), false);

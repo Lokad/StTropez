@@ -33,7 +33,7 @@ test("a guarded draft restore maps live views and clears linked undo and redo at
     workspace.edit(prefix(unrelated, "keep"));
     workspace.editDocuments([prefix(draft.id, "old "), prefix(peer, "+")]);
     workspace.editDocuments([prefix(draft.id, "?"), prefix(peer, "?")]);
-    assert.ok(undo().applied);
+    assert.ok(undo().status === "done");
     const rejected = document(), peerBefore = workspace.document(peer);
     assert.equal(rejected.text(), "old draft");
     const peerHistory = workspace.observeHistory(peer);
@@ -43,48 +43,48 @@ test("a guarded draft restore maps live views and clears linked undo and redo at
     const result = workspace.edit({ documentId: draft.id, expectedRevision: rejected.revision, origin: "host",
         edits: [{ from: 0, to: 4, insert: "" }], history: { kind: "replace", reset: true } });
     stop();
-    assert.deepEqual(result, { applied: true, revision: rejected.revision + 1 });
+    assert.deepEqual(result, { status: "done", value: rejected.revision + 1 });
     assert.deepEqual(observed, [draft.text()]);
     assert.deepEqual([view.getSnapshot().selection.anchor, view.getSnapshot().selection.head], [1, 4]);
     assert.equal(view.getSnapshot().revision, document().revision);
     assert.equal(workspace.document(peer), peerBefore);
     assert.deepEqual(peerHistory.getSnapshot(), { undoDepth: 0, redoDepth: 0 });
-    assert.deepEqual(undo(), { applied: false, reason: "history-empty" });
-    assert.deepEqual(redo(), { applied: false, reason: "history-empty" });
+    assert.deepEqual(undo(), { status: "refused", reason: "history-empty" });
+    assert.deepEqual(redo(), { status: "refused", reason: "history-empty" });
     assert.equal(workspace.observeHistory(unrelated).getSnapshot().undoDepth, 1);
     assert.equal(source.metadata.getSnapshot().dirty, true);
     assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
     replace("saved");
     assert.equal(source.metadata.getSnapshot().dirty, false);
-    assert.ok(undo().applied);
+    assert.ok(undo().status === "done");
     assert.equal(document().text(), draft.text());
     view.dispose();
 });
 
 test("a history-only reset checks every target before clearing stacks and preserves the revision", () => {
     const { workspace, source, document, state, replace, undo } = fixture();
-    replace("draft"); replace("later"); assert.ok(undo().applied);
+    replace("draft"); replace("later"); assert.ok(undo().status === "done");
     const request = { documentId: source.id, expectedRevision: document().revision, origin: "host" as const,
         edits: [], history: { kind: "replace" as const, reset: true } };
     const history = state.getSnapshot();
     assert.deepEqual(history, { undoDepth: 1, redoDepth: 1 });
     const permissions = source.metadata.getSnapshot().capabilities;
     workspace.setCapabilities(source.id, { ...permissions, edit: ["human"] });
-    assert.deepEqual(workspace.edit(request), { applied: false, reason: "read-only" });
+    assert.deepEqual(workspace.edit(request), { status: "refused", reason: "read-only" });
     workspace.setCapabilities(source.id, permissions);
-    assert.deepEqual(workspace.edit({ ...request, expectedRevision: request.expectedRevision - 1 }), { applied: false, reason: "stale-revision" });
+    assert.deepEqual(workspace.edit({ ...request, expectedRevision: request.expectedRevision - 1 }), { status: "stale", reason: "stale-revision" });
     const peer = workspace.createDocument({ scope: "history", resource: "peer", variant: "working" }, "Peer", "");
-    assert.deepEqual(workspace.editDocuments([request, { ...request, documentId: peer, expectedRevision: 1 }]), { applied: false, reason: "stale-revision" });
+    assert.deepEqual(workspace.editDocuments([request, { ...request, documentId: peer, expectedRevision: 1 }]), { status: "stale", reason: "stale-revision" });
     assert.throws(() => workspace.editDocuments([request, { ...request, documentId: peer, history: { kind: "replace" } }]), /one origin and history policy/);
     assert.throws(() => workspace.edit({ ...request, history: { ...request.history, group: "typing" } }), /undo group/);
     assert.equal(state.getSnapshot(), history);
     const before = document();
     let notifications = 0;
     const stop = state.subscribe(() => notifications++);
-    assert.deepEqual(workspace.edit({ ...request, edits: [{ from: 0, to: 5, insert: "draft" }] }), { applied: true, revision: before.revision });
+    assert.deepEqual(workspace.edit({ ...request, edits: [{ from: 0, to: 5, insert: "draft" }] }), { status: "done", value: before.revision });
     assert.equal(document(), before);
     assert.deepEqual(state.getSnapshot(), { undoDepth: 0, redoDepth: 0 });
-    assert.ok(workspace.edit(request).applied);
+    assert.ok(workspace.edit(request).status === "done");
     assert.equal(notifications, 1);
     assert.equal(source.metadata.getSnapshot().dirty, true);
     stop();
@@ -95,14 +95,14 @@ test("packed bulk changes preserve initiating selection, independent views and e
     const before = document().buffer, first = workspace.createDocumentView(source.id, { anchor: 1, head: 1 });
     const second = workspace.createDocumentView(source.id, { anchor: 2 * 24 + 11, head: 998 * 24 + 12 });
     const edits = Array.from({ length: 1000 }, (_, line) => ({ from: line * 24, to: line * 24 + 5, insert: "let" }));
-    assert.equal(workspace.edit({ documentId: source.id, expectedRevision: 0, origin: "human", edits, view: first, history: { kind: "replace" } }).applied, true);
+    assert.equal(workspace.edit({ documentId: source.id, expectedRevision: 0, origin: "human", edits, view: first, history: { kind: "replace" } }).status, "done");
     const after = document().buffer; assert.equal(first.getSnapshot().selection.head, 3);
     assert.equal(second.getSnapshot().selection.anchor, 2 * 22 + 9); assert.equal(second.getSnapshot().selection.head, 998 * 22 + 10);
     assert.equal(source.metadata.getSnapshot().dirty, true); assert.equal(state.getSnapshot().undoDepth, 1);
-    assert.equal(undo().applied, true); assert.equal(document().buffer, before); assert.equal(first.getSnapshot().selection.head, 1);
+    assert.equal(undo().status, "done"); assert.equal(document().buffer, before); assert.equal(first.getSnapshot().selection.head, 1);
     assert.equal(second.getSnapshot().selection.anchor, 2 * 24 + 11); assert.equal(second.getSnapshot().selection.head, 998 * 24 + 12);
     assert.equal(source.metadata.getSnapshot().dirty, false);
-    assert.equal(redo().applied, true); assert.equal(document().buffer, after); assert.equal(first.getSnapshot().selection.head, 3);
+    assert.equal(redo().status, "done"); assert.equal(document().buffer, after); assert.equal(first.getSnapshot().selection.head, 3);
     assert.equal(bufferReads(before).textExports, 0); assert.equal(bufferReads(after).textExports, 0); first.dispose(); second.dispose();
 });
 
@@ -145,7 +145,7 @@ test("explicit consecutive groups, origins, standalone intents and saved boundar
     const commands = new HostSaveQueue(workspace);
     const saved = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "saved", serverVersion: "v1" }) }); assert.equal(saved.kind, "saved");
     replace("abcdef", "typing", "typing-one"); assert.equal(state.getSnapshot().undoDepth, 2);
-    const beforeUndo = document().revision; assert.equal(undo().applied, true);
+    const beforeUndo = document().revision; assert.equal(undo().status, "done");
     assert.equal(document().text(), "abcde"); assert.equal(source.metadata.getSnapshot().dirty, false); assert.ok(document().revision > beforeUndo);
     undo(); assert.equal(document().text(), "abc"); assert.equal(source.metadata.getSnapshot().dirty, true);
     redo(); assert.equal(document().text(), "abcde"); assert.equal(source.metadata.getSnapshot().dirty, false);
@@ -225,7 +225,7 @@ test("typing grouping is local to its document while unrelated live traffic and 
 
 test("default history retains 150 word groups and an earlier edit in another document", () => {
     const { workspace, document, replace, undo } = fixture("first");
-    assert.ok(replace("first edit").applied);
+    assert.ok(replace("first edit").status === "done");
     const other = workspace.createDocument({ scope: "history", resource: "words", variant: "working" }, "Words", "");
     const words = Array.from({ length: 150 }, (_, index) => "word" + index + " ");
     const target = () => ({ documentId: other, expectedRevision: workspace.document(other).revision });
@@ -236,20 +236,20 @@ test("default history retains 150 word groups and an earlier edit in another doc
             assert.ok(workspace.edit({
                 ...target(), origin: "human", history: { kind: "typing", group: word },
                 edits: [{ from: at, to: at, insert }],
-            }).applied);
+            }).status === "done");
         }
     }
     let expected = words.join("");
     assert.equal(workspace.document(other).text(), expected);
     for (const word of [...words].reverse()) {
-        assert.ok(workspace.undo(target()).applied);
+        assert.ok(workspace.undo(target()).status === "done");
         expected = expected.slice(0, -word.length);
         assert.equal(workspace.document(other).text(), expected);
     }
-    assert.equal(workspace.undo(target()).applied, false);
-    assert.ok(workspace.redo(target()).applied);
+    assert.notEqual(workspace.undo(target()).status, "done");
+    assert.ok(workspace.redo(target()).status === "done");
     assert.equal(document().text(), "first edit");
-    assert.ok(undo().applied);
+    assert.ok(undo().status === "done");
     assert.equal(document().text(), "first");
     assert.equal(workspace.document(other).text(), words[0]);
 });
@@ -261,19 +261,19 @@ test("multi-document edits preflight every target, publish coherently, and undo/
         origin: "host" as const, history: { kind: "refactor" as const }, edits: [{ from: 1, to: 2, insert: "!" }] }));
     const original = workspace.getSnapshot(), malformed = requests(); malformed[1]!.edits[0]!.to = 99;
     assert.throws(() => workspace.editDocuments(malformed)); assert.equal(workspace.getSnapshot(), original);
-    const stale = requests(); stale[1]!.expectedRevision = 99; assert.deepEqual(workspace.editDocuments(stale), { applied: false, reason: "stale-revision" });
+    const stale = requests(); stale[1]!.expectedRevision = 99; assert.deepEqual(workspace.editDocuments(stale), { status: "stale", reason: "stale-revision" });
     assert.equal(workspace.getSnapshot(), original);
     let notifications = 0;
     const unsubscribe = workspace.observeDocument(source.id).subscribe(() => {
         notifications++; assert.equal(document().text(), "a!c"); assert.equal(workspace.document(other.id).text(), "x!z");
         assert.equal(workspace.observeHistory(other.id).getSnapshot().undoDepth, 1);
     });
-    assert.equal(workspace.editDocuments(requests()).applied, true); unsubscribe(); assert.equal(notifications, 1);
+    assert.equal(workspace.editDocuments(requests()).status, "done"); unsubscribe(); assert.equal(notifications, 1);
     assert.equal(document().change!.transactionId, workspace.document(other.id).change!.transactionId);
     workspace.setCapabilities(other.id, { edit: [], save: true }); const locked = workspace.getSnapshot();
-    assert.deepEqual(workspace.undo({ documentId: source.id, expectedRevision: 1 }), { applied: false, reason: "read-only" }); assert.equal(workspace.getSnapshot(), locked);
+    assert.deepEqual(workspace.undo({ documentId: source.id, expectedRevision: 1 }), { status: "refused", reason: "read-only" }); assert.equal(workspace.getSnapshot(), locked);
     workspace.setCapabilities(other.id, { edit: ["human", "host"], save: true });
-    assert.equal(workspace.undo({ documentId: source.id, expectedRevision: 1 }).applied, true);
+    assert.equal(workspace.undo({ documentId: source.id, expectedRevision: 1 }).status, "done");
     assert.equal(document().text(), "abc"); assert.equal(workspace.document(other.id).text(), "xyz");
     assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(other.metadata.getSnapshot().dirty, false);
     workspace.redo({ documentId: other.id, expectedRevision: 2 });
@@ -285,12 +285,12 @@ test("later edits block linked undo; branching invalidates dependent redo and re
     const other = workspace.createTextResource({ scope: "history", resource: "other", variant: "working" }, "Other", { value: "xyz" });
     workspace.editDocuments([source, other].map(handle => ({ documentId: handle.id, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "!" }] })));
     replace("later");
-    assert.deepEqual(workspace.undo({ documentId: other.id, expectedRevision: 1 }), { applied: false, reason: "history-blocked" });
+    assert.deepEqual(workspace.undo({ documentId: other.id, expectedRevision: 1 }), { status: "refused", reason: "history-blocked" });
     workspace.undo({ documentId: source.id, expectedRevision: document().revision });
     workspace.undo({ documentId: other.id, expectedRevision: 1 });
     replace("branch");
     assert.equal(workspace.observeHistory(other.id).getSnapshot().redoDepth, 0);
-    assert.deepEqual(workspace.redo({ documentId: other.id, expectedRevision: workspace.document(other.id).revision }), { applied: false, reason: "history-empty" });
+    assert.deepEqual(workspace.redo({ documentId: other.id, expectedRevision: workspace.document(other.id).revision }), { status: "refused", reason: "history-empty" });
     workspace.editDocuments([source, other].map(handle => ({ documentId: handle.id, expectedRevision: workspace.document(handle.id).revision,
         origin: "host", edits: [{ from: 0, to: 0, insert: "?" }] })));
     workspace.releaseResource(other.id, true); assert.deepEqual(workspace.observeHistory(source.id).getSnapshot(), { undoDepth: 0, redoDepth: 0 });
@@ -307,9 +307,9 @@ test("undo and redo map a later view through a long group of separated edits", (
     }
     assert.equal(workspace.observeHistory(id).getSnapshot().undoDepth, 1);
     const view = workspace.createDocumentView(id, { anchor: 4 * 999, head: 4 * 503 });
-    assert.ok(workspace.undo({ documentId: id, expectedRevision: 1_102 }).applied);
+    assert.ok(workspace.undo({ documentId: id, expectedRevision: 1_102 }).status === "done");
     assert.deepEqual(view.getSnapshot().selection, { anchor: 3 * 999, head: 3 * 503, anchorAffinity: "before", headAffinity: "after" });
-    assert.ok(workspace.redo({ documentId: id, expectedRevision: 1_103 }).applied);
+    assert.ok(workspace.redo({ documentId: id, expectedRevision: 1_103 }).status === "done");
     assert.deepEqual(view.getSnapshot().selection, { anchor: 4 * 999, head: 4 * 503, anchorAffinity: "before", headAffinity: "after" });
     view.dispose();
 });
@@ -321,10 +321,10 @@ test("history bounds count groups, changes and changed units without flattening,
         assert.ok(stats.groups <= 3 && stats.changes <= 3 && stats.changedUnits <= 30);
     }
     assert.ok(state.getSnapshot().undoDepth <= 3); assert.ok(state.getSnapshot().undoDepth > 0);
-    for (let index = 0; index < 10; index++) { if (!undo().applied) break; }
+    for (let index = 0; index < 10; index++) { if (undo().status !== "done") break; }
     assert.ok(state.getSnapshot().redoDepth <= 3);
-    while (redo().applied) { /* bounded */ }
-    replace("oversized".repeat(100)); assert.equal(state.getSnapshot().undoDepth, 0); assert.equal(undo().applied, false);
+    while (redo().status === "done") { /* bounded */ }
+    replace("oversized".repeat(100)); assert.equal(state.getSnapshot().undoDepth, 0); assert.notEqual(undo().status, "done");
     assert.equal(bufferReads(document().buffer).textExports, 0);
     assert.throws(() => fixture("", { maxChanges: -1 }), RangeError);
     const independent = workspace.createDocument({ scope: "history", resource: "independent", variant: "working" }, "Independent", "a");
@@ -347,19 +347,19 @@ test("workspace history snapshots follow changed stack depths rather than all op
     const edit = () => workspace.edit({ documentId: id, expectedRevision: workspace.document(id).revision,
         origin: "human", history: { kind: "typing", group: "continuous" }, edits: [{ from: 0, to: 0, insert: "a" }] });
     try {
-        capture("first edit", () => { assert.equal(edit().applied, true); }, [id]);
-        capture("group extension", () => { assert.equal(edit().applied, true); }, []);
+        capture("first edit", () => { assert.equal(edit().status, "done"); }, [id]);
+        capture("group extension", () => { assert.equal(edit().status, "done"); }, []);
         capture("selection only", () => { workspace.edit({ documentId: id, expectedRevision: workspace.document(id).revision,
             origin: "human", edits: [], view, selection: { anchor: 1, head: 1 } }); }, []);
-        capture("undo", () => { assert.equal(workspace.undo({ documentId: id, expectedRevision: workspace.document(id).revision }).applied, true); }, [id]);
-        capture("redo", () => { assert.equal(workspace.redo({ documentId: id, expectedRevision: workspace.document(id).revision }).applied, true); }, [id]);
+        capture("undo", () => { assert.equal(workspace.undo({ documentId: id, expectedRevision: workspace.document(id).revision }).status, "done"); }, [id]);
+        capture("redo", () => { assert.equal(workspace.redo({ documentId: id, expectedRevision: workspace.document(id).revision }).status, "done"); }, [id]);
         capture("no-op", () => { workspace.edit({ documentId: id, expectedRevision: workspace.document(id).revision, origin: "human", edits: [] }); }, []);
         for (const canonical of [undefined, "canonical"]) capture(canonical ? "canonical save" : "ordinary save", () => {
             const ticket = workspace.captureSave(workspace.resource(id)); ticket.start();
             ticket.accept({ serverVersion: "saved", ...(canonical === undefined ? {} : { canonical }) }); ticket.finish();
         }, canonical ? [id] : []);
         capture("shared edit", () => { assert.equal(workspace.editDocuments([id, peer].map(documentId => ({ documentId,
-            expectedRevision: workspace.document(documentId).revision, origin: "host" as const, edits: [{ from: 0, to: 0, insert: "!" }] }))).applied, true); }, [id, peer]);
+            expectedRevision: workspace.document(documentId).revision, origin: "host" as const, edits: [{ from: 0, to: 0, insert: "!" }] }))).status, "done"); }, [id, peer]);
         assert.equal(workspace.observeHistory(ids[999]!).getSnapshot(), untouched);
     } finally { TextHistory.prototype.snapshot = snapshots; view.dispose(); }
     t.diagnostic(JSON.stringify(results.map(({ action, calls }) => ({ action, snapshots: calls.length }))));
@@ -370,9 +370,9 @@ test("history publishes transitive redo clearing and oversized linked boundaries
     const errors: unknown[] = [], workspace = new Workspace({ history: { maxGroups: 3, maxChangedUnits: 16 }, onListenerError: error => errors.push(error) });
     const [a, b, c, d] = ["a", "b", "c", "d"].map(resource => workspace.createDocument({ scope: "linked", resource, variant: "working" }, resource, "")) as [DocumentId, DocumentId, DocumentId, DocumentId];
     const edit = (ids: DocumentId[], insert = "x") => assert.equal(workspace.editDocuments(ids.map(documentId => ({ documentId,
-        expectedRevision: workspace.document(documentId).revision, origin: "human" as const, edits: [{ from: 0, to: 0, insert }] }))).applied, true);
+        expectedRevision: workspace.document(documentId).revision, origin: "human" as const, edits: [{ from: 0, to: 0, insert }] }))).status, "done");
     const state = (id: DocumentId) => workspace.observeHistory(id).getSnapshot();
-    const undo = (documentId: DocumentId) => assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true);
+    const undo = (documentId: DocumentId) => assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).status, "done");
     edit([a, b]); edit([b, c]); edit([d]); undo(c); undo(a);
     assert.deepEqual([state(a).redoDepth, state(b).redoDepth, state(c).redoDepth], [1, 2, 1]);
     const unrelated = state(d), notifications = new Map<DocumentId, number>();
@@ -406,7 +406,7 @@ test("no-op/malformed/stale edits publish no history or text and reject foreign 
     assert.equal(localView.getSnapshot().selection.head, 1); assert.equal(workspace.getSnapshot(), before); localView.dispose();
     workspace.edit({ documentId: source.id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 1, insert: "" }, { from: 1, to: 1, insert: "a" }] });
     assert.equal(workspace.getSnapshot(), before); assert.equal(state.getSnapshot(), oldHistory);
-    assert.deepEqual(workspace.undo({ documentId: source.id, expectedRevision: 9 }), { applied: false, reason: "stale-revision" });
+    assert.deepEqual(workspace.undo({ documentId: source.id, expectedRevision: 9 }), { status: "stale", reason: "stale-revision" });
     const foreignId = foreign.getSnapshot().documents[0]!.id, view = foreign.createDocumentView(foreignId);
     assert.throws(() => workspace.edit({ documentId: source.id, expectedRevision: 0, origin: "human", view, edits: [{ from: 0, to: 0, insert: "bad" }] }));
     assert.equal(workspace.getSnapshot(), before); assert.equal(document().revision, 0); view.dispose();
@@ -442,8 +442,8 @@ test("seeded Unicode edits and random undo/redo match a string history oracle wi
         }
         assert.equal(document().text(), text);
     }
-    while (past.length) { future.push(text); text = past.pop()!; assert.equal(undo().applied, true); assert.equal(document().text(), text); }
-    while (future.length) { past.push(text); text = future.pop()!; assert.equal(redo().applied, true); assert.equal(document().text(), text); }
+    while (past.length) { future.push(text); text = past.pop()!; assert.equal(undo().status, "done"); assert.equal(document().text(), text); }
+    while (future.length) { past.push(text); text = future.pop()!; assert.equal(redo().status, "done"); assert.equal(document().text(), text); }
     assert.equal(document().text(), text);
-    assert.equal(workspace.undo({ documentId: "missing" as DocumentId, expectedRevision: 0 }).applied, false);
+    assert.notEqual(workspace.undo({ documentId: "missing" as DocumentId, expectedRevision: 0 }).status, "done");
 });

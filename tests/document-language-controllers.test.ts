@@ -83,7 +83,7 @@ for (const [cause, interrupt] of Object.entries(sourceChanges)) {
         interrupt(f);
         if (cause === "typing") {
             const { id, revision } = f.document();
-            assert.ok(f.workspace.undo({ documentId: id, expectedRevision: revision }).applied);
+            assert.ok(f.workspace.undo({ documentId: id, expectedRevision: revision }).status === "done");
         }
         assert.deepEqual(await selected, { status: "stale" });
         const source = f.document();
@@ -251,7 +251,7 @@ test("direct rename applies its whole project in one undo step or refuses it", a
     assert.deepEqual([f.document(), other()].map(doc => doc.buffer.slice(0, 4)), ["next", "next"]);
     assert.deepEqual(await rename.request("next"), { status: "refused", reason: "no-changes" });
     assert.equal(previews, 0);
-    assert.ok(f.workspace.undo({ documentId: other().id, expectedRevision: other().revision }).applied);
+    assert.ok(f.workspace.undo({ documentId: other().id, expectedRevision: other().revision }).status === "done");
     assert.deepEqual([f.document(), other()].map(doc => doc.buffer.text()), before.map(doc => doc.buffer.text()));
 });
 
@@ -404,7 +404,7 @@ test("color choices belong to the presentation request that returned them", { ti
     assert.deepEqual(current.value[1]!.select(), { status: "done", value: [{ document: before.id, title: before.title }] });
     assert.deepEqual(review.value.apply(), { status: "stale" });
     assert.equal(f.document().buffer.slice(0, 3), "red");
-    assert.ok(f.workspace.undo({ documentId: before.id, expectedRevision: f.document().revision }).applied);
+    assert.ok(f.workspace.undo({ documentId: before.id, expectedRevision: f.document().revision }).status === "done");
     assert.equal(f.document().buffer.text(), before.buffer.text());
     language.dispose();
 });
@@ -621,7 +621,7 @@ test("a diagnostic tracks its text through an edit and a fresh push replaces the
     assert.equal(language.hover.getSnapshot().text, "Check beta");
     assert.equal(f.provider.snapshot().scopes, before.scopes + 1);
     assert.equal(f.provider.snapshot().documentParticipants, before.documentParticipants + 1);
-    assert.ok(f.edit().applied);
+    assert.ok(f.edit().status === "done");
     await f.flush();
     const pending = controller.getSnapshot();
     assert.ok(pending.diagnosticsPending);

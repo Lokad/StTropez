@@ -92,7 +92,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, doc
     if (!win) throw new Error("Comparison requires an attached browser document.");
     let display: TextResourceHandle | undefined;
     const controller = compareText(workspace, documentId, baseline, options, typeof baseline === "string" ? undefined : next =>
-        !!display && workspace.adoptSaved(display.id, { text: next.buffer, serverVersion: next.version, history: "reset" }).applied);
+        !!display && workspace.adoptSaved(display.id, { text: next.buffer, serverVersion: next.version, history: "reset" }).status === "done");
     const runner = createCooperativeRunner(win);
     const root = editorElement(owner, "div", "comparison");
     const panes = editorElement(owner, "div", "comparison-panes");

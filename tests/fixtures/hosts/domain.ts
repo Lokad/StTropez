@@ -153,7 +153,7 @@ export class HostDomainTools {
                 source.signal.removeEventListener("abort", expire);
                 const applied = source.commit(() => this.workspace.edit({ documentId: source.document.id,
                     expectedRevision: source.document.revision, view: source.view, origin: "human",
-                    edits, source: "import", history: { kind: "refactor" } }).applied);
+                    edits, source: "import", history: { kind: "refactor" } }).status === "done");
                 if (!applied) { expire(); return; }
                 this.metrics.applied++; this.release(job);
                 for (const attached of this.sessions.values()) if (attached.editor.view.documentId === document.id) this.sync(attached);

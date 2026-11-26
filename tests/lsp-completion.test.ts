@@ -10,7 +10,7 @@ const range = (from: number, to: number) => ({ start: { line: 0, character: from
 const choice = (label = "alphaNext") => ({ label, data: { token: label }, textEdit: { newText: label, insert: range(0, 2), replace: range(0, 5) } });
 const type = (f: ReturnType<typeof clientFixture>, at = 2, insert = "x") => {
     const document = f.document(); assert.equal(f.workspace.edit({ documentId: document.id, expectedRevision: document.revision,
-        edits: [{ from: at, to: at, insert }], origin: "human", history: { kind: "typing" } }).applied, true);
+        edits: [{ from: at, to: at, insert }], origin: "human", history: { kind: "typing" } }).status, "done");
 };
 
 test("completion owns immutable sorted choices, captured options and lazy fallback without browser state", async t => {
@@ -94,11 +94,11 @@ test("shortening a typed prefix cancels resolution and stops at the provider's o
     await entered.promise;
     const erase = (from: number, to: number) => f.workspace.edit({ documentId: f.source.id, expectedRevision: f.document().revision,
         edits: [{ from, to, insert: "" }], origin: "human", history: { kind: "delete" } });
-    assert.ok(erase(2, 3).applied);
+    assert.ok(erase(2, 3).status === "done");
     const shortened = client.rebase(extended, f.document())!;
     await rejected; answer.resolve({ ...wire, detail: "obsolete" }); await settled();
     assert.ok(shortened.isCurrent()); assert.equal(shortened.offset, 2); assert.deepEqual(shortened.items[0]!.primary, queried.items[0]!.primary);
-    assert.ok(erase(1, 2).applied);
+    assert.ok(erase(1, 2).status === "done");
     assert.equal(client.rebase(shortened, f.document()), undefined); assert.equal(shortened.isCurrent(), false);
 });
 

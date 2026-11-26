@@ -21,7 +21,7 @@ import { humanEditRefusal } from "./input-events.ts";
 import type { TextViewport } from "./viewport.ts";
 import type { DecorationLayers } from "./decoration-layers.ts";
 const literalBudget = Object.freeze({ units: 4096, matches: 1024, calls: 32 });
-type ReplacementRefusal = Extract<EditResult, { applied: false }>["reason"] | "composition-active";
+type ReplacementRefusal = Exclude<EditResult, { status: "done" }>["reason"] | "composition-active";
 const replacementMessages: Partial<Record<ReplacementRefusal, string>> = {
     "read-only": "This document is read-only.",
     "not-ready": "The document is unavailable.",
@@ -527,9 +527,9 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
             const applied = workspace.edit({ documentId, expectedRevision: state.revision, origin: "human", edits, view: editor.view,
                 ...(head === undefined ? {} : { selection: { anchor: head, head } }), history: { kind: "replace" } });
             stopPlanAuthority?.(); stopPlanAuthority = undefined;
-            if (!valid()) return applied.applied ? replaced : stale;
+            if (!valid()) return applied.status === "done" ? replaced : stale;
             replaceTransactionMs = win.performance.now() - started;
-            if (!applied.applied) return refuseReplacement(applied.reason, true);
+            if (applied.status !== "done") return refuseReplacement(applied.reason, true);
             if (request && readDocument().revision === state.revision) publish({ status: "ready" });
             if (range && range.from === range.to && store.get().query === state.query && store.get().regularExpression && valid()) {
                 replacedZero = { revision: readDocument().revision, head: head!, selectionSet: currentSelection() };

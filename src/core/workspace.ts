@@ -1,3 +1,4 @@
+import { done, refused } from "./outcome.ts";
 import { isNonNegativeInteger } from "./bounds.ts";
 import type { TextEdit } from "./changes.ts";
 import { compactDocumentEdit, replacementSpan, textDifference } from "./changes.ts";
@@ -88,19 +89,21 @@ export type TextTransactionOptions = Readonly<{
     origin: EditOrigin; source?: string; view?: DocumentView;
     history: "record" | "reset"; kind?: EditKind;
 }>;
-type EditRefusal = Readonly<{ applied: false;
-    reason: "missing-document" | "stale-revision" | "not-ready" | "read-only" | "history-empty" | "history-blocked" }>;
-export type TextWriteResult = Readonly<{ applied: true; changed: boolean; revision: number }> | EditRefusal;
-export type EditResult = Readonly<{ applied: true; revision: number }> | EditRefusal;
-export type BatchEditResult = Readonly<{ applied: true; revisions: readonly Readonly<{ documentId: DocumentId; revision: number }>[] }> | EditRefusal;
+const staleRevision = Object.freeze({ status: "stale", reason: "stale-revision" } as const);
+type EditReason = "missing-document" | "not-ready" | "read-only" | "history-empty" | "history-blocked";
+type EditRefusal = typeof staleRevision | ReturnType<typeof refused<EditReason>>;
+type EditOutcome<T> = ReturnType<typeof done<T>> | EditRefusal;
+/** Success carries the current revision and whether the text changed. */
+export type TextWriteResult = EditOutcome<Readonly<{ changed: boolean; revision: number }>>;
+/** Success carries the resulting document revision. */
+export type EditResult = EditOutcome<number>;
+/** Success carries one resulting revision per document, in request order. */
+export type BatchEditResult = EditOutcome<readonly Readonly<{ documentId: DocumentId; revision: number }>[]>;
 export type HistoryRequest = Readonly<{ documentId: DocumentId; expectedRevision: number; origin?: EditOrigin; source?: string }>;
 export type WorkspaceOptions = Readonly<{ onListenerError?: (error: unknown) => void; history?: HistoryOptions }>;
 
-function refuseEdit(reason: EditRefusal["reason"]): EditRefusal {
-    return { applied: false, reason };
-}
 function singleRevision(result: BatchEditResult): EditResult {
-    return result.applied ? { applied: true, revision: result.revisions[0]!.revision } : result;
+    return result.status === "done" ? done(result.value[0]!.revision) : result;
 }
 function textWriteRequest(documentId: DocumentId, expectedRevision: number, options: TextTransactionOptions): Omit<EditRequest, "edits"> {
     const { history, kind = "replace", origin, source, view } = options;
@@ -385,11 +388,11 @@ export class Workspace {
     }
     replaceText(id: DocumentId, text: string | TextBuffer, options: TextTransactionOptions & Readonly<{ expectedRevision?: number }>): TextWriteResult {
         const expectedRevision = options.expectedRevision ?? this.#records.get(id)?.state.get().revision;
-        if (expectedRevision === undefined) return refuseEdit("missing-document");
+        if (expectedRevision === undefined) return refused("missing-document");
         const result = this.editDocuments([{ ...textWriteRequest(id, expectedRevision, options), text }]);
-        if (!result.applied) return result;
-        const revision = result.revisions[0]!.revision;
-        return { applied: true, changed: revision !== expectedRevision, revision };
+        if (result.status !== "done") return result;
+        const revision = result.value[0]!.revision;
+        return done(Object.freeze({ changed: revision !== expectedRevision, revision }));
     }
     transact(id: DocumentId, expectedRevision: number, action: (tx: TextTransaction) => void, options: TextTransactionOptions): EditResult {
         if (typeof action !== "function") throw new TypeError("Expected a synchronous text transaction callback.");
@@ -416,7 +419,7 @@ export class Workspace {
             if (request.origin !== first.origin || (policy?.kind ?? "replace") !== kind || policy?.group !== group
                 || (policy?.reset ?? false) !== reset) throw new Error("A text transaction has one origin and history policy.");
             const record = this.#records.get(request.documentId);
-            if (!record) return refuseEdit("missing-document");
+            if (!record) return refused("missing-document");
             const refusal = this.#validateEdit(record, request.expectedRevision, request.origin); if (refusal) return refusal;
             const view = request.view === undefined ? undefined : record.views.get(request.view.id);
             if ((request.view && view?.handle !== request.view) || ((request.selection || request.selectionSet) && !view)) throw new Error("Selection target must be a live view of this document.");
@@ -453,7 +456,7 @@ export class Workspace {
         }
         const revisions = Object.freeze(prepared.map(change => Object.freeze({ documentId: change.request.documentId, revision: change.record.state.get().revision })));
         this.#syncHistory(changed); if (changed.size) { if (actual.length) this.#publish(changed); else this.#scope.deliver([...changed]); }
-        return Object.freeze({ applied: true, revisions });
+        return done(revisions);
     }
     undo(request: HistoryRequest): BatchEditResult { return this.#moveHistory(request, "undo"); }
     redo(request: HistoryRequest): BatchEditResult { return this.#moveHistory(request, "redo"); }
@@ -461,14 +464,14 @@ export class Workspace {
         this.#scope.assertWritable();
         if (request.source !== undefined && typeof request.source !== "string") throw new TypeError("Edit source must be a string.");
         const record = this.#records.get(request.documentId), origin = request.origin ?? "human";
-        if (!record) return refuseEdit("missing-document");
+        if (!record) return refused("missing-document");
         const refusal = this.#validateEdit(record, request.expectedRevision, origin); if (refusal) return refusal;
         const entry = this.#history.peek(request.documentId, direction);
-        if (!entry) return refuseEdit("history-empty");
-        if (!this.#history.available(entry, direction)) return refuseEdit("history-blocked");
+        if (!entry) return refused("history-empty");
+        if (!this.#history.available(entry, direction)) return refused("history-blocked");
         for (const change of entry.changes) {
             const participant = this.#records.get(change.documentId as DocumentId);
-            if (!participant || participant.buffer !== (direction === "undo" ? change.after : change.before)) return refuseEdit("history-blocked");
+            if (!participant || participant.buffer !== (direction === "undo" ? change.after : change.before)) return refused("history-blocked");
             const denied = this.#validateEdit(participant, participant.state.get().revision, origin); if (denied) return denied;
         }
         const prepared = entry.changes.map(change => {
@@ -494,7 +497,7 @@ export class Workspace {
             this.#commitText(text, origin, direction, transactionId, changed, request.source);
             revisions.push(Object.freeze({ documentId: text.record.handle.id, revision: text.state.revision }));
         }
-        this.#syncHistory(changed); this.#publish(changed); return Object.freeze({ applied: true, revisions: Object.freeze(revisions) });
+        this.#syncHistory(changed); this.#publish(changed); return done(Object.freeze(revisions));
     }
     /** Prepare every projection before history, resource or view mutation, including linked documents. */
     #prepareText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping,
@@ -539,9 +542,9 @@ export class Workspace {
     }
     #validateEdit(record: ResourceRecord, revision: number, origin: EditOrigin): EditRefusal | undefined {
         const state = record.state.get();
-        if (state.state !== "ready") return refuseEdit("not-ready");
-        if (!state.metadata.capabilities.edit.includes(origin)) return refuseEdit("read-only");
-        if (state.revision !== revision) return refuseEdit("stale-revision");
+        if (state.state !== "ready") return refused("not-ready");
+        if (!state.metadata.capabilities.edit.includes(origin)) return refused("read-only");
+        if (state.revision !== revision) return staleRevision;
         return undefined;
     }
     setDocumentLanguage(id: DocumentId, language: DocumentLanguage | null): void {
@@ -640,8 +643,7 @@ export class Workspace {
 
     /** Install an authoritative text version and its saved baseline in one publication. */
     adoptSaved(id: DocumentId, version: Readonly<{ text: string | TextBuffer; serverVersion: string | null; history: "record" | "reset"; expectedRevision?: number; source?: string }>): EditResult {
-        const result = this.adoptSavedDocuments([{ ...version, documentId: id }], version);
-        return result.applied ? { applied: true, revision: result.revisions[0]!.revision } : result;
+        return singleRevision(this.adoptSavedDocuments([{ ...version, documentId: id }], version));
     }
     /** Install related saved versions together. Undo restores the previous working text across the batch. */
     adoptSavedDocuments(versions: readonly Readonly<{ documentId: DocumentId; text: string | TextBuffer; serverVersion: string | null; expectedRevision?: number }>[],
@@ -654,13 +656,13 @@ export class Workspace {
         const prepared: (PreparedText | Pick<PreparedText, "record" | "buffer" | "state">)[] = [];
         for (const version of versions) {
             const record = this.#records.get(version.documentId);
-            if (!record) return refuseEdit("missing-document");
+            if (!record) return refused("missing-document");
             if (documents.has(record.handle.id)) throw new Error("A saved document may appear only once.");
             documents.add(record.handle.id);
             const state = record.state.get();
-            if (!record.buffer || state.state !== "ready" || record.saveReservations || record.reloadReservations) return refuseEdit("not-ready");
-            if (version.expectedRevision !== undefined && version.expectedRevision !== state.revision) return refuseEdit("stale-revision");
-            if (state.metadata.dirty && !state.metadata.capabilities.edit.includes("host")) return refuseEdit("read-only");
+            if (!record.buffer || state.state !== "ready" || record.saveReservations || record.reloadReservations) return refused("not-ready");
+            if (version.expectedRevision !== undefined && version.expectedRevision !== state.revision) return staleRevision;
+            if (state.metadata.dirty && !state.metadata.capabilities.edit.includes("host")) return refused("read-only");
             if (version.serverVersion !== null && typeof version.serverVersion !== "string") throw new TypeError("Invalid saved text version.");
             const before = record.buffer, { buffer, mapping, changedUnits: units } = replaceDocumentBuffer(before, version.text);
             const metadata: ResourceMetadata = { ...state.metadata, serverVersion: version.serverVersion, dirty: false, saveStatus: "idle", failure: null };
@@ -682,7 +684,7 @@ export class Workspace {
             return Object.freeze({ documentId: text.record.handle.id, revision: text.state.revision });
         });
         this.#syncHistory(changed); if (changed.size) this.#publish(changed);
-        return Object.freeze({ applied: true, revisions: Object.freeze(revisions) });
+        return done(Object.freeze(revisions));
     }
 
     /** Captures content now, retains ownership while queued, and enforces one writer per resource. */

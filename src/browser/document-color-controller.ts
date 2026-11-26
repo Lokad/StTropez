@@ -124,7 +124,7 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
             const result = workspace.edit({ documentId: document.id, expectedRevision: document.revision, edits,
                 origin: "host", source: "color-presentation", history: { kind: "refactor" }, view,
                 selectionSet: mapReplacementSelections(document.buffer.length, selectionSet, edits) });
-            if (!result.applied) throw new Error(result.reason);
+            if (result.status !== "done") throw new Error(result.reason);
             return true;
         })) return stale;
         const updated = workspace.document(document.id);

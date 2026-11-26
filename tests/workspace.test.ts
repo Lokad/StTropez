@@ -15,7 +15,7 @@ test("language changes publish a new document identity without replaying an edit
     const { workspace, documentId } = fixture(), changes: DocumentChange[] = [];
     const resource = workspace.resource(documentId), view = workspace.createDocumentView(documentId);
     const stop = workspace.onDocumentChange(documentId, change => changes.push(change));
-    assert.ok(workspace.edit({ documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "!" }], origin: "human" }).applied);
+    assert.ok(workspace.edit({ documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "!" }], origin: "human" }).status === "done");
     const before = workspace.document(documentId), history = workspace.observeHistory(documentId).getSnapshot(), selection = view.getSnapshot();
     const metadata = resource.metadata.getSnapshot();
     const pair = { uri: "project:source%2Fone", languageId: "generic" };
@@ -115,20 +115,20 @@ test("forwarded transactions and history send the two distant changes and keep i
         tx.edit([{ from: 0, to: 0, insert: "[" }]);
         tx.edit([{ from: tx.buffer.length, to: tx.buffer.length, insert: "]" }]);
     }, { ...options, history: "record" });
-    assert.ok(result.applied);
+    assert.ok(result.status === "done");
     const forward = [{ from: 0, to: 0, insert: "[" }, { from: body.length, to: body.length, insert: "]" }];
     const peer = workspace.createDocument({ scope: "fixture", resource: "peer", variant: "working" }, "Peer", body);
     const replay = (expected: typeof forward) => {
         const current = workspace.document(documentId), reads = bufferReads(current.buffer).sliceUnits, edits = current.change!.edits;
         assert.ok(bufferReads(current.buffer).sliceUnits - reads < 32);
         assert.deepEqual(edits, expected);
-        assert.ok(workspace.edit({ documentId: peer, expectedRevision: workspace.document(peer).revision, origin: "host", edits }).applied);
+        assert.ok(workspace.edit({ documentId: peer, expectedRevision: workspace.document(peer).revision, origin: "host", edits }).status === "done");
         assert.ok(current.buffer.equals(workspace.document(peer).buffer));
     };
     replay(forward);
-    assert.ok(workspace.undo({ documentId, expectedRevision: result.revision }).applied);
+    assert.ok(workspace.undo({ documentId, expectedRevision: result.value }).status === "done");
     replay([{ from: 0, to: 1, insert: "" }, { from: body.length + 1, to: body.length + 2, insert: "" }]);
-    assert.ok(workspace.redo({ documentId, expectedRevision: result.revision + 1 }).applied); replay(forward);
+    assert.ok(workspace.redo({ documentId, expectedRevision: result.value + 1 }).status === "done"); replay(forward);
     workspace.replaceText(documentId, "q".repeat(100_000), options);
     const current = workspace.document(documentId), reads = bufferReads(current.buffer).sliceUnits, [whole] = current.change!.edits;
     assert.equal(whole!.from, 0); assert.equal(bufferReads(current.buffer).sliceUnits, reads);
@@ -148,7 +148,7 @@ test("forwarded edits keep surrogate pairs and CRLF together in both coordinate 
     // Two touching raw edits form one scalar in the result, and a separate insertion forms a CRLF.
     const result = workspace.edit({ documentId, expectedRevision: before.revision, origin: "host", edits: [
         { from: 1, to: 2, insert: "\ud83e" }, { from: 2, to: 3, insert: "\udd8a" }, { from: 3, to: 3, insert: "\r" }] });
-    assert.ok(result.applied);
+    assert.ok(result.status === "done");
     const after = workspace.document(documentId), edits = after.change!.edits;
     assert.deepEqual(edits, [{ from: 1, to: 3, insert: "🦊" }, { from: 3, to: 4, insert: "\r\n" }]);
     assert.equal(applyTextEdits(before.text(), edits), after.text());
@@ -157,7 +157,7 @@ test("forwarded edits keep surrogate pairs and CRLF together in both coordinate 
     const rows = "😀\r\n".repeat(400);
     workspace.replaceText(documentId, rows, options);
     const dense = Array.from({ length: 400 }, (_, i) => ({ from: 4 * i + 1, to: 4 * i + 3, insert: "\ude01" }));
-    assert.ok(workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "host", edits: dense }).applied);
+    assert.ok(workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "host", edits: dense }).status === "done");
     const changes = workspace.document(documentId).change!.edits;
     assert.equal(changes.length, dense.length);
     assert.ok(changes.every((edit, i) => edit.from === i * 4 && edit.to === i * 4 + 4 && edit.insert === "😁\n"));
@@ -200,7 +200,7 @@ test("follow-up writes run after listeners in order and expire with their subscr
         if (change.source === "start") after(() => { order.push("last follow-up"); });
     });
     const detachPending = workspace.onDocumentChange(documentId, () => { order.push("retired listener"); });
-    assert.deepEqual(append("start", 0), { applied: true, revision: 1 });
+    assert.deepEqual(append("start", 0), { status: "done", value: 1 });
     assert.deepEqual(order, ["first start", "last start"]);
     await Promise.resolve();
     assert.deepEqual(order, ["first start", "last start", "first next", "last next", "last follow-up"]);
@@ -224,7 +224,7 @@ test("late agent edits cannot overwrite a newer human revision", () => {
     const { workspace, documentId } = fixture();
     workspace.edit({ documentId, expectedRevision: 0, origin: "human", edits: [{ from: 1, to: 2, insert: "B" }] });
     assert.deepEqual(workspace.edit({ documentId, expectedRevision: 0, origin: "agent", edits: [{ from: 0, to: 3, insert: "old" }] }),
-        { applied: false, reason: "stale-revision" });
+        { status: "stale", reason: "stale-revision" });
     assert.equal(workspace.document(documentId).text(), "aBc");
 });
 
@@ -263,7 +263,7 @@ test("scoped publication defers inventory traversal until the coarse snapshot is
     };
     try {
         let applied = false;
-        const publication = visits(() => { applied = workspace.replaceText(files[0]!.id, "after", { expectedRevision: 0, origin: "human", history: "record" }).applied; });
+        const publication = visits(() => { applied = workspace.replaceText(files[0]!.id, "after", { expectedRevision: 0, origin: "human", history: "record" }).status === "done"; });
         const capture = visits(() => { after = workspace.getSnapshot(); }), repeated = visits(() => { workspace.getSnapshot(); });
         t.diagnostic(JSON.stringify({ publication, capture, repeated }));
         assert.equal(applied, true); assert.equal(notifications, 1);

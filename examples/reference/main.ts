@@ -280,7 +280,7 @@ adopt.addEventListener("click", () => {
     if (!review) return;
     const result = workspace.adoptSaved(file.id, { text: baseline.buffer, serverVersion: review.copy.version,
         expectedRevision: review.revision, history: "record" });
-    if (result.applied) {
+    if (result.status === "done") {
         competing = undefined;
         saved.value = "Using saved copy";
         current.showReviewSave();

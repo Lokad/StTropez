@@ -29,9 +29,9 @@ test("viewport maps retained source rows through newline edits without stale con
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.activity().pending) return; } throw new Error("Viewport did not settle"); };
         const edit = (edits: readonly import("../../src/core/changes.ts").TextEdit[]) => {
             const result = workspace.edit({ documentId: source.id, expectedRevision: doc().revision, origin: "human", edits });
-            if (!result.applied) throw new Error("Fixture edit rejected");
+            if (result.status !== "done") throw new Error("Fixture edit rejected");
         };
-        const history = (direction: "undo" | "redo") => { if (!workspace[direction]({ documentId: source.id, expectedRevision: doc().revision }).applied) throw new Error("History rejected"); };
+        const history = (direction: "undo" | "redo") => { if (workspace[direction]({ documentId: source.id, expectedRevision: doc().revision }).status !== "done") throw new Error("History rejected"); };
         const exact = () => mounted().every(node => {
             const from = Number(node.dataset.from), to = Number(node.dataset.to), line = Number(node.dataset.line);
             return node.textContent === doc().buffer.slice(from, to).replaceAll("\r", "␍") && doc().buffer.lineAt(from) === line

@@ -5,7 +5,7 @@ import { TextBuffer } from "../src/index.ts";
 const text = (host: HostController) => { const buffer = host.workspace.document(host.source.id).buffer; return buffer.slice(0, buffer.length); };
 function edit(host: HostController, value: string): void {
     const current = host.workspace.document(host.source.id);
-    assert.equal(host.workspace.edit({ documentId: host.source.id, expectedRevision: current.revision, origin: "human", edits: [{ from: 0, to: current.buffer.length, insert: value }] }).applied, true);
+    assert.equal(host.workspace.edit({ documentId: host.source.id, expectedRevision: current.revision, origin: "human", edits: [{ from: 0, to: current.buffer.length, insert: value }] }).status, "done");
 }
 const reference = (host: HostController) => { const buffer = host.comparisonReference.getSnapshot().baseline.buffer; return buffer.slice(0, buffer.length); };
 

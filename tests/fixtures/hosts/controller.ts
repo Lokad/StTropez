@@ -138,7 +138,7 @@ export class HostController {
             { expectedRevision: proposal.revision, origin: "agent", history: "record", kind: "proposal" });
         this.proposalTransactionMs = performance.now() - start;
         this.proposal = undefined;
-        if (!result.applied) throw new Error("Source changed or became unavailable. Review the proposal again.");
+        if (result.status !== "done") throw new Error("Source changed or became unavailable. Review the proposal again.");
         this.sourceReview.showComparison(proposal.original);
     });
     readonly save = (): void => this.safe(this.sourceReview.save);
@@ -182,7 +182,7 @@ export class HostController {
         const document = this.workspace.document(this.source.id);
         const result = this.workspace.edit({ documentId: document.id, expectedRevision: document.revision, origin: "host",
             edits: [{ from: document.buffer.length, to: document.buffer.length, insert: "Q" }] });
-        phases.push(`edit:${result.applied}`);
+        phases.push(`edit:${result.status === "done"}`);
         void this.track(this.submitRun(async submission => { phases.push(`run:${submission.settings.mode}`); }).catch(error => this.reportError(error)));
         void this.track(write.then(async () => {
             if (this.disposed) return;

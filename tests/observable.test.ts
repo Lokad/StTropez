@@ -76,12 +76,12 @@ test("one shared observer sees the complete atomic edit and each history publica
     const stops = [...channels, workspace].flatMap(channel => [channel.subscribe(observe), channel.subscribe(() => { published++; })]);
     try {
         assert.equal(workspace.editDocuments(sources.map(source => ({ documentId: source.id, expectedRevision: 0,
-            origin: "human" as const, edits: [{ from: 0, to: 0, insert: "+" }] }))).applied, true);
+            origin: "human" as const, edits: [{ from: 0, to: 0, insert: "+" }] }))).status, "done");
         assert.equal(published, channels.length + 1);
         assert.deepEqual(observations, [{ text: ["+a", "+b"], revisions: [1, 1], heads: [2, 2], viewRevisions: [1, 1] }]);
-        assert.equal(workspace.undo({ documentId: sources[0]!.id, expectedRevision: 1 }).applied, true);
+        assert.equal(workspace.undo({ documentId: sources[0]!.id, expectedRevision: 1 }).status, "done");
         assert.equal(observations.length, 2); assert.deepEqual(observations[1], { text: ["a", "b"], revisions: [2, 2], heads: [1, 1], viewRevisions: [2, 2] });
-        assert.equal(workspace.redo({ documentId: sources[1]!.id, expectedRevision: 2 }).applied, true);
+        assert.equal(workspace.redo({ documentId: sources[1]!.id, expectedRevision: 2 }).status, "done");
         assert.equal(observations.length, 3); assert.deepEqual(observations[2], { text: ["+a", "+b"], revisions: [3, 3], heads: [2, 2], viewRevisions: [3, 3] });
         assert.deepEqual(errors, []);
     } finally { stops.forEach(stop => stop()); views.forEach(view => view.dispose()); sources.forEach(source => workspace.releaseResource(source.id, true)); }

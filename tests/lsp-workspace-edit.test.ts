@@ -48,10 +48,10 @@ test("decoded workspace edits bind exact resources and share undo with an unmoun
         assert.equal(f.workspace.observeHistory(a.id).getSnapshot().undoDepth, 1);
         assert.equal(f.workspace.observeHistory(b.id).getSnapshot().undoDepth, 1);
         assert.throws(() => applyLspWorkspaceEdit(f.workspace, plan, { origin: "host" }), stale);
-        assert.ok(f.workspace.undo({ documentId: b.id, expectedRevision: changed[1]!.revision }).applied);
+        assert.ok(f.workspace.undo({ documentId: b.id, expectedRevision: changed[1]!.revision }).status === "done");
         assert.equal(f.workspace.document(a.id).buffer, a.buffer); assert.equal(f.workspace.document(b.id).buffer, b.buffer);
         assert.deepEqual(view.getSnapshot().selectionSet, selections);
-        assert.ok(f.workspace.redo({ documentId: a.id, expectedRevision: f.workspace.document(a.id).revision }).applied);
+        assert.ok(f.workspace.redo({ documentId: a.id, expectedRevision: f.workspace.document(a.id).revision }).status === "done");
         assert.deepEqual(view.getSnapshot().selectionSet, afterSelections);
         assert.equal(transactions.length, 3); assert.ok(transactions.every(([left, right]) => left !== undefined && left === right));
     } finally { stop(); view.dispose(); }

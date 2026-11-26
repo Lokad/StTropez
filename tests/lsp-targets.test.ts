@@ -88,7 +88,7 @@ test("read-only target text survives an opened view and cannot supply editable w
     assert.ok(!f.workspace.getSnapshot().documents.includes(doc)); assert.equal(f.sent("textDocument/didOpen").length, 1);
     const view = f.workspace.createDocumentView(id);
     navigation.cancel(); await settled(); assert.equal(releases, 1); assert.equal(f.workspace.document(id), doc);
-    assert.deepEqual(f.workspace.edit({ documentId: id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "!" }] }), { applied: false, reason: "read-only" });
+    assert.deepEqual(f.workspace.edit({ documentId: id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "!" }] }), { status: "refused", reason: "read-only" });
     view.dispose(); await settled(); assert.throws(() => f.workspace.document(id));
     f.peer.onRequest("textDocument/rename", () => ({ changes: { [uri]: [{ range, newText: "new" }] } }));
     await assert.rejects(rename.run({ document: source, offset: 0, newName: "new" }).result, /requires a project document/); assert.equal(releases, 2);
@@ -234,7 +234,7 @@ test("a closed target cannot satisfy an invented wire version or bypass read-onl
     const plan = await client.run({ document: source, offset: 6, newName: "new" }).result;
     const applied = f.workspace.editDocuments(plan.documents.map(item => ({ documentId: item.target.document.documentId as typeof source.id,
         expectedRevision: item.target.document.revision, edits: item.edits, origin: "human" })));
-    assert.equal(applied.applied, false);
+    assert.notEqual(applied.status, "done");
     assert.equal(f.document(), source); assert.equal(f.workspace.document(f.other.id).text(), "gamma delta");
 });
 

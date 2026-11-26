@@ -174,7 +174,7 @@ button("Propose task", () => {
     const end = before.buffer.length;
     const newline = end > 0 && before.buffer.slice(end - 1, end) !== "\n" ? "\n" : "";
     proposal = () => workspace.edit({ documentId: before.id, expectedRevision: before.revision,
-        origin: "host", edits: [{ from: end, to: end, insert: newline + "- [ ] New task\n" }] }).applied;
+        origin: "host", edits: [{ from: end, to: end, insert: newline + "- [ ] New task\n" }] }).status === "done";
     output.textContent = "Append an unchecked task?";
 });
 button("Apply task", () => {

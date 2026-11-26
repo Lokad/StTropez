@@ -244,7 +244,7 @@ export class DemoProject {
             documentId: file.resource.id, text: this.workspace.document(file.resource.id).buffer,
             serverVersion: token, name: file.name,
         }));
-        if (!this.workspace.adoptSavedDocuments(versions, { history: "record" }).applied) return false;
+        if (this.workspace.adoptSavedDocuments(versions, { history: "record" }).status !== "done") return false;
         for (const { name, text } of versions) this.baselines.set(name, { buffer: text, version: token });
         return true;
     }
@@ -295,7 +295,7 @@ export class DemoProject {
             const versions = Array.from(review.revisions, ([file, expectedRevision]) => ({
                 documentId: file.resource.id, expectedRevision, text: conflict.baselines.get(file.name)!.buffer, serverVersion: conflict.token,
             }));
-            if (!this.inputIdle() || !this.workspace.adoptSavedDocuments(versions, { history: "record" }).applied) {
+            if (!this.inputIdle() || this.workspace.adoptSavedDocuments(versions, { history: "record" }).status !== "done") {
                 this.review = undefined; this.message = "Your files changed or are busy. Review the saved copy again.";
                 return;
             }
@@ -461,7 +461,7 @@ export class DemoProject {
             return { documentId: document.id, expectedRevision: document.revision, origin: "host" as const,
                 text: this.sample.files[file.name]! };
         }));
-        if (!result.applied) { this.message = "The sample could not be reset. Your edits are intact."; return; }
+        if (result.status !== "done") { this.message = "The sample could not be reset. Your edits are intact."; return; }
         for (const [file, model] of this.noteModels) { model.clear(); this.seedNotes(file, model); }
         this.message = "Sample restored. Undo restores your edits; Save locally replaces the saved copy.";
     }

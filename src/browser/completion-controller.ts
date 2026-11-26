@@ -348,15 +348,15 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         const before = currentView();
         try { result = workspace.edit({ documentId, expectedRevision: captured.revision, origin: "human", edits: plan.edits, view: editor.view,
             selectionSet: plan.selectionSet, history: { kind: "replace" } }); } finally { applying = false; }
-        if (!result.applied) { closeList("rejected", result.reason); return false; }
-        if (parent && fieldPlan) snippet = { ...parent, stops: fieldPlan.stops, revision: result.revision };
-        else if (first && first.index !== 0) snippet = { stops: plan.snippet!, active: 0, revision: result.revision, authority: authority(),
+        if (result.status !== "done") { closeList("rejected", result.reason); return false; }
+        if (parent && fieldPlan) snippet = { ...parent, stops: fieldPlan.stops, revision: result.value };
+        else if (first && first.index !== 0) snippet = { stops: plan.snippet!, active: 0, revision: result.value, authority: authority(),
             indentation: captured.indentation, maxUnits: completion.insertion.maxUnits, primaryGroup: captured.selections.primary };
         const after = currentView();
         cancelAuto();
         closeList("applied");
         revealCaret(after.selection.head);
-        if (character && available() && after.revision === result.revision) dispatchTypedText(editor.element, before, after, character);
+        if (character && available() && after.revision === result.value) dispatchTypedText(editor.element, before, after, character);
         return true;
     };
     function stopListRefresh(captured: Job) {
@@ -416,8 +416,8 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         let result;
         try { result = workspace.edit({ documentId, expectedRevision: document.revision, origin: "human", edits: plan.edits, selectionSet: plan.selectionSet, view: editor.view, history: { kind: "replace" } }); }
         finally { applying = false; }
-        if (!result.applied) return false;
-        snippet = { ...captured, stops: plan.stops, revision: result.revision }; publish("snippet"); editor.focus(); return true;
+        if (result.status !== "done") return false;
+        snippet = { ...captured, stops: plan.stops, revision: result.value }; publish("snippet"); editor.focus(); return true;
     };
     let stopTransform: () => void;
     try { stopTransform = editor.registerEditTransform(edit => {

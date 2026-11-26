@@ -19,11 +19,11 @@ test("point labels at replacement boundaries survive clipping and later edits", 
             assert.deepEqual(layers.present(fragment, false, true).map(r => [r.afterLine, r.from]), expected);
         }
     }
-    assert.ok(workspace.edit({ documentId: id, expectedRevision: 0, origin: "human", edits: [{ from: 2, to: 8, insert: "XY" }] }).applied);
+    assert.ok(workspace.edit({ documentId: id, expectedRevision: 0, origin: "human", edits: [{ from: 2, to: 8, insert: "XY" }] }).status === "done");
     check([["2", 4], ["8", 4], ["11", 7]]);
     // This batch rebuilds the index. It deletes one more point while inserting at the surviving boundary.
     const edits = [{ from: 4, to: 4, insert: "!" }, { from: 6, to: 8, insert: "" },
         ...[10, 12, 14, 16].map(from => ({ from, to: from, insert: "." }))];
-    assert.ok(workspace.edit({ documentId: id, expectedRevision: 1, origin: "human", edits }).applied);
+    assert.ok(workspace.edit({ documentId: id, expectedRevision: 1, origin: "human", edits }).status === "done");
     check([["2", 5], ["8", 5]]);
 });

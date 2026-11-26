@@ -378,9 +378,9 @@ test("large comment and indentation edits form one shared undo transaction", () 
     assert.equal(spaces.text, " ".repeat(20000) + "\n" + " ".repeat(20000) + "x");
     const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "comments", variant: "working" }, "Comments", { value: text });
     const view = workspace.createDocumentView(resource.id); view.setSelection(0, { anchor: 0, head: text.length });
-    assert.equal(workspace.edit({ documentId: resource.id, expectedRevision: 0, origin: "human", view, ...result.value, history: { kind: "replace" } }).applied, true);
+    assert.equal(workspace.edit({ documentId: resource.id, expectedRevision: 0, origin: "human", view, ...result.value, history: { kind: "replace" } }).status, "done");
     assert.equal(workspace.observeHistory(resource.id).getSnapshot().undoDepth, 1);
-    assert.equal(workspace.undo({ documentId: resource.id, expectedRevision: 1 }).applied, true);
+    assert.equal(workspace.undo({ documentId: resource.id, expectedRevision: 1 }).status, "done");
     assert.equal(workspace.document(resource.id).text(), text);
     view.dispose(); workspace.releaseResource(resource.id, true);
 });

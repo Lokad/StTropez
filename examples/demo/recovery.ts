@@ -314,7 +314,7 @@ export class DemoRecovery {
             }
             const result = this.workspace.editDocuments(offer.capture.map(item => ({ documentId: item.document.id, expectedRevision: item.document.revision,
                 origin: "host", history: { kind: "replace" }, text: draft.files[item.file.name]! })));
-            if (!result.applied) { this.publish("offer", "Restore is unavailable. Your current files are intact."); return; }
+            if (result.status !== "done") { this.publish("offer", "Restore is unavailable. Your current files are intact."); return; }
             this.rememberCheckpoint(draft.id);
             this.checkpointed = this.capture();
             this.offer = remaining.length ? { drafts: remaining, selected: 0, capture: this.checkpointed, working: draft } : undefined;

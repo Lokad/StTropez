@@ -48,7 +48,7 @@ test("Back and Forward restore the departure selection and scroll through interv
     assert.deepEqual(first.captureView(), start);
     assert.deepEqual(history.getSnapshot(), { back: 0, forward: 2 });
     assert.ok(workspace.edit({ documentId: last.view.documentId, expectedRevision: 0, origin: "host",
-        edits: [{ from: 0, to: 0, insert: "abc" }] }).applied);
+        edits: [{ from: 0, to: 0, insert: "abc" }] }).status === "done");
     assert.equal(history.forward(first.editor, present), "restored");
     assert.equal(history.forward(middle.editor, present), "restored");
     assert.partialDeepStrictEqual(last.view.getSnapshot().selection, { anchor: 14, head: 11 });

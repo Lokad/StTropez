@@ -113,7 +113,7 @@ function fixture(text: string, clock: Pick<Performance, "now"> = performance) {
     const find = findForView(workspace, editor), document = () => workspace.document(documentId);
     const step = () => { const entry = tasks.entries().next().value; assert.ok(entry); tasks.delete(entry[0]); entry[1](); };
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 1000); step(); } assert.deepEqual(errors, []); };
-    const edit = (from: number, to: number, insert: string) => { assert.equal(workspace.edit({ documentId, expectedRevision: document().revision, origin: "human", edits: [{ from, to, insert }], history: { kind: "replace" } }).applied, true); };
+    const edit = (from: number, to: number, insert: string) => { assert.equal(workspace.edit({ documentId, expectedRevision: document().revision, origin: "human", edits: [{ from, to, insert }], history: { kind: "replace" } }).status, "done"); };
     const select = (anchor: number, head = anchor) => view.setSelection(document().revision, { anchor, head });
     const dispose = () => { find.dispose(); view.dispose(); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); };
     return { workspace, documentId, view, find, document, tasks, step, drain, edit, select, dispose };
@@ -135,7 +135,7 @@ test("Replace reveals an unseen match first and Undo restores a previewed match 
         f.find.setQuery("dog", { preview: true }); f.drain();
         assert.equal(f.view.getSnapshot().selection.head, 0);
         assert.ok(f.find.replaceCurrent("mouse")); f.drain();
-        assert.ok(f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }).applied);
+        assert.ok(f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }).status === "done");
         const { anchor, head } = f.view.getSnapshot().selection;
         assert.equal(f.document().buffer.slice(anchor, head), "dog");
     } finally { f.dispose(); }

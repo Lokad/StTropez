@@ -5,7 +5,7 @@ import { saveConflictPanelModel } from "./fixtures/hosts/operation-panels.ts";
 const settled = () => new Promise<void>(resolve => setImmediate(resolve));
 function edit(host: HostController, text: string): void {
     const current = host.workspace.document(host.source.id);
-    assert.equal(host.workspace.edit({ documentId: current.id, expectedRevision: current.revision, origin: "human", edits: [{ from: 0, to: current.buffer.length, insert: text }] }).applied, true);
+    assert.equal(host.workspace.edit({ documentId: current.id, expectedRevision: current.revision, origin: "human", edits: [{ from: 0, to: current.buffer.length, insert: text }] }).status, "done");
 }
 async function conflict(host: HostController): Promise<void> {
     edit(host, "local"); host.save(); await settled(); host.externalWrite("remote one"); host.finishSave(); await settled();

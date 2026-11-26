@@ -97,7 +97,7 @@ test("a retained diagnostic, swatch and point follow typing and history in a scr
             const edits = Array.from({ length: 200 }, (_, i) => {
                 const at = doc.buffer.offsetAt(i * 5); return { from: at, to: at, insert: "  " };
             });
-            return workspace.edit({ documentId: id, expectedRevision: doc.revision, edits, origin: "human" }).applied;
+            return workspace.edit({ documentId: id, expectedRevision: doc.revision, edits, origin: "human" }).status === "done";
         }, clearMarks: () => { layer.dispose(); editor.viewport.flush(); return layer.set(workspace.document(id).revision, []); } });
         return { visits, changed, text, label: label.dataset.label, markup: !!label.querySelector("b"),
             width: parseFloat(getComputedStyle(host.querySelector(".missing-again")!, "::after").width), replaced: !mark.isConnected,

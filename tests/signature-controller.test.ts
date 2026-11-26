@@ -44,7 +44,7 @@ test("typing keeps a chosen overload across provider reordering until the call n
         const offset = before.selection.head;
         assert.ok(workspace.edit({ documentId: view.documentId, expectedRevision: before.revision, origin: "human", view,
             history: { kind: "typing" }, edits: [{ from: offset, to: offset, insert: text }],
-            selection: { head: offset + text.length, anchor: offset + text.length } }).applied);
+            selection: { head: offset + text.length, anchor: offset + text.length } }).status === "done");
         dispatchTypedText(editor.element, before, view.getSnapshot(), text);
         await settled();
         const refresh = [...timers].find(([, entry]) => entry.ms === 50);

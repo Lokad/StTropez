@@ -34,7 +34,7 @@ async function fixture(page: Page, shadow = false) {
             set: (text, caret) => { const document = workspace.document(resource.id);
                 const result = workspace.edit({ documentId: resource.id, expectedRevision: document.revision, origin: "host", view: editor.view,
                     edits: [{ from: 0, to: document.buffer.length, insert: text }], selection: { anchor: caret, head: caret } });
-                if (!result.applied) throw new Error("Fixture edit rejected."); },
+                if (result.status !== "done") throw new Error("Fixture edit rejected."); },
             select: caret => { if (!editor.view.setSelection(workspace.document(resource.id).revision, { anchor: caret, head: caret })) throw new Error("Fixture selection rejected."); } };
         window.bracketFixture = f;
     }, { shadow, css });

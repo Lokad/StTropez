@@ -30,7 +30,7 @@ async function fixture(page: Page, text = "a\u00a0b\u200bc", enabled = false) {
             set: (text, caret = 0) => { const document = workspace.document(resource.id);
                 const result = workspace.edit({ documentId: resource.id, expectedRevision: document.revision, origin: "host", view: editor.view,
                     edits: [{ from: 0, to: document.buffer.length, insert: text }], selection: { anchor: caret, head: caret } });
-                if (!result.applied) throw new Error("Fixture edit rejected."); } };
+                if (result.status !== "done") throw new Error("Fixture edit rejected."); } };
         editor.viewport.flush();
     }, { text, enabled });
 }

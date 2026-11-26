@@ -147,12 +147,12 @@ test("case options retain raw Unicode matches and literal Replace All commits in
         drain(); assert.equal(text(), "x" + original.slice(1));
         assert.strictEqual(view.getSnapshot().selectionSet, moved);
         assert.equal(workspace.observeHistory(documentId).getSnapshot().undoDepth, history.undoDepth + 1);
-        assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain();
+        assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).status, "done"); drain();
         assert.equal(text(), original); assert.deepEqual(view.getSnapshot().selectionSet, set);
         find.setQuery("𐐨"); drain(); assert.equal(find.getSnapshot().count, 2); assert.equal(find.next().status, "done");
         assert.equal(view.getSnapshot().selection.anchor, original.indexOf("𐐀")); assert.equal(view.getSnapshot().selection.head, original.indexOf("𐐀") + 2);
         find.replaceAll("Ω"); drain(); assert.equal(text(), original.replace("𐐀", "Ω").replace("𐐨", "Ω"));
-        assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain(); assert.equal(text(), original);
+        assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).status, "done"); drain(); assert.equal(text(), original);
         const many = "K k K_\n".repeat(1100);
         workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "human", edits: [{ from: 0, to: original.length, insert: many }] });
         find.setFlags({ matchCase: false, wholeWord: false }); find.setQuery("k"); drain(); assert.equal(find.getSnapshot().count, 3300);
@@ -166,7 +166,7 @@ test("case options retain raw Unicode matches and literal Replace All commits in
         assert.equal(text(), "x x x_\n".repeat(1100));
         assert.equal(workspace.observeHistory(documentId).getSnapshot().undoDepth, depth + 1);
         find.setFlags({ wholeWord: true }); drain();
-        assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain(); assert.equal(text(), many); assert.deepEqual(view.getSnapshot().selectionSet, complete);
+        assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).status, "done"); drain(); assert.equal(text(), many); assert.deepEqual(view.getSnapshot().selectionSet, complete);
     } finally {
         find.dispose(); view.dispose(); peer.dispose();
         assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().views, 0);

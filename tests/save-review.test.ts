@@ -41,7 +41,7 @@ test("successive edits publish one revision, map other views and undo together",
         tx.edit([{ from: 2, to: 4, insert: "XY" }]);
         assert.equal(workspace.document(id).text(), "base");
     }, options);
-    assert.deepEqual(result, { applied: true, revision: 1 });
+    assert.deepEqual(result, { status: "done", value: 1 });
     assert.deepEqual(changes, [1]);
     const change = workspace.document(id).change!;
     assert.equal(change.source, "peer"); assert.equal(workspace.document(id).text(), "!bXYe");
@@ -49,11 +49,11 @@ test("successive edits publish one revision, map other views and undo together",
     assert.equal(view.getSnapshot().selection.head, 5);
     assert.throws(() => captured!.edit([]), /no longer open/);
     assert.equal(workspace.observeHistory(id).getSnapshot().undoDepth, 1);
-    assert.equal(workspace.undo({ documentId: id, expectedRevision: 1 }).applied, true);
+    assert.equal(workspace.undo({ documentId: id, expectedRevision: 1 }).status, "done");
     assert.equal(workspace.document(id).text(), "base"); assert.equal(view.getSnapshot().selection.head, 4);
-    assert.equal(workspace.redo({ documentId: id, expectedRevision: 2 }).applied, true);
+    assert.equal(workspace.redo({ documentId: id, expectedRevision: 2 }).status, "done");
     assert.equal(workspace.document(id).text(), "!bXYe");
-    assert.deepEqual(workspace.transact(id, 0, () => assert.fail("stale callback ran"), options), { applied: false, reason: "stale-revision" });
+    assert.deepEqual(workspace.transact(id, 0, () => assert.fail("stale callback ran"), options), { status: "stale", reason: "stale-revision" });
     stop(); view.dispose();
 });
 
@@ -79,15 +79,15 @@ test("whole-text writes retain unchanged ranges, report no-ops and guard the cap
     const id = source.id, options = { origin: "host", history: "record", source: "draft" } as const;
     const view = workspace.createDocumentView(id, { anchor: 4, head: 4 });
     const changed = workspace.replaceText(id, "new base", options);
-    assert.deepEqual(changed, { applied: true, changed: true, revision: 1 });
+    assert.deepEqual(changed, { status: "done", value: { changed: true, revision: 1 } });
     assert.equal(view.getSnapshot().selection.head, 8);
     const current = workspace.document(id);
     assert.deepEqual(current.change?.edits, [{ from: 0, to: 0, insert: "new " }]);
     assert.equal(current.change?.source, "draft");
-    assert.deepEqual(workspace.replaceText(id, TextBuffer.from("new base"), options), { applied: true, changed: false, revision: 1 });
+    assert.deepEqual(workspace.replaceText(id, TextBuffer.from("new base"), options), { status: "done", value: { changed: false, revision: 1 } });
     assert.equal(workspace.document(id), current);
-    assert.deepEqual(workspace.replaceText(id, "stale", { ...options, expectedRevision: 0 }), { applied: false, reason: "stale-revision" });
-    assert.equal(workspace.undo({ documentId: id, expectedRevision: 1 }).applied, true);
+    assert.deepEqual(workspace.replaceText(id, "stale", { ...options, expectedRevision: 0 }), { status: "stale", reason: "stale-revision" });
+    assert.equal(workspace.undo({ documentId: id, expectedRevision: 1 }).status, "done");
     assert.equal(workspace.document(id).text(), "base"); assert.equal(view.getSnapshot().selection.head, 4);
     workspace.replaceText(id, "base", { ...options, history: "reset" });
     assert.equal(workspace.observeHistory(id).getSnapshot().redoDepth, 0);
@@ -104,20 +104,20 @@ test("whole-file replacement and saved adoption retain each pane's directed sele
     const endpoints = () => [first, second, inner].map(view => {
         const { anchor, head } = view.getSnapshot().selection; return [anchor, head];
     });
-    assert.ok(workspace.replaceText(id, "y = 2", { ...options, view: first }).applied);
+    assert.ok(workspace.replaceText(id, "y = 2", { ...options, view: first }).status === "done");
     assert.deepEqual(endpoints(), [[0, 0], [5, 0], [4, 2]]);
-    assert.ok(workspace.undo({ documentId: id, expectedRevision: 2 }).applied);
+    assert.ok(workspace.undo({ documentId: id, expectedRevision: 2 }).status === "done");
     assert.deepEqual(endpoints(), [[0, 0], [6, 0], [4, 2]]);
-    assert.ok(workspace.redo({ documentId: id, expectedRevision: 3 }).applied);
+    assert.ok(workspace.redo({ documentId: id, expectedRevision: 3 }).status === "done");
     assert.deepEqual(endpoints(), [[0, 0], [5, 0], [4, 2]]);
-    assert.ok(workspace.adoptSaved(source.id, { text: TextBuffer.from("y😀!2"), serverVersion: "v2", history: "record" }).applied);
+    assert.ok(workspace.adoptSaved(source.id, { text: TextBuffer.from("y😀!2"), serverVersion: "v2", history: "record" }).status === "done");
     assert.deepEqual(endpoints(), [[0, 0], [5, 0], [4, 1]]);
-    assert.ok(workspace.undo({ documentId: id, expectedRevision: 5 }).applied);
+    assert.ok(workspace.undo({ documentId: id, expectedRevision: 5 }).status === "done");
     assert.deepEqual(endpoints(), [[0, 0], [5, 0], [4, 2]]);
-    assert.ok(workspace.editDocuments([{ documentId: id, text: "", origin: "host", expectedRevision: 6 }]).applied);
+    assert.ok(workspace.editDocuments([{ documentId: id, text: "", origin: "host", expectedRevision: 6 }]).status === "done");
     assert.deepEqual(endpoints(), [[0, 0], [0, 0], [0, 0]]);
     assert.ok(workspace.editDocuments([{ documentId: id, text: "again", origin: "host", expectedRevision: 7,
-        view: first, selection: { anchor: 5, head: 1 } }]).applied);
+        view: first, selection: { anchor: 5, head: 1 } }]).status === "done");
     assert.deepEqual(endpoints(), [[5, 1], [0, 0], [0, 0]]);
 });
 
@@ -136,22 +136,22 @@ test("adopting a saved buffer publishes the revision, authority and mapped view 
     }));
     const adopted = workspace.adoptSaved(source.id, { text: saved, serverVersion: "v2", history: "record", source: "review" });
     stop();
-    assert.deepEqual(adopted, { applied: true, revision: 2 });
+    assert.deepEqual(adopted, { status: "done", value: 2 });
     assert.deepEqual(observed, [{ edits: [{ from: 0, to: 0, insert: "note\n" }], source: "review", saved: "v2",
         dirty: false, selection: { anchor: 18, head: 21, anchorAffinity: "after", headAffinity: "before" }, folded: 1 }]);
     assert.equal(workspace.document(source.id).buffer, saved);
     const doc = workspace.document(source.id), selection = view.getSnapshot(), folding = view.folding.getSnapshot();
     assert.deepEqual(workspace.adoptSaved(source.id, { text: TextBuffer.from("note\nhead\n  child\nend"), serverVersion: "v3", history: "record", expectedRevision: 2 }),
-        { applied: true, revision: 2 });
+        { status: "done", value: 2 });
     assert.equal(workspace.document(source.id), doc); assert.equal(view.getSnapshot(), selection); assert.equal(view.folding.getSnapshot(), folding);
     assert.equal(source.metadata.getSnapshot().serverVersion, "v3");
-    assert.equal(workspace.undo({ documentId: source.id, expectedRevision: 2 }).applied, true);
+    assert.equal(workspace.undo({ documentId: source.id, expectedRevision: 2 }).status, "done");
     assert.equal(workspace.document(source.id).buffer, old.buffer);
     assert.equal(source.metadata.getSnapshot().dirty, true);
     assert.deepEqual(workspace.adoptSaved(source.id, { text: saved, serverVersion: "late", history: "reset", expectedRevision: 2 }),
-        { applied: false, reason: "stale-revision" });
+        { status: "stale", reason: "stale-revision" });
     assert.equal(workspace.document(source.id).buffer, old.buffer); assert.equal(source.metadata.getSnapshot().serverVersion, "v3");
-    assert.equal(workspace.redo({ documentId: source.id, expectedRevision: 3 }).applied, true);
+    assert.equal(workspace.redo({ documentId: source.id, expectedRevision: 3 }).status, "done");
     assert.equal(source.metadata.getSnapshot().dirty, false);
     workspace.adoptSaved(source.id, { text: saved, serverVersion: "v4", history: "reset" });
     assert.equal(workspace.observeHistory(source.id).getSnapshot().undoDepth, 0);
@@ -165,18 +165,18 @@ test("reviewed documents adopt together, reject a stale participant and share Un
     const second = { documentId: helper.id, expectedRevision: 0, text: "remote helper", serverVersion: "v2" };
     const options = { history: "record" as const };
     const original = source.getSnapshot(), undo = workspace.observeHistory(source.id).getSnapshot();
-    assert.deepEqual(workspace.adoptSavedDocuments([first, { ...second, expectedRevision: 1 }], options), { applied: false, reason: "stale-revision" });
+    assert.deepEqual(workspace.adoptSavedDocuments([first, { ...second, expectedRevision: 1 }], options), { status: "stale", reason: "stale-revision" });
     const lease = workspace.acquire(helper.id, { preventReload: true });
-    assert.deepEqual(workspace.adoptSavedDocuments([first, second], options), { applied: false, reason: "not-ready" }); lease.release();
+    assert.deepEqual(workspace.adoptSavedDocuments([first, second], options), { status: "refused", reason: "not-ready" }); lease.release();
     assert.equal(source.getSnapshot(), original); assert.equal(workspace.observeHistory(source.id).getSnapshot(), undo);
     const observed: string[][] = [];
     const stop = workspace.subscribe(() => observed.push([source, helper].map(file => workspace.document(file.id).text())));
-    assert.equal(workspace.adoptSavedDocuments([first, second], options).applied, true); stop();
+    assert.equal(workspace.adoptSavedDocuments([first, second], options).status, "done"); stop();
     assert.deepEqual(observed, [["remote", "remote helper"]]);
-    assert.equal(workspace.undo({ documentId: helper.id, expectedRevision: 1 }).applied, true);
+    assert.equal(workspace.undo({ documentId: helper.id, expectedRevision: 1 }).status, "done");
     assert.deepEqual([source, helper].map(file => [workspace.document(file.id).text(), file.metadata.getSnapshot().serverVersion, file.metadata.getSnapshot().dirty]),
         [["local", "v2", true], ["helper", "v2", true]]);
-    assert.equal(workspace.redo({ documentId: source.id, expectedRevision: 3 }).applied, true);
+    assert.equal(workspace.redo({ documentId: source.id, expectedRevision: 3 }).status, "done");
     for (const file of [source, helper]) assert.equal(file.metadata.getSnapshot().dirty, false);
 });
 
@@ -189,10 +189,9 @@ test("a reviewed batch can mark local text saved while changing another document
     ];
     const changes: string[] = [];
     const stop = workspace.onDocumentChange(source.id, () => changes.push("source"));
-    assert.deepEqual(workspace.adoptSavedDocuments(versions, { history: "record" }), { applied: true,
-        revisions: [{ documentId: helper.id, revision: 1 }, { documentId: source.id, revision: doc.revision }] });
+    assert.deepEqual(workspace.adoptSavedDocuments(versions, { history: "record" }), { status: "done", value: [{ documentId: helper.id, revision: 1 }, { documentId: source.id, revision: doc.revision }] });
     assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(workspace.document(source.id), doc);
-    assert.ok(workspace.undo({ documentId: helper.id, expectedRevision: 1 }).applied);
+    assert.ok(workspace.undo({ documentId: helper.id, expectedRevision: 1 }).status === "done");
     assert.equal(workspace.document(helper.id).text(), "old"); assert.equal(workspace.document(source.id), doc);
     assert.deepEqual(changes, []); stop();
 });
@@ -202,12 +201,12 @@ test("saved text respects outstanding saves, reload reservations and dirty read-
     const next = { text: "replacement", serverVersion: "v2", history: "reset" as const };
     edit("local");
     const state = source.getSnapshot(), ticket = workspace.captureSave(source);
-    assert.equal(workspace.adoptSaved(source.id, next).applied, false); ticket.finish();
+    assert.notEqual(workspace.adoptSaved(source.id, next).status, "done"); ticket.finish();
     const lease = workspace.acquire(source.id, { preventReload: true });
-    assert.equal(workspace.adoptSaved(source.id, next).applied, false); lease.release();
+    assert.notEqual(workspace.adoptSaved(source.id, next).status, "done"); lease.release();
     assert.equal(source.getSnapshot().revision, state.revision);
     workspace.setCapabilities(source.id, { edit: [], save: false });
-    assert.deepEqual(workspace.adoptSaved(source.id, next), { applied: false, reason: "read-only" });
+    assert.deepEqual(workspace.adoptSaved(source.id, next), { status: "refused", reason: "read-only" });
     assert.equal(workspace.document(source.id).buffer.slice(0, 5), "local");
 });
 

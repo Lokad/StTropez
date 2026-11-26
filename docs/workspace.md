@@ -77,8 +77,10 @@ and maps newer selections. [View state](viewport.md#scrolling-and-saved-views)
 document with a shared origin and history policy. `replaceText` accepts a string or `TextBuffer` and
 `"record"` or `"reset"`. `transact` addresses the staged buffer at each step and rolls back on error.
 
-Use `setCapabilities` to choose which origins may write (`human`, `host`, `agent`) and whether the resource can be saved.
-An edit that returns `applied: false` leaves the target unchanged.
+Read `result.status` after an edit. On `done`, `value` holds the resulting revision for a single edit,
+or a list of document IDs and revisions for a batch. `replaceText` returns `{ revision, changed }` in
+`value` so a host can skip work for an identical replacement. On `stale` or `refused`, the target
+retains its text and the result includes a reason.
 
 | Reason | When it occurs |
 | --- | --- |

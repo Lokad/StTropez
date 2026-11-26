@@ -38,7 +38,7 @@ test("input refresh reuses bounded projections while repairing native state and 
             work.push({ name, sliceUnits: reads.read(buffer).sliceUnits - before });
         };
         const edit = (from: number, to: number, insert: string) => {
-            if (!workspace.edit({ documentId: source.id, expectedRevision: doc().revision, origin: "host", edits: [{ from, to, insert }] }).applied) throw new Error("Edit rejected");
+            if (workspace.edit({ documentId: source.id, expectedRevision: doc().revision, origin: "host", edits: [{ from, to, insert }] }).status !== "done") throw new Error("Edit rejected");
         };
         const reads = observeBufferReads();
         try {

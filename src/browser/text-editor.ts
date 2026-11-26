@@ -417,13 +417,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             const result = workspace.edit({ documentId, expectedRevision, origin: "human", edits, view,
                 ...("ranges" in selection ? { selectionSet: selection } : { selection }),
                 history: { kind, ...(key ? { group: key } : {}) } });
-            applied = result.applied;
-            if (result.applied) {
-                if (accepted && currentDocument().revision === result.revision) accepted(edits);
+            applied = result.status === "done";
+            if (result.status === "done") {
+                if (accepted && currentDocument().revision === result.value) accepted(edits);
                 const after = currentView();
                 revealCaret(after.selection);
-                if (typedText && after.revision === result.revision && (!transformed || edits.some(edit => edit.insert.length > 0))) typedAt = after;
-                if (type && key) group = { type, revision: result.revision, selectionSet: after.selectionSet, tail, key }; }
+                if (typedText && after.revision === result.value && (!transformed || edits.some(edit => edit.insert.length > 0))) typedAt = after;
+                if (type && key) group = { type, revision: result.value, selectionSet: after.selectionSet, tail, key }; }
             else conflict(result.reason, edits[0], expectedRevision, context.from, recoveryText);
         } finally {
             committing = false;
@@ -486,9 +486,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         if (input.readOnly) { refresh(); return false; }
         if (!live()) { conflict("expired-view"); refresh(); return false; }
         const result = workspace[direction]({ documentId, expectedRevision: revision });
-        if (!result.applied && result.reason !== "history-empty") conflict(result.reason);
-        else if (result.applied) revealCaret(currentView().selection, "center-if-outside");
-        refresh(); return result.applied;
+        if (result.status !== "done" && result.reason !== "history-empty") conflict(result.reason);
+        else if (result.status === "done") revealCaret(currentView().selection, "center-if-outside");
+        refresh(); return result.status === "done";
     }
     const focus = () => { if (!disposed) { input.focus({ preventScroll: true }); scheduleCaret(); } };
     const inputBinding = viewport.bindInput(focus);

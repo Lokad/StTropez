@@ -7,7 +7,7 @@ const value = (host: HostController) => host.workspace.document(host.source.id).
 function edit(host: HostController, text: string): void {
     const current = host.debug().source;
     assert.equal(host.workspace.edit({ documentId: host.source.id, expectedRevision: current.revision, origin: "human",
-        edits: [{ from: 0, to: current.length, insert: text }] }).applied, true);
+        edits: [{ from: 0, to: current.length, insert: text }] }).status, "done");
 }
 
 test("a failed host save retains corrections and baseline; retry keeps later edits", async () => {

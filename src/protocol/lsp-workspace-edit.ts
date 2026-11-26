@@ -51,8 +51,8 @@ export function applyLspWorkspaceEdit(workspace: Workspace, edit: LspWorkspaceEd
     if (!requests.length) return emptyList;
     // The core validates every range, revision, permission, lock and view before publishing.
     const result = workspace.editDocuments(requests);
-    if (!result.applied) throw new Error(result.reason);
-    return Object.freeze(result.revisions.flatMap(({ documentId, revision }, i) => {
+    if (result.status !== "done") throw new Error(result.reason);
+    return Object.freeze(result.value.flatMap(({ documentId, revision }, i) => {
         return revision === requests[i]!.expectedRevision ? [] : [workspace.document(documentId)];
     }));
 }

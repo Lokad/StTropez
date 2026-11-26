@@ -27,7 +27,7 @@ test("fixture diagnostics address the requested URI and reject missing, unknown 
     const scope = owner.createScope(), pushes: { uri: string; version?: number; diagnostics: { range: unknown; message: string }[] }[] = [];
     scope.onNotification("textDocument/publishDiagnostics", value => { pushes.push(value as typeof pushes[number]); });
     scope.setDocuments([workspace.document(first.id), workspace.document(second.id)]); await scope.ensureConnected(); await scope.flush();
-    assert.ok(workspace.edit({ documentId: second.id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "// " }] }).applied);
+    assert.ok(workspace.edit({ documentId: second.id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "// " }] }).status === "done");
     await scope.flush(); const secondVersion = scope.captureProject().get(uri)!.version;
     await scope.request("fixture/state").result; pushes.length = 0;
     const firstDiagnostics = scope.observeDiagnostics(scope.attachDocument(first.id)), untouched = firstDiagnostics.getSnapshot();
@@ -95,9 +95,9 @@ test("generic host profile joins selector registration, space-triggered lazy sni
     assert.ok(choice?.snippet); assert.ok(choice.resolve); assert.equal(choice.additional.length, 0);
     const resolved = decodeLspResolvedCompletion(await scope.request("completionItem/resolve", choice.resolve).result, choice, capture);
     assert.equal(resolved.additional.length, 1); const plan = lspCompletionPlan(resolved, "replace");
-    assert.ok(workspace.edit({ documentId: before.id, expectedRevision: before.revision, origin: "human", edits: plan.edits, history: { kind: "replace" } }).applied);
+    assert.ok(workspace.edit({ documentId: before.id, expectedRevision: before.revision, origin: "human", edits: plan.edits, history: { kind: "replace" } }).status === "done");
     assert.equal(document().text(), "// resolved import\r\nconst sample = 1;\nsample; sample(value)");
-    assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).applied); assert.equal(document().text(), initial);
+    assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).status === "done"); assert.equal(document().text(), initial);
     const occurrences = await highlights.run({ document: document(), offset: 19 }).result;
     assert.deepEqual(occurrences.items, [{ from: 6, to: 12, kind: "text" }, { from: 18, to: 24, kind: "text" }]);
     await scope.request("fixture/completionStyle", { style: "edits" }).result;
@@ -111,15 +111,15 @@ test("generic host profile joins selector registration, space-triggered lazy sni
     assert.equal(scope.commandNames().includes("fixture.unadvertised"), false);
     let reviews = 0;
     const commandScope: LspCommandScope = { snapshots, isCurrent: () => true,
-        prepare: () => { assert.ok(apply(action.edit!).applied); },
-        review: async (request, context) => { reviews++; assert.ok(context.isCurrent()); assert.ok(request.edit.isCurrent()); return apply(request.edit); }
+        prepare: () => { assert.ok(apply(action.edit!).status === "done"); },
+        review: async (request, context) => { reviews++; assert.ok(context.isCurrent()); assert.ok(request.edit.isCurrent()); return { applied: apply(request.edit).status === "done" }; }
     };
     const receipt = await batch.execute(action, commandScope); assert.equal(receipt.decision?.applied, true); assert.equal(reviews, 1);
     assert.equal(document().text(), reviewHeader + "// fixture action\r\n" + initial + reviewFooter);
     const last = await scope.request("fixture/lastCommand").result as { command: string; documents: { prefix: string }[] };
     assert.equal(last.command, "fixture.unadvertised"); assert.ok(last.documents[0]!.prefix.startsWith("// fixture action\r\n"));
     // Initial action and later server edits are separate, explicitly undoable phases.
-    assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).applied);
+    assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).status === "done");
     assert.equal(document().text(), "// fixture action\r\n" + initial);
-    assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).applied); assert.equal(document().text(), initial);
+    assert.ok(workspace.undo({ documentId: before.id, expectedRevision: document().revision }).status === "done"); assert.equal(document().text(), initial);
 }));

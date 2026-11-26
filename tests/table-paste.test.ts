@@ -13,7 +13,7 @@ function fixture() {
     const editor = { workspace, view, signal: new AbortController().signal,
         element: { ownerDocument: owner }, registerPasteHandler: () => () => {},
         captureInsertion: () => captureInsertion(editor, () => !composing,
-            (plan, revision) => workspace.edit({ documentId: source.id, expectedRevision: revision, edits: plan.edits, selectionSet: plan.selectionSet, origin: "human", view, history: { kind: "paste" } }).applied, () => {}),
+            (plan, revision) => workspace.edit({ documentId: source.id, expectedRevision: revision, edits: plan.edits, selectionSet: plan.selectionSet, origin: "human", view, history: { kind: "paste" } }).status === "done", () => {}),
         focus: () => { throw new Error("Table paste must not focus a later editor."); } } as unknown as TextEditor;
     const tools = new HostTablePaste(), detach = tools.attach("primary", editor); tools.setEnabled(true);
     const text = () => { const b = workspace.document(source.id).buffer; return b.slice(0, b.length); };
