@@ -197,7 +197,13 @@ test("a pointer fold returns to typing while keyboard activation keeps the discl
     await button.dblclick();
     await expect(button).toHaveAttribute("aria-expanded", "true");
     expect(await page.evaluate(() => window.editingFixture.selectionSet().ranges[0])).toMatchObject({ anchor: 3, head: 3 });
-    await button.click();
+    // The document advances before the gutter has painted the new revision.
+    await button.evaluate(node => {
+        const f = window.editingFixture;
+        f.edit([{ from: 16, to: 16, insert: "!" }]);
+        node.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, isPrimary: true }));
+        node.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    });
     await expect(button).toHaveAttribute("aria-expanded", "false");
     await expect(input(page)).toBeFocused();
     await page.keyboard.type("Z");

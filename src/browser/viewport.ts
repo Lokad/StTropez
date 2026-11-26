@@ -856,10 +856,10 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             let button = foldButtons.get(region.id);
             if (!button) {
                 button = editorElement(owner, "button", "fold-button"); button.type = "button";
+                button.dataset.fold = region.id;
                 foldButtons.set(region.id, button); foldLayer.append(button);
             }
             orderedButtons.push(button);
-            button.dataset.fold = region.id; button.dataset.revision = String(document.revision); button.dataset.generation = String(folds.generation);
             const action = region.collapsed ? "Expand" : "Collapse";
             const first = region.lineFrom + 2;
             const body = region.group === "imports" ? "imports" : first === region.lineTo ? `line ${first}` : `lines ${first}–${region.lineTo}`;
@@ -953,11 +953,17 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         event.stopPropagation();
         if (activateFold(pressed.version, pressed.id, false, true) && !inputOwner && !disposed) root.focus({ preventScroll: true });
     });
-    listen(foldLayer, "pointerdown", event => { if (foldButton(event.target)) event.stopPropagation(); });
+    listen(foldLayer, "pointerdown", event => {
+        if (!foldButton(event.target)) return;
+        event.stopPropagation();
+        if (event.button !== 0) return;
+        if (inputOwner) event.preventDefault();
+        if (frame !== undefined) flush();
+    });
     listen(foldLayer, "dblclick", event => { if (foldButton(event.target)) event.stopPropagation(); });
     listen(foldLayer, "click", event => {
         const button = foldButton(event.target); if (!button) return; event.stopPropagation();
-        activateFold({ revision: Number(button.dataset.revision), generation: Number(button.dataset.generation) }, button.dataset.fold!,
+        if (renderedRevision !== null) activateFold({ revision: renderedRevision, generation: renderedFoldGeneration }, button.dataset.fold!,
             button.getAttribute("aria-expanded") === "true", event.detail > 0);
     });
     listen(foldLayer, "keydown", event => { if (event.key === "Escape" && foldButton(event.target)) {
