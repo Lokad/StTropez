@@ -130,7 +130,7 @@ connect.onclick = () => {
     languageEnabled = true;
     current.enableLanguage();
     const attempt = provider.getSnapshot().commandRequiresReconnect ? provider.reconnect() : provider.connect();
-    void attempt.catch(error => { connection.value = String(error); });
+    void attempt.catch(renderConnection);
 };
 const pendingNotice = "An edit is pending. Try again when it finishes.";
 function showSaveState() {

@@ -255,10 +255,16 @@ test("a resolved reference link stays usable from its focused row", async ({ pag
 
 test("reconnecting the reference host requires a fresh server command choice", async ({ page }) => {
     let session = 0;
+    let refuseFirstConnection = true;
     let disconnect: () => void;
     let lateReply: (() => void) | undefined;
     const executions: number[] = [];
     await page.routeWebSocket("**/lsp-fixture", client => {
+        if (refuseFirstConnection) {
+            refuseFirstConnection = false;
+            client.onMessage(() => client.close({ code: 1011, reason: "Provider restart" }));
+            return;
+        }
         const connection = ++session;
         const server = client.connectToServer();
         disconnect = () => client.close({ code: 1011, reason: "Provider restart" });
@@ -282,11 +288,16 @@ test("reconnecting the reference host requires a fresh server command choice", a
     const run = page.getByRole("button", { name: "Run server command" });
     const command = page.getByRole("button", { name: "fixture.status" });
     const source = page.getByRole("textbox", { name: "quote.ts" });
+    const unavailable = "Language WebSocket closed (1011).";
+    await connect.click();
+    await expect(page.locator("#connection")).toHaveText(unavailable);
+    await expect(source).toBeFocused();
     await connect.click();
     await expect(source).toBeFocused();
     await run.click();
     const previous = await command.elementHandle();
     disconnect!();
+    await expect(page.locator("#connection")).toHaveText(unavailable);
     await connect.click();
     await expect(source).toBeFocused();
     await expect(run).toBeVisible();
