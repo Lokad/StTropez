@@ -16,7 +16,7 @@ Open `http://127.0.0.1:4173/`. Set `STTROPEZ_PORT` to choose another port.
 | Route | What to try |
 | --- | --- |
 | `/` | The TypeScript demo with editing, language tools and local saves. |
-| `/reference/` | Mount an editor, find text, fold code and compare edits with the saved file. |
+| `/reference/` | Edit `quote.ts`, review it in **Changes** and choose **Save for this tab**. [Reference host walkthrough](getting-started.md#use) |
 
 The development server also serves these test fixtures.
 
@@ -46,7 +46,7 @@ The playground runs TypeScript in a browser worker, both locally and on GitHub P
 
 ## Host workflows
 
-In either development host, edit **Primary source** and undo from **Secondary source**. Each pane keeps its selection. Edit again, then use **Toggle views** twice to detach and remount the editors.
+Open `/hosts/plain/` or `/hosts/react/`. Edit **Primary source** and undo from **Secondary source**. Each pane keeps its selection. Edit again, then use **Toggle views** twice to detach and remount the editors.
 
 For a conflict, edit the source, choose **Simulate external source change**, save, then choose **Finish save**.
 Select **Review remote source** and **Finish remote review** to compare. To keep your edits, choose
@@ -59,11 +59,11 @@ then **Confirm draft action**. The configuration and transfer form have separate
 
 ### Table conversion
 
-In the demo’s **Host integrations · paste & notes** sample, open **Code → Paste format** and choose **Insert example table**. Undo removes the inserted CSV. In a development host, enable **Paste tables as CSV** to try an HTML or tab-separated table.
+In the demo’s **Host integrations · paste & notes** sample, open **Code → Paste format** and choose **Insert example table**. Undo removes the inserted CSV. In the plain or React fixture, enable **Paste tables as CSV** to try an HTML or tab-separated table.
 
 ### Source-backed transfer form
 
-In a development host, choose **Insert transfer instruction** or **Anchor instruction at caret** on an existing instruction. Change a form field and undo from the editor to see the corresponding source edit. [Host integration](host-integration.md#tokenization-annotations-and-forms)
+In the plain or React fixture, choose **Insert transfer instruction** or **Anchor instruction at caret** on an existing instruction. Change a form field and undo from the editor to see the corresponding source edit. [Host integration](host-integration.md#tokenization-annotations-and-forms)
 
 ## Static build and deployment
 
