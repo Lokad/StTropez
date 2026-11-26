@@ -105,31 +105,28 @@ const notes = workspace.createTextResource(
 const notesHost = document.querySelector("aside");
 if (!notesHost) throw new Error("Missing notes pane.");
 const openNotes = () => {
-    const id = workspace.tabs.open({ kind: "text", documentId: notes.documentId }, "main");
-    return { target: workspace.tabs.capture(id),
-        editor: mountTextEditor(notesHost, workspace, id, { ariaLabel: "notes.md" }) };
+    return { pane: "main", editor: mountTextEditor(notesHost, workspace, notes.documentId, { ariaLabel: "notes.md" }) };
 };
 /** @type {ReturnType<typeof openNotes> | undefined} */
 let notesTab;
-const notesPane = () => notesTab && workspace.tabs.resolve(notesTab.target)?.paneId;
 ```
 
 ```js file=app.js
 const showChecklist = () => {
     primary.hidden = false;
-    notesHost.hidden = notesPane() !== "side";
+    notesHost.hidden = notesTab?.pane !== "side";
     editor.focus();
 };
 button("Checklist", showChecklist);
 button("Notes", () => {
     notesTab ??= openNotes();
-    primary.hidden = notesPane() === "main";
+    primary.hidden = notesTab?.pane === "main";
     notesHost.hidden = false;
     notesTab.editor.focus();
 });
 button("Dock notes", () => {
     if (!notesTab) return;
-    workspace.tabs.move(notesTab.target.id, "side");
+    notesTab.pane = "side";
     showChecklist();
 });
 ```
@@ -140,18 +137,19 @@ button("Dock notes", () => {
 it. Reopen Notes to recover its draft and history.
 
 ```js file=app.js
-/** @type {import("sttropez").CloseIntent | undefined} */
+/** @type {{ tab: ReturnType<typeof openNotes>, revision: number } | undefined} */
 let closing;
 button("Review close", () => {
     if (!notesTab) return;
-    closing = workspace.tabs.captureClose(notesTab.target.id);
-    output.textContent = closing.dirty ? "Close notes and keep the draft?" : "Close notes?";
+    const state = notes.getSnapshot();
+    closing = { tab: notesTab, revision: state.revision };
+    output.textContent = state.metadata.dirty ? "Close notes and keep the draft?" : "Close notes?";
 });
 button("Close notes", () => {
     if (!closing || !editsReady([notesTab?.editor])) return;
-    const closed = workspace.tabs.completeClose(closing, "close");
+    const current = closing.tab === notesTab && closing.revision === notes.getSnapshot().revision;
     closing = undefined;
-    if (!closed) { output.textContent = "Notes changed. Review close again."; return; }
+    if (!current) { output.textContent = "Notes changed. Review close again."; return; }
     notesTab?.editor.dispose();
     notesTab = undefined;
     showChecklist();
@@ -389,7 +387,7 @@ button("Close", () => {
     review?.dispose();
     checklist.dispose();
     split.dispose();
-    if (notesTab) { notesTab.editor.dispose(); workspace.tabs.close(notesTab.target.id); }
+    notesTab?.editor.dispose();
     editor.dispose();
     workspace.releaseResourceWhenUnowned(file.id, dirty);
     workspace.releaseResourceWhenUnowned(notes.id, dirty);

@@ -194,18 +194,28 @@ for (const mode of ["plain", "react"] as const) {
 
         if (mode === "plain") test("captured close/load/save targets expire presentation while resource work completes after replacement and reopen", async ({ page }) => {
             const primary = page.getByRole("textbox", { name: "Primary source", exact: true });
-            await primary.fill("saved target");
+            const prompt = () => page.getByRole("button", { name: "Prompt close", exact: true }).click();
+            const confirm = () => page.getByRole("button", { name: "Confirm close", exact: true }).click();
+            const replace = async (text: string) => {
+                await primary.press("ControlOrMeta+a");
+                await page.keyboard.insertText(text);
+            };
+            await replace("saved target");
             await page.getByRole("button", { name: "Save source", exact: true }).click();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().pendingSaves.length)).toBe(1);
-            await page.getByRole("button", { name: "Prompt close", exact: true }).click();
+            await prompt();
             await page.getByRole("button", { name: "Replace primary panel", exact: true }).click();
             await page.getByRole("button", { name: "Reopen primary source", exact: true }).click();
-            await page.getByRole("button", { name: "Confirm close", exact: true }).click();
+            await confirm();
             await expect(primary).toHaveValue("saved target");
-            await page.getByRole("button", { name: "Prompt close", exact: true }).click();
-            await page.getByRole("button", { name: "Confirm close", exact: true }).click(); await expect(primary).toHaveCount(0);
+            await prompt();
+            await replace("edited during review");
+            await confirm();
+            await expect(primary).toHaveValue("edited during review");
+            await prompt();
+            await confirm(); await expect(primary).toHaveCount(0);
             await page.getByRole("button", { name: "Reopen primary source", exact: true }).click();
-            await primary.fill("new human text");
+            await replace("new human text");
             await page.getByRole("button", { name: "Finish save", exact: true }).click();
             await expect.poll(() => page.evaluate(() => window.hostFixture.snapshot().activity.writes)).toBe(1);
             await expect(primary).toHaveValue("new human text");

@@ -1,7 +1,7 @@
 import { emptyList } from "./empty-list.ts";
 import { Store } from "./observable.ts";
 import type { NotificationScope, Observable } from "./observable.ts";
-import type { CloseIntent, CloseOperation, PaneId, ResourceId, Surface, TabId, TabSnapshot, TabTarget, Workspace } from "./workspace.ts";
+import type { PaneId, ResourceId, Surface, TabId, TabSnapshot, TabTarget, Workspace } from "./workspace.ts";
 
 export type WorkspaceTabs = Observable<readonly TabSnapshot[]> & Readonly<{
     open: (surface: Surface, pane: PaneId) => TabId;
@@ -10,9 +10,6 @@ export type WorkspaceTabs = Observable<readonly TabSnapshot[]> & Readonly<{
     close: (id: TabId) => void;
     capture: (id: TabId) => TabTarget;
     resolve: (target: TabTarget) => TabSnapshot | undefined;
-    captureClose: (id: TabId) => CloseIntent;
-    completeClose: (intent: CloseIntent, decision: "keep-open" | "close") => boolean;
-    beginClose: (id: TabId) => CloseOperation;
 }>;
 
 export function surfaceResource(workspace: Workspace, surface: Surface): ResourceId {
@@ -47,18 +44,8 @@ export function createWorkspaceTabs(workspace: Workspace, scope: NotificationSco
         const tab = target.workspace === lifetime ? index.get(target.id) : undefined;
         return tab?.generation === target.generation ? tab : undefined;
     };
-    function captureClose(id: TabId): CloseIntent {
-        const resource = workspace.resource(surfaceResource(workspace, requireTab(id).surface));
-        const state = resource.getSnapshot();
-        return Object.freeze({ tab: capture(id), resource: workspace.captureResource(resource.id), revision: state.revision, dirty: state.metadata.dirty });
-    }
-    function completeClose(intent: CloseIntent, decision: "keep-open" | "close"): boolean {
-        scope.assertWritable();
-        if (decision === "keep-open" || !resolve(intent.tab) || workspace.resolveResource(intent.resource)?.getSnapshot().revision !== intent.revision) return false;
-        close(intent.tab.id); return true;
-    }
     const api: WorkspaceTabs = Object.freeze({
-        getSnapshot: () => visible, subscribe: all.observable.subscribe, capture, resolve, close, captureClose, completeClose,
+        getSnapshot: () => visible, subscribe: all.observable.subscribe, capture, resolve, close,
         open(surface: Surface, paneId: PaneId) {
             scope.assertWritable();
             const visibility = workspace.resource(surfaceResource(workspace, surface)).metadata.getSnapshot().visibility;
@@ -76,13 +63,6 @@ export function createWorkspaceTabs(workspace: Workspace, scope: NotificationSco
             publishTabs(all.get().map(tab => tab.id === id ? Object.freeze({ ...tab, generation: tab.generation + 1, surface: Object.freeze({ ...surface }), visibility }) : tab));
             release(previous);
         },
-        beginClose(id: TabId): CloseOperation {
-            const intent = captureClose(id), operation = workspace.operations.begin(intent.resource.id, `close:${id}`, intent.tab);
-            return Object.freeze({ ...operation, intent, complete: (decision: "keep-open" | "close") => {
-                try { return operation.isCurrent() && completeClose(intent, decision); }
-                finally { operation.finish(); }
-            } });
-        }
     });
     return { api, count: (resource?: ResourceId) => resource === undefined ? index.size
         : all.get().filter(tab => surfaceResource(workspace, tab.surface) === resource).length };

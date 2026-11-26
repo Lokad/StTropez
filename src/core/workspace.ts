@@ -97,8 +97,6 @@ export type Operation = Readonly<{
 export type LoadOperation<T> = Operation & Readonly<{
     accept: (loaded: LoadedResource<T>) => boolean; fail: (message: string) => boolean;
 }>;
-export type CloseIntent = Readonly<{ tab: TabTarget; resource: ResourceTarget; revision: number; dirty: boolean }>;
-export type CloseOperation = Operation & Readonly<{ intent: CloseIntent; complete: (decision: "keep-open" | "close") => boolean }>;
 export type SaveSubmission<T> = Readonly<{ id: string; target: ResourceTarget; key: ResourceKey;
     revision: number; value: Immutable<T>; expectedServerVersion: string | null }>;
 /** Host-confirmed remote version for saving the explicitly reviewed local revision. No baseline adoption. */

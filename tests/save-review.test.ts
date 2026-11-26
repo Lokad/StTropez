@@ -126,11 +126,10 @@ test("adopting a saved buffer publishes the revision, authority and mapped view 
         dirty: false, selection: { anchor: 18, head: 21, anchorAffinity: "after", headAffinity: "before" }, folded: 1 }]);
     assert.equal(workspace.document(source.documentId).buffer, saved);
     const doc = workspace.document(source.documentId), selection = view.getSnapshot(), folding = view.folding.getSnapshot();
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "review"), close = workspace.tabs.beginClose(tab);
     assert.deepEqual(workspace.adoptSaved(source.id, { text: TextBuffer.from("note\nhead\n  child\nend"), serverVersion: "v3", history: "record", expectedRevision: 2 }),
         { applied: true, revision: 2 });
     assert.equal(workspace.document(source.documentId), doc); assert.equal(view.getSnapshot(), selection); assert.equal(view.folding.getSnapshot(), folding);
-    assert.equal(source.metadata.getSnapshot().serverVersion, "v3"); assert.equal(close.complete("close"), true);
+    assert.equal(source.metadata.getSnapshot().serverVersion, "v3");
     assert.equal(workspace.undo({ documentId: source.documentId, expectedRevision: 2 }).applied, true);
     assert.equal(workspace.document(source.documentId).buffer, old.buffer);
     assert.equal(source.metadata.getSnapshot().dirty, true);

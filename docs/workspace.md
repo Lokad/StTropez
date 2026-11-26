@@ -214,8 +214,7 @@ export async function computeForTab<T>(
 }
 ```
 
-`tabs.beginClose(id)` retains the resource for the prompt. Complete with `"close"` or `"keep-open"`, or
-`finish()`. Moving the tab preserves the decision. Editing, replacing or closing its target expires it.
+For a delayed close prompt, capture the pane and the document revision. Check both when the user confirms.
 
 ### Save and conflicts
 

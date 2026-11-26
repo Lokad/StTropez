@@ -350,26 +350,6 @@ test("deferred resource release follows final ownership and preserves later unsa
     assert.equal(workspace.diagnostics().resources, 0); assert.equal(workspace.diagnostics().leases, 0);
 });
 
-test("dirty close confirmations capture generations/revisions and hold ownership after closure", () => {
-    const { workspace, source, form, tab, edit } = fixture();
-    edit("dirty");
-    const first = workspace.tabs.beginClose(tab);
-    workspace.tabs.move(tab, "right"); edit("newer");
-    assert.equal(first.complete("close"), false);
-    assert.ok(workspace.tabs.resolve(workspace.tabs.capture(tab)));
-    const second = workspace.tabs.beginClose(tab);
-    workspace.tabs.replace(tab, { kind: "panel", resourceId: form.id, panelType: "form" });
-    assert.equal(second.complete("close"), false);
-    workspace.tabs.replace(tab, { kind: "text", documentId: source.documentId });
-    const third = workspace.tabs.beginClose(tab);
-    workspace.tabs.close(tab);
-    assert.throws(() => workspace.releaseResource(source.id, true));
-    assert.equal(third.complete("close"), false);
-    assert.throws(() => workspace.releaseResource(source.id));
-    workspace.releaseResource(source.id, true);
-    assert.equal(source.getSnapshot().state, "released");
-});
-
 test("capabilities reject all edit origins and prevent stale refresh from erasing local work", () => {
     const { workspace, source, edit } = fixture();
     workspace.setCapabilities(source.id, { edit: [], save: false });
