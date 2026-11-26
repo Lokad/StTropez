@@ -27,10 +27,10 @@ function checkpoint(state: MutablePlanning, workUnits = 0): boolean {
     state.checkpoint = state.workUnits; return true;
 }
 
-function plannedSelections(length: number, ranges: Selection[], primary: number, state: MutablePlanning) {
+function publishRanges(edits: TextEdit[], length: number, ranges: Selection[], primary: number, state: MutablePlanning) {
     state.phase = "map";
     bulk(state, ranges.length);
-    return createSelectionSet(length, ranges, primary);
+    return publish(edits, createSelectionSet(length, ranges, primary), state);
 }
 
 type LineShift = "move-line-up" | "move-line-down" | "copy-line-up" | "copy-line-down";
@@ -108,6 +108,7 @@ export function lineColumnScanner(read: (from: number, to: number) => string, ta
     };
 }
 function* publish(edits: TextEdit[], selectionSet: SelectionSet, state: MutablePlanning): Generator<void, SelectionEditPlan> {
+    if (checkpoint(state)) yield;
     state.phase = "publish";
     for (const edit of edits) {
         Object.freeze(edit);
@@ -208,7 +209,7 @@ function* blockComments(buffer: TextBuffer, selections: SelectionSet, pair: Edit
         bulk(state, edits.length);
         edits.sort((a, b) => a.from - b.from || a.to - b.to);
     }
-    return yield* publish(edits, plannedSelections(removals.newLength + inserted, ranges, selections.primary, state), state);
+    return yield* publishRanges(edits, removals.newLength + inserted, ranges, selections.primary, state);
 }
 
 function projectedLines(first: number, last: number, folds?: FoldIndex) {
@@ -254,7 +255,7 @@ function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "l
         let allCommented = true;
         let start = buffer.offsetAt(interval.first);
         for (let line = interval.first; line <= interval.last; line++) {
-            const first = readAhead(start, start + 1);
+            const first = window[start - base] ?? readAhead(start, start + 1);
             const newline = window.indexOf("\n", start - base);
             const end = newline < 0 ? lineBoundary(buffer, line + 1) : base + newline + 1;
             let offset = start;
@@ -264,10 +265,10 @@ function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "l
             }
             const next = readAhead(offset, Math.min(end, offset + marker.length + 1));
             const markerEnd = next.startsWith(marker) ? offset + marker.length + Number(next[marker.length] === " ") : 0;
-            const blank = !next || /^[\r\n]/.test(next);
             if (command === "remove-line-comment") {
                 if (markerEnd) edits.push({ from: offset, to: markerEnd, insert: "" });
             } else {
+                const blank = !next || /^\r?\n/.test(next);
                 if (!blank) {
                     minimum = Math.min(minimum, column);
                     allCommented &&= !!markerEnd;
@@ -303,9 +304,7 @@ function* lineComments(buffer: TextBuffer, selections: SelectionSet, command: "l
     state.phase = "map";
     bulk(state, edits.length + selections.ranges.length);
     // Comment edits only insert or delete. Every endpoint inside a deletion collapses to its start.
-    const selectionSet = mapReplacementSelections(buffer.length, selections, edits);
-    if (checkpoint(state)) yield;
-    return yield* publish(edits, selectionSet, state);
+    return yield* publish(edits, mapReplacementSelections(buffer.length, selections, edits), state);
 }
 
 function* enterIndent(buffer: TextBuffer, from: number, to: number, config: ResolvedLanguageConfiguration, unit: string,
@@ -354,7 +353,7 @@ function* insertOrDeleteLines(buffer: TextBuffer, selections: SelectionSet, comm
             if (checkpoint(state, 1)) yield;
         }
     }
-    return yield* publish(edits, plannedSelections(buffer.length + delta, ranges, selections.primary, state), state);
+    return yield* publishRanges(edits, buffer.length + delta, ranges, selections.primary, state);
 }
 
 function* blockText(read: (from: number, to: number) => string, state: MutablePlanning, from: number, to: number): Generator<void, string> {
@@ -414,7 +413,7 @@ function* shiftLines(buffer: TextBuffer, selections: SelectionSet, command: Line
             if (checkpoint(state, 1)) yield;
         }
     }
-    return yield* publish(edits, plannedSelections(buffer.length + delta, ranges, selections.primary, state), state);
+    return yield* publishRanges(edits, buffer.length + delta, ranges, selections.primary, state);
 }
 
 function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent" | "indent-lines" | "outdent", config: ResolvedLanguageConfiguration,
@@ -500,7 +499,7 @@ function* indent(buffer: TextBuffer, selections: SelectionSet, command: "indent"
             if (checkpoint(state, 1)) yield;
         }
     }
-    return yield* publish(edits, plannedSelections(buffer.length + delta, ranges, selections.primary, state), state);
+    return yield* publishRanges(edits, buffer.length + delta, ranges, selections.primary, state);
 }
 
 /** Lazy, DOM-free planning. Budgets count work, not milliseconds; only ready publishes a complete proposal. */
@@ -568,7 +567,5 @@ function* plan(buffer: TextBuffer, input: SelectionSet, command: EditingCommand 
         ranges.push({ anchor, head });
         if (checkpoint(state, 1)) yield;
     }
-    const selectionSet = plannedSelections(buffer.length + delta, ranges, selections.primary, state);
-    if (checkpoint(state)) yield;
-    return yield* publish(edits, selectionSet, state);
+    return yield* publishRanges(edits, buffer.length + delta, ranges, selections.primary, state);
 }

@@ -88,6 +88,13 @@ test("configured line indentation and comments preserve reversed selections, bla
     assert.equal(plan(twice.text, twice.value.selectionSet.ranges, "remove-line-comment").text, once.text);
     const original = plan(once.text, once.value.selectionSet.ranges, "remove-line-comment");
     assert.equal(original.text, mixed); assert.deepEqual(original.ranges, [[mixed.length, 0]]);
+    const carriageReturns = "\rvalue\n\r\n# tail\n\r";
+    const hash = { lineComment: "#" };
+    const added = plan(carriageReturns, selection(carriageReturns.length, 0), "line-comment", hash);
+    assert.equal(added.text, "# \rvalue\n\r\n# # tail\n# \r");
+    const removed = plan(added.text, added.value.selectionSet.ranges, "line-comment", hash);
+    assert.equal(removed.text, carriageReturns);
+    assert.deepEqual(removed.ranges, [[carriageReturns.length, 0]]);
     const tabs = "   a\n \tb\n  \tc", cfg = { ...configuration, tabSize: 4 };
     const aligned = plan(tabs, selection(0, tabs.length), "line-comment", cfg);
     assert.equal(aligned.text, " //   a\n // \tb\n //  \tc");
