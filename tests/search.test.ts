@@ -123,6 +123,12 @@ test("case-insensitive literals preserve raw spans across pieces and tiny read b
     assert.deepEqual(all(pair, "𐐨", 1, { matchCase: false }), [{ from: prefix.length, to: prefix.length + 2 }]);
     assert.deepEqual(all(TextBuffer.from("AaAAA"), "aa", 1, { matchCase: false }), [{ from: 0, to: 2 }, { from: 2, to: 4 }]);
     assert.deepEqual(all(TextBuffer.from("k K K"), "k"), [{ from: 0, to: 1 }]);
+    const part = "x".repeat(63) + "ſKSKs";
+    const word = TextBuffer.from(part).replace(part.length, part.length, "K" + part.repeat(3));
+    const expected = [...word.text().matchAll(/sk/giu)].map(match => ({ from: match.index, to: match.index + 2 }));
+    for (const budget of [1, 64, 127, 4096]) {
+        assert.deepEqual(all(word, "sk", budget, { matchCase: false }), expected);
+    }
     const pending = new LiteralSearch(TextBuffer.from("𐐀"), "𐐨", { matchCase: false }); pending.next(1); pending.dispose();
     assert.deepEqual(pending.next(1), { done: true, scanned: 1, readUnits: 0, matches: [] });
 });

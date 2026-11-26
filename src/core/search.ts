@@ -19,6 +19,7 @@ export class LiteralSearch {
     #boundaryBuffer: TextBuffer | undefined;
     #pending: { match: SearchMatch; before: string; after: string } | undefined;
     #matcher: TokenMatcher | undefined;
+    readonly #wordPattern?: RegExp;
     readonly #ignoreCase: boolean;
     readonly #equivalentBreaks: boolean;
     readonly #from: number;
@@ -40,6 +41,9 @@ export class LiteralSearch {
             this.#iterator = buffer.chunks(this.#offset, Math.min(buffer.length, end + 1))[Symbol.iterator]();
         }
         if (this.#ignoreCase || this.#equivalentBreaks) this.#matcher = new TokenMatcher(query, this.#ignoreCase);
+        if (this.#ignoreCase && !options.wholeWord && /^[A-Za-z0-9_]{1,128}$/.test(query)) {
+            this.#wordPattern = new RegExp(query, "iu");
+        }
         this.#prefix = new Uint32Array(this.#matcher ? 0 : query.length);
         for (let index = 1, length = 0; !this.#matcher && index < query.length; index++) {
             while (length && query[index] !== query[length]) length = this.#prefix[length - 1]!;
@@ -115,6 +119,23 @@ export class LiteralSearch {
                     } else { this.#chunk = next.value; this.#index = 0; if (!this.#chunk.length) continue; }
                 }
                 if (!point) {
+                    if (this.#wordPattern && !this.#leading && !this.#matcher.partial) {
+                        const size = Math.min(16384, this.#chunk.length - this.#index, maxUnits - readUnits);
+                        // Any Unicode code point that folds to a query letter occupies at most two units.
+                        // Leave that much overlap for the streaming matcher at piece and budget edges.
+                        const tail = this.#query.length * 2;
+                        if (size >= Math.max(64, 2 * tail)) {
+                            const match = this.#wordPattern.exec(this.#chunk.slice(this.#index, this.#index + size));
+                            const consumed = match ? match.index + match[0].length : size - tail;
+                            if (match) matches.push(Object.freeze({
+                                from: this.#offset + match.index, to: this.#offset + consumed,
+                            }));
+                            this.#offset += consumed;
+                            this.#index += consumed;
+                            readUnits += match ? consumed : size;
+                            continue;
+                        }
+                    }
                     const text = this.#chunk[this.#index++]!, from = this.#offset++; readUnits++;
                     const startsPair = this.#ignoreCase && high(text.charCodeAt(0)) && from >= this.#from && from + 1 < this.#to
                         || this.#equivalentBreaks && text === "\r";
@@ -146,6 +167,7 @@ class TokenMatcher {
     readonly #starts: Float64Array;
     readonly #patterns = new Map<string, RegExp>();
     #matched = 0;
+    get partial(): boolean { return this.#matched !== 0; }
     #position = 0;
     readonly #ignoreCase: boolean;
     constructor(query: string, ignoreCase: boolean) {
