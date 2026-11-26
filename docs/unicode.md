@@ -1,13 +1,13 @@
 # Unicode
 
-StTropez stores UTF-16 offsets. For caret movement and deletion, a grapheme such as `é`
-occupies one step. The browser’s `Intl.Segmenter` supplies the boundaries, so browsers with
-different Unicode versions can handle a rare sequence differently.
+The editor moves by graphemes and stores UTF-16 offsets. A letter plus a combining accent takes
+one caret step. Browsers use their own `Intl.Segmenter`, so rare sequences can have different
+boundaries across engines.
 
 ## Use
 
-Index a captured buffer in steps. Yield between steps and cancel if the document or selection
-changes.
+Index a captured buffer in steps. Cancel the work if its result would belong to an old selection
+or revision.
 
 ```ts
 import { createGraphemeCursor } from "sttropez/kernels";
@@ -34,7 +34,7 @@ export async function indexGraphemes(
 }
 ```
 
-Enable `characterWarnings` in the editor settings to query warnings for a tooltip.
+To label a tooltip, enable `characterWarnings` and query the affected range.
 
 ```ts
 import { characterWarningLabel } from "sttropez";
@@ -50,117 +50,79 @@ export function warningLabels(editor: TextEditor, from: number, to: number) {
 
 ### Cooperative cursor lifetime
 
-Call `next(workBudget)` to advance a cursor and `snapshot()` to inspect it between calls.
-Read the result when its status is `ready`. An empty index and offset zero are valid results.
-A failed advance releases unfinished work, records the failure and throws its cause.
-`dispose()` releases the cursor’s result. An index you already hold stays usable.
-Repeated disposal is safe. Reentrant advances and disposal during an advance throw.
-An invalid budget throws before changing state. [Work budgets](#limits)
+`next(budget)` advances the cursor. `snapshot()` reads its progress. Read the result at `ready`,
+including offset zero or an empty index. A failed advance records and throws its cause. Invalid
+budgets leave progress intact. Call `dispose()` when finished. A result you hold survives disposal.
+Advancing or disposing a cursor during its own advance throws.
 
 ### Graphemes and word movement
 
-`createGraphemeCursor(bufferOrString, { from, to })` segments the specified range on its own.
-It starts reading on the first advance. Its result stays `null` until the index is complete.
-Exceeding the work or cluster limit throws `GraphemeLimitError`.
+`createGraphemeCursor(source, { from, to })` reads the range on first advance and segments it as
+one string. Its immutable index uses absolute offsets and preserves unpaired surrogates. Choose
+range boundaries with context. Starting midway through a run of regional indicators can pair
+different characters into flags.
 
-The index uses absolute UTF-16 offsets and preserves unpaired surrogates. Include enough context
-for the boundaries you need. Starting halfway through a run of regional indicators can change
-which pairs form flags.
+| To find | Use |
+| --- | --- |
+| A numbered boundary or cluster | `boundaryAt`, `clusterAt`. An empty range has one boundary and zero clusters. |
+| A boundary near an offset | `floor` and `ceil` include an exact match. `preceding` and `following` exclude it and return `null` past the range. |
+| The cluster containing a unit | `clusterIndexAt` for offsets below `to`. `isBoundary` also accepts `to`. |
+| A boundary array | `index.boundaries()` materializes the requested interval. `graphemeBoundaries(text)` builds the whole array synchronously. |
 
-The immutable index records its source, range, cluster count and boundary
-count. `boundaryAt` and `clusterAt` query it without materializing all boundaries. `floor`
-and `ceil` include an exact boundary; `preceding` and `following` are strict and return `null`
-at the corresponding end. `isBoundary` tests a position, and `clusterIndexAt` requires an
-offset inside the range. An empty range has one boundary and no clusters. `boundaries()`
-explicitly materializes the requested boundary interval. `graphemeBoundaries(text)` runs
-the same kernel synchronously for bounded strings.
+At a collapsed caret, deletion handles a whole cluster, including a CRLF. A nonempty selection
+keeps its exact extent. The editor can index a complete logical line and its ending, including
+the preceding line when moving back from a line start.
 
-For movement, the editor first checks local ASCII text. When it needs more context, it indexes the
-captured logical line and its LF, including the preceding line for backward movement at a line
-start. It caches one buffer/range pair and preserves long clusters and regional-indicator parity.
-Word movement uses the same boundaries. At a caret inside a cluster, deletion removes the whole
-cluster. A nonempty selection keeps its exact extent. Delayed commands recheck revision, selection,
-tab generation, composition and edit permission.
-
-`WordCursor(buffer, offset, direction, options)` supplies code-word endpoints in either direction.
-`WordOptions` can bound the source range and disable whitespace skipping. Unicode letters,
-numbers and connector punctuation form words; other symbols form runs, and whitespace is
-separate. Marks and join controls attach to their preceding base. The default forward scan consumes
-the current run and following whitespace; the backward scan skips preceding whitespace and
-consumes the preceding run. `skipWhitespace: false` finds run edges for pointer selection.
-This is a code-oriented policy, not dictionary segmentation or Unicode word-boundary conformance.
-
-`next(maxWork)` returns `WordStep` progress with status, raw UTF-16 offset, failure and work/read
-counts. Work counts scanned UTF-16 units. Reads retain a 256-unit slice plus at most one unit
-to complete a surrogate pair. The caller supplies grapheme snapping and
-logical-line bounds where needed.
+`WordCursor(buffer, offset, direction, options)` groups letters, numbers and connector punctuation
+into code words. Marks and join controls attach to their base. Other symbols form runs. Forward
+movement consumes a run and following whitespace. Backward movement skips preceding whitespace
+and crosses the prior run. Set `skipWhitespace: false` for run edges. `next(maxWork)` reports
+a raw UTF-16 offset. Supply line bounds and snap to a grapheme boundary for a visible caret.
 
 ### Browser caret geometry
 
-Rows use left-to-right layout and browser-shaped glyph rectangles. Caret stops follow logical
-grapheme boundaries, including combining sequences and emoji. Left and Right cross line breaks and
-skip folded rows. Selection endpoints keep their affinities. Hit testing and pointer selection share
-row geometry.
+Pointer hits and selections use the browser's glyph rectangles on left-to-right rows.
+Left and Right follow logical caret stops across newlines and skip folded rows.
 
 ### Character warnings
 
-Enable markers with `editor.configure({ characterWarnings: true })` or pass a policy object.
-All categories start enabled. Set individual `categories` to false or add permitted characters
-to `allow`. Each entry must contain exactly one code point.
+`editor.configure({ characterWarnings: true })` enables all categories. A policy can turn individual
+`categories` off or `allow` specific characters, one code point per entry.
 
-| Category | Meaning |
+| Category | Flags |
 | --- | --- |
 | `bidi-control` | Directional marks, embeddings, overrides and isolates |
-| `invisible` | Other default-ignorable characters |
-| `bom` | U+FEFF after document offset zero |
-| `non-breaking-space` | U+00A0, U+2007 or U+202F |
-| `unusual-space` | Other classified whitespace, excluding ordinary space, tab, CR and LF |
+| `bom` | U+FEFF anywhere after offset zero |
+| `non-breaking-space` | U+00A0, U+2007 and U+202F |
+| `invisible` | Other default-ignorable characters, including joiners and variation selectors |
+| `unusual-space` | Other classified whitespace beyond ordinary space, tab, CR and LF |
 
-Ordinary combining marks and letters from other scripts pass without warnings. Decide which joiners
-and variation selectors to flag for your source. Use `characterWarningLabel` for the name and
-Unicode code point. To continue a limited query, pass its `nextFrom` with the same end offset
-while the capture is current.
-
-`editor.settings().characterWarnings` returns the frozen policy or `false` when disabled.
-`editor.characterWarnings.query(from, to, limits)` returns
-a bounded batch with document/revision and an `isCurrent()` guard, or `null` if unavailable.
-Edits, policy changes, view closure and disposal expire that capture. Invalid configuration
-preserves the existing policy; configure outside workspace notifications.
-
-Markers inspect only the presented fragments. Each marker covers a grapheme. A query returns the
-exact code point. Markers preserve source text, syntax color and selection backgrounds. Style them
-with `--st-character-warning-background` and `--st-character-warning-border`.
+A marker covers the visible grapheme. `editor.characterWarnings.query(from, to, limits)` gives
+the exact code point. Continue a limited batch at `nextFrom` with the same `to` while `isCurrent()`
+is true. Edits, policy changes, closure and disposal expire the capture. An unavailable query
+returns `null`. Style markers with `--st-character-warning-background` and `--st-character-warning-border`.
 
 ### Limits
 
-| Operation | Bound or validation |
+| Operation | Limit |
 | --- | --- |
-| Grapheme cursor advance | Default 4,096 work units; integer budget at least 256; cooperative checkpoints can overshoot a requested budget |
-| Grapheme limits | Positive safe integers; default operations `max(1_000_000, rangeLength * 16)`, clusters `max(1_000_000, rangeLength)` |
-| Source reads | The cursor reads up to 256 UTF-16 units per slice, then segments the complete range across slice boundaries |
-| Synchronous utilities/materialization | Work and arrays proportional to the supplied range; callers bound inputs |
-| Character scan | Default 4,096 units and 256 warnings; integer `maxUnits >= 2`, `maxWarnings >= 1`; at most `maxUnits + 5` units read |
-| Character marker cache | At most 128 presented fragments |
-
-A checkpoint cannot interrupt allocation, freezing, native calls or garbage collection. Measure time
-and memory separately.
+| Grapheme advance | Default 4,096 work units, minimum 256. The cursor reads 256 units per slice. Joining slices and the native segmentation call can exceed a scheduling turn. |
+| Grapheme index | For a range of length `n`, defaults are `max(1_000_000, n * 16)` operations and `max(1_000_000, n)` clusters. Both take positive safe integers. Exceeding either throws `GraphemeLimitError`. |
+| Word scan | Reads 256 units at a time plus one for a surrogate pair. Work counts scanned units. |
+| Warning query | Defaults to 4,096 units and 256 warnings. Integer limits require `maxUnits >= 2`, `maxWarnings >= 1`. Reads at most `maxUnits + 5` units. |
 
 ## Host responsibilities
 
-Capture identity and revision before scheduling, yield between advances and dispose abandoned
-cursors. Recheck the capture before updating a live view. Give each segmentation range enough
-context. Use bounded queries when you need only part of the index.
+Recheck the captured document before displaying results. Configure warnings outside workspace
+notifications. `editor.settings().characterWarnings` returns the frozen policy or `false`.
+Invalid configuration preserves the prior setting.
 
-Choose warning policies and font sources. Set the host's CSS variable `--st-font` to the
-desired family. For bundled web fonts, use `@font-face`. For fonts supplied as bytes, load
-a `FontFace` and add it to the editor document's `fonts` set. The host owns that registration
-and removes it when its views have finished using it.
-
-The library ships Unicode ranges for default-ignorable character warnings. Development fixtures
-exercise grapheme boundaries. Both use reviewed inputs. [Regeneration](testing.md#unicode-regeneration)
-and [Unicode License V3](../licenses/Unicode-3.0.txt)
+Set `--st-font` on the host. Use `@font-face` for bundled fonts. For font bytes, load a `FontFace`,
+add it to the editor document's `fonts` set and remove it once the views are finished.
+Warning data and grapheme fixtures are covered by the [Unicode license](../licenses/Unicode-3.0.txt).
+[Regeneration](testing.md#unicode-regeneration)
 
 ## Not covered
 
-Caret geometry uses left-to-right rows. Font rendering on particular devices needs a device check.
-[Presentation support](README.md#support-matrix)
+Physical keyboard behavior and device font rendering require hands-on checks.
+[Support matrix](README.md#support-matrix)

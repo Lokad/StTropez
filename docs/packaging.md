@@ -1,13 +1,12 @@
 # Packaging
 
-Restore `StTropez.Assets` with NuGet to get the JavaScript modules, TypeScript declarations,
-stylesheet and regex worker for your frontend. The browser runs the compiled JavaScript.
+Restore `StTropez.Assets` with NuGet to get the compiled editor, declarations, CSS and regex
+worker. Your frontend loads the ES modules directly.
 
 ## Use
 
-Add a direct package reference to the project that builds your frontend. The example expects
-`0.0.0-local` in your NuGet feed and stages the assets under `obj/sttropez`. Use the exact
-version you intend to deploy and a directory reserved for generated files.
+Pin the package in the project that builds the frontend. This example uses a local feed containing
+`0.0.0-local` and stages assets in a dedicated directory under `obj/`.
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -26,16 +25,13 @@ version you intend to deploy and a directory reserved for generated files.
 </Project>
 ```
 
-Restore the project, then run `PrepareFrontend` to write the staged directory to `assets-root.txt`.
-
 ```sh
 dotnet restore Consumer.csproj
 dotnet msbuild Consumer.csproj -target:PrepareFrontend
 ```
 
-Point the frontend build at the directory in `assets-root.txt`. Its `package.json` resolves
-the following imports. If you configure TypeScript paths and bundler aliases by hand, use the
-same [entry points](#package-contents-and-entry-points) for both.
+`assets-root.txt` gives the directory to pass to your bundler. Resolve these imports through its
+`package.json`. If you use aliases, point TypeScript and the bundler at the same entries.
 
 ```ts
 export * as model from "sttropez";
@@ -44,132 +40,78 @@ export * as protocol from "sttropez/protocol";
 export * as kernels from "sttropez/kernels";
 ```
 
-Include `editor.css` in your stylesheet bundle or serve it directly. For an asset folder
-at `./sttropez/`, add this to the page.
+Serve the stylesheet from the same build or include it in the host's stylesheet bundle.
 
 ```html
 <link rel="stylesheet" href="./sttropez/editor.css">
 ```
 
-If you enable regex search, deploy `browser/regex-worker.js` and pass its URL to your
-[worker factory](search.md#regular-expressions-and-worker-limits). Once the page can import
-the modules and load the CSS, [mount your first editor](getting-started.md#open-the-first-editor).
+For regex search, deploy `browser/regex-worker.js` and supply its URL to the worker factory.
+[Regex search](search.md#regular-expressions-and-worker-limits) · [Mount the editor](getting-started.md#open-the-first-editor)
 
 ## Contract
 
 ### Package contents and entry points
 
-The package contains ES2022 modules with shared chunks. Its declarations import relative
-`.js` paths. Your frontend can use them without compiling StTropez or installing any library
-dependencies. The package has no managed assembly and the browser needs no .NET runtime.
+Public imports resolve under `assets/` in the restored package. The staged copy uses the same layout.
 
-Paths are relative to the restored `assets/` folder or the staged directory.
-
-| Public import | JavaScript/asset | Declaration |
+| Public import | Asset | Manifest key |
 | --- | --- | --- |
-| `sttropez` | `index.js` | `index.d.ts` |
-| `sttropez/browser` | `browser/index.js` | `browser/index.d.ts` |
-| `sttropez/protocol` | `protocol/index.js` | `protocol/index.d.ts` |
-| `sttropez/kernels` | `kernels/index.js` | `kernels/index.d.ts` |
-| `sttropez/editor.css` | `editor.css` | — |
-| `sttropez/regex-worker.js` | `browser/regex-worker.js` | — |
+| `sttropez` | `index.js` | `core` |
+| `sttropez/browser` | `browser/index.js` | `browser` |
+| `sttropez/protocol` | `protocol/index.js` | `protocol` |
+| `sttropez/kernels` | `kernels/index.js` | `kernels` |
+| `sttropez/editor.css` | `editor.css` | `css` |
+| `sttropez/regex-worker.js` | `browser/regex-worker.js` | `regexWorker` |
 
-Use `sttropez/kernels` for standalone text algorithms, position maps, JSON-RPC connections, LSP sessions and diagnostic decoding. The editor and language clients load their own implementations.
-
-The package declares these exports, the ESM module format and the MIT license in `package.json`.
-Private `.d.ts` files describe types used by the public API. Only the paths in the exports map
-are public imports. If you serve the modules directly, keep the shared chunks beside them. A
-bundler can relocate chunks if it also rewrites the imports.
-
-| Archive location | Contents |
-| --- | --- |
-| `assets/` | Compiled `.js`, `.d.ts`, `.css`, `package.json`, `manifest.json`, `LICENSE.txt` and `UNICODE-LICENSE.txt` |
-| `build/` | `StTropez.Assets.props` and `StTropez.Assets.targets` |
-| Package root/metadata | Package README, NuGet manifest and packaging metadata |
-
-The archive excludes source, source maps, tests, research and development dependencies. The
-[regex worker](search.md) is a standalone module with no shared-chunk imports.
+Each of the four module entries has a sibling `index.d.ts`. Declarations use relative `.js` imports.
+The ES2022 modules share chunks. Preserve their relative paths when serving them directly.
+The regex worker is a standalone module. Import only paths in the exports map. [API index](api.md)
 
 ### Manifest and versions
 
-`manifest.json` has `schemaVersion: 1`, a build version label, an `entries` object and an
-`assets` array. Each asset records its relative slash-separated `path`, byte count and SHA-256.
-The array includes metadata and both license notices, and excludes the manifest itself.
-
-| Manifest entry | Path |
-| --- | --- |
-| `core` | `index.js` |
-| `browser` | `browser/index.js` |
-| `protocol` | `protocol/index.js` |
-| `kernels` | `kernels/index.js` |
-| `types` | `index.d.ts` |
-| `css` | `editor.css` |
-| `regexWorker` | `browser/regex-worker.js` |
-
-Select the archive by its NuGet version. Local builds default to `StTropez.Assets` version
-`0.0.0-local`. The manifest and module metadata record the build label. There is no runtime
-version negotiation.
+`manifest.json` records `schemaVersion: 1`, the build version label, `entries` and `assets`.
+`entries.types` points to `index.d.ts`. Each file under `assets/` except the manifest itself has
+a relative path, byte count and SHA-256, including both license notices. Resolve the version
+at NuGet restore time.
 
 ### MSBuild preparation
 
-After restore, `StTropezAssetRoot` points to the immutable assets directory in the NuGet cache.
-Use that directory directly, or set `StTropezStageDirectory` and call `StTropezPrepareAssets`
-to copy the files into your build.
+`StTropezAssetRoot` points to the restored `assets/` directory. Read it directly or invoke
+`StTropezPrepareAssets` with `StTropezStageDirectory` set. The package supplies `.props` and
+`.targets` under `build/` for direct references. [NuGet build imports](https://learn.microsoft.com/en-us/nuget/concepts/msbuild-props-and-targets)
 
-`StTropezPreparedRoot` is a subdirectory named for the SHA-256 hash of the manifest bytes. The
-target copies allowed file types there, preserving relative paths. Packages with identical manifests
-share a stage. Different manifests get separate directories.
-
-Staging runs offline and skips unchanged files. It only copies assets. Your build owns the
-staging path and cleanup of old directories. The directory hash identifies the manifest. To
-verify a staged file, compute its SHA-256 and compare it with the hash recorded for that file.
-Staging doesn't authenticate the package.
-
-These files use NuGet's standard `build/` imports; the package supplies no `buildTransitive/`
-integration. See [MSBuild properties and targets in NuGet packages](https://learn.microsoft.com/en-us/nuget/concepts/msbuild-props-and-targets)
-for restore/import behavior and [NuGet package metadata](https://learn.microsoft.com/en-us/nuget/reference/nuspec)
-for archive metadata.
+The target copies assets offline, skips unchanged files and sets `StTropezPreparedRoot` to a
+subdirectory named for the SHA-256 of the manifest bytes. Different manifests get separate
+directories. To verify a file, compare its own hash with the manifest entry. Your build owns
+cleanup of old stages.
 
 <a id="producer-contract"></a>
 
 ### Building the NuGet package
 
-Building the package requires the pinned development packages, Node.js 24 or later and a .NET SDK
-that supports `net10.0`.
-
-`npm run build` clears library output, bundles the public entries and worker, emits strict
-declarations, rewrites declaration specifiers and generates metadata and the manifest. The bundler
-accepts runtime inputs only from `src/`. The build copies both license notices unchanged.
-
-`npm run pack:nuget` builds the assets, restores the packaging project and packs the allowed files
-into a local archive. Packing requires the compiled manifest and excludes managed build output and
-dependencies. Publishing is separate.
-
-The CI smoke test restores the package outside the checkout, checks its manifest and exports, and compiles
-the reference host against the shipped declarations. Chromium loads the stylesheet, a host-supplied font and the
-regex worker, then types into the mounted editor. [Run the smoke test](testing.md#package-qualification)
+From the checkout, use Node.js 24 or later, the pinned development packages and an SDK supporting
+`net10.0`. `npm run pack:nuget` builds the modules and declarations, restores the packaging
+project and creates the archive in `artifacts/nuget/feed/`. `npm run test:package` restores it
+in a separate consumer and exercises the reference host. [Package smoke test](testing.md#package-qualification)
 
 <a id="bounds-and-validation"></a>
 
 ### Troubleshooting a restored build
 
-If a restored build fails, the failing step narrows down what to inspect.
-
-| Failure | Check |
+| Symptom | Check |
 | --- | --- |
-| The compiler finds the types but the browser cannot import a module. | Check that your bundler resolves the same public entry as TypeScript and that the deployed module can load its shared chunks. |
-| `StTropezPrepareAssets` has no destination. | Set `StTropezStageDirectory` to a nonempty path inside the directory your build owns. |
-| You see files from another version. | Read `StTropezPreparedRoot` after running the target. Different manifests have different subdirectories. |
-| Regex search fails after deployment. | Check that the worker URL serves `browser/regex-worker.js` from the same package as the client. |
+| Types resolve but a module fails to load | Compare bundler and TypeScript aliases and check the shared-chunk URL. |
+| Staging fails before copying files | Set `StTropezStageDirectory` to a directory reserved for generated output. |
+| The host loads an older version | Read `StTropezPreparedRoot` after the preparation target runs. |
+| Regex search fails after deployment | Check that the worker URL serves `browser/regex-worker.js` from the client package. |
 
 ## Host responsibilities
 
-Pin the feed and version in the project that builds the frontend. Your application supplies the
-compiler or bundler it uses, the HTTP server and the cache policy. Ship `LICENSE.txt` and
-`UNICODE-LICENSE.txt` with the assets. Test imports, styles and any worker from the deployed
-layout, where URLs can differ from the development server.
+Select a trusted feed and package version. Ship `LICENSE.txt` and `UNICODE-LICENSE.txt` with
+the assets. Own the server, URLs and cache policy. Test the imports, stylesheet and worker at
+the deployed path.
 
 ## Not covered
 
-Check the asset URLs in your production deployment. The [distribution row in the support
-matrix](README.md#support-matrix) distinguishes the package contents from what each host must verify.
+See the distribution row in the [support matrix](README.md#support-matrix).
