@@ -112,28 +112,28 @@ test("language shortcuts follow their panel and editor through attachment failur
                 const owned = (editor: typeof first) => editor.commands.list().filter(c => c.id.startsWith(feature + ".") || feature === "navigation" && c.id.startsWith("locations.")).map(c => c.id);
                 const sessions = () => { const active = panel.debug().sessions; return typeof active === "number" ? active : active.length; };
                 let refused = false;
-                try { panel.attach("primary", tab, first); } catch (error) { refused = String(error).includes("Key binding conflicts: Escape"); }
+                try { panel.attach("primary", first); } catch (error) { refused = String(error).includes("Key binding conflicts: Escape"); }
                 const rollback = { refused, commands: owned(first), sessions: sessions(), escape: first.commands.run("host.escape") };
                 conflict.dispose();
                 if (feature !== "hover") {
                     first.focus();
                     const failure = new Error("The host could not render the focused panel");
                     const stop = panel.state.subscribe(() => { stop(); throw failure; });
-                    try { panel.attach("primary", tab, first); throw new Error("Expected the focused mount to fail"); }
+                    try { panel.attach("primary", first); throw new Error("Expected the focused mount to fail"); }
                     catch (error) { if (error !== failure) throw error; }
                     if (owned(first).length || sessions()) throw new Error(feature + " retained a failed mount");
                 }
-                const detach = panel.attach("primary", tab, first);
+                const detach = panel.attach("primary", first);
                 first.dispose();
                 const afterEditor = sessions();
                 const next = mountTextEditor(host, controller.workspace, tab);
                 try {
-                    const detachNext = panel.attach("primary", tab, next); detach();
+                    const detachNext = panel.attach("primary", next); detach();
                     const remounted = next.keymap.getShortcuts(discover);
                     let reattached = false;
                     if (feature !== "hover") {
                         panel.dispose();
-                        try { panel.attach("primary", tab, next); reattached = true; } catch (error) {
+                        try { panel.attach("primary", next); reattached = true; } catch (error) {
                             if (!String(error).includes("panel is disposed")) throw error;
                         }
                     } else detachNext();

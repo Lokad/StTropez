@@ -3,7 +3,7 @@ import { focusSource, onSourceFocus } from "../../../examples/shared/source-focu
 import { restoreReferenceView, type SavedReferenceView } from "../../../examples/shared/reference-view.ts";
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../../src/browser/index.ts";
 import type { TextEditor, TextComparison, ViewState } from "../../../src/browser/index.ts";
-import type { ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget } from "../../../src/index.ts";
+import type { ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabTarget } from "../../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../language/presentation.ts";
 import { comparisonSettled, editorSettled } from "../readiness.ts";
@@ -26,7 +26,7 @@ import { HostSignatureTools } from "./signature.ts";
 import { mountInstructionWidget } from "./instruction-widget.ts";
 import type { InstructionViewState } from "./instruction-widget.ts";
 
-type ViewTool = Readonly<{ attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void }>;
+type ViewTool = Readonly<{ attach(id: string, editor: TextEditor, presentation: EditingPresentation): () => void }>;
 
 /** Stable refs own editor descendants; the controller and resource IDs survive every detach. */
 export class ViewBindings {
@@ -107,11 +107,11 @@ export class ViewBindings {
                     if (this.review === review) this.comparison(null);
                 });
             }));
-            this.attachTools(scope, "comparison", this.controller.viewTab("primary"), review.panes.working, presentation);
+            this.attachTools(scope, "comparison", review.panes.working, presentation);
             scope.defer(() => referencePresentation.clear());
             const reference = review.panes.reference;
             reference.decorations.addProvider({ order: 0, provide: referencePresentation.decorate });
-            scope.defer(this.language.attachReference("reference", reference, referencePresentation, () => review.controller.getSnapshot().baseline, saveTarget));
+            scope.defer(this.language.attachReference("reference", reference, referencePresentation, () => review.controller.getSnapshot().baseline));
             const state = this.states.get("comparison")?.get(view.documentId);
             if (state) review.panes.working.restoreView(state, { selection: "current" });
             if (!restoreReferenceView(reference, baseline, this.referenceState)) this.referenceState = undefined;
@@ -307,7 +307,7 @@ export class ViewBindings {
                     this.instructionMount = instruction;
                     scope.defer(() => { if (this.instructionMount === instruction) this.instructionMount = undefined; instruction.dispose(); });
                 }
-                this.attachTools(scope, id, tabId, editor, presentation);
+                this.attachTools(scope, id, editor, presentation);
                 const original = this.controller.source.documentId;
                 if (id === "secondary" && documentId !== original) {
                     const bar = host.ownerDocument.createElement("div"), title = host.ownerDocument.createElement("strong");
@@ -341,10 +341,10 @@ export class ViewBindings {
             } catch (error) { scope.rollback(error); }
         };
     }
-    private attachTools(scope: CleanupScope, id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): void {
+    private attachTools(scope: CleanupScope, id: string, editor: TextEditor, presentation: EditingPresentation): void {
         editor.decorations.addProvider({ order: 0, provide: presentation.decorate });
         scope.defer(this.tablePaste.attach(id, editor));
-        for (const tool of this.tools) scope.defer(tool.attach(id, tab, editor, presentation));
+        for (const tool of this.tools) scope.defer(tool.attach(id, editor, presentation));
     }
     private detach(id: string): void {
         const mounted = this.mounted.get(id); if (!mounted) return;

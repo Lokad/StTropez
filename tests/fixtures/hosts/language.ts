@@ -1,14 +1,14 @@
 import { onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { scopedCommands } from "../../../examples/shared/editor-attachment.ts";
 import { mountFindBar, type TextEditor } from "../../../src/browser/index.ts";
-import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../../src/index.ts";
+import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, DocumentView, Workspace } from "../../../src/index.ts";
 import type { LspProviderController, LspProviderFactory } from "../language/lsp-provider-controller.ts";
 import { EditingPresentation } from "../language/presentation.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 
-type Session = { id: string; editor: TextEditor; target: TabTarget; presentation: EditingPresentation;
+type Session = { id: string; editor: TextEditor; presentation: EditingPresentation;
     provider?: LspProviderController; stopProvider?: () => void; providerError?: string; reference?: () => ComparisonBaseline | null; initialized: boolean };
-type DetachedOwner = Readonly<{ id: string; target: TabTarget; documentId: DocumentId; reference?: ComparisonBaseline }>;
+type DetachedOwner = Readonly<{ id: string; view: DocumentView; reference?: ComparisonBaseline }>;
 type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ReturnType<LspProviderController["getSnapshot"]> | null; providerError: string | null; folds: FoldingSnapshot | null; foldMessage: string }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
@@ -62,8 +62,7 @@ export class HostLanguageTools {
         const reference = session.reference?.();
         const compatible = previous.reference && reference
             ? previous.reference.buffer === reference.buffer && previous.reference.version === reference.version
-            : !previous.reference && !session.reference && previous.documentId === session.editor.view.documentId
-                && previous.target.workspace === session.target.workspace && previous.target.id === session.target.id && previous.target.generation === session.target.generation;
+            : !previous.reference && !session.reference && previous.view === session.editor.view;
         // Only the same resource can resume as the toolbar target without a new focus gesture.
         if (compatible && !this.active) this.activate(session, false);
     }
@@ -85,17 +84,17 @@ export class HostLanguageTools {
         const update = () => { if (this.active === session) this.publish(); };
         session.stopProvider = provider.subscribe(update); update();
     }
-    attach(id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): () => void {
+    attach(id: string, editor: TextEditor, presentation: EditingPresentation): () => void {
         if (this.sessions.has(id)) throw new Error("Language view already mounted.");
-        const target = this.workspace.tabs.capture(tab), session: Session = { id, target, editor, presentation, initialized: false }, listeners = new AbortController();
+        const session: Session = { id, editor, presentation, initialized: false }, listeners = new AbortController();
         this.bindCommands(session, listeners);
         this.sessions.set(id, session); this.attachProvider(session);
         onSourceFocus(editor, listeners.signal, () => this.activate(session));
         this.resume(session); return this.detachSession(session, listeners);
     }
-    attachReference(id: string, editor: TextEditor, presentation: EditingPresentation, reference: () => ComparisonBaseline | null, target: TabTarget): () => void {
+    attachReference(id: string, editor: TextEditor, presentation: EditingPresentation, reference: () => ComparisonBaseline | null): () => void {
         if (this.sessions.has(id)) throw new Error("Find view already mounted.");
-        const session: Session = { id, target, editor, presentation, initialized: true, reference }, listeners = new AbortController();
+        const session: Session = { id, editor, presentation, initialized: true, reference }, listeners = new AbortController();
         if (!this.ownsSession(session)) throw new Error("Reference Find requires its captured view and baseline.");
         this.bindCommands(session, listeners);
         this.sessions.set(id, session);
@@ -105,9 +104,9 @@ export class HostLanguageTools {
         return this.detachSession(session, listeners);
     }
     private ownsSession(session: Session): boolean {
-        const surface = this.workspace.tabs.resolve(session.target)?.surface, view = session.editor.view;
-        if (surface?.kind !== "text" || !this.workspace.ownsDocumentView(view) || session.editor.signal.aborted) return false;
-        if (!session.reference) return surface.documentId === view.documentId;
+        const { view, signal } = session.editor;
+        if (signal.aborted || !this.workspace.ownsDocumentView(view)) return false;
+        if (!session.reference) return true;
         const reference = session.reference();
         return reference !== null && this.workspace.document(view.documentId).buffer === reference.buffer;
     }
@@ -144,7 +143,7 @@ export class HostLanguageTools {
             if (detached) return; detached = true;
             if (this.active === session) {
                 const reference = session.reference?.();
-                this.detachedOwner = Object.freeze({ id: session.id, target: session.target, documentId: session.editor.view.documentId, ...(reference ? { reference } : {}) });
+                this.detachedOwner = Object.freeze({ id: session.id, view: session.editor.view, ...(reference ? { reference } : {}) });
                 this.stopFolds?.(); this.stopFolds = undefined;
             }
             session.stopProvider?.();

@@ -1,7 +1,7 @@
 import { fixtureRequests } from "../language/fixture-requests.ts";
 import { onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { isMountedEditor, openChangedFile, type ChangedFile, type LanguageHost } from "../../../examples/shared/language-host.ts";
-import type { DocumentId, DocumentSnapshot, ResourceLease, TabId, TabTarget } from "../../../src/index.ts";
+import type { DocumentId, DocumentSnapshot, ResourceLease } from "../../../src/index.ts";
 import { captureViewRequest } from "../../../src/browser/index.ts";
 import type { CapturedViewRequest, CodeActionController, LanguageCommands, TextEditor } from "../../../src/browser/index.ts";
 import { ProviderLane } from "../provider-lane.ts";
@@ -13,7 +13,7 @@ import type { LspProjectClient, LspProjectFactory } from "../language/lsp-projec
 import { readLspEditNotes } from "../../../src/protocol/index.ts";
 import { editPaging, readEditPage, type EditPage } from "./edit-review.ts";
 import type { PanelPaging } from "../../../examples/shared/panel-actions.ts";
-type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
+type Session = { token: number; id: string; editor: TextEditor };
 type Participant = Readonly<{ document: DocumentSnapshot; authority: string }>;
 type Job = { origin: Session; documents: Map<string, Participant>;
     leases: ResourceLease[]; stops: (() => void)[]; timer: number; invalid: boolean; capture: CapturedViewRequest;
@@ -47,7 +47,7 @@ export class HostProjectTools {
         this.host = host; this.createClient = createClient; this.provider = provider;
     }
     private available(s: Session): boolean {
-        return !this.disposed && this.sessions.get(s.token) === s && isMountedEditor(this.host.workspace, s.editor, s.target);
+        return !this.disposed && this.sessions.get(s.token) === s && isMountedEditor(this.host.workspace, s.editor);
     }
     private authority(id: DocumentId): string { const m = this.host.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit]); }
     private publish(patch: Partial<ProjectSnapshot> = {}): void {
@@ -141,8 +141,8 @@ export class HostProjectTools {
     };
     readonly disconnect = (): void => { this.cancel(); this.drop(); this.disconnected = true; this.publish({ status: "idle", message: "Workspace provider disconnected; local editing remains available." }); };
     readonly reconnect = (): void => { this.cancel(); this.drop(); this.disconnected = false; this.host.reconnect?.(); this.publish({ status: "idle", message: "Register again with current working snapshots." }); };
-    attach(id: string, tab: TabId, editor: TextEditor): () => void {
-        const session = { token: this.host.workspace.allocateIdentity(), id, target: this.host.workspace.tabs.capture(tab), editor }, events = new AbortController(); this.sessions.set(session.token, session);
+    attach(id: string, editor: TextEditor): () => void {
+        const session = { token: this.host.workspace.allocateIdentity(), id, editor }, events = new AbortController(); this.sessions.set(session.token, session);
         onSourceFocus(editor, events.signal, () => { this.active = session; this.publish(); });
         editor.onEditIntent(() => { if (this.job?.documents.has(editor.view.documentId)) this.cancel(); }, events.signal);
         let detached = false;

@@ -5,7 +5,7 @@ import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../../../examples/shared/editor-attachment.ts";
 import { attachPlainPane, focusSourceCaret, onSourceFocus, type PlainPane } from "../../../examples/shared/source-focus.ts";
 import { openChangedFile, type ChangedFile, type LanguageHost } from "../../../examples/shared/language-host.ts";
-import type { DocumentId, DocumentSnapshot, TabId } from "../../../src/index.ts";
+import type { DocumentId, DocumentSnapshot } from "../../../src/index.ts";
 import { attachEditorLanguage } from "../../../src/browser/index.ts";
 import type { ColorPresentationChoice, DocumentColorChoice, DocumentColorController, ColorPresentationReview, TextEditor } from "../../../src/browser/index.ts";
 import type { LspDocumentColor, LspPrepare, LspWorkspace } from "../../../src/protocol/index.ts";
@@ -134,7 +134,7 @@ export class HostDocumentColors {
         if (this.owner) this.render(this.owner);
         else { const proposed = parseColor(this.value); this.publish({ value: this.value, css: proposed ? rgbaColor(proposed) : null }); }
     }
-    attach(id: string, _tab: TabId, editor: TextEditor) {
+    attach(id: string, editor: TextEditor) {
         if (this.disposed) throw new Error("Color panel is disposed.");
         const source = this.host.workspace.document(editor.view.documentId);
         if (!source.language) return attachPlainPane(this.sessions, id, editor, () => {

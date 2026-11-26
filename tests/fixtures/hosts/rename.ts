@@ -4,7 +4,7 @@ import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../../../examples/shared/editor-attachment.ts";
 import { focusSourceCaret, onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { isMountedEditor, openChangedFile, type LanguageHost } from "../../../examples/shared/language-host.ts";
-import type { DocumentId, TabId } from "../../../src/index.ts";
+import type { DocumentId } from "../../../src/index.ts";
 import { attachEditorLanguage } from "../../../src/browser/index.ts";
 import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../../src/browser/index.ts";
 import type { LspWorkspace, LspWorkspaceEditNote } from "../../../src/protocol/index.ts";
@@ -75,7 +75,7 @@ export class HostRenameTools {
         this.publish({ name });
     }
     readonly bindName = this.nameField.bind;
-    attach(id: string, _tab: TabId, editor: TextEditor): () => void {
+    attach(id: string, editor: TextEditor): () => void {
         if (this.disposed) throw new Error("Rename panel is disposed.");
         const { rename: controller, dispose } = attachEditorLanguage(editor, this.provider, { rename: {
             documents: () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null),

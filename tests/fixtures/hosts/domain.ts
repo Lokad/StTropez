@@ -1,7 +1,7 @@
 import { onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { captureEditorCommand } from "../../../examples/shared/editor-attachment.ts";
 import { createFoldRegions } from "../../../src/index.ts";
-import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, TabId, TabTarget, Workspace } from "../../../src/index.ts";
+import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, Workspace } from "../../../src/index.ts";
 import type { DecorationLayer, TextEditor } from "../../../src/browser/index.ts";
 import { FixtureDomainProvider, validateDomainResult } from "../language/domain.ts";
 import type { DomainAnnotation, DomainInput, DomainProvider } from "../language/domain.ts";
@@ -9,7 +9,7 @@ import { HostCell } from "../../../examples/shared/observable.ts";
 
 type OwnedFold = { id: string; from: number; to: number };
 type ViewData = { revision: number; owned: Map<string, OwnedFold>; annotations: readonly DomainAnnotation[] };
-type Session = { token: string; id: string; editor: TextEditor; target: TabTarget; layer: DecorationLayer; data: ViewData };
+type Session = { token: string; id: string; editor: TextEditor; layer: DecorationLayer; data: ViewData };
 type Analysis = { folds: FoldingSnapshot; authority: string; lease: ResourceLease };
 type Job = { session: Session; input: DomainInput; analysis?: Analysis; abort: AbortController; timeout: number; invalid: boolean };
 export type DomainSnapshot = Readonly<{ available: boolean; editable: boolean; view: string | null; token: string | null; revision: number | null;
@@ -36,7 +36,7 @@ export class HostDomainTools {
     private available(session: Session): boolean {
         const { editor } = session;
         return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.activity().disposed
-            && this.workspace.ownsDocumentView(editor.view, session.target)
+            && this.workspace.ownsDocumentView(editor.view, editor.tab)
             && this.workspace.resourceForDocument(editor.view.documentId).getSnapshot().state === "ready";
     }
     private authority(session: Session): string {
@@ -65,13 +65,13 @@ export class HostDomainTools {
         if (changed) { session.data.revision = revision; session.data.annotations = noAnnotations; session.layer.clear(); }
         if (this.active === session) this.publish();
     }
-    attach(id: string, tab: TabId, editor: TextEditor): () => void {
+    attach(id: string, editor: TextEditor): () => void {
         const token = `domain-session-${this.workspace.allocateIdentity()}`, revision = this.workspace.document(editor.view.documentId).revision;
         const data = this.data.get(editor.view) ?? { revision, owned: new Map<string, OwnedFold>(), annotations: noAnnotations };
         const layer = editor.decorations.add({ order: 30 });
-        this.data.set(editor.view, data); const session = { token, id, editor, layer, data, target: this.workspace.tabs.capture(tab) }, listeners = new AbortController(); this.sessions.set(token, session);
+        this.data.set(editor.view, data); const session = { token, id, editor, layer, data }, listeners = new AbortController(); this.sessions.set(token, session);
         const changed = () => { this.sync(session); if (this.job?.session === session && !this.current(this.job)) this.invalidate(this.job); };
-        const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.folding.subscribe(changed), this.workspace.tabs.subscribe(changed), this.workspace.resourceForDocument(editor.view.documentId).metadata.subscribe(changed)];
+        const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.folding.subscribe(changed), this.workspace.resourceForDocument(editor.view.documentId).metadata.subscribe(changed)];
         onSourceFocus(editor, listeners.signal, () => { this.active = session; this.sync(session); });
         editor.onEditIntent(() => {
             if (this.job?.session.editor.view.documentId === editor.view.documentId) this.cancel();

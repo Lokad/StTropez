@@ -5,7 +5,7 @@ import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../../../examples/shared/editor-attachment.ts";
 import { focusSourceCaret, onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { isMountedEditor, openChangedFile, type ChangedFile, type LanguageHost } from "../../../examples/shared/language-host.ts";
-import type { DocumentId, TabId, TabTarget } from "../../../src/index.ts";
+import type { DocumentId } from "../../../src/index.ts";
 import { attachEditorLanguage } from "../../../src/browser/index.ts";
 import type { CodeActionChoice, CodeActionController, CodeActionPreview, TextEditor } from "../../../src/browser/index.ts";
 import type { LspCommandPolicy, LspScopeAccess, LspWorkspace, LspWorkspaceEditNote } from "../../../src/protocol/index.ts";
@@ -13,7 +13,7 @@ import { validDomainModule } from "../language/domain.ts";
 import type { ActionInput } from "../language/actions.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 import type { HostProjectTools } from "./project.ts";
-type Session = { id: string; target: TabTarget; editor: TextEditor; controller: CodeActionController };
+type Session = { id: string; editor: TextEditor; controller: CodeActionController };
 type ActionSettings = Pick<ActionInput, "module" | "delay" | "fault">;
 export type ActionHostOptions = Readonly<{ provider: LspWorkspace; commandPolicy?: LspCommandPolicy;
     beforeRequest?: (scope: LspScopeAccess, config: ActionSettings) => Promise<unknown>;
@@ -49,7 +49,7 @@ export class HostActionsTools {
         this.stopReviewOwner = reviewOwner?.state.subscribe(() => this.publish());
     }
     private available(s: Session): boolean {
-        return !this.disposed && this.sessions.has(s) && isMountedEditor(this.host.workspace, s.editor, s.target);
+        return !this.disposed && this.sessions.has(s) && isMountedEditor(this.host.workspace, s.editor);
     }
 
     private publish(patch: Partial<ActionsSnapshot> = {}): void {
@@ -79,9 +79,8 @@ export class HostActionsTools {
     setModule(value: string): void { if (value === this.cell.get().module) return; this.cancel(); this.publish({ module: value.slice(0, 65), status: "idle", message: "Module changed; preview a fresh action.", title: "", disabled: null, edits: [], choices: [], page: 0, editCount: 0 }); }
     readonly bindModule = this.moduleField.bind;
     private readonly documents = () => this.host.workspace.getSnapshot().documents.filter(doc => doc.language !== null);
-    attach(id: string, tab: TabId, editor: TextEditor): () => void {
+    attach(id: string, editor: TextEditor): () => void {
         if (this.disposed) throw new Error("Code action panel is disposed.");
-        const target = this.host.workspace.tabs.capture(tab);
         const { provider, commandPolicy, beforeRequest, beforeResolve } = this.options, review = this.reviewOwner;
         const settings = () => {
             const panel = this.panel;
@@ -106,7 +105,7 @@ export class HostActionsTools {
             }
         });
         const stopAction = review?.observeActions(editor, controller, commands);
-        const s = { id, target, editor, controller };
+        const s = { id, editor, controller };
         const ownsModule = () => this.moduleField.focused && this.moduleSource === s;
         return attachPanelSession(this.sessions, s, (signal, register) => {
             onSourceFocus(editor, signal, () => { this.active = s; this.publish(); });

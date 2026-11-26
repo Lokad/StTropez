@@ -3,7 +3,7 @@ import { captureDestinationPanes, isMountedEditor, presentDocument, type Navigat
 import { focusSource, onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { attachPanelSession } from "../../../examples/shared/editor-attachment.ts";
 import { createWorkingSource } from "./working-source.ts";
-import type { DocumentId, TabId, TabTarget } from "../../../src/index.ts";
+import type { DocumentId } from "../../../src/index.ts";
 import { attachEditorLanguage } from "../../../src/browser/index.ts";
 import type { NavigationController, NavigationSnapshot as ControllerSnapshot, NavigationDestination, NavigationPointerLink, TextEditor } from "../../../src/browser/index.ts";
 import type { LspNavigationRequest, LspPrepare, LspWorkspace } from "../../../src/protocol/index.ts";
@@ -13,7 +13,7 @@ import { HostCell } from "../../../examples/shared/observable.ts";
 type Kind = LspNavigationRequest["kind"];
 export type NavigationHostOptions = Readonly<{ provider: LspWorkspace; prepare: (kind: Kind, policy: FixturePolicy<NavigationFault>) => LspPrepare;
     linkAt?: (editor: TextEditor, offset: number) => NavigationPointerLink | undefined }>;
-type Session = { id: string; target: TabTarget; editor: TextEditor; controller: NavigationController | undefined };
+type Session = { id: string; editor: TextEditor; controller: NavigationController | undefined };
 export type NavigationSnapshot = Readonly<{
     available: boolean;
     status: ControllerSnapshot["status"];
@@ -41,7 +41,7 @@ export class HostNavigationTools {
     }
     private available(session: Session): session is Session & { controller: NavigationController } {
         return !!session.controller && !this.disposed && this.sessions.has(session)
-            && isMountedEditor(this.host.workspace, session.editor, session.target);
+            && isMountedEditor(this.host.workspace, session.editor);
     }
     private publish(patch: Partial<NavigationSnapshot> = {}) {
         this.cell.set({ ...this.cell.get(), available: !!this.active && this.available(this.active),
@@ -85,11 +85,10 @@ export class HostNavigationTools {
             }
         };
     }
-    attach(id: string, tab: TabId, editor: TextEditor) {
+    attach(id: string, editor: TextEditor) {
         if (this.disposed) throw new Error("Navigation panel is disposed.");
         const { workspace } = this.host;
-        const target = workspace.tabs.capture(tab);
-        const session: Session = { id, target, editor, controller: undefined };
+        const session: Session = { id, editor, controller: undefined };
         const attachment = workspace.document(editor.view.documentId).language && attachEditorLanguage(editor, this.options.provider, {
             navigation: {
                 documents: () => workspace.getSnapshot().documents.filter(doc => doc.language !== null),

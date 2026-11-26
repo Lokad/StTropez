@@ -2,7 +2,7 @@ import { fixtureRequests, type FixturePolicy } from "../language/fixture-request
 import { onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { attachPanelSession } from "../../../examples/shared/editor-attachment.ts";
 import { CleanupScope } from "../../../examples/shared/cleanup-scope.ts";
-import type { DocumentId, TabId } from "../../../src/index.ts";
+import type { DocumentId } from "../../../src/index.ts";
 import { attachEditorLanguage } from "../../../src/browser/index.ts";
 import type { HostHoverTools } from "./hover.ts";
 import type { SignatureController, SignatureSnapshot, TextEditor } from "../../../src/browser/index.ts";
@@ -55,7 +55,7 @@ export class HostSignatureTools {
     readonly dismiss = () => { this.active?.controller.cancel(); };
     readonly disconnect = () => { this.disconnected = true; for (const s of this.sessions.keys()) s.controller.cancel(); this.publish("Signature provider disconnected."); };
     readonly reconnect = () => { this.disconnected = false; this.reconnectProvider?.(); this.publish(); };
-    attach(id: string, _tab: TabId, editor: TextEditor): () => void {
+    attach(id: string, editor: TextEditor): () => void {
         if (this.disposed) throw new Error("Signature panel is disposed.");
         const settings = { delay: 0 };
         const language = attachEditorLanguage(editor, this.options.provider, {

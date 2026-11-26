@@ -61,13 +61,13 @@ test("links and definitions retry a failed presentation and keep the requesting 
         const notesEditor = mountTextEditor(document.body.appendChild(document.createElement("div")), ws, notesTab, { ariaLabel: "Notes" });
         // The host closes an unrelated, non-language pane while the declaration lookup is in flight.
         const host = new HostNavigationTools(panes, { provider, prepare: () => async () => { notesEditor.dispose(); } });
-        host.attach("notes", notesTab, notesEditor);
+        host.attach("notes", notesEditor);
         const links = new HostDocumentLinks(panes, { provider, prepare: () => async () => {} });
         links.setAlias("currency", module.documentId);
-        links.attach("notes", notesTab, notesEditor);
-        links.attach("source", tab, editor);
+        links.attach("notes", notesEditor);
+        links.attach("source", editor);
         const removeLinks = mountDocumentLinksPanel(document.getElementById("links")!, links);
-        const detach = host.attach("source", tab, editor), removePanel = mountNavigationPanel(document.getElementById("panel")!, host);
+        const detach = host.attach("source", editor), removePanel = mountNavigationPanel(document.getElementById("panel")!, host);
         editor.focus();
         return async () => {
             const loaded = destination && ws.observeDocument(destination.view.documentId);

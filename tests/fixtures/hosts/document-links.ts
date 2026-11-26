@@ -5,7 +5,7 @@ import { createReviewKey, panelPaging, type PanelPaging } from "../../../example
 import { captureDestinationPanes, presentDocument, unavailablePaneMessage, type HostLocation, type NavigationHost } from "../../../examples/shared/language-host.ts";
 import { attachPlainPane, focusSource, onSourceFocus, type PlainPane } from "../../../examples/shared/source-focus.ts";
 import { createWorkingSource } from "./working-source.ts";
-import type { DocumentId, DocumentSnapshot, TabId } from "../../../src/index.ts";
+import type { DocumentId, DocumentSnapshot } from "../../../src/index.ts";
 import { attachEditorLanguage } from "../../../src/browser/index.ts";
 import type { DocumentLinkChoice, DocumentLinkController, DocumentLinkSnapshot, NavigationPointerLink, TextEditor, ViewState } from "../../../src/browser/index.ts";
 import type { LspPrepare, LspWorkspace } from "../../../src/protocol/index.ts";
@@ -103,7 +103,7 @@ export class HostDocumentLinks {
         return route && this.sessions.has(route.origin) ? route.origin.editor : this.visit?.destination;
     }
     readonly bindList = this.linkList.bind;
-    attach(id: string, _tab: TabId, editor: TextEditor) {
+    attach(id: string, editor: TextEditor) {
         if (this.disposed) throw new Error("Link panel is disposed.");
         if (!this.host.workspace.document(editor.view.documentId).language) return attachPlainPane(this.sessions, id, editor, () => {
             if (this.cell.get().status === "resolving" && !this.presenting) this.cancel();
