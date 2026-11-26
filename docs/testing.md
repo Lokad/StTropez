@@ -69,7 +69,7 @@ Use the [readiness helper](../tests/fixtures/readiness.ts) for the surface under
 | Helper | Waits for |
 | --- | --- |
 | `viewportSettled` | Live viewport, no pending frame, painted revision, selections and fold generation match the view |
-| `editorSettled` | Settled viewport and no pending input, command, caret, word, grapheme or drag-scroll work |
+| `editorSettled` | Settled viewport, no captured host insertion, and finished caret and drag-scroll frames |
 | `comparisonSettled` | Ready diff, settled editors and finished scroll/alignment with matching IDs when aligned. Alignment failure throws. |
 
 Assert the actual text, selection direction and affinity. Wait separately for a required service reply,

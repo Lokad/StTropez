@@ -400,9 +400,9 @@ test("two thousand carets move down before the next typed character", async ({ p
     const moved = await page.locator("#primary textarea").evaluate(input => {
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
         const fixture = window.editingFixture;
-        return { pending: fixture.snapshot().primary.pendingCommand, first: fixture.selectionSet().ranges[0]!.head };
+        return { first: fixture.selectionSet().ranges[0]!.head };
     });
-    expect(moved).toEqual({ pending: false, first: 7 });
+    expect(moved).toEqual({ first: 7 });
     await page.keyboard.type("!");
     await ready(page);
     const expected = "abcd" + "\nab!cd".repeat(count);
@@ -447,7 +447,7 @@ test("navigation reuses immediate style captures and rejects synchronous layout 
             try {
                 input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
                 const state = window.editingFixture.snapshot();
-                return { key, reads, head: state.primary.selection.head, pending: state.primary.pendingCommand };
+                return { key, reads, head: state.primary.selection.head };
             } finally { window.getComputedStyle = getStyle; }
         }, key));
         await ready(page);
@@ -468,7 +468,7 @@ test("navigation reuses immediate style captures and rejects synchronous layout 
                 const key = phase === "geometry" ? "ArrowDown" : "ArrowRight";
                 input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
                 const state = window.editingFixture.snapshot();
-                return { phase, changed, head: state.primary.selection.head, pending: state.primary.pendingCommand, conflicts: state.conflicts.length };
+                return { phase, changed, head: state.primary.selection.head, conflicts: state.conflicts.length };
             } finally { Range.prototype.getClientRects = nativeRects; stop(); }
         }, phase));
         await testInfo.attach(`navigation-${phase}`, { body: JSON.stringify(changes.at(-1)), contentType: "application/json" });
@@ -479,9 +479,8 @@ test("navigation reuses immediate style captures and rejects synchronous layout 
     await testInfo.attach("navigation-style", { body: JSON.stringify({ counts, changes }), contentType: "application/json" });
     for (const result of counts) {
         expect(result.head).toBe(head + (result.key === "ArrowRight" ? 1 : 17));
-        expect(result.pending).toBe(false);
         // Includes the viewport's metric reads; vertical preflight adds one flush.
         expect(result.reads).toBeGreaterThan(0); expect(result.reads).toBeLessThanOrEqual(result.key === "ArrowRight" ? 5 : 6);
     }
-    for (const result of changes) expect(result).toMatchObject({ changed: 1, head, pending: false, conflicts: 0 });
+    for (const result of changes) expect(result).toMatchObject({ changed: 1, head, conflicts: 0 });
 });

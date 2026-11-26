@@ -8,7 +8,7 @@ export function captureEditorCommand(editor: TextEditor, editOrigin?: "human") {
         available: () => {
             const activity = editor.activity(), state = editor.getSnapshot();
             return !editor.signal.aborted && editor.element.isConnected && !state.disabled
-                && !activity.disposed && !activity.composing && !activity.pendingInput && !activity.pendingCommand
+                && !activity.disposed && activity.input === "idle"
                 && (!editOrigin || state.readOnlyReason === null);
         },
     });

@@ -83,15 +83,15 @@ test("owner activity retains immutable captures without collecting metrics and f
     expect(result).toMatchObject({ comparisonSetterExposed: false, selectionStale: true, foldStale: true, insertionAborted: true, oldCapturesUnchanged: true, disposedStable: true });
     for (const name of ["mount", "selection queued", "revision queued", "fold queued", "alignment queued", "composition queued"])
         expect(result.states[name], name).toMatchObject({ ready: false, painted: { pending: true, disposed: false } });
-    for (const name of ["selection painted", "revision painted", "fold painted", "alignment painted", "alignment cleared", "insertion cancelled", "composition painted", "composition ended"])
-        expect(result.states[name], name).toMatchObject({ ready: true, painted: { pending: false }, input: { pendingCaret: false, pendingInput: false, pendingCommand: false } });
+    for (const name of ["selection painted", "revision painted", "fold painted", "alignment painted", "alignment cleared", "insertion cancelled", "composition ended"])
+        expect(result.states[name], name).toMatchObject({ ready: true, painted: { pending: false }, input: { pendingCaret: false, input: "idle" } });
     expect(result.states["revision queued"]).toMatchObject({ painted: { revision: 0 } });
     expect(result.states["revision painted"]).toMatchObject({ painted: { revision: 1 } });
     expect(result.states["alignment queued"]).toMatchObject({ painted: { aligned: false, alignmentId: null } });
     expect(result.states["alignment painted"]).toMatchObject({ painted: { aligned: true, alignmentId: 42 } });
     expect(result.states["alignment cleared"]).toMatchObject({ painted: { aligned: false, alignmentId: null } });
-    expect(result.states["insertion captured"]).toMatchObject({ ready: false, input: { pendingInput: true } });
-    expect(result.states["composition painted"]).toMatchObject({ ready: true, input: { composing: true } });
-    expect(result.states["composition ended"]).toMatchObject({ input: { composing: false } });
-    expect(result.states["disposed"]).toMatchObject({ ready: false, input: { disposed: true, pendingInput: false, pendingCaret: false }, painted: { disposed: true, pending: false } });
+    expect(result.states["insertion captured"]).toMatchObject({ ready: false, input: { input: "host-insertion" } });
+    expect(result.states["composition painted"]).toMatchObject({ ready: true, painted: { pending: false }, input: { pendingCaret: false, input: "composing" } });
+    expect(result.states["composition ended"]).toMatchObject({ input: { input: "idle" } });
+    expect(result.states["disposed"]).toMatchObject({ ready: false, input: { disposed: true, input: "idle", pendingCaret: false }, painted: { disposed: true, pending: false } });
 });

@@ -84,7 +84,7 @@ const button = (label, command) => {
 const editsReady = panes => {
     for (const pane of panes) {
         const state = pane?.activity();
-        if (state && (state.composing || state.pendingInput || state.pendingCommand)) {
+        if (state && (state.input !== "idle")) {
             output.textContent = "An edit is pending. Try again when it finishes.";
             return false;
         }

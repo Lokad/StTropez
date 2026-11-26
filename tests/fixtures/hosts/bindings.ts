@@ -161,7 +161,7 @@ export class ViewBindings {
     readonly finishReferenceRefresh = (): void => this.finishReference("refresh");
     readonly beginReviewAcceptance = (): void => this.beginReference("accept");
     readonly finishReviewAcceptance = (): void => this.finishReference("accept");
-    private composing(): boolean { return this.review?.panes.working.activity().composing === true || [...this.mounted.values()].some(value => value.editor.activity().composing); }
+    private composing(): boolean { return this.review?.panes.working.activity().input === "composing" === true || [...this.mounted.values()].some(value => value.editor.activity().input === "composing"); }
     readonly beginDiscard = (): void => {
         if (!this.review) return;
         for (const { ticket } of this.discardTickets.splice(0)) ticket.cancel();
@@ -204,10 +204,10 @@ export class ViewBindings {
     constructor(controller: HostController) {
         this.controller = controller;
         this.tablePaste = new HostTablePaste();
-        this.domain = new HostDomainTools(controller.workspace, documentId => !this.tablePaste.hasPendingInput(documentId) && !(this.review?.panes.working.view.documentId === documentId && (this.review.panes.working.activity().pendingInput || this.review.panes.working.activity().composing))
-            && ![...this.mounted.values()].some(value => { const activity = value.editor.activity(); return value.documentId === documentId && (activity.pendingInput || activity.composing); }));
+        this.domain = new HostDomainTools(controller.workspace, documentId => !this.tablePaste.hasPendingInput(documentId) && !(this.review?.panes.working.view.documentId === documentId && (this.review.panes.working.activity().input !== "idle"))
+            && ![...this.mounted.values()].some(value => { const activity = value.editor.activity(); return value.documentId === documentId && (activity.input !== "idle"); }));
         const canCapture = (documentId: DocumentId) => {
-            const busy = (activity: ReturnType<TextEditor["activity"]> | undefined) => activity && (activity.pendingInput || activity.pendingCommand || activity.composing);
+            const busy = (activity: ReturnType<TextEditor["activity"]> | undefined) => activity && (activity.input !== "idle");
             return !this.tablePaste.hasPendingInput(documentId) && !(this.review?.panes.working.view.documentId === documentId && busy(this.review.panes.working.activity())) && ![...this.mounted.values()].some(value => value.documentId === documentId && busy(value.editor.activity()));
         };
         const lsp = hostLspFactories(controller.workspace);
@@ -232,8 +232,8 @@ export class ViewBindings {
         this.signature = new HostSignatureTools(canCapture, this.hover, lsp.signature, reconnectProvider);
         this.tools = [this.language, this.signature, this.tablePaste, this.domain, this.navigation, this.project,
             this.rename, this.actions, this.links, this.colors];
-        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && !this.review?.panes.working.activity().pendingInput
-            && ![...this.mounted.values()].some(value => value.editor.activity().pendingInput),
+        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && this.review?.panes.working.activity().input !== "host-insertion"
+            && ![...this.mounted.values()].some(value => value.editor.activity().input === "host-insertion"),
             documentId => this.selections.get("primary")?.get(documentId) ?? this.selections.get("comparison")?.get(documentId) ?? this.selections.get("secondary")?.get(documentId));
         this.stopDocumentCleanup = controller.registerDetachedDocumentCleanup(documentId => {
             if ([...this.mounted.values()].some(value => value.documentId === documentId) || this.review?.panes.working.view.documentId === documentId) return;
@@ -271,7 +271,7 @@ export class ViewBindings {
         const editor = this.mounted.get("secondary")?.editor;
         if (!editor?.tab) return;
         const host = editor.element.closest<HTMLDivElement>(".editor-host"), activity = editor.activity();
-        if (!host?.isConnected || activity.disposed || activity.composing || activity.pendingInput || activity.pendingCommand
+        if (!host?.isConnected || activity.disposed || activity.input !== "idle"
             || this.tablePaste.hasPendingInput(editor.view.documentId)) return;
         const { workspace, tab } = editor;
         if (!workspace.ownsDocumentView(editor.view, tab) || !workspace.observeDocument(documentId).getSnapshot()) return;

@@ -13,7 +13,7 @@ test("controller and workspace notifications reject cross-owner writes through n
     let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ composing: false, disposed: false }),
+    const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ input: "idle", disposed: false }),
         viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
     const scope = workspace.createNotificationScope();
     const observe = t.mock.method(workspace, "createNotificationScope", () => scope);
@@ -58,7 +58,7 @@ test("changing whole-word mode excludes selected substring matches", () => {
     const tasks = new Map<number, () => void>(); let serial = 0, focused = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ composing: false, disposed: false }),
+    const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ input: "idle", disposed: false }),
         viewport: { revealRange: () => {} }, focus: () => { focused++; } } satisfies FindHost;
     const find = findForView(workspace, workspace.tabs.capture(tab), editor);
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 100); const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } };
@@ -96,7 +96,7 @@ for (const lifetime of ["destroyed", "expired", "view-disposed"] as const) for (
         const owner = Object.assign(new EventTarget(), { defaultView: { setTimeout: (work: () => void, delay: number) => Number(setTimeout(work, delay)), clearTimeout, performance } });
         // This headless facade exercises controller ownership and notifications. Real DOM/input remains browser coverage.
         let inactive = false;
-        const editor = { view, element: { ownerDocument: owner }, ...editorState({ readOnlyReason: "read-only" }), activity: () => ({ composing: inactive && composing, disposed: false }),
+        const editor = { view, element: { ownerDocument: owner }, ...editorState({ readOnlyReason: "read-only" }), activity: () => ({ input: inactive && composing ? "composing" : "idle", disposed: false }),
             viewport: { revealRange: () => { assert.equal(inactive, false, "Inactive view must not be revealed."); } },
             focus: () => { assert.equal(inactive, false, "Inactive editor must not receive focus."); } } satisfies FindHost;
         const find = findForView(workspace, workspace.tabs.capture(tab), editor); let stop = () => {};
@@ -128,7 +128,7 @@ test("case options retain raw Unicode matches and literal Replace All commits in
     const tasks = new Map<number, () => void>(); let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
-    const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ composing: false, disposed: false }),
+    const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ input: "idle", disposed: false }),
         viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
     const find = findForView(workspace, workspace.tabs.capture(tab), editor), text = () => { const buffer = workspace.document(documentId).buffer; return buffer.slice(0, buffer.length); };
     const runOne = () => { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); };

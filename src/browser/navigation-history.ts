@@ -26,7 +26,7 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
     }
     function busy(editor: TextEditor) {
         const state = editor.activity();
-        return state.composing || state.pendingCommand || state.pendingInput;
+        return state.input !== "idle";
     }
     function track(view: DocumentView, tab: TabTarget | undefined, origin: ViewState, revision: number): Entry {
         const entry: Entry = { view, tab, origin, state: origin, revision, stop: workspace.onDocumentChange(view.documentId, change => {

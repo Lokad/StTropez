@@ -21,7 +21,7 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
     const layers = createDecorationLayers(f.document, () => {}, () => true);
     const lifetime = new AbortController();
     const editor = { decorations: layers.handle, commands: registry.commands, keymap: registry.keymap, signal: lifetime.signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, element: Object.assign(new EventTarget(), { ownerDocument: owner }), ...editorState(),
-        activity: () => ({ disposed: false, composing: false }), viewport: { revealRange: () => {} }, focus: () => {} } as unknown as TextEditor;
+        activity: () => ({ disposed: false, input: "idle" }), viewport: { revealRange: () => {} }, focus: () => {} } as unknown as TextEditor;
     const controller = kind === "folding" ? createFoldingController(editor, () => [])
         : attachEditorLanguage(editor, f.provider, { occurrences: {} }).occurrences;
     const commands = [controller.refresh, controller.dispose];

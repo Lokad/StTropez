@@ -16,7 +16,7 @@ function fixture(t: TestContext) {
     const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "source");
     const view = workspace.createDocumentView(source.documentId);
     const editor = { workspace, tab: workspace.tabs.capture(tab), view, ...editorState(), signal: new AbortController().signal,
-        activity: () => ({ disposed: false }), viewport: { revealOffset() {} }, focus() {},
+        activity: () => ({ disposed: false, input: "idle" }), viewport: { revealOffset() {} }, focus() {},
         element: Object.assign(new EventTarget(), { isConnected: true, ownerDocument: { defaultView: globalThis } }) } as unknown as TextEditor;
     const host = new HostProjectTools({ workspace, canCapture: () => true, present: () => editor }, undefined, provider);
     let detach = host.attach("source", tab, editor);

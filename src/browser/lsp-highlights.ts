@@ -3,7 +3,6 @@ import { documentHighlightMethod } from "../protocol/lsp-methods.ts";
 import { Store, type Observable } from "../core/observable.ts";
 import { codeWordConstituentPattern } from "../core/word-patterns.ts";
 import { controllerObservable } from "./controller-observable.ts";
-import { editingInProgress } from "./captured-view.ts";
 import type { DocumentId } from "../core/workspace.ts";
 import { highlightClient } from "../protocol/lsp-highlights.ts";
 import type { LspDocumentHighlight } from "../protocol/lsp-highlights.ts";
@@ -39,7 +38,7 @@ export function mountOccurrences(editor: TextEditor, owner: LspDocumentOwner,
         if (result?.revision !== line.revision) return emptyList;
         return result.intersect(line.from, line.to).map(({ from, to, kind }) => ({ from, to, className: "st-occurrence-" + kind }));
     } });
-    const busy = () => editingInProgress(editor.activity());
+    const busy = () => editor.activity().input !== "idle";
     const publish = (status: LspHighlightSnapshot["status"], revision = cell.get().revision, caret: number | null = null) => {
         const items = result?.items ?? emptyList;
         if (items !== cell.get().items) layer.invalidate();

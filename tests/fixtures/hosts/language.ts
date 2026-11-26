@@ -208,7 +208,7 @@ export class HostLanguageTools {
         const root = this.toolsElement, target = event.target, realm = root?.ownerDocument.defaultView, session = this.active;
         if (event.defaultPrevented || event.isComposing || !root?.isConnected || !realm || !(target instanceof realm.HTMLElement) || !root.contains(target) || !session
             || (target.closest("button,input,select,textarea") ?? target).matches(":disabled") || !session.editor.element.isConnected
-            || session.editor.activity().disposed || session.editor.activity().composing || !this.workspace.ownsDocumentView(session.editor.view)) return;
+            || session.editor.activity().disposed || session.editor.activity().input === "composing" || !this.workspace.ownsDocumentView(session.editor.view)) return;
         if (!this.ownsSession(session)) return;
         return session;
     }
@@ -265,7 +265,7 @@ export class HostLanguageTools {
     private foldTarget(): Session | undefined {
         const session = this.active; if (!session) return;
         if (!this.ownsSession(session) || !session.editor.element.isConnected) return;
-        if (session.editor.activity().composing) { this.cell.set({ ...this.cell.get(), foldMessage: "Finish composition before folding." }); return; }
+        if (session.editor.activity().input === "composing") { this.cell.set({ ...this.cell.get(), foldMessage: "Finish composition before folding." }); return; }
         return session;
     }
     readonly foldSelection = (): void => { this.foldTarget()?.editor.commands.run("fold.selection"); };

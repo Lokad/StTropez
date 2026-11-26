@@ -340,7 +340,7 @@ function detachLanguage(): void {
 }
 function editorBusy(): boolean {
     const activity = editor?.activity();
-    return !!activity && (activity.composing || activity.pendingInput || activity.pendingCommand);
+    return !!activity && (activity.input !== "idle");
 }
 function projectBusy(): boolean {
     return editorBusy() || find.getSnapshot()?.status === "replacing";

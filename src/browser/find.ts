@@ -3,7 +3,7 @@ import { onAbort } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { isOffsetRange } from "../core/bounds.ts";
 import { LiteralSearch } from "../core/search.ts";
-import type { TextEditor } from "./text-editor.ts";
+import type { TextEditor, TextEditorActivity } from "./text-editor.ts";
 import type { DocumentSnapshot, DocumentView, EditResult, TabTarget, Workspace } from "../core/workspace.ts";
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { FindIndex } from "../core/find-index.ts";
@@ -41,7 +41,7 @@ export type FindHost = Readonly<{
     }> | null }> }>;
     getSnapshot: () => Pick<ReturnType<TextEditor["getSnapshot"]>, "readOnlyReason">;
     onEditIntent: TextEditor["onEditIntent"];
-    activity: () => Readonly<{ disposed: boolean; composing: boolean }>;
+    activity: () => Pick<TextEditorActivity, "disposed" | "input">;
     viewport: Pick<TextEditor["viewport"], "revealRange">;
     focus: () => void;
 }>;
@@ -198,7 +198,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     function replacementAllowed(planning = false): boolean {
         const metadata = resource.metadata.getSnapshot();
         const reason = metadata.state !== "ready" ? "not-ready" : editor.getSnapshot().readOnlyReason
-            ?? humanEditRefusal(metadata) ?? (editor.activity().composing ? "composition-active" : null);
+            ?? humanEditRefusal(metadata) ?? (editor.activity().input === "composing" ? "composition-active" : null);
         return !reason || refuseReplacement(reason, planning);
     }
     const observePlanAuthority = (token: number) => { stopPlanAuthority = resource.metadata.subscribe(() => {
@@ -389,7 +389,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     function finishPreview(): void {
         const preview = pendingPreview;
         if (!preview) return;
-        const current = () => valid() && preview.scrollUnchanged() && !editor.activity().composing && currentSelection() === preview.selection;
+        const current = () => valid() && preview.scrollUnchanged() && editor.activity().input !== "composing" && currentSelection() === preview.selection;
         if (!count || !current()) { cancelPreview(); return; }
         const selected = preview.selection.ranges[preview.selection.primary]!;
         const start = Math.min(selected.anchor, selected.head), preferred = indexAt(start) % count;
@@ -425,7 +425,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     function finishAdvance(): void {
         const selection = advanceAfterReplace;
         advanceAfterReplace = undefined;
-        if (!selection || !valid() || selection !== currentSelection() || editor.activity().composing) return;
+        if (!selection || !valid() || selection !== currentSelection() || editor.activity().input === "composing") return;
         const next = nextMatch(1);
         if (next) selectMatch(next.index, false);
     }
@@ -441,7 +441,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     }
     function acceptPreview(): boolean {
         scope.assertWritable();
-        if (!previewed || !valid() || editor.activity().composing || store.get().status !== "ready"
+        if (!previewed || !valid() || editor.activity().input === "composing" || store.get().status !== "ready"
             || previewed.selection !== currentSelection()) return false;
         return selectMatch(previewed.index, true);
     }
@@ -449,7 +449,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         scope.assertWritable();
         pendingNext = undefined;
         if (!valid()) return false;
-        if (editor.activity().composing) {
+        if (editor.activity().input === "composing") {
             publish(notice("composition-active", "Finish composition before navigating."));
             return false;
         }

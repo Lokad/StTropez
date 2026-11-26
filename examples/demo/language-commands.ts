@@ -36,7 +36,7 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
         const source = captureViewRequest(editor.workspace, editor.tab, editor.view, { available: () => {
             const input = editor.activity();
             return editor.element.isConnected && !editor.getSnapshot().disabled && !input.disposed
-                && !input.composing && !input.pendingInput && !input.pendingCommand;
+                && input.input === "idle";
         } });
         if (!source) return;
         pending = source;

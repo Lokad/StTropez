@@ -87,14 +87,14 @@ export class HostDomainTools {
     }
     private guard(session: Session | undefined): session is Session {
         if (!session || !this.available(session)) { this.publish({ message: "Focus an available candidate source view." }); return false; }
-        if (session.editor.activity().composing || !this.canCapture(session.editor.view.documentId)) { this.publish({ message: "Finish pending typing or composition before a domain command." }); return false; }
+        if (session.editor.activity().input === "composing" || !this.canCapture(session.editor.view.documentId)) { this.publish({ message: "Finish pending typing or composition before a domain command." }); return false; }
         return true;
     }
     private current(job: Job): boolean {
         if (job.invalid || this.job !== job) return false;
         try {
             // Analysis replaces fold metadata, so it needs the exact fold generation but allows selection movement.
-            return this.available(job.session) && !job.session.editor.activity().composing && this.canCapture(job.session.editor.view.documentId)
+            return this.available(job.session) && job.session.editor.activity().input !== "composing" && this.canCapture(job.session.editor.view.documentId)
                 && (!job.analysis || this.workspace.document(job.session.editor.view.documentId).revision === job.input.revision
                     && job.session.editor.view.folding.getSnapshot().generation === job.analysis.folds.generation && this.authority(job.session) === job.analysis.authority);
         } catch { return false; }

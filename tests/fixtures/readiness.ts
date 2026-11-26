@@ -12,8 +12,8 @@ export function viewportSettled(viewport: TextViewport): boolean {
 
 export function editorSettled(editor: TextEditor): boolean {
     const input = editor.activity();
-    return !input.disposed && !input.pendingInput && !input.pendingCommand && !input.pendingCaret
-        && !input.pendingWord && !input.pendingGrapheme && !input.pendingDragScroll && viewportSettled(editor.viewport);
+    return !input.disposed && input.input !== "host-insertion" && !input.pendingCaret
+        && !input.pendingDragScroll && viewportSettled(editor.viewport);
 }
 
 export function comparisonSettled(comparison: TextComparison): boolean {

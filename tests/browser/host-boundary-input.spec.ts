@@ -36,12 +36,11 @@ test(`plain ${journey} boundaries finish before immediate typing`, async ({ page
             const input = node as HTMLTextAreaElement, f = window.hostFixture;
             input.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: documentBoundary, shiftKey: extend, bubbles: true, cancelable: true }));
             const s = f.snapshot(), v = input.getAttribute("aria-label") === "Primary source" ? s.bindings.views.find(v => v.id === "primary")! : s.bindings.comparison!;
-            const selectionSet = v.selectionSet!, pending = "metrics" in v ? v.metrics!.pendingGrapheme : v.input.pendingGrapheme;
+            const selectionSet = v.selectionSet!;
             input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "!", bubbles: true, cancelable: true }));
             input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "!", bubbles: true }));
-            return { selectionSet, pending };
+            return { selectionSet };
         }, { key: commandKey, extend, documentBoundary });
-        expect(result.pending, `${view} ${commandKey} shift=${extend}`).toBe(false);
         const owner = ranges[1]!;
         // Document extensions overlap/coalesce; line extensions stay independent.
         const lineHeads = key === "Home" ? [0, original.length - 5] : [original.indexOf("\r\n"), original.length];
@@ -76,9 +75,9 @@ test(`plain ${journey} boundaries finish before immediate typing`, async ({ page
         const state = window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!;
         input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "!", bubbles: true, cancelable: true }));
         input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "!", bubbles: true }));
-        return { pageLines, pending: state.metrics!.pendingGrapheme, heads: state.selectionSet.ranges.map(r => r.head) };
+        return { pageLines, heads: state.selectionSet.ranges.map(r => r.head) };
     });
-    expect(resized.pending).toBe(false); expect(resized.heads).toEqual(resizeHeads.map(head => head + resized.pageLines * rowUnits));
+    expect(resized.heads).toEqual(resizeHeads.map(head => head + resized.pageLines * rowUnits));
     let resizedText = original; for (const head of resizeHeads.slice().reverse()) { const at = head + resized.pageLines * rowUnits; resizedText = resizedText.slice(0, at) + "!" + resizedText.slice(at); }
     await waitForReview(page); await exact(page, resizedText); await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(page); await exact(page, original);
     // Navigation also updates every caret in a read-only source.
@@ -95,7 +94,6 @@ test(`plain ${journey} boundaries finish before immediate typing`, async ({ page
             if (documentBoundary) return original.length;
             const lf = original.indexOf("\n", head); return lf < 0 ? original.length : original[lf - 1] === "\r" ? lf - 1 : lf;
         });
-        expect(movement.metrics!.pendingGrapheme).toBe(false);
         expect(movement.selectionSet.ranges.map(r => r.head)).toEqual([...new Set(ends)].sort((a, b) => a - b));
         await page.getByRole("textbox", { name: "Primary source", exact: true }).pressSequentially("x"); await exact(page, original); expect((await snapshot(page)).history).toEqual(readonly.history);
     }
@@ -111,9 +109,8 @@ test(`plain ${journey} boundaries finish before immediate typing`, async ({ page
         const state = window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!;
         const accepted = input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "!", bubbles: true, cancelable: true }));
         if (accepted) { input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "!", bubbles: true })); }
-        return { pending: state.metrics!.pendingGrapheme, heads: state.selectionSet.ranges.map(r => r.head) };
+        return { heads: state.selectionSet.ranges.map(r => r.head) };
     }, key);
-    expect(moved.pending).toBe(false);
     expect(moved.heads).toEqual(heads.map(head => head + delta));
     let expected = original; for (const head of heads.slice().reverse()) expected = expected.slice(0, head + delta) + "!" + expected.slice(head + delta);
     await waitForReview(page); await exact(page, expected); await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(page); await exact(page, original);

@@ -157,10 +157,10 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     let referenceDiff: ReturnType<typeof differences> | undefined;
     const busy = (editor: TextEditor | undefined, includeDrag: boolean) => {
         const input = editor?.activity();
-        return input && (input.composing || input.pendingInput || input.pendingCommand || includeDrag && input.pendingDragScroll);
+        return input && (input.input !== "idle" || includeDrag && input.pendingDragScroll);
     };
     const panesIdle = (includeDrag: boolean) => !busy(working, includeDrag) && !busy(referenceEditor(), includeDrag);
-    const composing = () => working.activity().composing || referenceEditor()?.activity().composing === true;
+    const composing = () => working.activity().input === "composing" || referenceEditor()?.activity().input === "composing";
     const alignment = createComparisonAlignment(win, pair, controller.getSnapshot, changed, () => panesIdle(true));
     const scroll = createComparisonScroll(win, pair, controller.getSnapshot, () => panesIdle(false) && !alignment.snapshot().pending);
     let lastFocused: TextEditor | undefined;

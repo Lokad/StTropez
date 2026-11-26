@@ -354,6 +354,23 @@ test("column drags edit visible rows together and keep the active corner", async
     await page.keyboard.type("!"); expect(await text()).toBe("01!2345\r\nx\r\nhidden\r\n01!2345");
 });
 
+test("a rectangular selection follows the painted width of host-styled tokens", async ({ page }) => {
+    await page.goto("/editing/");
+    await page.addStyleTag({ content: ".st-token-number { letter-spacing: 1ch; }" });
+    await page.evaluate(() => window.editingFixture.setText("abcdefgh\n12345678\nabcdefgh"));
+    await ready(page);
+    const start = await textPoint(page, 2);
+    const end = await textPoint(page, 24);
+    await page.mouse.click(start.x, start.y);
+    await page.keyboard.down("Shift");
+    await page.keyboard.down("Alt");
+    await page.mouse.click(end.x, end.y);
+    await page.keyboard.up("Alt");
+    await page.keyboard.up("Shift");
+    const ranges = await page.evaluate(() => window.editingFixture.selectionSet().ranges.map(r => [r.anchor, r.head]));
+    expect(ranges).toEqual([[2, 6], [10, 12], [20, 24]]);
+});
+
 test("a scrolled column drag replaces graphemes on every crossed row and undoes in one step", async ({ page }) => {
     const row = "A\t🍎AZ\n", first = 502, last = first + 192;
     await page.goto("/editing/");
@@ -384,10 +401,10 @@ test("a scrolled column drag replaces graphemes on every crossed row and undoes 
     const original = row.repeat(last - first + 3);
     expect(await read(original.length)).toBe(original);
 
-    // The host changes the selection after pointermove queues the remaining rows.
+    // A host selection made after pointermove wins over the completed column drag.
     await drag(() => root.evaluate((node, at) => node.addEventListener("pointermove", () => {
         const f = window.editingFixture;
-        if (!f.snapshot().primary.pendingCommand) throw new Error("Expected pending column measurements");
+        if (f.selectionSet().ranges.length !== 193) throw new Error("Column selection did not finish in pointermove");
         f.selections([{ anchor: at, head: at }]);
     }, { once: true }), last * row.length + 5));
     await page.keyboard.type("!"); await ready(page);

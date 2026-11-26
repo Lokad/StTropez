@@ -64,7 +64,7 @@ type ViewportNavigation = Readonly<{
         Pick<CaretRectangle, "offset" | "affinity"> | undefined;
     columnAt: (offset: number, affinity?: Affinity) => number | undefined;
     caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
-    selectionAtColumns: (line: number, anchor: number, head: number) => (Selection & { reaches: boolean }) | undefined;
+    columnSelections: (anchor: number, head: number) => (line: number) => (Selection & { reaches: boolean }) | undefined;
     fixedPitch: () => boolean;
 }>;
 export type TextViewport = Observable<ViewportSnapshot> & Readonly<{ element: HTMLDivElement; view: DocumentView; decorations: DecorationLayers;
@@ -1232,6 +1232,90 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const end = line + 1 === buffer.lineCount ? buffer.length : buffer.offsetAt(line + 1);
         return end - span.from <= 514 && row(buffer, line, left, true).complete;
     }
+    function measuredColumnSelection(line: number, anchor: number, head: number) {
+        return withColumnRow(line, anchor, row => {
+            const start = row.nearest(anchor);
+            const sameFragment = row.complete || columnScroll(anchor) === columnScroll(head);
+            const end = anchor === head ? start : sameFragment ? row.nearest(head) : withColumnRow(line, head, other => other.nearest(head));
+            if (!end) return;
+            let reaches = true;
+            if (start.offset === end.offset && start.offset === lineContentEnd(workspace.document(documentId).buffer, line)) {
+                const bounds = clientBox(root, false, gutterWidth);
+                const endColumn = left + (start.left - bounds.left) / bounds.zoom;
+                reaches = Math.min(anchor, head) <= endColumn + columnWidth / 2;
+            }
+            return { anchor: start.offset, anchorAffinity: start.affinity, head: end.offset, headAffinity: end.affinity, reaches };
+        });
+    }
+    function columnSelections(anchor: number, head: number) {
+        const document = currentDocument();
+        const measured = (line: number) => measuredColumnSelection(line, anchor, head);
+        if (!fixedPitch || !document || document.revision !== renderedRevision) return measured;
+        const widths = new Map<string, boolean>();
+        // Bold or colored text can keep the same cell grid. Measure each class once per projection.
+        function preservesCells(name: string) {
+            const known = widths.get(name);
+            if (known !== undefined) return known;
+            const sample = owner.createElement("div");
+            sample.className = "st-viewport-row";
+            const styled = owner.createElement("span");
+            styled.className = name;
+            const letters = owner.createTextNode(Array.from({ length: 95 }, (_, i) => String.fromCharCode(i + 32)).join(""));
+            styled.append(letters);
+            const tail = owner.createTextNode("x");
+            sample.append(styled, tail);
+            commandMeasure.append(sample);
+            root.append(commandMeasure);
+            try {
+                const style = win.getComputedStyle(styled);
+                const range = owner.createRange();
+                const origin = sample.getBoundingClientRect().left;
+                const width = columnWidth * cssZoom(root);
+                let same = style.fontVariantLigatures === "none" && style.direction === "ltr";
+                for (let i = 0; same && i <= letters.length; i++) {
+                    if (i === letters.length) range.selectNodeContents(tail);
+                    else {
+                        range.setStart(letters, i);
+                        range.setEnd(letters, i + 1);
+                    }
+                    const box = range.getBoundingClientRect();
+                    same = Math.abs(box.left - origin - i * width) < .1 && Math.abs(box.width - width) < .1;
+                }
+                widths.set(name, same);
+                return same;
+            } finally {
+                sample.remove();
+                commandMeasure.remove();
+            }
+        }
+        const position = (column: number, from: number, to: number) => {
+            const cell = (column - padding) / columnWidth;
+            const offset = Math.max(from, Math.min(to, from + Math.ceil(cell - .5)));
+            const affinity: Affinity = offset > from && (offset === to || offset - from > cell) ? "before" : "after";
+            return { offset, affinity };
+        };
+        return (line: number) => {
+            const span = document.buffer.line(line);
+            if (span.to - span.from > 512) return measured(line);
+            const text = span.text;
+            if (/[^ -~]/.test(text)) return measured(line);
+            const presented = { documentId, revision: document.revision, line, lineStart: span.from,
+                from: span.from, to: span.to, text };
+            if (decorations.lineClasses(presented)) return measured(line);
+            let end = span.from;
+            for (const mark of decorations.present(presented, false, true)) {
+                if (mark.before || mark.afterLine || mark.properties || mark.from < end || !preservesCells(mark.className)) {
+                    return measured(line);
+                }
+                end = mark.to;
+            }
+            const start = position(anchor, span.from, span.to);
+            const finish = position(head, span.from, span.to);
+            const reaches = Math.min(anchor, head) <= padding + (span.to - span.from + .5) * columnWidth;
+            return { anchor: start.offset, anchorAffinity: start.affinity,
+                head: finish.offset, headAffinity: finish.affinity, reaches };
+        };
+    }
     const navigation = Object.freeze<ViewportNavigation>({
         fixedPitch: () => fixedPitch,
         horizontalPoint(buffer, range, direction, extend) {
@@ -1283,19 +1367,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             return withRow(line, scroll, projected, measured => { const point = measured.point(projected, affinity); return point && (point.left - rectangle.left) / rectangle.zoom + left; });
         },
         caretAtColumn: (line, column) => withColumnRow(line, column, row => row.nearest(column)),
-        selectionAtColumns: (line, anchor, head) => withColumnRow(line, anchor, row => {
-            const start = row.nearest(anchor);
-            const sameFragment = row.complete || columnScroll(anchor) === columnScroll(head);
-            const end = anchor === head ? start : sameFragment ? row.nearest(head) : withColumnRow(line, head, other => other.nearest(head));
-            if (!end) return;
-            let reaches = true;
-            if (start.offset === end.offset && start.offset === lineContentEnd(workspace.document(documentId).buffer, line)) {
-                const bounds = clientBox(root, false, gutterWidth);
-                const endColumn = left + (start.left - bounds.left) / bounds.zoom;
-                reaches = Math.min(anchor, head) <= endColumn + columnWidth / 2;
-            }
-            return { anchor: start.offset, anchorAffinity: start.affinity, head: end.offset, headAffinity: end.affinity, reaches };
-        }),
+        columnSelections,
         visualRowAt: line => renderedIndex.rowAt(line),
         columnDragLine: (localY, originLine) => {
             const row = visualRowAtY(localY);

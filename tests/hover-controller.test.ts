@@ -15,7 +15,7 @@ async function fixture(t: TestContext, text: string, diagnostics?: HoverDiagnost
     const owner = { defaultView: { setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) } };
     const editor = { workspace, tab: workspace.tabs.capture(tab), view, signal: new AbortController().signal,
         element: { ownerDocument: owner, isConnected: true }, ...editorState(),
-        activity: () => ({ composing: false, disposed: false }), focus: () => { throw new Error("Hover moved focus."); } } as unknown as TextEditor;
+        activity: () => ({ input: "idle", disposed: false }), focus: () => { throw new Error("Hover moved focus."); } } as unknown as TextEditor;
     const language = attachEditorLanguage(editor, provider, { hover: diagnostics ? { diagnostics } : {} });
     await provider.connect();
     await settled();

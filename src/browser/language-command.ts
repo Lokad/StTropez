@@ -36,7 +36,7 @@ export function captureEditCommand(editor: TextEditor, options: LanguageCommandO
     const { workspace, view, tab } = editor;
     function available(id: DocumentId) {
         const activity = editor.activity();
-        return editorReadyForRequest(editor, activity) && !activity.pendingGrapheme && !activity.pendingWord
+        return editorReadyForRequest(editor, activity)
             && (options.canCapture?.(id) ?? true);
     }
     const capture = () => captureRequest(workspace, tab, view, { available: () => available(view.documentId) }, selectionBound);

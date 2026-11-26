@@ -124,8 +124,8 @@ function showSaveState() {
         : file.metadata.getSnapshot().dirty ? "Unsaved changes" : "No unsaved changes";
 }
 function editPending() {
-    const { composing, pendingInput, pendingCommand } = current.editor.activity();
-    return composing || pendingInput || pendingCommand || find.getSnapshot()?.status === "replacing";
+    const { input } = current.editor.activity();
+    return input !== "idle" || find.getSnapshot()?.status === "replacing";
 }
 function readyForHostAction() {
     if (editPending()) {

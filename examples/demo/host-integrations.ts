@@ -81,7 +81,7 @@ export function mountHostIntegrations(project: DemoProject, file: DemoFile, edit
         editor.focus();
     };
     const annotate = () => {
-        const snapshot = editor.activity(); if (snapshot.pendingInput || snapshot.pendingCommand || snapshot.composing) return;
+        const snapshot = editor.activity(); if (snapshot.input !== "idle") return;
         editor.captureView(); const selected = editor.view.getSnapshot();
         const added = model.add(selected.revision, Math.min(selected.selection.anchor, selected.selection.head), Math.max(selected.selection.anchor, selected.selection.head), "Host note");
         controls.status.textContent = added ? "Added a source note. It follows edits and folded lines; deleting its range removes it." : "The note could not be added (64-note limit)."; editor.focus();

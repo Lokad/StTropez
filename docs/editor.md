@@ -67,13 +67,12 @@ export function openProblem(editor: TextEditor, revision: number, line: number, 
 Select and focus are opt-in, including in read-only panes. `align` accepts `"nearest"`,
 `"center-if-outside"`, `"start"` or `"center"`. A busy, stale or closed view returns `null`.
 
-### What happens when you type during a command
+### Input and host commands
 
-Keyboard navigation updates every selection before the next keystroke. A following paste has its own Undo step.
-Escape, composition, selection changes or a closed view can interrupt input during a column drag. Listen for
-`inputConflictEvent` through disposal to recover unapplied text. Before saving or running the
-current draft, check composition, pending input and pending commands in every pane that can
-edit it. [Runnable checklist](getting-started.md#add-features-to-a-browser-ide)
+Keyboard moves and column selections finish before the next input. A following paste has its own Undo step.
+Before saving or running a draft, check that each editing pane reports `activity().input === "idle"`.
+Listen for `inputConflictEvent` to recover text rejected by an edit or host transform.
+[Host example](getting-started.md#add-features-to-a-browser-ide)
 
 ### Selections and history
 
@@ -164,7 +163,7 @@ token, views and revisions. A drop selects the inserted text.
 
 ### Language configuration
 
-`configure({ language })` replaces one view's rules and cancels pending commands. It returns
+`configure({ language })` replaces one view's editing rules. It returns
 `false` during composition or after disposal. Read resolved rules from `editor.settings().language`.
 
 | Setting | Behavior |
@@ -237,7 +236,7 @@ the primary caret and call `refresh()` when lexical rules change.
 ### View state, activity and limits
 
 `restoreView(saved, { selection: "current" })` restores scroll on remount and keeps the live
-selection. `activity()` reports pending work without layout. For visible readiness check that the
+selection. `activity().input` is `"composing"` during native composition and `"host-insertion"` while a host owns a captured insertion. For visible readiness check that the
 new text, colors and carets are painted. `getDiagnostics()` times input handlers. A cancelled
 `beforeinput` can suppress `input`, so check its event count before using `lastInputMs`.
 [View restoration](viewport.md#scrolling-and-saved-views) · [Interaction clocks](README.md#measuring-an-interaction)
@@ -245,7 +244,6 @@ new text, colors and carets are painted. `getDiagnostics()` times input handlers
 | Operation | Bound |
 | --- | --- |
 | Settled input window | 256 UTF-16 units per side and 2,048 selected units. Composition and noncancellable input can exceed it until commit. |
-| Ordered input | 256 actions and 65,536 units. Overflow reports unapplied text. |
 | Language planner | Default budget 4,096 work units, minimum 256. |
 | Bracket scan | Defaults to 100,000 work units and 1,024 nesting levels. Both limits take positive safe integers. |
 

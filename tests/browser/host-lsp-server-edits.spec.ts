@@ -7,7 +7,7 @@ const input = (page: Page, name = "Primary source") => page.getByRole("textbox",
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const notes = (page: Page) => page.getByRole("list", { name: "Captured provider edits", exact: true }).locator("li");
 const raw = "// 😀 TODO\r\nconst catalogue = 1;\r\ncatalogue;", header = "// provider review\r\n", footer = "\r\n// end provider review";
-async function editors(page: Page) { await expect.poll(async () => { const s = await snapshot(page), c = s.bindings.comparison; return s.bindings.views.every(v => !v.metrics?.pendingInput && !v.metrics?.pendingCommand && !v.metrics?.pendingCaret && !v.metrics?.viewport.pending)
+async function editors(page: Page) { await expect.poll(async () => { const s = await snapshot(page), c = s.bindings.comparison; return s.bindings.views.every(v => v.metrics?.input !== "host-insertion" && !v.metrics?.pendingCaret && !v.metrics?.viewport.pending)
     && (!c || c.status === "ready" && !c.workingViewport.pending && !c.referenceViewport?.pending); }, { timeout: 30000 }).toBe(true); }
 async function done(page: Page) { await expect.poll(async () => (await snapshot(page)).bindings.project.pending, { timeout: 30000 }).toBe(false); await editors(page); }
 async function select(page: Page, at = 7) { await input(page).focus(); await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, at); await editors(page); }

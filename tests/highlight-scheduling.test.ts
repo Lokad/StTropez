@@ -18,7 +18,7 @@ test("occurrences coalesce refreshes and bound busy retries from the actual debo
             clearTimeout: (id: number) => { tasks.delete(id); } } };
         const layers = createDecorationLayers(f.document, () => {}, () => true);
         const editor = { decorations: layers.handle, signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, ...editorState({ focused: true }), element: Object.assign(new EventTarget(), { ownerDocument: owner }),
-            activity: () => ({ disposed: false, composing: false, pendingCommand: busy }) } as unknown as TextEditor;
+            activity: () => ({ disposed: false, input: busy ? "host-insertion" : "idle" }) } as unknown as TextEditor;
         const fire = (delay: number, elapsed = delay) => {
             assert.equal(tasks.size, 1); const [id, task] = tasks.entries().next().value!;
             assert.equal(task.delay, delay); assert.ok(elapsed >= delay); tasks.delete(id); time += elapsed; task.run();

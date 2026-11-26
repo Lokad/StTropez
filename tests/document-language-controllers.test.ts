@@ -21,7 +21,7 @@ async function fixture(t: TestContext) {
         ...editorState(), workspace, view, tab: workspace.tabs.capture(tab), signal: lifetime.signal,
         element: { isConnected: true, ownerDocument: { defaultView: { setTimeout, clearTimeout } } },
         viewport: { revealOffset() {} }, focus() {},
-        activity: () => ({ composing: false, pendingInput: false, pendingCommand: false }),
+        activity: () => ({ input: "idle" }),
     } as unknown as TextEditor;
     t.after(() => {
         lifetime.abort();

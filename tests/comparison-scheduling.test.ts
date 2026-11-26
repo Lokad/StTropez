@@ -37,7 +37,7 @@ function fixture(count = 5000) {
     }
     const working = viewport(view), reference = viewport(refView);
     const workingInput = new EventTarget() as HTMLTextAreaElement, referenceInput = new EventTarget() as HTMLTextAreaElement;
-    const editor = { view, viewport: working.value, activity: () => ({ composing, pendingInput: false, pendingCommand: false, pendingDragScroll: false }) } as unknown as TextEditor;
+    const editor = { view, viewport: working.value, activity: () => ({ input: composing ? "composing" : "idle", pendingDragScroll: false }) } as unknown as TextEditor;
     let compositions = 0, focuses = 0;
     const baselineEditor = { view: refView, viewport: reference.value, focus: () => { focuses++; } } as unknown as TextEditor;
     const baselineMount = { editor: baselineEditor, input: referenceInput, setComparisonRows: reference.setComparisonRows };

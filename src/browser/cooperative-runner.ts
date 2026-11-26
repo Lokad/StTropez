@@ -1,15 +1,12 @@
-type Turn = (work: () => void) => void;
 type Host = Readonly<{ performance: Pick<Performance, "now">;
     setTimeout: (work: () => void, delay: number) => number; clearTimeout: (timer: number) => void }>;
 export type CooperativeRunner = Readonly<{
     slice<T>(advance: () => T, pending: (result: T) => boolean, calls: number): T;
-    schedule: (work: () => void, delay?: number, enter?: Turn) => () => void;
+    schedule: (work: () => void, delay?: number) => () => void;
     cancel: () => void;
 }>;
-const direct: Turn = work => work();
 
-export const commandBudget = Object.freeze({ sliceMs: 4, cursorUnits: 4096, foldCalls: 64,
-    columnCalls: 64, queuedCalls: 8, queuedActions: 256, queuedUnits: 65536 });
+export const commandBudget = Object.freeze({ sliceMs: 4, cursorUnits: 4096, foldCalls: 64 });
 
 /** Shared task mechanics. Owners retain captures, iterator disposal, failure handling and completion. */
 export function createCooperativeRunner(host: Host): CooperativeRunner {
@@ -22,13 +19,14 @@ export function createCooperativeRunner(host: Host): CooperativeRunner {
             while (pending(result) && ++count < calls && host.performance.now() - began < commandBudget.sliceMs);
             return result;
         },
-        /** Each continuation is a timer task; enter preserves the owner's synchronous turn accounting. */
-        schedule(work: () => void, delay = 0, enter: Turn = direct): () => void {
+        schedule(work: () => void, delay = 0): () => void {
             let pending = true;
             const cancel = () => { if (!pending) return; pending = false; host.clearTimeout(timer); scheduled.delete(cancel); };
             const timer = host.setTimeout(() => {
                 if (!pending) return;
-                enter(() => { if (!pending) return; pending = false; scheduled.delete(cancel); work(); });
+                pending = false;
+                scheduled.delete(cancel);
+                work();
             }, delay);
             scheduled.add(cancel); return cancel;
         },

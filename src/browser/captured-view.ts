@@ -1,7 +1,7 @@
 import type { DocumentSnapshot, DocumentView, EditOrigin, ResourceMetadata, TabTarget, Workspace } from "../core/workspace.ts";
 import type { FoldingSnapshot } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
-import type { TextEditor, TextEditorActivity } from "./text-editor.ts";
+import type { TextEditor } from "./text-editor.ts";
 
 export function requireLanguageView(editor: TextEditor): void {
     if (editor.signal.aborted || !editor.workspace.ownsDocumentView(editor.view, editor.tab)) {
@@ -9,12 +9,8 @@ export function requireLanguageView(editor: TextEditor): void {
     }
 }
 
-export function editingInProgress(activity: TextEditorActivity): boolean {
-    return activity.composing || activity.pendingInput || activity.pendingCommand;
-}
-
 export function editorReadyForRequest(editor: TextEditor, activity = editor.activity()): boolean {
-    return editor.element.isConnected && !editor.getSnapshot().disabled && !activity.disposed && !editingInProgress(activity);
+    return editor.element.isConnected && !editor.getSnapshot().disabled && !activity.disposed && activity.input === "idle";
 }
 
 export function canInspectView(editor: TextEditor, canCapture?: () => boolean): boolean {

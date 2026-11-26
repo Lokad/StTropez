@@ -94,7 +94,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     let providerPhase = connectionPhase();
     const cell = new Store<CompletionSnapshot>(Object.freeze({ message: connectionMessage(providerPhase), connected: providerPhase === "ready", pending: false, offerText: null, anchor: null, choices: emptyList, choiceIndex: 0, completionAt: () => undefined, completionIncomplete: false, completionDetail: "", resolving: false, snippet: null, omittedCompletions: emptyList }), notifications);
     const available = () => !disposed && editor.element.isConnected && !editor.signal.aborted && workspace.ownsDocumentView(view, target);
-    const idle = () => { const m = editor.activity(); return !m.composing && !m.pendingInput && !m.pendingCommand && !m.pendingWord && !m.pendingGrapheme && !m.disposed && !editor.getSnapshot().disabled && (options.canCapture?.() ?? true); };
+    const idle = () => { const m = editor.activity(); return m.input === "idle" && !m.disposed && !editor.getSnapshot().disabled && (options.canCapture?.() ?? true); };
     const authority = resource.metadata.getSnapshot;
     const authorityCurrent = (before: ResourceMetadata) => sameEditAuthority(before, authority());
     const indentationCurrent = (before: Job["indentation"]) => { const after = editor.settings().language; return before.tabSize === after.tabSize && before.insertSpaces === after.insertSpaces; };
@@ -381,7 +381,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         return true;
     };
     const cancel = () => { cancelAuto(); release();
-        if (snippet) { snippet = undefined; if (available() && !editor.activity().composing) view.setSelection(currentDocument().revision, currentView().selection); }
+        if (snippet) { snippet = undefined; if (available() && editor.activity().input !== "composing") view.setSelection(currentDocument().revision, currentView().selection); }
         publish("LSP request or snippet cancelled."); };
     const snippetCurrent = (captured: SnippetSession) => snippet === captured && available() && !editor.getSnapshot().readOnlyReason && indentationCurrent(captured.indentation) && authorityCurrent(captured.authority) && currentDocument().revision === captured.revision;
     function revealCaret(head: number) {
@@ -551,7 +551,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     listen(input, "blur", () => {
         cancelAuto();
         if (job) closeList("Completion dismissed after focus changed.");
-        if (snippet && !editor.activity().composing) { snippet = undefined; publish("Snippet ended after focus changed."); }
+        if (snippet && editor.activity().input !== "composing") { snippet = undefined; publish("Snippet ended after focus changed."); }
     });
     listen(input, "compositionstart", () => { cancelAuto(); closeList("Finish composition before completion."); });
     listen(input, "beforeinput", event => { const started = clock.performance.now();
@@ -563,7 +563,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     });
     // Home and End dismiss the list even when the caret is already at the boundary.
     listen(input, "keydown", event => {
-        if (!event.isComposing && !editor.activity().composing && job?.visible.length && (event.key === "Home" || event.key === "End")) {
+        if (!event.isComposing && editor.activity().input !== "composing" && job?.visible.length && (event.key === "Home" || event.key === "End")) {
             cancelAuto();
             closeList("Completion dismissed.");
         }

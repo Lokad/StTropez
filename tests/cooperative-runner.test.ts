@@ -45,13 +45,12 @@ test("cancelled continuations cannot execute late or invalidate replacement work
 
 test("turn failures detach the running task before owner cleanup and later recovery", () => {
     const f = fixture(), calls: string[] = [], cause = new Error("owner failure");
-    const enter = (work: () => void) => { calls.push("enter"); try { work(); } finally { calls.push("leave"); } };
     const cancel = f.runner.schedule(() => {
         f.runner.schedule(() => calls.push("obsolete")); throw cause;
-    }, 0, enter);
+    });
     assert.throws(f.step, error => error === cause); cancel(); f.runner.cancel();
     assert.equal(f.tasks.size, 0);
-    f.runner.schedule(() => { calls.push("recovered"); f.runner.schedule(() => calls.push("continuation")); }, 0, enter);
+    f.runner.schedule(() => { calls.push("recovered"); f.runner.schedule(() => calls.push("continuation")); });
     f.step(); f.step();
-    assert.deepEqual(calls, ["enter", "leave", "enter", "recovered", "leave", "continuation"]); assert.equal(f.tasks.size, 0);
+    assert.deepEqual(calls, ["recovered", "continuation"]); assert.equal(f.tasks.size, 0);
 });

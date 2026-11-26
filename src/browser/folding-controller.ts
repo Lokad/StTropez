@@ -8,7 +8,6 @@ import type { DocumentSnapshot } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
 import { createFoldRegions, foldSummary, matchingFoldIds, revealSelectionFolds } from "../core/folding.ts";
 import { commandBudget, createCooperativeRunner } from "./cooperative-runner.ts";
-import { editingInProgress } from "./captured-view.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import type { KernelCursor, KernelStatus } from "../core/kernel-cursor.ts";
 
@@ -42,7 +41,7 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
     let disposed = false;
     let job: { document: DocumentSnapshot; abort: AbortController; pumping?: boolean; cursor?: FoldDiscoveryCursor } | undefined;
     const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view, target);
-    const busy = () => editingInProgress(editor.activity());
+    const busy = () => editor.activity().input !== "idle";
     const publish = (status: FoldingStatus["status"], message = "") => {
         const folds = view.folding.getSnapshot(), summary = foldSummary(folds.index);
         notifications.publish(cell, Object.freeze({ status, revision: folds.revision, regions: summary.count,

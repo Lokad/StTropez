@@ -67,7 +67,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
             try {
                 const idle = () => {
                     const activity = editor.activity();
-                    return valid() && !activity.composing && !activity.pendingInput && !activity.pendingCommand;
+                    return valid() && activity.input === "idle";
                 };
                 const tools = attachEditorLanguage(editor, provider, {
                     codeActions: demoActionPolicy(workspace, file, language, idle), occurrences: {},
