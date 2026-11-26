@@ -74,7 +74,7 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
                 result.push({ id, failure, before, afterFailure, afterRetry: ownership(), children, retired: retiredInput?.isConnected === false,
                     active: failed.activeViews, comparison: failed.comparison !== null, language: failed.language.sessions.length,
                     reference: failed.language.referenceViews.length, languageActive: failed.language.active, hoverAvailable, paste: failed.tablePaste.sessions,
-                    instruction: failed.instruction !== null, retryError, detachFailure, edited });
+                    retryError, detachFailure, edited });
             }
         } finally { bindings.dispose(); await controller.dispose(); }
         return result;
@@ -86,7 +86,7 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
         expect(result.afterFailure, result.id).toEqual(result.before);
         expect(result.afterRetry, result.id).toEqual(result.before);
         expect(result, result.id).toMatchObject({ children: 0, retired: true, active: 0, comparison: false, language: 0, reference: 0, hoverAvailable: false, paste: 0,
-            languageActive: null, instruction: false, retryError: [], edited: true });
+            languageActive: null, retryError: [], edited: true });
     }
 });
 

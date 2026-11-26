@@ -23,8 +23,6 @@ import { HostDocumentLinks } from "./document-links.ts";
 import { HostActionsTools } from "./code-actions.ts";
 import { HostRenameTools } from "./rename.ts";
 import { HostSignatureTools } from "./signature.ts";
-import { mountInstructionWidget } from "./instruction-widget.ts";
-import type { InstructionViewState } from "./instruction-widget.ts";
 
 type ViewTool = Readonly<{ attach(id: string, editor: TextEditor, presentation: EditingPresentation): () => void }>;
 
@@ -32,8 +30,6 @@ type ViewTool = Readonly<{ attach(id: string, editor: TextEditor, presentation: 
 export class ViewBindings {
     private readonly controller: HostController;
     private commandSource: TextEditor | undefined;
-    private instructionMount: ReturnType<typeof mountInstructionWidget> | undefined;
-    private readonly instructionMemory: InstructionViewState = { generation: 0, fields: {}, focus: undefined };
     private readonly stopInputCapture: () => void;
     private readonly stopDocumentCleanup: () => void;
     private readonly mounted = new Map<string, { editor: TextEditor; documentId: DocumentId; target: HostPane; dispose: () => void }>();
@@ -227,7 +223,7 @@ export class ViewBindings {
         this.signature = new HostSignatureTools(canCapture, this.hover, lsp.signature, reconnectProvider);
         this.tools = [this.language, this.signature, this.domain, this.navigation, this.project,
             this.rename, this.actions, this.links, this.colors];
-        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.id) && this.review?.panes.working.activity().input !== "host-insertion"
+        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.tablePaste.hasPendingInput(controller.source.id) && this.review?.panes.working.activity().input !== "host-insertion"
             && ![...this.mounted.values()].some(value => value.editor.activity().input === "host-insertion"),
             documentId => this.selections.get("primary")?.get(documentId) ?? this.selections.get("comparison")?.get(documentId) ?? this.selections.get("secondary")?.get(documentId));
         this.stopDocumentCleanup = controller.registerDetachedDocumentCleanup(documentId => {
@@ -291,17 +287,8 @@ export class ViewBindings {
             try {
                 const listeners = new AbortController(); scope.defer(() => listeners.abort());
                 const presentation = new EditingPresentation();
-                const surface = id === "primary" ? host.ownerDocument.createElement("div") : host;
-                if (surface !== host) { surface.className = "host-instruction-source"; host.append(surface); scope.defer(() => surface.remove()); }
-                const editor = mountTextEditor(surface, workspace, documentId, { ariaLabel, view, requestLine: linePrompt(surface.ownerDocument) });
+                const editor = mountTextEditor(host, workspace, documentId, { ariaLabel, view, requestLine: linePrompt(host.ownerDocument) });
                 scope.defer(editor.dispose);
-                const lane = surface !== host ? host.ownerDocument.createElement("div") : undefined;
-                if (lane) { lane.className = "host-instruction-lane"; lane.hidden = true; host.append(lane); scope.defer(() => lane.remove()); }
-                const instruction = lane ? mountInstructionWidget(host, lane, editor, this.controller, this.instructionMemory) : undefined;
-                if (instruction) {
-                    this.instructionMount = instruction;
-                    scope.defer(() => { if (this.instructionMount === instruction) this.instructionMount = undefined; instruction.dispose(); });
-                }
                 this.attachTools(scope, id, editor, presentation);
                 const original = this.controller.source.id;
                 if (id === "secondary" && documentId !== original) {
@@ -349,18 +336,6 @@ export class ViewBindings {
             queueMicrotask(() => this.controller.collectLoadedDocument());
         }
     }
-    readonly anchorInstruction = (): void => {
-        const current = this.mounted.get("primary"); if (!current || current.documentId !== this.controller.source.id || !this.controller.canCaptureRecovery()) return;
-        this.controller.instruction.anchor(current.editor.view.getSnapshot().selection.head);
-    };
-    readonly insertInstruction = (): void => {
-        const current = this.mounted.get("primary"); if (!current || current.documentId !== this.controller.source.id || !this.controller.canCaptureRecovery()) return;
-        const d = this.controller.workspace.document(current.documentId), at = d.buffer.offsetAt(d.buffer.lineAt(current.editor.view.getSnapshot().selection.head));
-        const firstEnd = d.buffer.lineCount > 1 ? d.buffer.offsetAt(1) : 0, tail = d.buffer.slice(Math.max(0, firstEnd - 2), firstEnd), eol = tail.endsWith("\r\n") ? "\r\n" : tail.endsWith("\r") ? "\r" : "\n";
-        const result = this.controller.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from: at, to: at,
-            insert: '// @transfer {"destination":"target.csv","batchSize":"1000"}' + eol }], history: { kind: "form" }, view: current.editor.view });
-        if (result.applied) { this.controller.instruction.anchor(at); current.editor.viewport.revealOffset(at); }
-    };
     unmount(): void { for (const id of [...this.mounted.keys()]) this.detach(id); }
     dispose(): void {
         this.stopInputCapture(); this.stopDocumentCleanup();
@@ -375,7 +350,7 @@ export class ViewBindings {
     }
     debug() {
         const comparison = this.review?.controller.getSnapshot();
-        return { lsp: this.lspOwner?.snapshot() ?? null, instruction: this.instructionMount?.debug() ?? null, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(), tablePaste: this.tablePaste.debug(), domain: this.domain.debug(), navigation: this.navigation.debug(), project: this.project.debug(), rename: this.rename.debug(), actions: this.actions.debug(), links: this.links.debug(), colors: this.colors.debug(), signature: this.signature.debug(),
+        return { lsp: this.lspOwner?.snapshot() ?? null, mounts: this.mounts, destroys: this.destroys, activeViews: this.mounted.size, language: this.language.debug(), tablePaste: this.tablePaste.debug(), domain: this.domain.debug(), navigation: this.navigation.debug(), project: this.project.debug(), rename: this.rename.debug(), actions: this.actions.debug(), links: this.links.debug(), colors: this.colors.debug(), signature: this.signature.debug(),
         comparison: comparison ? { status: comparison.status, generation: comparison.generation, workingRevision: comparison.working?.revision,
             referenceIsWorkingBuffer: comparison.baseline !== null && comparison.baseline.buffer === comparison.working?.buffer,
             progress: comparison.progress && { work: comparison.progress.work, readUnits: comparison.progress.readUnits,

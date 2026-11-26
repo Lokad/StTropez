@@ -62,11 +62,6 @@ Edit, choose **Keep recovery draft**, reload and select **Restore source draft**
 In **Host integrations · paste & notes**, choose **Code → Paste format → Insert example table**. Undo
 removes the CSV. In a host fixture enable **Paste tables as CSV** for HTML or tab-separated tables.
 
-### Source-backed transfer form
-
-In a host fixture choose **Insert transfer instruction** or **Anchor instruction at caret**. Change a field
-and Undo in the editor. [Source-backed forms](host-integration.md#tokenization-annotations-and-forms)
-
 ## Static build and deployment
 
 ```sh

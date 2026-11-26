@@ -104,8 +104,7 @@ export function trackNote(workspace: Workspace, documentId: DocumentId, from: nu
 ```
 
 Use `afterLine` for labels or anchor a host control to the row. Source forms use workspace history. Copying
-to versioned settings needs both revisions. [Geometry](viewport.md#geometry-and-readiness) ·
-[Form example](examples.md#source-backed-transfer-form)
+to versioned settings needs both revisions. [Geometry](viewport.md#geometry-and-readiness)
 
 ### Navigation, commands and lifecycle
 

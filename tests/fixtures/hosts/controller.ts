@@ -9,7 +9,6 @@ import { HostLoadedSource } from "./loaded-source.ts";
 import { ConfigurationSave } from "./configuration.ts";
 import { HostTransfer } from "./transfers.ts";
 import { RunResources } from "./run-resources.ts";
-import { TransferInstruction } from "./instruction.ts";
 import { HostFixtureServices, SourceSaveFailure } from "./fixture-services.ts";
 import { runWithResources, type RunSettings } from "./run-command.ts";
 import type { Connection, ServiceActivity, SubmittedRun } from "./fixture-services.ts";
@@ -33,7 +32,6 @@ export class HostController {
     readonly configurationSave = new ConfigurationSave(this.workspace, this.saves, this.connection, task => { void this.track(task); });
     readonly transfer = new HostTransfer(this.workspace, this.saves, task => { void this.track(task); });
     readonly runResources = new RunResources(this.workspace, this.source, this.connection, this.transfer.resource);
-    readonly instruction = new TransferInstruction(this);
     private readonly presentation = new HostLayout(this.workspace, this.source, this.connection.id);
     readonly panes = this.presentation.panes;
     private readonly activityCell = new HostCell<Activity>({ writes: 0, pendingRuns: 0, completedRuns: 0, background: 0, errors: 0, lastSavedRevision: null, lastRun: null, ordering: Object.freeze([]) });
@@ -90,7 +88,7 @@ export class HostController {
         this.presentation.error("Wait for pending typing to finish, then try the source command again."); return false;
     }
     canCaptureRecovery(): boolean { return !this.disposed && [...this.inputCaptureGuards.keys()].every(ready => ready()); }
-    hasPendingRecoveryWork(includeLoaded = true): boolean { return this.loadedSlot.hasPendingRecoveryWork(includeLoaded) || this.operations.size > 0 || this.instruction.debug().pendingCopy; }
+    hasPendingRecoveryWork(includeLoaded = true): boolean { return this.loadedSlot.hasPendingRecoveryWork(includeLoaded) || this.operations.size > 0; }
     /** Recovery targets the host's temporary-source slot, never a surviving tab index. */
     restoreLoadedDraft(text: string, generation: number, view?: DocumentView): TextResourceHandle | undefined { return this.loadedSlot.restoreDraft(text, generation, view); }
     setSecondary(documentId: DocumentId | null): void { this.presentation.setSecondary(documentId); }
@@ -236,18 +234,18 @@ export class HostController {
             source: { id: this.source.id, uri: this.workspace.document(this.source.id).language!.uri, revision: source.revision, length: source.state === "ready" ? this.workspace.document(this.source.id).buffer.length : 0,
                 serverVersion: source.metadata.serverVersion, dirty: source.metadata.dirty, saveStatus: source.metadata.saveStatus },
             ...this.sourceReview.debug(),
-            transfer: { id: this.transfer.resource.id, revision: this.transfer.resource.getSnapshot().revision, dirty: this.transfer.resource.metadata.getSnapshot().dirty, saveStatus: this.transfer.resource.metadata.getSnapshot().saveStatus, serverVersion: this.transfer.resource.metadata.getSnapshot().serverVersion }, transferSave: this.transfer.save.debug(), runResources: this.runResources.debug(), instruction: this.instruction.debug(),
+            transfer: { id: this.transfer.resource.id, revision: this.transfer.resource.getSnapshot().revision, dirty: this.transfer.resource.metadata.getSnapshot().dirty, saveStatus: this.transfer.resource.metadata.getSnapshot().saveStatus, serverVersion: this.transfer.resource.metadata.getSnapshot().serverVersion }, transferSave: this.transfer.save.debug(), runResources: this.runResources.debug(),
             ...this.services.debug(),
             lastError: this.reportedError instanceof Error ? { name: this.reportedError.name, message: this.reportedError.message, stack: this.reportedError.stack } : null,
             history: this.workspace.observeHistory(this.source.id).getSnapshot(),
             configuration: { id: this.connection.id, revision: form.revision, dirty: form.metadata.dirty, serverVersion: form.metadata.serverVersion, saveStatus: form.metadata.saveStatus }, configurationSave: this.configurationSave.debug(),
             proposalTransactionMs: this.proposalTransactionMs, pendingCommands: this.operations.size,
             inputRecovery: this.recoveryCell.get().items.map(item => ({ documentId: item.documentId, expectedRevision: item.expectedRevision, reason: item.reason, contextFrom: item.contextFrom, attemptedUnits: item.attemptedText.length })),
-            hostSubscriptions: this.presentation.subscriptions() + this.activityCell.count() + this.settingsCell.count() + this.loadedSlot.subscriptions() + this.recoveryCell.count() + this.sourceReview.subscriptions() + this.configurationSave.debug().subscriptions + this.transfer.save.debug().subscriptions + this.runResources.debug().subscriptions + this.instruction.debug().subscriptions, inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.loadedSlot.pending, disposed: this.disposed };
+            hostSubscriptions: this.presentation.subscriptions() + this.activityCell.count() + this.settingsCell.count() + this.loadedSlot.subscriptions() + this.recoveryCell.count() + this.sourceReview.subscriptions() + this.configurationSave.debug().subscriptions + this.transfer.save.debug().subscriptions + this.runResources.debug().subscriptions, inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.loadedSlot.pending, disposed: this.disposed };
     }
     dispose(): Promise<void> {
         if (this.disposal) return this.disposal; this.disposed = true; this.proposal = undefined; this.sourceReview.dispose();
-        this.configurationSave.dispose(); this.transfer.save.dispose(); this.runResources.dispose(); this.instruction.dispose();
+        this.configurationSave.dispose(); this.transfer.save.dispose(); this.runResources.dispose();
         this.inputCaptureGuards.clear();
         if (this.timer !== undefined) clearInterval(this.timer); this.timer = undefined;
         this.services.dispose();
