@@ -7,6 +7,7 @@ import type { TextEdit } from "../src/index.ts";
 import { createRegexClient } from "../src/browser/regex-client.ts";
 import { createRegexFindBackend } from "../src/browser/regex-find.ts";
 import type { DocumentId } from "../src/index.ts";
+import type { RegexOptions } from "../src/protocol/regex.ts";
 import { RegexSession } from "../src/protocol/regex-session.ts";
 import { regexProtocolVersion } from "../src/protocol/regex.ts";
 class FixtureWorker extends EventTarget {
@@ -26,9 +27,12 @@ function workerFixture(automatic = true) {
     const clock = { setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) } as unknown as Pick<Window, "setTimeout" | "clearTimeout">;
     return { workers, timers, options: { clock, createWorker: () => { const worker = new FixtureWorker(); worker.automatic = automatic; workers.push(worker); return worker as unknown as Worker; } } };
 }
-function fixture(buffer: TextBuffer, pattern = "(?:)", automatic = true, options: Parameters<ReturnType<typeof createRegexClient>["createCursor"]>[3] = {}) {
-    const f = workerFixture(automatic), client = createRegexClient(f.options);
-    const cursor = client.createCursor({ buffer, revision: 9, documentId: "document" as DocumentId }, pattern, true, options);
+function fixture(buffer: TextBuffer, pattern = "(?:)", automatic = true, options: RegexOptions & { wholeWord?: boolean } = {}) {
+    const f = workerFixture(automatic);
+    const client = createRegexClient({ ...f.options, ...(options.maxOutputUnits !== undefined && { maxOutputUnits: options.maxOutputUnits }) });
+    const capture = { buffer, revision: 9, documentId: "document" as DocumentId,
+        query: pattern, matchCase: true, wholeWord: options.wholeWord ?? false };
+    const cursor = client.createCursor(capture, options.replacement, options.range);
     return { ...f, client, cursor };
 }
 
@@ -53,15 +57,15 @@ test("regex backend retains one complete source across pattern changes and captu
 
 test("retained regex source requires document, revision and buffer identity, including abandoned queries", async t => {
     const f = workerFixture(), client = createRegexClient(f.options); t.after(() => client.dispose());
-    const buffer = TextBuffer.from("beta"), capture = { documentId: "one" as DocumentId, revision: 1, buffer };
+    const buffer = TextBuffer.from("beta"), capture = { query: "beta", matchCase: true, wholeWord: false, documentId: "one" as DocumentId, revision: 1, buffer };
     const search = async (value = capture) => {
-        const cursor = client.createCursor(value, "beta", true); let count = 0;
+        const cursor = client.createCursor(value); let count = 0;
         for (;;) { const result = await cursor.next(); count += result.matches.length; if (result.done) break; }
         assert.equal((await cursor.next()).scanned, value.buffer.length);
         cursor.dispose(); return count;
     };
     assert.equal(await search(), 1);
-    client.createCursor(capture, "abandoned", true).dispose();
+    client.createCursor({ ...capture, query: "abandoned" }).dispose();
     assert.equal(await search(), 1); assert.equal(f.workers.length, 1);
     assert.equal(f.workers[0]!.messages.filter(m => m.text !== undefined).length, 1);
     assert.equal(await search({ ...capture, documentId: "two" as DocumentId }), 1);
@@ -71,31 +75,31 @@ test("retained regex source requires document, revision and buffer identity, inc
     const starts = f.workers[0]!.messages;
     assert.equal(starts[0]!.source, starts[1]!.source); assert.equal(new Set(starts.map(m => m.source)).size, 4);
     // An idle worker failure also invalidates the source during the next query's debounce.
-    client.createCursor(capture, "waiting", true);
+    client.createCursor({ ...capture, query: "waiting" });
     f.workers[0]!.dispatchEvent(new Event("error", { cancelable: true }));
     assert.equal(f.workers[0]!.terminated, true);
     assert.equal(await search(), 1); assert.equal(f.workers.length, 2); assert.equal(f.workers[0]!.terminated, true);
-    client.dispose(); assert.equal(f.workers[1]!.terminated, true); assert.throws(() => client.createCursor(capture, "beta", true), /disposed/);
+    client.dispose(); assert.equal(f.workers[1]!.terminated, true); assert.throws(() => client.createCursor(capture), /disposed/);
 });
 
 test("cancelled retained queries cannot tear down their successor and timeout drops cached source", async t => {
     const f = workerFixture(), client = createRegexClient(f.options); t.after(() => client.dispose());
-    const capture = { documentId: "one" as DocumentId, revision: 1, buffer: TextBuffer.from("beta") };
+    const capture = { query: "beta", matchCase: true, wholeWord: false, documentId: "one" as DocumentId, revision: 1, buffer: TextBuffer.from("beta") };
     const drain = async (cursor: ReturnType<typeof client.createCursor>) => { let count = 0; for (;;) { const step = await cursor.next(); count += step.matches.length; if (step.done) return count; } };
-    assert.equal(await drain(client.createCursor(capture, "beta", true)), 1);
+    assert.equal(await drain(client.createCursor(capture)), 1);
     const old = f.workers[0]!; old.automatic = false;
-    const cursor = client.createCursor(capture, "bet", true), pending = cursor.next(), rejected = assert.rejects(pending, /cancelled/);
-    const next = client.createCursor(capture, "beta", true), current = drain(next);
+    const cursor = client.createCursor({ ...capture, query: "bet" }), pending = cursor.next(), rejected = assert.rejects(pending, /cancelled/);
+    const next = client.createCursor(capture), current = drain(next);
     old.reply(null); await rejected; assert.equal(await current, 1);
     assert.equal(old.terminated, true); assert.equal(f.workers[1]!.terminated, false);
     f.workers[1]!.automatic = false;
-    const timed = client.createCursor(capture, "b", true).next(), timedOut = assert.rejects(timed, /timed out/);
+    const timed = client.createCursor({ ...capture, query: "b" }).next(), timedOut = assert.rejects(timed, /timed out/);
     f.timers.values().next().value!(); await timedOut;
     assert.equal(f.workers[1]!.terminated, true);
-    assert.equal(await drain(client.createCursor(capture, "beta", true)), 1);
+    assert.equal(await drain(client.createCursor(capture)), 1);
     assert.equal(f.workers.length, 3); assert.equal(f.workers[2]!.messages.filter(m => m.text !== undefined).length, 1);
     // Disposing an owner with a debounced, unused query still releases the completed source.
-    client.createCursor(capture, "unused", true); client.dispose();
+    client.createCursor({ ...capture, query: "unused" }); client.dispose();
     assert.equal(f.workers[2]!.terminated, true); assert.equal(f.timers.size, 0);
 });
 
@@ -152,7 +156,7 @@ test("regex replacement can grow a document past the performance bound and searc
     assert.equal(plan.done, true);
     const after = before.apply(plan.edits).buffer;
     assert.equal(after.length, 512_001);
-    const cursor = f.client.createCursor({ documentId: "one" as DocumentId, revision: 2, buffer: after }, "!$", true);
+    const cursor = f.client.createCursor({ documentId: "one" as DocumentId, revision: 2, buffer: after, query: "!$", matchCase: true, wholeWord: false });
     assert.deepEqual((await cursor.next()).matches, [{ from: 512_000, to: 512_001 }]);
 });
 
@@ -188,7 +192,7 @@ test("a worker construction failure reaches the search caller intact", async t =
     const denied = new Error("Worker URL rejected");
     const f = workerFixture(), client = createRegexClient({ ...f.options, createWorker: () => { throw denied; } });
     t.after(client.dispose);
-    const cursor = client.createCursor({ documentId: "a" as DocumentId, revision: 0, buffer: TextBuffer.from("a") }, "a", true);
+    const cursor = client.createCursor({ documentId: "a" as DocumentId, revision: 0, buffer: TextBuffer.from("a"), query: "a", matchCase: true, wholeWord: false });
     await assert.rejects(cursor.next(), error => error === denied);
     assert.equal(f.timers.size, 0);
 });

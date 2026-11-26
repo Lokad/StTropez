@@ -20,8 +20,13 @@ export function mountSearch(toolbar: HTMLElement, pane: TextEditor, workerUrl: U
 ```
 
 Focus or `setTarget(editor)` selects the pane. Ctrl+Alt+Enter replaces all and keeps Replace focused.
-Customize `text`, `status` and `targetLabel`. A custom Find UI can use the same command IDs and shortcuts.
-Forward its keydown events to `editor.keymap.handle`. Supply callbacks for the fields and actions it owns.
+Find starts with a single-line selection or the word at the caret. A multiline selection keeps the last query.
+Paste multiline text or use Ctrl/Cmd+Enter to insert a line break. In Replace, Tab moves from the query to
+the replacement. Ctrl/Cmd+F returns to the query and keeps both fields open.
+
+Customize `strings.findStatus`, `strings.text` and `targetLabel`. A custom toolbar can use the same shortcuts.
+Forward keydown to `editor.keymap.handle` and supply callbacks for the actions it owns. Set
+`toolbarFocused` with the close action so Escape dismisses Find first when the toolbar has focus.
 
 ```ts
 import { bindFindCommands, createFindController, createRegexFindBackend } from "sttropez/browser";
@@ -63,7 +68,7 @@ Use `reason` for decisions, `message` for display and `status` for progress.
 
 
 `replacedCount` includes accepted no-ops. `count` counts current matches. Refusals distinguish permissions,
-composition, unavailable pane or backend, cancellation, search and replacement failures. Rejected
+composition, unavailable pane or backend, cancellation, invalid regex syntax and other search or replacement failures. Rejected
 transactions forward the workspace reason. Progress can retain an earlier notice.
 
 ### Literal matching and scheduling

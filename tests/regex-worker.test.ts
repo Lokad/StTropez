@@ -26,5 +26,6 @@ test("the worker transfers a complete result and reports failure at the captured
     const matching = t.mock.method(String.prototype, "matchAll", () => { throw new Error("Injected native execution failure"); });
     receive!(new MessageEvent("message", { data: { ...request, source: 6, id: 6 } }));
     matching.mock.restore();
-    assert.deepEqual(messages, [{ id: 6, revision: 12, version, operation: "regex-error", message: "Regex search failed; editing remains available." }]);
+    assert.deepEqual(messages, [{ id: 6, revision: 12, version, operation: "regex-error", invalidPattern: false,
+        message: "Regex search failed; editing remains available." }]);
 });

@@ -1,4 +1,4 @@
-import { regexMatches, regexRanges, regexReplacement } from "../core/regex-search.ts";
+import { regexMatches, regexReplacement } from "../core/regex-search.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
 import { isPositiveInteger } from "../core/bounds.ts";
 import { regexErrorLimit, regexIdentity, regexOptions, regexOutputLimit, regexProtocolVersion, regexQuery } from "./regex.ts";
@@ -7,24 +7,27 @@ import type { RegexReply, RegexRequest, RegexResult } from "./regex.ts";
 function run(request: RegexRequest, text: string): RegexResult {
     const { pattern, matchCase, wholeWord, range, replacement } = request;
     const offsets: number[] = [];
-    if (replacement === undefined) {
-        for (const at of regexRanges(text, pattern, matchCase, wholeWord)) offsets.push(at.from, at.to);
-        return { operation: "regex-matches", offsets: Uint32Array.from(offsets) };
-    }
     const limit = regexOutputLimit(text.length, request);
     const parts: string[] = [];
     let inserted = 0;
     const matches = range && splitsSurrogatePair(text, range.from) ? []
         : regexMatches(text, pattern, matchCase, wholeWord, range?.from);
     for (const match of matches) {
-        if (range && (match.from !== range.from || match.to !== range.to)) break;
-        const insert = regexReplacement(text, match, replacement, limit - inserted);
-        inserted += insert.length;
-        offsets.push(match.from, match.to, inserted);
-        if (insert) parts.push(insert);
+        const from = match.index;
+        const to = from + match[0].length;
+        if (range && (from !== range.from || to !== range.to)) break;
+        offsets.push(from, to);
+        if (replacement !== undefined) {
+            const insert = regexReplacement(match, replacement, limit - inserted);
+            inserted += insert.length;
+            offsets.push(inserted);
+            if (insert) parts.push(insert);
+        }
         if (range) break;
     }
-    return { operation: "regex-edits", offsets: Uint32Array.from(offsets), insertions: parts.join("") };
+    const result = Uint32Array.from(offsets);
+    return replacement === undefined ? { operation: "regex-matches", offsets: result }
+        : { operation: "regex-edits", offsets: result, insertions: parts.join("") };
 }
 
 export class RegexSession {
@@ -51,12 +54,13 @@ export class RegexSession {
         } catch (cause) {
             this.source = undefined;
             let message = cause instanceof RangeError ? cause.message : "Regex search failed; editing remains available.";
-            if (cause instanceof SyntaxError) {
+            const invalidPattern = cause instanceof SyntaxError;
+            if (invalidPattern) {
                 // Engines can repeat the whole pattern before the syntax error.
                 const detail = cause.message.replace(/^Invalid regular expression:\s*(?:\/[\s\S]*\/[a-z]+:\s*)?/i, "").trim();
                 message = detail ? "Invalid regular expression: " + detail : "Invalid regular expression.";
             }
-            return { id, revision, version, operation: "regex-error", message: message.slice(0, regexErrorLimit) };
+            return { id, revision, version, operation: "regex-error", invalidPattern, message: message.slice(0, regexErrorLimit) };
         }
     }
 }

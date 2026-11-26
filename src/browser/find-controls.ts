@@ -10,6 +10,8 @@ export type FindCommandOptions = Readonly<{
     replaceAll?: Action;
     insertLineBreak?: Action;
     close?: Action;
+    /** Close the focused Find toolbar before a popup left open in the editor. */
+    toolbarFocused?: () => boolean;
 }>;
 
 /** Bind the shared Find shortcuts to one pane and the host fields that act on it. */
@@ -40,6 +42,10 @@ export function bindFindCommands(editor: TextEditor, options: FindCommandOptions
         bind("replaceAll", "Replace all matches", "Ctrl+Alt+Enter", options.replaceAll, keys.editor);
         bind("insertLineBreak", "Insert a line break in Find or Replace", "Mod+Enter", options.insertLineBreak, keys.field);
         bind("close", "Close Find", "Escape", options.close, keys.editor);
+        if (options.close && options.toolbarFocused) {
+            bind("toolbar.close", "Close Find", "Escape",
+                { enabled: options.toolbarFocused, run: () => editor.commands.run("find.close") }, keys.field);
+        }
         editor.signal.addEventListener("abort", dispose, { once: true });
     } catch (error) { dispose(); throw error; }
     return { dispose };

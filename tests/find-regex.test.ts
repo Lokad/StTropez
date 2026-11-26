@@ -65,12 +65,12 @@ function fixture(text: string, supplied = true) {
     const backend: FindBackend = {
         dispose: () => { backendDisposed = true; },
         search: capture => {
-            const raw = capture.buffer.slice(0, capture.buffer.length), ranges = [...regexMatches(raw, capture.query, capture.matchCase, capture.wholeWord)].map(m => ({ from: m.from, to: m.to }));
+            const raw = capture.buffer.slice(0, capture.buffer.length), ranges = [...regexMatches(raw, capture.query, capture.matchCase, capture.wholeWord)].map(m => ({ from: m.index, to: m.index + m[0].length }));
             return { next: () => Promise.resolve({ done: true, scanned: raw.length, readUnits: raw.length, matches: ranges }), dispose: () => {} };
         },
         replace: (capture, replacement, range) => {
             const raw = capture.buffer.slice(0, capture.buffer.length), matches = [...regexMatches(raw, capture.query, capture.matchCase, capture.wholeWord, range?.from ?? 0)];
-            const edits = matches.filter(m => !range || m.from === range.from && m.to === range.to).map(m => ({ from: m.from, to: m.to, insert: regexReplacement(raw, m, replacement) }));
+            const edits = matches.filter(m => !range || m.index === range.from && m.index + m[0].length === range.to).map(m => ({ from: m.index, to: m.index + m[0].length, insert: regexReplacement(m, replacement) }));
             const job = { disposed: false, capture }; plans.push(job); let index = 0, calls = 0;
             return { next: () => {
                 const value: FindPlanStep = index < edits.length ? { done: false, edits: [edits[index++]!] } : { done: true, edits: [] }; calls++;
@@ -246,7 +246,7 @@ test("missing backend, syntax errors and failed or mismatched plans cannot publi
     const f = fixture("cat cat");
     try {
         f.find.setFlags({ regularExpression: true }); f.find.setQuery("("); await f.drain(); assert.equal(f.find.getSnapshot().status, "failed");
-        assert.equal(f.find.getSnapshot().reason, "search-failed");
+        assert.equal(f.find.getSnapshot().reason, "invalid-pattern");
         f.find.setQuery("cat"); await f.drain(); f.fail(); f.find.replaceAll("dog"); await f.drain(); assert.equal(f.text(), "cat cat"); assert.equal(f.find.getSnapshot().status, "ready"); assert.match(f.find.getSnapshot().message, /failure/);
         assert.equal(f.find.getSnapshot().reason, "replacement-failed");
         assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 0); assert.equal(f.plans[0]!.disposed, true);

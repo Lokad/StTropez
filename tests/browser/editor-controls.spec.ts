@@ -122,6 +122,11 @@ test("Replace all keeps typing in the replacement field after a click or shortcu
     const replacement = page.getByRole("textbox", { name: "Replacement text" });
     const all = page.getByRole("button", { name: "Replace all", exact: true });
     await query.fill("accent");
+    await query.press("Tab");
+    await expect(replacement).toBeFocused();
+    await replacement.press("Control+f");
+    await expect(query).toBeFocused();
+    await expect(replacement).toBeVisible();
     await replacement.fill("tone");
     await all.click();
     await expect(source).toHaveValue('const tone = "#5fae99";\nuse(tone);');
@@ -132,6 +137,38 @@ test("Replace all keeps typing in the replacement field after a click or shortcu
     await query.press("Control+Alt+Enter");
     await expect(source).toHaveValue('const tones = "#5fae99";\nuse(tones);');
     await expect(replacement).toBeFocused();
+});
+
+test("opening Find on a multiline selection keeps the previous query", async ({ page }) => {
+    await page.goto("/controls/");
+    const source = page.getByRole("textbox", { name: "colors.ts" });
+    const query = page.getByRole("textbox", { name: "Find text" });
+    await source.press("Control+f");
+    await query.fill("accent");
+    await query.press("Escape");
+    await source.press("Control+a");
+    await source.press("Control+f");
+    await expect(query).toHaveValue("accent");
+});
+
+test("Escape in Find closes it before a prepared rename", async ({ page }) => {
+    await page.goto("/controls/");
+    const source = page.getByRole("textbox", { name: "colors.ts" });
+    await source.press("Control+Home");
+    await source.press("Control+ArrowRight");
+    await source.press("ArrowRight");
+    await source.press("F2");
+    const name = page.getByRole("textbox", { name: "New name" });
+    await expect(page.getByLabel("Rename status")).toContainText("Enter to rename");
+    await name.press("Control+f");
+    const query = page.getByRole("textbox", { name: "Find text" });
+    await expect(query).toBeFocused();
+    await query.press("Escape");
+    await expect(query).toBeHidden();
+    await expect(source).toBeFocused();
+    await expect(name).toBeVisible();
+    await source.press("Escape");
+    await expect(name).toBeHidden();
 });
 
 test("accepting a completion keeps its visible line at the same scroll position", async ({ page }) => {

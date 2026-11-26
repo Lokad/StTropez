@@ -6,7 +6,7 @@ export const regexProtocolVersion = 5;
 // Both source offsets and cumulative insertion lengths travel in a Uint32Array.
 const maxOffset = 0xffff_ffff;
 export const regexErrorLimit = 256;
-export type RegexOptions = Readonly<{ replacement?: string; range?: SearchMatch; maxOutputUnits?: number }>;
+export type RegexOptions = Readonly<{ replacement?: string | undefined; range?: SearchMatch | undefined; maxOutputUnits?: number | undefined }>;
 export function regexOutputLimit(length: number, options: RegexOptions): number {
     return options.maxOutputUnits ?? Math.min(maxOffset, length + 512_000);
 }
@@ -18,7 +18,7 @@ export type RegexRequest = Identity & RegexQuery & RegexOptions & Readonly<{
 export type RegexResult = Readonly<{ operation: "regex-matches"; offsets: Uint32Array }>
     | Readonly<{ operation: "regex-edits"; offsets: Uint32Array; insertions: string }>;
 export type RegexReply = Identity & Readonly<{ version: number }> &
-    (RegexResult | Readonly<{ operation: "regex-error"; message: string }>);
+    (RegexResult | Readonly<{ operation: "regex-error"; message: string; invalidPattern?: boolean }>);
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 export const regexIdentity = (value: unknown): value is Record<string, unknown> & Identity =>
@@ -40,7 +40,9 @@ export function regexOptions(value: RegexOptions, length: number): boolean {
 export function readRegexResult(value: Record<string, unknown>, length: number, replacement: boolean, maxOutput: number): RegexResult {
     if (value.version !== regexProtocolVersion) throw new Error("Unsupported regex worker protocol version.");
     if (value.operation === "regex-error") {
-        throw new Error(typeof value.message === "string" && value.message.length <= regexErrorLimit ? value.message : "Regex search failed.");
+        const Failure = value.invalidPattern === true ? SyntaxError : Error;
+        throw new Failure(typeof value.message === "string" && value.message.length <= regexErrorLimit
+            ? value.message : "Regex search failed.");
     }
     const stride = replacement ? 3 : 2;
     const offsets = value.offsets;

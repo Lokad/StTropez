@@ -1,20 +1,20 @@
 import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { TextEdit } from "../core/changes.ts";
-import type { DocumentId } from "../core/workspace.ts";
+import type { FindQueryCapture } from "../core/find.ts";
+import type { RegexFindBackendOptions } from "./regex-find.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
 import { isNonNegativeInteger } from "../core/bounds.ts";
 import { readRegexResult, regexIdentity, regexOptions, regexOutputLimit, regexProtocolVersion, regexQuery } from "../protocol/regex.ts";
-import type { RegexOptions, RegexRequest, RegexResult } from "../protocol/regex.ts";
+import type { RegexRequest, RegexResult } from "../protocol/regex.ts";
 
-type Capture = Readonly<{ documentId: DocumentId; revision: number; buffer: TextBuffer }>;
-type QueryOptions = RegexOptions & Readonly<{ wholeWord?: boolean }>;
+type Capture = Pick<FindQueryCapture, "documentId" | "revision" | "buffer">;
 type CursorStep = SearchStep & Readonly<{ edits: readonly TextEdit[] }>;
 type Source = Capture & Readonly<{ id: number; text: string }>;
 type Job = Readonly<{ receive(data: unknown): void; fail(error: Error): void; dispose(): void }>;
 const empty = Object.freeze([]);
 
-export function createRegexClient(host: Readonly<{ clock: Pick<Window, "setTimeout" | "clearTimeout">; createWorker: () => Worker; timeoutMs?: number }>) {
+export function createRegexClient(host: RegexFindBackendOptions) {
     const timeout = host.timeoutMs ?? 5000;
     if (!Number.isFinite(timeout) || timeout <= 0) throw new RangeError("Unsupported regex timeout.");
     let sequence = 0;
@@ -50,16 +50,16 @@ export function createRegexClient(host: Readonly<{ clock: Pick<Window, "setTimeo
         }, { signal: listeners.signal });
         return created;
     }
-    function createCursor(capture: Capture, pattern: string, matchCase: boolean, options: QueryOptions = {}) {
+    function createCursor(capture: FindQueryCapture, replacement?: string, selected?: SearchMatch) {
         if (disposed) throw new Error("Regex backend is disposed.");
-        const { documentId, revision } = capture;
+        const { documentId, revision, query: pattern, matchCase, wholeWord } = capture;
         const length = capture.buffer.length;
-        const query = { length, pattern, matchCase, wholeWord: options.wholeWord ?? false };
+        const query = { length, pattern, matchCase, wholeWord };
+        const options = { replacement, range: selected, maxOutputUnits: replacement === undefined ? undefined : host.maxOutputUnits };
         const maxOutput = regexOutputLimit(length, options);
         if (!documentId || typeof documentId !== "string" || !isNonNegativeInteger(revision) || !regexQuery(query) || !regexOptions(options, length))
             throw new RangeError("Unsupported regex capture.");
-        const replacement = options.replacement;
-        const range = options.range && { from: options.range.from, to: options.range.to };
+        const range = selected && { from: selected.from, to: selected.to };
         active?.dispose();
         const id = ++sequence;
         let buffer: TextBuffer | undefined = capture.buffer;

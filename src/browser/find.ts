@@ -45,7 +45,7 @@ export type FindHost = Readonly<{
     focus: () => void;
 }>;
 /** Stable cause of the last published notice, independent of its display message. */
-export type FindReason = ReplacementRefusal | "backend-unavailable" | "search-failed"
+export type FindReason = ReplacementRefusal | "backend-unavailable" | "invalid-pattern" | "search-failed"
     | "replacement-failed" | "view-unavailable" | "cancelled" | "replaced";
 type FindNotice = Readonly<{ reason: FindReason | null; message: string; replacedCount: number }>;
 export type FindSnapshot = FindNotice & Readonly<{
@@ -211,7 +211,8 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     const failed = (error: unknown, token: number, planning = false, reason: FindReason = planning ? "replacement-failed" : "search-failed") => {
         if (token !== generation || disposed) return;
         stop(); const message = error instanceof Error && error.message.length <= 256 ? error.message : "Search is unavailable; editing remains available.";
-        const failure = notice(reason, message);
+        const failure = notice(reason === "search-failed" && store.get().regularExpression && error instanceof SyntaxError
+            ? "invalid-pattern" : reason, message);
         if (planning) publish({ status: "ready", ...failure });
         else reset({ status: "failed", ...failure });
     };

@@ -200,6 +200,7 @@
 .st-find-bar textarea { min-width: 0; width: 13rem; max-width: 100%; resize: none; border: 1px solid var(--st-find-border, var(--_st-control-border)); border-radius: 4px; padding: 3px 6px; font: 13px/1.45 var(--st-font, ui-monospace, monospace); color: inherit; background: var(--_st-control-surface); }
 .st-find-bar textarea::placeholder { color: var(--_st-control-secondary); opacity: 1; }
 .st-find-bar textarea:focus-visible { outline: 2px solid var(--st-focus-ring, currentColor); outline-offset: -1px; }
+.st-find-bar textarea[aria-invalid="true"] { border-color: var(--_st-control-removed); outline-color: var(--_st-control-removed); }
 .st-find-target { color: var(--_st-control-secondary); font-size: 12px; }
 .st-find-target:empty { display: none; }
 .st-find-options { display: inline-flex; gap: 3px; }

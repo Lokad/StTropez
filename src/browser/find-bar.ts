@@ -23,19 +23,14 @@ export type FindBar = Observable<FindSnapshot | null> & Readonly<{
 }>;
 
 function selectedFindQuery(source: TextEditor, regex: boolean): string | undefined {
-    const { anchor, head } = source.view.getSnapshot().selection, length = Math.abs(head - anchor);
+    const { anchor, head } = source.view.getSnapshot().selection;
     const limit = 4096;
-    if (length > limit) return;
+    if (Math.abs(head - anchor) > limit) return;
     const buffer = source.workspace.document(source.view.documentId).buffer;
-    let text: string | undefined;
-    if (length) text = buffer.slice(Math.min(anchor, head), Math.max(anchor, head));
-    else {
-        text = identifierAt(buffer, head, limit);
-    }
-    if (!text || text.length > limit) return;
-    const query = regex ? text.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&").replace(/\r/g, "\\r") : text.replaceAll("\r\n", "\n");
-    // A textarea would turn a remaining literal CR into a different query.
-    if (query.includes("\r")) return;
+    const text = anchor === head ? identifierAt(buffer, head, limit)
+        : buffer.slice(Math.min(anchor, head), Math.max(anchor, head));
+    if (!text || /[\r\n]/.test(text)) return;
+    const query = regex ? text.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&") : text;
     return query.length <= limit ? query : undefined;
 }
 
@@ -72,7 +67,18 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
         control.onclick = action;
         return control;
     }
+    const expand = button(bar, "replace-toggle", "Replace…", () => {
+        showReplacement(Boolean(row.hidden));
+        (row.hidden ? query : replacement).focus({ preventScroll: true });
+    });
     const query = field(bar, "find-query", "Find text", "Find in this file");
+    const row = node("span", "replace-controls", bar);
+    const replacement = field(row, "replacement", "Replacement text", "Replace with");
+    const replace = button(row, "replace-current", "Replace", () => {
+        replacement.focus({ preventScroll: true });
+        target?.commands.run("find.replaceCurrent", "button");
+    });
+    const all = button(row, "replace-all", "Replace all", () => target?.commands.run("find.replaceAll", "button"));
     const flags = node("span", "find-options", bar);
     flags.setAttribute("role", "group");
     flags.setAttribute("aria-label", text("Search options"));
@@ -95,20 +101,9 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
     }
     const previous = button(bar, "find-previous", "↑", () => target?.commands.run("find.previous"), "Previous match");
     const next = button(bar, "find-next", "↓", () => target?.commands.run("find.next"), "Next match");
-    const expand = button(bar, "replace-toggle", "Replace…", () => {
-        showReplacement(Boolean(row.hidden));
-        (row.hidden ? query : replacement).focus({ preventScroll: true });
-    });
-    const row = node("span", "replace-controls", bar);
-    const replacement = field(row, "replacement", "Replacement text", "Replace with");
-    const replace = button(row, "replace-current", "Replace", () => {
-        replacement.focus({ preventScroll: true });
-        target?.commands.run("find.replaceCurrent", "button");
-    });
-    const all = button(row, "replace-all", "Replace all", () => target?.commands.run("find.replaceAll", "button"));
+    button(bar, "find-close", "Close", close).title = text("Close find (Escape)");
     const name = node("span", "find-target", bar);
     const status = node("output", "find-status", bar);
-    button(bar, "find-close", "Close", close).title = text("Close find (Escape)");
     function value() {
         return pressed(regex) ? replacement.value.replace(/\\([\\n])/g, (_, ch) => ch === "n" ? "\n" : "\\")
             : replacement.value;
@@ -146,6 +141,7 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
         const matches = !!state?.count;
         status.classList.toggle("no-matches", ready && !matches && !!state.query);
         status.classList.toggle("search-failed", state?.status === "failed");
+        query.ariaInvalid = String(state?.reason === "invalid-pattern");
         previous.disabled = next.disabled = !(searching || ready && matches);
         replace.disabled = readOnly || !matches || !(ready || searching && state.retained);
         all.disabled = readOnly || !matches || !ready;
@@ -193,13 +189,13 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
             const seed = selectedFindQuery(target, pressed(regex));
             if (seed !== undefined && seed !== query.value) {
                 query.value = seed;
-                query.rows = seed.includes("\n") ? 2 : 1;
+                query.rows = 1;
                 find?.setQuery(seed);
             }
         }
         cached = undefined;
+        if (bar.hidden || replace) showReplacement(replace);
         bar.hidden = false;
-        showReplacement(replace);
         search()?.setHighlightMatches(true);
         const input = focusReplacement && query.value && !target.getSnapshot().readOnlyReason ? replacement : query;
         input.focus();
@@ -223,6 +219,7 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
     bar.onpointerdown = event => {
         if (event.button !== 0) return;
         const control = (event.target as Element).closest("button");
+        if (event.target === status || event.target === name) event.preventDefault();
         if (control?.disabled || control === previous || control === next) {
             event.preventDefault();
             if (!control.disabled && focused() !== replacement) query.focus({ preventScroll: true });
@@ -272,6 +269,7 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
                     },
                 },
                 close: { enabled: owns, run: close },
+                toolbarFocused: () => owns() && bar.matches(":focus-within"),
             });
             onAbort(signal, bindings.dispose);
             panes.set(editor, detach);
