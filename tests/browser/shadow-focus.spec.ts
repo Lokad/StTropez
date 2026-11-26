@@ -26,8 +26,10 @@ async function mount(page: Page, language: boolean) {
         const path = "/shadow-focus/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { BrowserLspWorkspace, mountTextEditor, attachEditorLanguage, openWebSocketTransport } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const { RpcError } = await import(path + "protocol.js") as typeof import("../../src/protocol/index.ts");
-        const workspace = new Workspace(), source = workspace.createTextResource({ scope: "focus", resource: "source", variant: "text" }, "Source", { value: "sample sample\ns" }, undefined,
-            { language: { uri: "focus:source", languageId: "generic" } });
+        const workspace = new Workspace(), source = workspace.createTextResource({ scope: "focus", resource: "source", variant: "text" }, "Source", {
+            value: "sample sample\ns",
+            language: { uri: "focus:source", languageId: "generic" },
+        });
         const outer = document.createElement("div"), inner = document.createElement("div"), outside = document.createElement("button");
         outside.id = "shadow-focus-outside"; outside.textContent = "Outside"; document.body.append(outside, outer); outer.attachShadow({ mode: "open" }).append(inner);
         const tree = inner.attachShadow({ mode: "closed" }), style = document.createElement("style"), host = document.createElement("section");

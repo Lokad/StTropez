@@ -12,10 +12,14 @@ export const settled = async () => { await setImmediate(); await setImmediate();
 export function clientFixture(t: TestContext, connect?: () => Promise<void>, resolveTarget?: LspTargetResolver,
     options?: Partial<Pick<LspWorkspaceOptions, "now" | "schedule" | "maxScopes" | "applyEdit">>) {
     const workspace = new Workspace();
-    const source = workspace.createTextResource({ scope: "public-client", resource: "source", variant: "working" }, "Source", { value: "alpha beta" }, undefined,
-        { language: { uri: "generic:source", languageId: "generic" } });
-    const other = workspace.createTextResource({ scope: "public-client", resource: "other", variant: "working" }, "Other", { value: "gamma delta" }, undefined,
-        { language: { uri: "generic:other", languageId: "generic" } });
+    const source = workspace.createTextResource({ scope: "public-client", resource: "source", variant: "working" }, "Source", {
+        value: "alpha beta",
+        language: { uri: "generic:source", languageId: "generic" },
+    });
+    const other = workspace.createTextResource({ scope: "public-client", resource: "other", variant: "working" }, "Other", {
+        value: "gamma delta",
+        language: { uri: "generic:other", languageId: "generic" },
+    });
     type Listener = Parameters<RpcTransport["subscribe"]>[0];
     const listeners: (Listener | undefined)[] = [], packets: { sender: number; method?: string; params?: unknown }[] = [];
     const timers = new Set<ReturnType<typeof setTimeout>>(), errors: string[] = [];

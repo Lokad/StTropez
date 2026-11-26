@@ -22,8 +22,11 @@ const name = "tasks.md";
 const readSaved = () => sessionStorage.getItem(name) ?? "- [ ] Review the draft\n";
 const openedText = readSaved();
 const file = workspace.createTextResource(
-    { scope: "checklist", resource: name, variant: "working" }, name, { value: openedText, serverVersion: openedText }, undefined,
-    { language: { uri: "file:///tasks.md", languageId: "markdown" } });
+    { scope: "checklist", resource: name, variant: "working" }, name, {
+        value: openedText,
+        serverVersion: openedText,
+        language: { uri: "file:///tasks.md", languageId: "markdown" },
+    });
 
 const primary = document.querySelector("main");
 if (!primary) throw new Error("Missing <main>.");

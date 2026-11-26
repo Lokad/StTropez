@@ -230,10 +230,14 @@ async function languageFixture(t: test.TestContext) {
 
 function fixture(t: test.TestContext, extra: Partial<Pick<LspWorkspaceOptions,
     "maxDocumentUnits" | "features" | "schedule" | "rpc">> = {}) {
-    const workspace = new Workspace(), source = workspace.createTextResource({ scope: "generic", resource: "source", variant: "working" }, "Source", { value: "a😀\r\nsource" }, undefined,
-        { language: { uri: "host+opaque:workspace/source", languageId: "generic-language" } }),
-        companion = workspace.createTextResource({ scope: "generic", resource: "companion", variant: "working" }, "Companion", { value: "companion" }, undefined,
-            { language: { uri: "host+opaque:workspace/companion", languageId: "generic-language" } });
+    const workspace = new Workspace(), source = workspace.createTextResource({ scope: "generic", resource: "source", variant: "working" }, "Source", {
+        value: "a😀\r\nsource",
+        language: { uri: "host+opaque:workspace/source", languageId: "generic-language" },
+    }),
+        companion = workspace.createTextResource({ scope: "generic", resource: "companion", variant: "working" }, "Companion", {
+            value: "companion",
+            language: { uri: "host+opaque:workspace/companion", languageId: "generic-language" },
+        });
     const timers = new Set<ReturnType<typeof setTimeout>>(), errors: string[] = [], peers: ReturnType<typeof peer>[] = [];
     const schedule: RpcScheduler = (ms, callback) => { const timer = setTimeout(() => { timers.delete(timer); callback(); }, ms); timers.add(timer); return () => { clearTimeout(timer); timers.delete(timer); }; };
     function peer() {
@@ -551,8 +555,10 @@ test("shared diagnostic placement preserves unknown freshness and expires on rec
     assert.throws(() => f.workspace.document(f.source.id), /released/);
     assert.equal(beforeReuse.isCurrent(), false); assert.equal(beforeReuse.isPlacementCurrent(), false); assert.equal(verified.isCurrent(), false);
     const file = f.workspace.createTextResource({ scope: "generic", resource: "replacement", variant: "working" },
-        "Replacement", { value: "new\nsource" }, undefined,
-        { language: { uri: message.uri, languageId: capture.document.languageId } });
+        "Replacement", {
+            value: "new\nsource",
+            language: { uri: message.uri, languageId: capture.document.languageId },
+        });
     const replacement = a.attachDocument(file.id);
     await a.flush();
     const rebound = a.observeDiagnostics(replacement);

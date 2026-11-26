@@ -10,9 +10,12 @@ const options = new URL(location.href).searchParams;
 const fixedRevisions = options.get("mode") === "revisions";
 const workspace = new Workspace();
 const workingBuffer = TextBuffer.from("const title = 'Working';\r\n// shared separator\r\nconst count = 2;\r\n// shared boundary\r\n\treturn title;\r\n// working note\r\n");
-const resource = workspace.createTextResourceFromBuffer({ scope: "fixture", resource: "working", variant: "source" }, "Working source",
-    { buffer: workingBuffer, serverVersion: fixedRevisions ? "saved-2" : "saved-1" },
-    fixedRevisions ? { edit: [], save: false } : undefined);
+const resource = workspace.createTextResource({ scope: "fixture", resource: "working", variant: "source" }, "Working source",
+    {
+        value: workingBuffer,
+        serverVersion: fixedRevisions ? "saved-2" : "saved-1",
+        capabilities: fixedRevisions ? { edit: [], save: false } : undefined,
+    });
 const customControls = options.get("controls") === "host";
 function mount() {
     return mountTextComparison(document.querySelector<HTMLElement>("#comparison")!, workspace, resource.id,

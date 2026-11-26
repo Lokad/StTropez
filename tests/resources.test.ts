@@ -98,9 +98,12 @@ test("typed array snapshots reject accessors without invoking code or publishing
 test("internal resources keep captured ownership while workspace inventories contain only host resources", async () => {
     const { workspace, source, form } = fixture(), before = workspace.getSnapshot();
     const options = { visibility: "internal" as const }, buffer = TextBuffer.from("immutable reference");
-    const reference = workspace.createTextResourceFromBuffer({ scope: "test", resource: "reference", variant: "one" }, "Reference",
-        { buffer }, { edit: [], save: false }, options);
-    const scratch = workspace.createTextResource({ scope: "test", resource: "scratch", variant: "one" }, "Scratch", { value: "x" }, undefined, options);
+    const reference = workspace.createTextResource({ scope: "test", resource: "reference", variant: "one" }, "Reference",
+        { value: buffer, capabilities: { edit: [], save: false }, ...options });
+    const scratch = workspace.createTextResource({ scope: "test", resource: "scratch", variant: "one" }, "Scratch", {
+        value: "x",
+        ...options,
+    });
     const panel = workspace.createResource({ scope: "test", resource: "panel", variant: "one" }, "Panel", { value: { count: 0 } }, undefined, options);
             const resourceTarget = workspace.captureResource(reference.id);
     const inventory = workspace.getSnapshot();

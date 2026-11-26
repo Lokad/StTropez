@@ -48,9 +48,9 @@ test("URI lookup selects one visible ready document and release belongs to its c
     const key = (variant: string) => ({ scope: "project", resource: "source", variant });
     const language = { uri: "project:a%2Fb", languageId: "fixture" };
     const options = { language };
-    const first = workspace.createTextResource(key("work"), "Work", { value: "one" }, undefined, options);
-    workspace.createTextResource(key("internal"), "Preview", { value: "copy" }, undefined, { ...options, visibility: "internal" });
-    const loading = workspace.createTextResource(key("loading"), "Loading", undefined, undefined, options);
+    const first = workspace.createTextResource(key("work"), "Work", { value: "one", ...options });
+    workspace.createTextResource(key("internal"), "Preview", { value: "copy", ...options, visibility: "internal" });
+    const loading = workspace.createTextResource(key("loading"), "Loading", options);
     const events: string[] = [];
     const watch = (id: typeof first.id) => workspace.onDocumentChange(id, change => events.push(change.kind),
         after => { events.push("released " + id); after(() => events.push("after " + id)); });
@@ -60,7 +60,7 @@ test("URI lookup selects one visible ready document and release belongs to its c
     unsubscribe();
     assert.equal(workspace.documentForUri(language.uri), workspace.document(first.id));
     assert.equal(workspace.documentForUri("project:a/b"), undefined);
-    const second = workspace.createTextResource(key("peer"), "Peer", { value: "two" }, undefined, options);
+    const second = workspace.createTextResource(key("peer"), "Peer", { value: "two", ...options });
     assert.equal(workspace.documentForUri(language.uri), undefined);
     workspace.setDocumentLanguage(second.id, null);
     assert.equal(workspace.documentForUri(language.uri)?.id, first.id);
@@ -71,7 +71,7 @@ test("URI lookup selects one visible ready document and release belongs to its c
     view.dispose();
     await Promise.resolve();
     assert.equal(workspace.documentForUri(language.uri), undefined);
-    const replacement = workspace.createTextResource(key("work"), "Reopened", { value: "new" }, undefined, options);
+    const replacement = workspace.createTextResource(key("work"), "Reopened", { value: "new", ...options });
     assert.equal(workspace.documentForUri(language.uri)?.id, replacement.id);
     workspace.replaceText(replacement.id, "fresh", { origin: "host", history: "record" });
     await Promise.resolve();

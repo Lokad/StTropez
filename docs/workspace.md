@@ -14,8 +14,11 @@ export function openFile() {
     const workspace = new Workspace();
     const source = workspace.createTextResource(
         { scope: "project", resource: "source.ts", variant: "working" },
-        "Source", { value: "const value = 1;\n", serverVersion: "source-v1" }, undefined,
-        { language: { uri: "project:source.ts", languageId: "typescript" } }
+        "Source", {
+            value: "const value = 1;\n",
+            serverVersion: "source-v1",
+            language: { uri: "project:source.ts", languageId: "typescript" },
+        }
     );
     return { workspace, source, view: workspace.createDocumentView(source.id) };
 }
@@ -29,6 +32,8 @@ A resource key groups scope, resource and variant. Reopening a released key give
 A text handle’s `id` is its `DocumentId`. Use it to edit, read metadata, acquire a lease or release the resource.
 Across awaits, capture and resolve a `ResourceTarget`. Views of one document share text and history.
 Local revision tracks edits. Server version identifies the saved baseline.
+
+Pass a string or an immutable `TextBuffer` as `value` when creating a document. Omitting `value` leaves it loading.
 
 `ownsDocumentView(view)` checks that the view belongs to this workspace. To target one mount,
 capture its editor and check `editor.signal`. Disposing the editor aborts the signal even if the host keeps the view.
@@ -59,13 +64,15 @@ can reach it. Its creator owns cleanup.
 
 ```ts
 import { TextBuffer } from "sttropez";
-import type { ResourceOptions, Workspace } from "sttropez";
+import type { Workspace } from "sttropez";
 
 export function createReference(workspace: Workspace, buffer: TextBuffer) {
-    const options: ResourceOptions = { visibility: "internal" };
-    return workspace.createTextResourceFromBuffer(
-        workspace.createResourceKey("review", "reference"), "Reference", { buffer },
-        { edit: [], save: false }, options
+    return workspace.createTextResource(
+        workspace.createResourceKey("review", "reference"), "Reference", {
+            value: buffer,
+            capabilities: { edit: [], save: false },
+            visibility: "internal",
+        }
     );
 }
 ```

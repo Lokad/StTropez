@@ -60,7 +60,7 @@ test("a saved color action cannot open or displace a picker after editing and Un
             await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace();
         const file = workspace.createTextResource({ scope: "test", resource: "colors", variant: "working" }, "Colors",
-            { value: '"#5fae99"' }, undefined, { language: { uri: "fixture:/colors", languageId: "generic" } });
+            { value: '"#5fae99"', language: { uri: "fixture:/colors", languageId: "generic" } });
         const host = document.body.appendChild(document.createElement("main"));
         host.style.height = "220px";
         const editor = mountTextEditor(host, workspace, file.id, { ariaLabel: "Colors" });
@@ -104,7 +104,10 @@ test("definition lookup uses its attached scope and recovers from a refused moun
             await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace();
         const source = workspace.createTextResource({ scope: "test", resource: "source", variant: "working" }, "Source",
-            { value: "const catalogue = 1;\ncatalogue" }, undefined, { language: { uri: "fixture:/source", languageId: "generic" } });
+            {
+                value: "const catalogue = 1;\ncatalogue",
+                language: { uri: "fixture:/source", languageId: "generic" },
+            });
         const host = document.createElement("main"); host.style.height = "240px"; document.body.append(host);
         const editor = mountTextEditor(host, workspace, source.id);
         const connect = (signal: AbortSignal) => openWebSocketTransport("ws://" + location.host + "/lsp-fixture", { signal });
@@ -172,7 +175,7 @@ test("signature help can release focus to a host field and recover from a refuse
             await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace(), text = 'lookup("key", )';
         const source = workspace.createTextResource({ scope: "test", resource: "source", variant: "working" }, "Source",
-            { value: text }, undefined, { language: { uri: "fixture:/source", languageId: "generic" } });
+            { value: text, language: { uri: "fixture:/source", languageId: "generic" } });
         const host = document.createElement("main"), field = document.createElement("input");
         host.style.height = "240px"; field.setAttribute("aria-label", "Host field"); document.body.append(host, field);
         const editor = mountTextEditor(host, workspace, source.id, { ariaLabel: "Source" });

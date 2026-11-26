@@ -99,7 +99,10 @@ test("target checks visit the captured project once per pass and retain independ
     const f = clientFixture(t, undefined, async () => { const lease = retained(f); leases.push(lease); return { text: lease.value.document.buffer, languageId: "generic", release: lease.value.release }; }),
         client = navigationClient(f.provider); t.after(client.dispose);
     const resources = [f.source, ...Array.from({ length: 19 }, (_, i) => f.workspace.createTextResource(
-        { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, { value: "source" }, undefined, { language: { uri: `generic:extra/${i}`, languageId: "generic" } }))];
+        { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, {
+            value: "source",
+            language: { uri: `generic:extra/${i}`, languageId: "generic" },
+        }))];
     const snapshots = resources.map(resource => f.workspace.document(resource.id));
     f.peer.onRequest("textDocument/references", () => Array.from({ length: 40 }, (_, i) => ({ uri: `${uri}/${i}`, range })));
     let visits = 0; const observe = f.workspace.observeDocument;

@@ -60,7 +60,10 @@ test("invalid comparison budgets preserve live work and the shared minimum can f
 
 test("captured whole-review reversion preserves distant changes and complete shared history", () => {
     const workspace = new Workspace(), text = "first\r\n" + "unchanged value\r\n".repeat(10_000) + "last 😀\r", reference = TextBuffer.from(text);
-    const resource = workspace.createTextResourceFromBuffer({ scope: "review", resource: "source", variant: "working" }, "Working", { buffer: reference, serverVersion: "saved-1" });
+    const resource = workspace.createTextResource({ scope: "review", resource: "source", variant: "working" }, "Working", {
+        value: reference,
+        serverVersion: "saved-1",
+    });
     const comparison = compareText(workspace, resource.id, { buffer: reference, version: "review-1" }), peer = workspace.createDocumentView(resource.id);
     workspace.edit({ documentId: resource.id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 5, insert: "different" }, { from: text.length - 8, to: text.length, insert: "tail" }] });
     ready(comparison); const buffer = workspace.document(resource.id).buffer;
@@ -236,7 +239,11 @@ test("supplied views remain owned by the host and buffer resources retain their 
     const { workspace, resource, reference, comparison } = fixture(); comparison.dispose();
     const view = workspace.createDocumentView(resource.id), controller = compareText(workspace, resource.id, reference, { view });
     controller.dispose(); assert.equal(workspace.ownsDocumentView(view), true); view.dispose();
-    const buffer = TextBuffer.from("a\r\nb\n").replace(1, 1, "\t"), display = workspace.createTextResourceFromBuffer({ scope: "test", resource: "reference", variant: "display" }, "Reference", { buffer, serverVersion: "v1" }, { edit: [], save: false });
+    const buffer = TextBuffer.from("a\r\nb\n").replace(1, 1, "\t"), display = workspace.createTextResource({ scope: "test", resource: "reference", variant: "display" }, "Reference", {
+        value: buffer,
+        serverVersion: "v1",
+        capabilities: { edit: [], save: false },
+    });
     assert.equal(workspace.document(display.id).buffer, buffer);
     for (const origin of ["human", "agent", "host"] as const) assert.equal(workspace.edit({ documentId: display.id, expectedRevision: 0, origin, edits: [{ from: 0, to: 0, insert: "bad" }] }).applied, false);
     workspace.releaseResource(display.id); assert.equal(workspace.diagnostics().leases, 0);

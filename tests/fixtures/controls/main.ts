@@ -6,8 +6,10 @@ import "sttropez/editor.css";
 const workspace = new Workspace();
 const name = "colors.ts";
 const file = workspace.createTextResource({ scope: "controls", resource: name, variant: "working" }, name,
-    { value: 'const accent = "#5fae99";\nuse(accent);' }, undefined,
-    { language: { uri: "file:///colors.ts", languageId: "typescript" } });
+    {
+        value: 'const accent = "#5fae99";\nuse(accent);',
+        language: { uri: "file:///colors.ts", languageId: "typescript" },
+    });
 const strings: ControlStrings = location.search === "?locale=fr" ? {
     text: label => label === "New name" ? "Nouveau nom" : label,
     reviewChanges: count => String(count) + (count === 1 ? " modification" : " modifications"),

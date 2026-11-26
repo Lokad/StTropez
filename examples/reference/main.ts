@@ -37,7 +37,11 @@ try {
 
 const workspace = new Workspace();
 const file = workspace.createTextResource({ scope: "quote", resource: name, variant: "working" }, name,
-    { value: opened, serverVersion: opened }, undefined, { language: { uri: "file:///reference/quote.ts", languageId: "typescript" } });
+    {
+        value: opened,
+        serverVersion: opened,
+        language: { uri: "file:///reference/quote.ts", languageId: "typescript" },
+    });
 const view = workspace.createDocumentView(file.id);
 const settings = { minimap: true, bracketMatching: true, language: { tabSize: 4, lineComment: "//" } };
 let baseline = { buffer: workspace.document(file.id).buffer, version: "opened" };

@@ -40,13 +40,13 @@ test("links and definitions retry a failed presentation and keep the requesting 
         const { HostDocumentLinks } = await import(path + "links.js") as typeof import("../fixtures/hosts/document-links.ts");
         const { mountDocumentLinksPanel } = await import(path + "linkPanel.js") as typeof import("../fixtures/hosts/document-links-panel.ts");
         const ws = new Workspace(), source = ws.createTextResource({ scope: "host", resource: "main", variant: "working" }, "Main",
-            { value: "Currency" }, undefined, { language: { uri: "project:main", languageId: "generic" } });
+            { value: "Currency", language: { uri: "project:main", languageId: "generic" } });
         const editor = mountTextEditor(document.getElementById("source")!, ws, source.id, { ariaLabel: "Main" });
         const url = new URL("/lsp-fixture", location.href); url.protocol = "ws:";
         const provider = new BrowserLspWorkspace(ws, { connect: signal => openWebSocketTransport(url.href, { signal }),
             resolveTarget: async uri => uri === "library:types" ? { text: "// declarations\ntype Currency = string", languageId: "generic" } : undefined });
         const module = ws.createTextResource({ scope: "host", resource: "currency", variant: "working" }, "Currency module",
-            { value: "export const currency = 1;" }, undefined, { language: { uri: "project:currency", languageId: "generic" } });
+            { value: "export const currency = 1;", language: { uri: "project:currency", languageId: "generic" } });
         let destination: typeof editor | undefined;
         const attempted = new Set<string>();
         const panes = createNavigationHost({ workspace: ws, canCapture: () => true, present: id => {

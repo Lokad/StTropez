@@ -369,8 +369,12 @@ export class LspWorkspace {
                 if (!isLspIdentityPart(source.languageId) || !(typeof source.text === "string" || source.text instanceof TextBuffer)) throw new TypeError("Invalid read-only target.");
                 if (source.text.length > limit) throw new RangeError("LSP target size limit exceeded.");
                 const buffer = typeof source.text === "string" ? TextBuffer.from(source.text) : source.text;
-                const resource = this.#workspace.createTextResourceFromBuffer(this.#workspace.createResourceKey("lsp", uri), uri, { buffer },
-                    { edit: [], save: false }, { visibility: "internal", language: { uri, languageId: source.languageId } });
+                const resource = this.#workspace.createTextResource(this.#workspace.createResourceKey("lsp", uri), uri, {
+                    value: buffer,
+                    capabilities: { edit: [], save: false },
+                    visibility: "internal",
+                    language: { uri, languageId: source.languageId },
+                });
                 lease = this.#workspace.acquire(resource.id);
                 this.#workspace.releaseResourceWhenUnowned(resource.id);
                 doc = this.#workspace.document(resource.id);

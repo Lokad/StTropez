@@ -49,7 +49,10 @@ test("partial protocol setup releases the listener and leases while preserving s
     t.after(async () => { acquired?.dispose(); if (retired) await closePackageServer(retired); });
     await assert.rejects(withProtocolFixture(async ({ url, server, defer }) => {
         retired = server; port = Number(new URL(url).port);
-        const workspace = new Workspace(), source = workspace.createTextResource({ scope: "cleanup", resource: "source", variant: "working" }, "Source", { value: "sample" }, undefined, { language: { uri: "fixture:source", languageId: "fixture" } });
+        const workspace = new Workspace(), source = workspace.createTextResource({ scope: "cleanup", resource: "source", variant: "working" }, "Source", {
+            value: "sample",
+            language: { uri: "fixture:source", languageId: "fixture" },
+        });
         defer(() => { order.push("leases"); assert.equal(workspace.diagnostics().leases, 0); });
         const owner = new FixtureLspWorkspace(workspace, {
             connect: () => openWebSocketTransport(url), features: ["textDocument/hover"],

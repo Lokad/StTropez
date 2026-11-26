@@ -8,8 +8,10 @@ import { DemoLanguage } from "../examples/demo/language.ts";
 /** Exercise the host's check loop against captured provider replies without opening a server. */
 async function fixture(count: number, relatedLine?: number) {
     const workspace = new Workspace(), files = Array.from({ length: count }, (_, i) => {
-        const name = `${i}.ts`, resource = workspace.createTextResource({ scope: "diagnostics", resource: name, variant: "working" }, name, { value: "let value = 1;" }, undefined,
-            { language: { uri: `file:///${name}`, languageId: "typescript" } });
+        const name = `${i}.ts`, resource = workspace.createTextResource({ scope: "diagnostics", resource: name, variant: "working" }, name, {
+            value: "let value = 1;",
+            language: { uri: `file:///${name}`, languageId: "typescript" },
+        });
         return { name, resource, view: workspace.createDocumentView(resource.id) };
     });
     const captures = new Map<string, LspDocumentCapture>(), valid = files.map(() => true), calls: { uri: string; kind: string }[] = [];

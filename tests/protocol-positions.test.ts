@@ -60,7 +60,9 @@ test("incremental newline joins/splits and history jumps apply exactly through t
 test("distant batch changes and their inverses send bounded text without copying intervening lines", async t => {
     const text = "row 😀\r\n".repeat(20_000), before = TextBuffer.from(text), index = await LspLineIndex.create(before, cooperate);
     const far = before.offsetAt(19_998) + 2, workspace = new Workspace();
-    const { id: documentId } = workspace.createTextResourceFromBuffer({ scope: "test", resource: "large", variant: "source" }, "Large", { buffer: before });
+    const { id: documentId } = workspace.createTextResource({ scope: "test", resource: "large", variant: "source" }, "Large", {
+        value: before,
+    });
     const edit = (edits: readonly TextEdit[], group?: string) => workspace.edit({ documentId, origin: "human", expectedRevision: workspace.document(documentId).revision,
         edits, ...(group ? { history: { kind: "typing" as const, group } } : {}) });
     const undoEdit = () => workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision });

@@ -153,7 +153,10 @@ test("a held project reply cannot rebind a source whose URI changed", async t =>
     const f = clientFixture(t),
         client = navigationClient(f.provider); t.after(client.dispose);
     const resources = [f.source, f.other, ...Array.from({ length: 48 }, (_, i) => f.workspace.createTextResource(
-        { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, { value: "source" }, undefined, { language: { uri: `generic:extra/${i}`, languageId: "generic" } }))];
+        { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, {
+            value: "source",
+            language: { uri: `generic:extra/${i}`, languageId: "generic" },
+        }))];
     const snapshots = () => resources.map(resource => f.workspace.document(resource.id));
     const run = () => client.run({ document: f.document(), project: snapshots(), offset: 0, kind: "references" }).result;
     f.peer.onRequest("textDocument/references", () => []);

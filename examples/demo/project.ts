@@ -111,8 +111,12 @@ export class DemoProject {
         const owners = new CleanupScope(); let file: DemoFile;
         try {
             const resource = this.workspace.createTextResource({ scope: `demo:${this.sample.id}`, resource: name, variant: "working" }, name,
-                { value, serverVersion: this.token }, readOnly ? { edit: [], save: false } : undefined,
-                { language: this.services?.language.languageFor(name) ?? null });
+                {
+                    value,
+                    serverVersion: this.token,
+                    capabilities: readOnly ? { edit: [], save: false } : undefined,
+                    language: this.services?.language.languageFor(name) ?? null,
+                });
             owners.defer(() => { this.workspace.releaseResource(resource.id, true); });
             const view = this.workspace.createDocumentView(resource.id); owners.defer(() => view.dispose());
             owners.defer(this.workspace.onDocumentChange(resource.id, () => {

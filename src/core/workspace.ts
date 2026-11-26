@@ -29,7 +29,11 @@ export type Capabilities = Readonly<{ edit: readonly EditOrigin[]; save: boolean
 export type ResourceVisibility = "workspace" | "internal";
 export type ResourceOptions = Readonly<{ visibility?: ResourceVisibility }>;
 export type DocumentLanguage = Readonly<{ uri: string; languageId: string }>;
-export type TextResourceOptions = ResourceOptions & Readonly<{ language?: DocumentLanguage | null }>;
+/** Omit value to open a loading document. Passing a TextBuffer retains its immutable contents directly. */
+export type TextResourceOptions = ResourceOptions & Readonly<{
+    capabilities?: Capabilities | undefined;
+    language?: DocumentLanguage | null;
+}> & (LoadedResource<string | TextBuffer> | Readonly<{ value?: never; serverVersion?: never }>);
 export type ResourceMetadata = Readonly<{
     id: ResourceId; key: ResourceKey; title: string; kind: "text" | "panel";
     visibility: ResourceVisibility;
@@ -45,7 +49,6 @@ export type ResourceHandle<T extends SnapshotValue> = Observable<ResourceSnapsho
 }>;
 export type TextResourceHandle = ResourceHandle<string> & Readonly<{ id: DocumentId }>;
 export type LoadedResource<T> = Readonly<{ value: T; serverVersion?: string | null }>;
-export type LoadedTextBuffer = Readonly<{ buffer: TextBuffer; serverVersion?: string | null }>;
 export type DocumentSnapshot = Readonly<{
     id: DocumentId; key: ResourceKey; title: string; buffer: TextBuffer; text: () => string; revision: number;
     language: DocumentLanguage | null; change: DocumentChange | null;
@@ -217,26 +220,25 @@ export class Workspace {
     createResource<T extends SnapshotValue>(key: ResourceKey, title: string, loaded?: LoadedResource<T>, permissions = defaultCapabilities, options: ResourceOptions = {}): ResourceHandle<T> {
         return this.#create(key, title, "panel", loaded, permissions, options) as ResourceHandle<T>;
     }
-    createTextResource(key: ResourceKey, title: string, loaded?: LoadedResource<string>, permissions = defaultCapabilities, options: TextResourceOptions = {}): TextResourceHandle {
-        return this.#create(key, title, "text", loaded, permissions, options) as TextResourceHandle;
-    }
-    /** Retain an immutable buffer directly, without exporting or reparsing its text. */
-    createTextResourceFromBuffer(key: ResourceKey, title: string, loaded: LoadedTextBuffer, permissions = defaultCapabilities, options: TextResourceOptions = {}): TextResourceHandle {
-        return this.#create(key, title, "text", loaded, permissions, options) as TextResourceHandle;
+    createTextResource(key: ResourceKey, title: string, options: TextResourceOptions = {}): TextResourceHandle {
+        const loaded = options.value === undefined ? undefined : options;
+        return this.#create(key, title, "text", loaded, options.capabilities ?? defaultCapabilities, options) as TextResourceHandle;
     }
     createDocument(key: ResourceKey, title: string, text: string): DocumentId {
         return this.createTextResource(key, title, { value: text }).id;
     }
-    #create(key: ResourceKey, title: string, kind: "text" | "panel", loaded: LoadedResource<SnapshotValue> | LoadedTextBuffer | undefined, permissions: Capabilities, options: TextResourceOptions): ResourceHandle<SnapshotValue> {
+    #create(key: ResourceKey, title: string, kind: "text" | "panel", loaded: LoadedResource<SnapshotValue | TextBuffer> | undefined,
+        permissions: Capabilities, options: ResourceOptions & { language?: DocumentLanguage | null }): ResourceHandle<SnapshotValue> {
         this.#scope.assertWritable();
         const visibility = options.visibility === undefined ? "workspace" : options.visibility;
         key = Object.freeze({ ...key });
         const identity = resourceKeyIdentity(key);
         if (this.#resourceKeys.has(identity)) throw new Error("Resource already exists in this workspace.");
-        if (loaded && "buffer" in loaded && kind !== "text") throw new TypeError("Only text resources accept a TextBuffer.");
-        const value = loaded === undefined || "buffer" in loaded ? undefined : snapshotValue(loaded.value);
-        if (kind === "text" && value !== undefined && typeof value !== "string") throw new TypeError("Text resource requires a string.");
-        const buffer = loaded && "buffer" in loaded ? loaded.buffer : kind === "text" && typeof value === "string" ? TextBuffer.from(value) : null;
+        const input = loaded?.value;
+        const buffer = kind === "text" && input instanceof TextBuffer ? input
+            : kind === "text" && typeof input === "string" ? TextBuffer.from(input) : null;
+        if (kind === "text" && loaded && !buffer) throw new TypeError("Text resource requires a string or buffer.");
+        const value = loaded && !buffer ? snapshotValue(loaded.value as SnapshotValue) : undefined;
         const id = `resource-${++this.#nextId}` as ResourceId;
         const documentId = kind === "text" ? id as DocumentId : null;
         const metadata = Object.freeze({ id, key, title, kind, visibility,

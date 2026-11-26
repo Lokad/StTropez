@@ -224,8 +224,13 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, doc
     function render(): void {
         if (disposed) return; state = comparisonState();
         if (state.baseline && !referenceEditor()) {
-            if (typeof baseline !== "string") display = workspace.createTextResourceFromBuffer(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
-                { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false }, { visibility: "internal" });
+            if (typeof baseline !== "string") display = workspace.createTextResource(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
+                {
+                    value: state.baseline.buffer,
+                    serverVersion: state.baseline.version,
+                    capabilities: { edit: [], save: false },
+                    visibility: "internal",
+                });
             const referenceId = typeof baseline === "string" ? baseline : display!.id;
             const mounted = mountEditor(referencePane.content, workspace, referenceId, {
                 ariaLabel: strings.text("Comparison baseline source"), readOnly: true, ...paneOptions,
