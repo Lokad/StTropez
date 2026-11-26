@@ -34,8 +34,8 @@ controls.
 ### Captures and ranges
 
 Read `getSnapshot()` in `subscribe()` callbacks. Bind buttons to captured choices, which recheck document
-and provider on invocation. Requests yield `done`, `stale`, `refused` with a reason or `failed` with an
-error. `cancel()` dismisses the request.
+and provider on invocation. Discard replies that have gone stale. `cancel()` dismisses the request.
+[Command outcomes](README.md#api-conventions)
 
 `lspRangeOffsets` maps UTF-16 positions, clamps long columns and keeps surrogate-half offsets exact. Invalid
 lines, positions or reversed ranges fail validation.
@@ -53,6 +53,21 @@ For problems, read `scope.observeDiagnostics(binding)`. During edits, `lastRepor
 Versioned pushes must match the synchronized version. Unversioned pushes have null version and revision.
 `isPlacementCurrent()` checks offsets and `isCurrent()` checks analysis. Only fresh versioned marks enter
 code actions. Malformed or stale pushes leave the report intact. Unplaced items retain their messages.
+
+Build a Problems list from the current marks. Each button retains the diagnostic it was created for.
+
+```ts
+import type { DiagnosticSnapshot } from "sttropez/browser";
+
+export function showProblems(list: HTMLElement, snapshot: DiagnosticSnapshot) {
+    list.replaceChildren(...snapshot.diagnostics.map(item => {
+        const button = document.createElement("button");
+        button.textContent = item.message;
+        button.onclick = () => item.select();
+        return button;
+    }));
+}
+```
 
 ### Completion
 
@@ -128,6 +143,18 @@ pairing. A comma clears the parameter highlight pending refresh. Up/Down cycles 
 owns the keys. Typing in the same argument list keeps the chosen overload while the server offers it
 and it accepts the active parameter. Escape closes the top popup. Leaving the call, blur or composition dismisses help. Custom
 controls read `signature` and `anchor`.
+
+For a custom signature hint, extract the parameter span from the provider’s label.
+
+```ts
+import type { SignatureSnapshot } from "sttropez/browser";
+
+export function currentParameter({ signature }: SignatureSnapshot) {
+    if (!signature || signature.activeParameter === null) return;
+    const range = signature.parameters[signature.activeParameter];
+    return range && signature.label.slice(range.from, range.to);
+}
+```
 
 ### Navigation and target loading
 
@@ -254,16 +281,37 @@ Custom pickers call `choice.presentations(rgba)` with channels in `[0, 1]`. On a
 contains full replacements. Read-only panes permit inspection. Source, selection, fold, permission or format
 changes expire approval.
 
+A host color button can open the built-in picker at the caret. Read its offset when the button is pressed.
+
+```ts
+import type { DocumentColorController } from "sttropez/browser";
+
+export function editColor(colors: DocumentColorController, offset: number) {
+    const mark = colors.colorAt(offset);
+    return mark ? colors.openPicker(mark) : false;
+}
+```
+
 ### Occurrences
 
 `occurrences: {}` paints settled text, read and write marks. A caret inside a highlighted identifier reuses
 the result. Edits, blur or provider changes clear it. Query with `intersect(from, to)`. Style
 `.st-occurrence-text`, `.st-occurrence-read` and `.st-occurrence-write`.
 
+To list writes in a selected range, query the current occurrence index.
+
+```ts
+import type { LspHighlightController } from "sttropez/browser";
+
+export function writesInRange(occurrences: LspHighlightController, from: number, to: number) {
+    return occurrences.intersect(from, to).filter(item => item.kind === "write");
+}
+```
+
 ### Folding
 
-Give the requesting pane’s controller the result and its `isCurrent` guard.
-[Provider folds](folding.md#language-server-discovery)
+Pass the server’s fold ranges and freshness check to the requesting pane. The folding guide shows the adapter.
+[Use provider folds](folding.md#language-server-discovery)
 
 ### Limits
 

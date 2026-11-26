@@ -101,6 +101,25 @@ turn.
 Cancel on abort, pass its `isCurrent` guard to the controller and dispose with the attachment.
 [Language server](language-server.md)
 
+```ts
+import type { FoldDiscovery } from "sttropez/browser";
+import type { LspFoldingClient } from "sttropez/protocol";
+
+export function providerFolds(client: LspFoldingClient): FoldDiscovery {
+    return async (document, signal) => {
+        signal.throwIfAborted();
+        const call = client.run({ document });
+        const cancel = () => call.cancel();
+        signal.addEventListener("abort", cancel, { once: true });
+        try {
+            return await call.result;
+        } finally {
+            signal.removeEventListener("abort", cancel);
+        }
+    };
+}
+```
+
 Inclusive LSP end lines become exclusive offsets. Server kinds become groups. Character positions, collapsed
 text, out-of-document ranges and ranges without body rows are ignored. Bare CR divides LSP lines, while the
 editor needs LF for a second row. Malformed replies reject the batch. Expired captures reject with RPC code

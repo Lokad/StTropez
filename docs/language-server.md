@@ -55,17 +55,16 @@ export function attachLanguage(
 
 ## Contract
 
-### Transport and session
+<a id="transport-and-session"></a>
+
+### Open the connection
 
 Pass the factory’s `AbortSignal` to credential lookup and transport opening. Disconnect, disposal or
 deadline cancels the attempt. The workspace closes late transports. Each WebSocket text message carries one
 JSON value. For authentication before initialization, set `preProtocolMessage` and handle the reply in the
 factory.
 
-Concurrent `connect()` calls share initialization, UTF-16 negotiation and synchronization. `disconnect()`
-expires calls and keeps scopes and bindings. `reconnect()` sends current text. `shutdown()` synchronizes,
-then sends shutdown/exit when ready. Edits during shutdown join the next connection. `dispose()` releases
-the connection, calls, scopes and bindings.
+Concurrent `connect()` calls share initialization, UTF-16 negotiation and synchronization.
 
 Headless clients supply transport and a cancellable scheduler that defers zero-delay callbacks. For direct
 buffers, use `LspSession` from `sttropez/kernels`. Update bindings by expected revision and close before URI
@@ -76,7 +75,9 @@ Cancellation rejects the call and releases its deadline. Validate immutable cust
 decoders throw `ProtocolDecodeError` for malformed or unsupported data. Throw `RpcError` to return a
 structured error.
 
-### Feature capability queries
+<a id="feature-capability-queries"></a>
+
+### Negotiate features
 
 `initialize` advertises supported methods and push diagnostics. Restrict with `features` or
 `diagnostics: false`. Inspect `getSnapshot().clientFeatures`. `canRequest` checks static capabilities and
@@ -84,28 +85,13 @@ matching registrations. `queryFeatureOptions(method, document)` returns options.
 snapshot or a session’s `{ uri, languageId }`. `requestDocument` synchronizes text. Prepare-rename requires
 `prepareProvider: true`.
 
-### Workspace ownership and synchronization
+<a id="workspace-ownership-and-synchronization"></a>
+
+### Attach documents and synchronize edits
 
 `scope.attachDocument(id)` retains one document. `setDocuments(snapshots)` retains a project, including
 files with closed panes. Owners share one binding and lease per document. The last release closes it.
 `scope.cancel()` expires requests. `scope.dispose()` releases documents and handlers too.
-
-```ts
-import type { DocumentId } from "sttropez";
-import type { LspWorkspace } from "sttropez/protocol";
-
-export async function reconnectProject(provider: LspWorkspace, document: DocumentId) {
-    const scope = provider.createScope();
-    try {
-        scope.attachDocument(document);
-        await scope.ensureConnected();
-        await provider.shutdown();
-        await scope.ensureConnected();
-    } finally {
-        scope.dispose();
-    }
-}
-```
 
 Changing the URI or language ID expires replies. Reattach to open the new identity. Wire versions advance
 across URI reuse on one connection and are distinct from local revisions. Loss of open/close or
@@ -191,6 +177,32 @@ Moving the caret preserves standalone commands. Cancelling before send frees the
 edits lack a command ID. StTropez declines them until the matching reply arrives. While
 `commandRequiresReconnect` is true, wait or call `provider.reconnect()` for a fresh command. Earlier edits
 remain undoable.
+
+### Disconnect, reconnect or shut down
+
+`disconnect()` expires calls and keeps scopes and bindings. On `reconnect()` the client opens a new
+session and sends current text for attached documents. A result from the old connection expires even
+when the same URI is open again.
+
+`shutdown()` flushes edits and sends shutdown/exit when ready. Edits during shutdown join the next
+connection. Dispose the provider to release its connection, calls, scopes and bindings.
+
+```ts
+import type { DocumentId } from "sttropez";
+import type { LspWorkspace } from "sttropez/protocol";
+
+export async function reconnectProject(provider: LspWorkspace, document: DocumentId) {
+    const scope = provider.createScope();
+    try {
+        scope.attachDocument(document);
+        await scope.ensureConnected();
+        await provider.shutdown();
+        await scope.ensureConnected();
+    } finally {
+        scope.dispose();
+    }
+}
+```
 
 ### Limits and failures
 
