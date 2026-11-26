@@ -26,7 +26,7 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const stopProvider = provider.subscribe(() => {
         const state = provider.getSnapshot();
         if (state.phase !== "ready" || offeredCommandVersion !== undefined
-            && state.registrationVersion("workspace/executeCommand") !== offeredCommandVersion) {
+            && (!state.commandAvailable || state.registrationVersion("workspace/executeCommand") !== offeredCommandVersion)) {
             intent++;
             clear();
         }

@@ -98,18 +98,24 @@ pane.addEventListener("focusin", () => {
 });
 const connect = document.querySelector<HTMLButtonElement>("#connect")!;
 const connection = document.querySelector<HTMLOutputElement>("#connection")!;
+const serverCommand = document.querySelector<HTMLButtonElement>("#command")!;
 function renderConnection() {
-    const { phase, error } = provider.getSnapshot();
-    document.querySelector<HTMLElement>("#tools")!.hidden = phase !== "ready";
-    connect.disabled = phase === "connecting" || phase === "initializing" || phase === "ready";
-    connect.textContent = phase === "ready" ? "Language server connected" : "Connect language server";
-    connection.value = error ?? (connect.disabled && phase !== "ready" ? "Connecting…" : "");
+    const { phase, error, commandAvailable, commandRequiresReconnect } = provider.getSnapshot();
+    const ready = phase === "ready";
+    document.querySelector<HTMLElement>("#tools")!.hidden = !ready;
+    serverCommand.disabled = !commandAvailable;
+    connect.disabled = !(phase === "disconnected" || (ready && commandRequiresReconnect));
+    connect.textContent = !ready ? "Connect language server"
+        : commandRequiresReconnect ? "Reconnect language server" : "Language server connected";
+    connection.value = error ?? (commandRequiresReconnect ? "Reconnect to run another server command."
+        : phase === "connecting" || phase === "initializing" ? "Connecting…" : "");
 }
 const stopConnection = provider.subscribe(renderConnection);
 connect.onclick = () => {
     languageEnabled = true;
     current.enableLanguage();
-    void provider.connect().catch(error => { connection.value = String(error); });
+    const attempt = provider.getSnapshot().commandRequiresReconnect ? provider.reconnect() : provider.connect();
+    void attempt.catch(error => { connection.value = String(error); });
 };
 const pendingNotice = "An edit is pending. Try again when it finishes.";
 function showSaveState() {
