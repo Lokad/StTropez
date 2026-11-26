@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { documentationExamples, compileDocumentation } from "../../scripts/check-docs.mjs";
-import { parseDocumentation, auditPage, auditLinks } from "../../scripts/documentation-audit.mjs";
+import { parseDocumentation, auditPage, auditLinks, proseWords } from "../../scripts/documentation-audit.mjs";
 
 test("documentation examples preserve source lines and fence boundaries", () => {
     const markdown = ["# Guide", "", "````markdown", "```ts", "not an example", "```", "````", "",
@@ -57,6 +57,8 @@ test("documentation policy checks examples, support links and authored prose whi
     assert.equal(issues.length, 5);
     assert.deepEqual(issues.map(issue => issue.line), [4, 6, 6, 6, 6]);
     assert.equal(auditPage(prose, { vocabulary: false }).length, 0);
+    const sample = "# Host\n\nA read-only `editor`.\n\n| Key |\n| --- |\n| text |\n\n```sh\nexample script\n```";
+    assert.equal(proseWords(parseDocumentation("docs/editor.md", sample)), 3);
     assert.deepEqual(auditPage(parseDocumentation("docs/api.md", "# API"), { api: true }).map(issue => issue.code), ["example", "support"]);
 });
 

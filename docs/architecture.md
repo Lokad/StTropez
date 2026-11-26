@@ -75,7 +75,7 @@ connection and synchronized documents. The host owns state shared across mounts.
 ### Identity and asynchronous work
 
 Capture a resource and server version for Save and a document revision for an edit. A pane request belongs
-to the issuing editor. Dispose the editor when the host replaces its pane. [View captures](host-integration.md#captured-view-requests)
+to the issuing editor. Dispose the editor when the host replaces its pane. [Handle a delayed reply](workspace.md#keep-a-delayed-reply-on-its-original-editor)
 
 ### Snapshots and notification delivery
 
@@ -111,7 +111,7 @@ comparison.
 
 Own endpoints, credentials, persistence and service execution. Dispose pane subscriptions with their mount
 and release retained targets when a request finishes or is cancelled.
-[Host integration](host-integration.md)
+[Editor ownership](editor.md#mounting-and-presentation) · [Save and conflicts](workspace.md#save-and-conflicts)
 
 ## Not covered
 

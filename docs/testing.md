@@ -16,7 +16,7 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 
 | Command | Coverage |
 | --- | --- |
-| `npm run typecheck`, `npm run check:docs` | Strict projects and handbook examples, links, sizes and public index |
+| `npm run typecheck`, `npm run check:docs` | Strict projects, compiled handbook examples, links, prose and public index |
 | `npm test` | Models, host policy and integration. Select `test:models` or `test:integration` for one group. |
 | `npm run test:browser`, `test:browsers` | Full source suite in Chromium (CI) or all three engines |
 | `npm run check` | Types, docs, models, integration, build and source Chromium |
@@ -34,10 +34,10 @@ Use a separate test server. Source tests use `STTROPEZ_PORT` (default 4183). Sta
 
 ### What the documentation check catches
 
-After changing exports, run `npm run check:docs -- --write-api-index`. The check verifies the
-[public index](api.md), LF UTF-8 sizes, local links and anchors. API examples compile independently against
-public entries. Use `file=app.js` and companion filenames to compile a tutorial together. Type errors cite
-Markdown lines. Review behavior claims against source.
+After changing exports, run `npm run check:docs -- --write-api-index`. The check verifies the public index,
+local links and anchors. The handbook shares a 14,000-word prose budget across its guides. Tables, code,
+and the generated index are excluded. API examples compile against public entries. Use `file=app.js` and
+companion filenames to compile a tutorial together. Type errors cite Markdown lines. [Public index](api.md)
 
 <a id="test-ownership"></a>
 

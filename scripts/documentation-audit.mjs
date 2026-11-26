@@ -21,7 +21,6 @@ const pages = [
     "docs/examples.md",
     "docs/folding.md",
     "docs/getting-started.md",
-    "docs/host-integration.md",
     "docs/language-features.md",
     "docs/language-server.md",
     "docs/packaging.md",
@@ -37,6 +36,17 @@ export const subjectPages = [...pages, apiIndexPath];
 const guides = ["docs/README.md", "docs/testing.md", "docs/examples.md"];
 export const apiPages = pages.filter(path => !guides.includes(path));
 export const documentationPages = [...subjectPages, "README.md", "packaging/README.md", "AGENTS.md"];
+/** Handwritten handbook prose. Tables, inline examples and code fences have their own checks. */
+export const handbookWordBudget = 14_000;
+
+/** @param {DocumentationPage} page */
+export function proseWords(page) {
+    let count = 0;
+    for (const { text, node } of page.prose) {
+        if (node.type !== "tableCell") count += (text.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu) ?? []).length;
+    }
+    return count;
+}
 export const publicEntries = Object.fromEntries(libraryModules.map(entry => [entry.specifier, entry.source]));
 export const exampleExtensions = new Map([["js", "js"], ["javascript", "js"], ["ts", "ts"], ["typescript", "ts"], ["tsx", "tsx"]]);
 

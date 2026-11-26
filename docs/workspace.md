@@ -205,7 +205,13 @@ export async function analyze<T>(
 }
 ```
 
-For a delayed close prompt, capture the pane and the document revision. Check both when the user confirms.
+For work tied to a caret or selection, call `captureViewRequest(editor, options)` before the first await.
+Omit `editOrigin` for reads. A change to the revision, selection, visible folds or edit authority expires
+the capture. Disposing its editor aborts it even if another mount reuses the view.
+
+`commit(operation)` consumes a live capture and returns `false` if it expired. Use `available` for host checks.
+Cancel on dismissal. Release outside notification delivery. For a delayed close prompt, check the pane and
+revision again when the user confirms. [Selection-bound request](architecture.md#use)
 
 ### Save and conflicts
 
@@ -263,6 +269,16 @@ text requires host edit permission.
 Observers see the baseline, text, clean state and mapped views together. `"record"` preserves equal text’s
 buffer and revision. Undo restores changed drafts against the new baselines. `"reset"` clears linked history
 even for equal text.
+
+### Draft recovery
+
+Record the persistent resource key and captured revision with each draft. On write or discard, compare the
+previous storage token so a peer’s newer draft survives. Notify open tabs after storage commits.
+
+Show a recovered draft beside the loaded file. On confirmation, check identity, revision, server version
+and permission again. Restore in one Undo step against the saved baseline. Before closing, check unsaved
+edits, pending input, composition and unfinished requests. Store rejected input separately.
+[Playground recovery](examples.md#typescript-demo) · [Input recovery](editor.md#edit-intent-and-input-recovery)
 
 ### Observables
 

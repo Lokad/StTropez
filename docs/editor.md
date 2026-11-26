@@ -146,12 +146,61 @@ Copy joins selections in order with LF. Carets alone copy distinct whole lines, 
 and endings. Cut takes one Undo. Paste editor-marked lines at a caret to insert above and keep its column.
 
 Matching line and selection counts distribute one line per range. Otherwise each gets the full text.
-Endings follow the destination unless `pasteLineEndings` is `"preserve"`. Read custom formats during
-[the paste event](host-integration.md#captured-insertion-and-structured-paste).
+Endings follow the destination unless `pasteLineEndings` is `"preserve"`.
 
 A drag between writable documents in the same workspace moves the text in one Undo. Ctrl
 (Option on Apple), a read-only source or another workspace copies. Moves require the original
 token, views and revisions. A drop selects the inserted text.
+
+### Convert a structured paste
+
+`registerPasteHandler` prepares a conversion without editing. A read-only pane refuses paste.
+Literal paste uses the current selection. Removing the handler cancels conversion.
+
+`editor.captureInsertion()` returns `undefined` while busy, composing or read-only. Typing, selection
+changes, a new capture or disposal can expire the target. Pass its `signal` to the converter. `insert(text)`
+replaces all selections in one Undo step. For distinct replacements, pass one string per selection in order.
+Empty entries delete their selections. An all-empty result consumes the target and returns `false`. Use
+`cancel()` to discard it. [Table conversion](examples.md#table-conversion)
+
+Read the custom format inside the paste event. Capture the insertion before starting an asynchronous conversion.
+
+```ts
+import type { TextEditor } from "sttropez/browser";
+
+export function attachConvertedPaste(
+    editor: TextEditor,
+    convert: (html: string, signal: AbortSignal) => Promise<string>,
+    report: (message: string) => void
+): () => void {
+    return editor.registerPasteHandler(data => {
+        if (!data.types.includes("text/html")) return;
+        const html = data.getData("text/html");
+        return target => {
+            if (html.length > 262_144) {
+                target.cancel();
+                report("Clipboard HTML exceeds the conversion limit.");
+                return;
+            }
+            void (async () => {
+                try {
+                    const text = await convert(html, target.signal);
+                    if (!target.isCurrent()) return;
+                    if (text.length * target.selectionSet.ranges.length > 4_194_304) {
+                        report("Converted text exceeds the insertion limit.");
+                        return;
+                    }
+                    target.insert(text);
+                } catch (error) {
+                    if (!target.signal.aborted) report(String(error));
+                } finally {
+                    target.cancel();
+                }
+            })();
+        };
+    });
+}
+```
 
 ### Language configuration
 
@@ -193,7 +242,7 @@ Translate with `strings.commandLabel(id, fallback)`. For a host chord, choose a 
   selection and revision within 1.5 seconds.
 - Use `repeat: false` for one activation per press. To share a shortcut with a toolbar, set
   `shared: true` and forward its event to that pane's `keymap.handle`.
-  [Host commands](host-integration.md#navigation-commands-and-lifecycle)
+
 
 `planLanguageEdit` plans against captured text, selections and folds. The editor commits inside the key handler.
 The result contains the edits and final selections. Invalid input or a failing host rule throws.
@@ -209,6 +258,41 @@ export function planIndent(buffer: TextBuffer, selections: SelectionSet) {
 
 Before applying the plan check the target, revision, selections and permissions. Preserve its
 `lineMove` information. [Transactions](workspace.md#transactions-and-history)
+
+### Edit intent and input recovery
+
+`editor.onEditIntent(listener, signal?)` reports `beforeinput`, `compositionstart`, `paste` and `cut` before
+handling. Use it to dismiss previews. A gesture may emit several events or make no edit. Dispose the
+listener or abort its signal.
+
+The editor reports refused edits and input conflicts on `editor.element`. Keep the listener through disposal to capture unfinished input. Both events bubble within the DOM root.
+
+```ts
+import { inputConflictEvent } from "sttropez/browser";
+import type { TextEditor } from "sttropez/browser";
+import type { DocumentId } from "sttropez";
+
+export function ownInputRecovery(
+    editor: TextEditor,
+    validateAndRetain: (documentId: DocumentId, detail: unknown) => void
+): () => void {
+    const documentId = editor.view.documentId;
+    const listeners = new AbortController();
+    editor.element.addEventListener(inputConflictEvent, event => {
+        validateAndRetain(documentId, (event as CustomEvent<unknown>).detail);
+    }, { signal: listeners.signal });
+    return () => {
+        try { editor.dispose(); }
+        finally { listeners.abort(); }
+    };
+}
+```
+
+`editRefusedEvent` gives the `documentId` and refusal reason (`read-only`).
+`inputConflictEvent` carries the document ID, reason, `expectedRevision` and `attemptedText`.
+Prefer `attemptedEdit` for the UTF-16 span. `contextFrom` alone can be zero for a pending insertion.
+Validate event data before storage, omit unsuitable `cause` values and recheck the resource and revision
+on recovery.
 
 ### Edit transforms
 

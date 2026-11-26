@@ -15,7 +15,7 @@
 
 | Area | Guides |
 | --- | --- |
-| Embedding | [Getting started](getting-started.md) · [Packaging](packaging.md) · [Examples](examples.md) · [Host integration](host-integration.md) |
+| Embedding | [Getting started](getting-started.md) · [Packaging](packaging.md) · [Examples](examples.md) |
 | Text and views | [Text model](text-model.md) · [Unicode](unicode.md) · [Editor](editor.md) · [Viewport](viewport.md) |
 | Editing and review | [Controls](controls.md) · [Folding](folding.md) · [Search](search.md) · [Comparison](comparison.md) · [Workspace](workspace.md) |
 | Providers | [Language server](language-server.md) · [Language features](language-features.md) |
@@ -49,6 +49,17 @@ Text ranges are half-open UTF-16 offsets. `[from, to)` includes `from` and ends 
 Read immutable state with `getSnapshot()`. In a `subscribe()` callback, read again. The returned
 function unsubscribes. `dispose()` releases a mount. Its document can outlive it.
 [Text coordinates](text-model.md#buffers-and-coordinates) · [Observables](workspace.md#observables)
+
+Versioned edits, Reveal, Find and language actions return an `Outcome`. Branch on its `status`.
+
+| Status | What the host can do |
+| --- | --- |
+| `done` | Read `value`. For Find, `queued` means the accepted command is waiting for results. |
+| `stale` | Drop the reply. An explicit retry captures the current document or selection. |
+| `refused` | Read `reason`. For example, a read-only document can accept navigation while refusing replacement. |
+| `failed` | Report `error` with the action that failed. |
+
+Malformed arguments can throw before a command starts. [Versioned edits](workspace.md#transactions-and-history) · [Find actions](search.md)
 
 ### Editing
 

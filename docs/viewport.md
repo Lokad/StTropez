@@ -79,6 +79,27 @@ Paint order is comparison (10), occurrences (20), snippets (25), links (30), swa
 (40), Find (60), brackets (100), and character warnings and definition links (110). Ties follow registration
 order. Later layers can override custom properties. CSS determines class precedence.
 
+### Keep an annotation on its text
+
+Map an annotation through each document change. This example hides it if its text is deleted or a reload
+replaces the revision it refers to. A host that keeps deleted notes can restore them on Undo.
+
+```ts
+import { anchoredRange, type AnchoredRange, type DocumentId, type Workspace } from "sttropez";
+
+export function trackNote(workspace: Workspace, documentId: DocumentId, from: number, to: number) {
+    const document = workspace.document(documentId);
+    const observed = workspace.observeDocument(documentId);
+    let revision = document.revision;
+    let range: AnchoredRange | undefined = anchoredRange(document.buffer.length, from, to, { onDelete: "invalidate" });
+    const stop = workspace.onDocumentChange(documentId, change => {
+        range = range && change.previousRevision === revision ? change.mapping.mapRange(range) : undefined;
+        revision = change.revision;
+    });
+    return { getSnapshot: () => observed.getSnapshot()?.revision === revision ? range : undefined, dispose: stop };
+}
+```
+
 ### Viewport settings
 
 Read `settings()` and apply changes together with `configure({ columnRulers: [80], minimap: true })`.

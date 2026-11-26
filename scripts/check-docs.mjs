@@ -4,7 +4,8 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { moduleSpecifiers } from "./module-specifiers.mjs";
 import { apiIndexPath, renderApiIndex } from "./api-index.mjs";
-import { apiPages, subjectPages, documentationPages, publicEntries as entries, exampleExtensions, parseDocumentation, auditPage, auditLinks } from "./documentation-audit.mjs";
+import { apiPages, subjectPages, documentationPages, publicEntries as entries, exampleExtensions, parseDocumentation,
+    auditPage, auditLinks, handbookWordBudget, proseWords } from "./documentation-audit.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
@@ -98,6 +99,9 @@ async function main() {
     /** @param {string} path */
     const read = path => readFile(resolve(root, path), "utf8");
     const pages = await Promise.all(documentationPages.map(async path => parseDocumentation(path, await read(path))));
+    const words = pages.filter(page => subjectPages.includes(page.path) && page.path !== apiIndexPath)
+        .reduce((total, page) => total + proseWords(page), 0);
+    if (words > handbookWordBudget) throw new Error(`Handbook prose has ${words} words against its ${handbookWordBudget}-word budget.`);
     const inventory = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8", windowsHide: true });
     if (inventory.error || inventory.status !== 0) throw inventory.error ?? new Error(inventory.stderr);
     const files = new Set(inventory.stdout.split("\0").filter(Boolean));
@@ -106,7 +110,7 @@ async function main() {
     if (issues.length) throw new Error(issues.map(issue => `${issue.path}:${issue.line}: [${issue.code}] ${issue.message}`).join("\n"));
     const examples = pages.flatMap(page => page.examples), result = await compileDocumentation(examples);
     if (!result.success) throw new Error(result.output || "Documentation compilation failed.");
-    console.log(`Checked ${pages.length} documents, repository links/anchors and prose. Compiled ${examples.length} example modules.`);
+    console.log(`Checked ${pages.length} documents and ${words} handbook words. Compiled ${examples.length} example modules.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

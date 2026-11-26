@@ -230,7 +230,7 @@ const checklist = split.decorations.addProvider({
 
 For async tokens, cache spans by document and revision, then call
 `checklist.invalidate(firstLine, endLine)`.
-[Host tokenization](host-integration.md#tokenization-annotations-and-forms)
+[Decoration layers](viewport.md#decoration-layers)
 
 #### Paste a list
 
