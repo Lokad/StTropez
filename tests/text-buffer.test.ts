@@ -269,6 +269,12 @@ test("dense batches bound fragmentation while sparse batches share large unchang
     for (const value of changed.chunks()) { assert.ok(value.length <= 65_536); assert.equal(value, expected.slice(offset, offset + value.length)); offset += value.length; chunks++; }
     assert.equal(offset, expected.length); assert.ok(chunks < 128);
     const retained = TextBuffer.retained([before, changed]); assert.ok(retained.nodes < 256); assert.ok(retained.backingBuffers < 128);
+    // Once the dense prefix is removed, an isolated replacement must not retain those insertions.
+    const half = lines / 2, tailEdit = before.length - 100;
+    const mixed = before.apply([...edits.slice(0, half), { from: tailEdit, to: tailEdit + 1, insert: "!" }]).buffer;
+    const tail = mixed.replace(0, half * (line.length - 2), "");
+    assert.equal(tail.text(), before.slice(half * line.length, tailEdit) + "!" + before.slice(tailEdit + 1, before.length));
+    assert.equal(TextBuffer.retained([before, tail]).backingTextUnits, before.length + 1);
     const sparse = before.apply([{ from: 1, to: 2, insert: "!" }, { from: before.length - 2, to: before.length - 1, insert: "!" }]).buffer;
     assert.ok(TextBuffer.retained([before, sparse]).backingTextUnits <= before.length + 128);
     assert.equal(sparse.slice(100, 200), before.slice(100, 200)); assert.equal(bufferReads(before).textExports, 0); assert.equal(bufferReads(changed).textExports, 0);

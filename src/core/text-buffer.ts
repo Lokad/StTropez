@@ -159,61 +159,99 @@ function rangeText(root: Root, from: number, to: number): string {
 
 /** Consume sorted original-coordinate ranges once, retaining untouched subtrees as whole nodes. */
 function batch(root: Root, edits: readonly TextEdit[]): Root {
-    const capacity = 65_536, additions: Backing[] = []; let strings: string[] = [], stringUnits = 0;
-    const flushStrings = () => { if (strings.length) additions.push(backing(strings.length === 1 ? strings[0]! : strings.join(""))); strings = []; stringUnits = 0; };
-    for (const edit of edits) {
-        if (!edit.insert.length) continue;
-        if (stringUnits + edit.insert.length > capacity) flushStrings();
-        if (edit.insert.length > capacity) additions.push(backing(edit.insert));
-        else { strings.push(edit.insert); stringUnits += edit.insert.length; }
-    }
-    flushStrings();
+    const capacity = 65_536;
     const pending: Node[] = [], forest: Node[] = [];
-    let node: Node | undefined = root ?? undefined, position = 0, leafOffset = 0, insertionOffset = 0, insertionBacking = 0;
+    let node: Node | undefined = root ?? undefined, position = 0, leafOffset = 0;
     const appendTree = (value: Node) => {
         while (forest.length && forest.at(-1)!.height <= value.height) value = join(forest.pop()!, value)!;
         forest.push(value);
     };
-    const parts: string[] = []; let fragments = 0, fragmentUnits = 0;
-    let firstBacking: Backing | undefined, firstFrom = 0, firstLength = 0, firstNode: Leaf | undefined;
-    const flushFragments = () => {
-        if (fragments === 1) appendTree(firstNode ?? piece(firstBacking!, firstFrom, firstLength));
-        else if (fragments) appendTree(original(parts.join(""))!);
-        parts.length = 0; fragments = 0; fragmentUnits = 0; firstBacking = undefined; firstNode = undefined;
-    };
-    const appendPiece = (value: Backing, from: number, length: number, reuse?: Leaf) => {
-        if (length > smallPieceUnits) { flushFragments(); appendTree(reuse ?? piece(value, from, length)); return; }
-        if (fragmentUnits + length > capacity) flushFragments();
-        if (!fragments) { firstBacking = value; firstFrom = from; firstLength = length; firstNode = reuse; }
-        else {
-            if (fragments === 1) parts.push(firstBacking!.text.slice(firstFrom, firstFrom + firstLength));
-            parts.push(value.text.slice(from, from + length));
+
+    // Isolated insertions share a backing, even with retained subtrees between them.
+    const inserts: string[] = [], output: (Node | number)[] = [];
+    let insertedUnits = 0;
+    const flushInserts = () => {
+        const value = backing(inserts.join(""));
+        let from = 0;
+        for (const item of output) {
+            if (typeof item === "number") {
+                appendTree(piece(value, from, item - from));
+                from = item;
+            } else appendTree(item);
         }
-        fragments++; fragmentUnits += length;
+        inserts.length = 0;
+        output.length = 0;
+        insertedUnits = 0;
+    };
+    const emit = (value: Node | string) => {
+        if (typeof value === "string") {
+            if (insertedUnits && insertedUnits + value.length > capacity) flushInserts();
+            inserts.push(value);
+            insertedUnits += value.length;
+            output.push(insertedUnits);
+        } else if (insertedUnits) output.push(value);
+        else appendTree(value);
+    };
+
+    // Adjacent short fragments form their own backing. A lone source fragment stays shared.
+    const parts: string[] = [];
+    let units = 0, singleSource: Leaf | undefined;
+    const endRun = () => {
+        if (parts.length === 1) emit(singleSource ?? parts[0]!);
+        else if (parts.length) emit(original(parts.join(""))!);
+        parts.length = 0;
+        units = 0;
+        singleSource = undefined;
+    };
+    const appendText = (text: string, source?: Leaf, offset = 0) => {
+        if (units + text.length > capacity) endRun();
+        if (!units && source) {
+            singleSource = text.length === source.length ? source : piece(source.backing, offset, text.length);
+        }
+        parts.push(text);
+        units += text.length;
+    };
+    const keepLeaf = (leaf: Leaf, offset: number, length: number) => {
+        const from = leaf.from + offset;
+        if (length > smallPieceUnits) {
+            endRun();
+            emit(length === leaf.length ? leaf : piece(leaf.backing, from, length));
+        } else appendText(leaf.backing.text.slice(from, from + length), leaf, from);
     };
     const consume = (until: number, keep: boolean) => {
         while (position < until && node) {
             if (node.kind === "branch") {
-                if (node.length <= until - position) { if (keep) { flushFragments(); appendTree(node); } position += node.length; node = pending.pop(); }
-                else { pending.push(node.right); node = node.left; }
+                if (node.length <= until - position) {
+                    if (keep) {
+                        endRun();
+                        emit(node);
+                    }
+                    position += node.length;
+                    node = pending.pop();
+                } else {
+                    pending.push(node.right);
+                    node = node.left;
+                }
             } else {
                 const length = Math.min(until - position, node.length - leafOffset);
-                if (keep) appendPiece(node.backing, node.from + leafOffset, length,
-                    leafOffset === 0 && length === node.length ? node : undefined);
-                position += length; leafOffset += length;
-                if (leafOffset === node.length) { leafOffset = 0; node = pending.pop(); }
+                if (keep) keepLeaf(node, leafOffset, length);
+                position += length;
+                leafOffset += length;
+                if (leafOffset === node.length) {
+                    leafOffset = 0;
+                    node = pending.pop();
+                }
             }
         }
     };
     for (const edit of edits) {
-        consume(edit.from, true); consume(edit.to, false);
-        if (edit.insert.length) {
-            const value = additions[insertionBacking]!; appendPiece(value, insertionOffset, edit.insert.length); insertionOffset += edit.insert.length;
-            if (insertionOffset === value.text.length) { insertionOffset = 0; insertionBacking++; }
-        }
+        consume(edit.from, true);
+        consume(edit.to, false);
+        if (edit.insert.length) appendText(edit.insert);
     }
     consume(root?.length ?? 0, true);
-    flushFragments();
+    endRun();
+    if (insertedUnits) flushInserts();
     let result: Root = null;
     for (let index = forest.length - 1; index >= 0; index--) result = join(forest[index]!, result);
     return result;
