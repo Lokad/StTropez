@@ -14,18 +14,55 @@ export function createReviewKey(workspace: Workspace) {
     };
 }
 
-export type PanelAction = Readonly<{ label: string; reviewKey?: number | string | null | undefined; pageStart?: number | undefined; pageGroup?: string; disabled: boolean; invoke: (() => void) | null }>;
+export type PanelAction = Readonly<{
+    label: string;
+    reviewKey?: number | string | null | undefined;
+    pageStart?: number | undefined;
+    pageGroup?: string;
+    disabled: boolean;
+    invoke: (() => void) | null;
+}>;
 
-export type PanelPaging = Readonly<{ key: number; first: number; previous: (() => void) | null; next: (() => void) | null }>;
+export type PanelPaging = Readonly<{
+    key: number;
+    first: number;
+    previous: (() => void) | null;
+    next: (() => void) | null;
+}>;
 
-export function panelPaging(key: number, page: number, count: number, size: number, show: (page: number) => void): PanelPaging {
-    return { key, first: page * size, previous: page > 0 ? () => show(page - 1) : null, next: (page + 1) * size < count ? () => show(page + 1) : null };
+export function panelPaging(
+    key: number,
+    page: number,
+    count: number,
+    size: number,
+    show: (page: number) => void
+): PanelPaging {
+    return {
+        key,
+        first: page * size,
+        previous: page > 0 ? () => show(page - 1) : null,
+        next: (page + 1) * size < count ? () => show(page + 1) : null
+    };
 }
 
 export function pageActions(subject: string, paging: PanelPaging | null) {
     return [
-        { label: "Previous " + subject, pageGroup: subject, reviewKey: paging?.key, pageStart: paging?.first, disabled: !paging?.previous, invoke: paging?.previous ?? null },
-        { label: "Next " + subject, pageGroup: subject, reviewKey: paging?.key, pageStart: paging?.first, disabled: !paging?.next, invoke: paging?.next ?? null },
+        {
+            label: "Previous " + subject,
+            pageGroup: subject,
+            reviewKey: paging?.key,
+            pageStart: paging?.first,
+            disabled: !paging?.previous,
+            invoke: paging?.previous ?? null
+        },
+        {
+            label: "Next " + subject,
+            pageGroup: subject,
+            reviewKey: paging?.key,
+            pageStart: paging?.first,
+            disabled: !paging?.next,
+            invoke: paging?.next ?? null
+        }
     ] as const;
 }
 
@@ -33,10 +70,13 @@ export function panelActionKey(action: PanelAction): string {
     return action.reviewKey == null ? action.label : `${action.label}:${action.reviewKey}`;
 }
 
-function rememberPointerPage(this: HTMLButtonElement) { this.dataset.pointerPage = this.dataset.page; }
+function rememberPointerPage(this: HTMLButtonElement) {
+    this.dataset.pointerPage = this.dataset.page;
+}
 function releasePointerPage(this: HTMLButtonElement, event: MouseEvent) {
     if (event.detail && this.dataset.pointerPage !== undefined && this.dataset.pointerPage !== this.dataset.page) {
-        event.preventDefault(); event.stopImmediatePropagation();
+        event.preventDefault();
+        event.stopImmediatePropagation();
     }
 }
 function pageKey(this: HTMLButtonElement, event: KeyboardEvent) {
@@ -49,20 +89,26 @@ function pageKey(this: HTMLButtonElement, event: KeyboardEvent) {
     if (event.type === "keydown" && !event.repeat) this.dataset.spacePage = this.dataset.page;
     if (event.type === "keyup" && this.dataset.spacePage !== this.dataset.page) event.preventDefault();
 }
-function clearEnterPress(this: HTMLButtonElement) { delete this.dataset.enterHeld; }
+function clearEnterPress(this: HTMLButtonElement) {
+    delete this.dataset.enterHeld;
+}
 
 export function activatePanelAction(button: HTMLButtonElement, action: PanelAction): void {
-    const group = button.parentElement, page = button.dataset.page;
+    const group = button.parentElement,
+        page = button.dataset.page;
     const paging = action.pageGroup !== undefined && page !== undefined && button.matches(":focus");
     action.invoke?.();
     if (!paging || !group) return;
     // React commits the new disabled state after its click handler. A replaced request has different buttons.
     queueMicrotask(() => {
-        if (!button.isConnected || button.parentElement !== group || !button.disabled || button.dataset.page === page) return;
-        const owner = button.ownerDocument, active = (button.getRootNode() as Document | ShadowRoot).activeElement;
+        if (!button.isConnected || button.parentElement !== group || !button.disabled || button.dataset.page === page)
+            return;
+        const owner = button.ownerDocument,
+            active = (button.getRootNode() as Document | ShadowRoot).activeElement;
         if (!owner.hasFocus() || (active && active !== owner.body && active !== button)) return;
-        const partner = [...group.querySelectorAll<HTMLButtonElement>("button[data-page-group]:enabled")]
-            .find(candidate => candidate.dataset.pageGroup === action.pageGroup);
+        const partner = [...group.querySelectorAll<HTMLButtonElement>("button[data-page-group]:enabled")].find(
+            (candidate) => candidate.dataset.pageGroup === action.pageGroup
+        );
         partner?.focus();
     });
 }

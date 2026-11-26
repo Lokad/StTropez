@@ -12,7 +12,7 @@ export async function filesUnder(root) {
     const files = [];
     for (const entry of await readdir(root, { withFileTypes: true })) {
         const path = resolve(root, entry.name);
-        if (entry.isDirectory()) files.push(...await filesUnder(path));
+        if (entry.isDirectory()) files.push(...(await filesUnder(path)));
         else if (entry.isFile()) files.push(path);
         else throw new Error(`Unexpected asset entry: ${entry.name}`);
     }
@@ -27,16 +27,31 @@ for (const file of await filesUnder(root)) {
         await writeFile(file, portableDeclaration(file, declaration));
     }
 }
-await writeFile(resolve(root, "package.json"), JSON.stringify({ name: "sttropez", version: "0.0.0-local",
-    private: true, license: "MIT", type: "module", exports: assetPackageExports }, null, 2) + "\n");
+await writeFile(
+    resolve(root, "package.json"),
+    JSON.stringify(
+        {
+            name: "sttropez",
+            version: "0.0.0-local",
+            private: true,
+            license: "MIT",
+            type: "module",
+            exports: assetPackageExports
+        },
+        null,
+        2
+    ) + "\n"
+);
 const assets = [];
 for (const file of await filesUnder(root)) {
     const path = relative(root, file).replaceAll("\\", "/");
     if (path === "manifest.json") continue;
-    if (!/\.(js|d\.ts|css|json)$/.test(path) && !["LICENSE.txt", "UNICODE-LICENSE.txt"].includes(path)) throw new Error(`Unexpected asset: ${path}`);
+    if (!/\.(js|d\.ts|css|json)$/.test(path) && !["LICENSE.txt", "UNICODE-LICENSE.txt"].includes(path))
+        throw new Error(`Unexpected asset: ${path}`);
     const bytes = await readFile(file);
     assets.push({ path, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
 }
-await writeFile(resolve(root, "manifest.json"), JSON.stringify({ schemaVersion: 1, version: "0.0.0-local",
-    entries: assetManifestEntries,
-    assets }, null, 2) + "\n");
+await writeFile(
+    resolve(root, "manifest.json"),
+    JSON.stringify({ schemaVersion: 1, version: "0.0.0-local", entries: assetManifestEntries, assets }, null, 2) + "\n"
+);

@@ -16,6 +16,7 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 
 | Command | Coverage |
 | --- | --- |
+| `npm run format`, `npm run check:format` | Format or check TypeScript and JavaScript in the examples and contributor scripts |
 | `npm run typecheck`, `npm run check:docs` | Strict projects, compiled handbook examples, links, prose and public index |
 | `npm test` | Models, host policy and integration. Pass the owning test file to `node --test` for a focused run. |
 | `npm run test:browser`, `test:browsers` | Full source suite in Chromium (CI) or all three engines |

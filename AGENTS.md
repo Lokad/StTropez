@@ -23,7 +23,7 @@ StTropez is a standalone TypeScript editor and workspace foundation.
 - Run the focused owner test locally. CI runs full Chromium and the restored consumer. Keep independent work moving while device or owner decisions are pending, and record them in the local roadmap.
 - Keep one documentation page per contract. Explain what hosts must do and why. Change prose for a fix only if it changes the host's obligations. Use headings suited to the subject and compile TypeScript examples against public entries.
 - Keep support limits and clock definitions in `docs/README.md`. Link there for shared details. Describe current behavior in present tense. Keep investigation notes in ignored research and use Git for change history.
-- Use one statement per line and aim for 120 columns in new or edited code. Measure footprint on built assets.
+- Use one statement per line and aim for 120 columns in new or edited code. Run `npm run format` for example and script code. Measure footprint on built assets.
 - While simplifying the library, keep new work in the existing benchmark suites, package scenarios, host samples and documentation pages. Add no new host features or measurement counters during this work.
 - On a shared desktop, keep browser automation headless or in the background. Do not activate applications, inject global input or change the OS clipboard without coordinating with the user. Keep test servers separate from the user's interactive demo server.
 - Do not add a WASM compiler or runtime until a measured kernel experiment justifies it. Keep a TypeScript implementation and test semantic equivalence.

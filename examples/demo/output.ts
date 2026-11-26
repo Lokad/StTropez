@@ -5,17 +5,34 @@ import { linePrompt } from "../shared/line-prompt.ts";
 /** Compiler output has its own selection, scroll position and read-only document. */
 export function mountDemoOutput(host: HTMLElement, text: string, settings: EditorSettings) {
     const workspace = new Workspace();
-    const resource = workspace.createTextResource({ scope: "demo-output", resource: "javascript", variant: "generated" }, "JavaScript output",
-        { value: text, capabilities: { edit: [], save: false } });
-    const editor = mountTextEditor(host, workspace, resource.id,
-        { ariaLabel: "JavaScript output", readOnly: true, requestLine: linePrompt(host.ownerDocument), settings });
+    const resource = workspace.createTextResource(
+        { scope: "demo-output", resource: "javascript", variant: "generated" },
+        "JavaScript output",
+        { value: text, capabilities: { edit: [], save: false } }
+    );
+    const editor = mountTextEditor(host, workspace, resource.id, {
+        ariaLabel: "JavaScript output",
+        readOnly: true,
+        requestLine: linePrompt(host.ownerDocument),
+        settings
+    });
     editor.element.classList.add("demo-output");
     let disposed = false;
-    return Object.freeze({ editor, update: (next: string) => {
-        if (disposed || next === text) return;
-        if (workspace.adoptSaved(resource.id, { text: next, serverVersion: null, history: "reset" }).status === "done") text = next;
-    }, dispose: () => {
-        if (disposed) return;
-        disposed = true; editor.dispose(); workspace.releaseResource(resource.id);
-    } });
+    return Object.freeze({
+        editor,
+        update: (next: string) => {
+            if (disposed || next === text) return;
+            if (
+                workspace.adoptSaved(resource.id, { text: next, serverVersion: null, history: "reset" }).status ===
+                "done"
+            )
+                text = next;
+        },
+        dispose: () => {
+            if (disposed) return;
+            disposed = true;
+            editor.dispose();
+            workspace.releaseResource(resource.id);
+        }
+    });
 }

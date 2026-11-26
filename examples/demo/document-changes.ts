@@ -3,14 +3,25 @@ import type { TextDocumentContentChangeEvent } from "vscode-languageserver-proto
 import { RpcError } from "../../src/protocol/index.ts";
 
 /** Incremental LSP ranges address the result of all earlier changes in the notification. */
-export function changeDemoDocument(before: TextDocument, version: number, changes: readonly TextDocumentContentChangeEvent[], maxLength = Infinity): TextDocument {
-    let base = before, source = base.getText(), tail = source.length, length = tail;
+export function changeDemoDocument(
+    before: TextDocument,
+    version: number,
+    changes: readonly TextDocumentContentChangeEvent[],
+    maxLength = Infinity
+): TextDocument {
+    let base = before,
+        source = base.getText(),
+        tail = source.length,
+        length = tail;
     const pieces: string[] = [];
     function flush() {
         if (pieces.length) {
             const prefix = source.slice(0, tail);
             if (pieces.length === 2) source = prefix + pieces[1]! + pieces[0]!;
-            else { pieces.push(prefix); source = pieces.reverse().join(""); }
+            else {
+                pieces.push(prefix);
+                source = pieces.reverse().join("");
+            }
             pieces.length = 0;
         }
         base = TextDocument.create(before.uri, before.languageId, version, source);
@@ -19,7 +30,8 @@ export function changeDemoDocument(before: TextDocument, version: number, change
     for (const change of changes) {
         if ("range" in change) {
             const { start, end } = change.range;
-            let from = base.offsetAt(start), to = base.offsetAt(end);
+            let from = base.offsetAt(start),
+                to = base.offsetAt(end);
             if (pieces.length) {
                 const actualEnd = base.positionAt(to);
                 // Replace All sends ranges from the bottom up. Positions strictly before
@@ -27,7 +39,8 @@ export function changeDemoDocument(before: TextDocument, version: number, change
                 // as a splice can form a new CRLF across the boundary.
                 if (to >= tail || from > to || actualEnd.line !== end.line || actualEnd.character !== end.character) {
                     flush();
-                    from = base.offsetAt(start); to = base.offsetAt(end);
+                    from = base.offsetAt(start);
+                    to = base.offsetAt(end);
                 }
             }
             pieces.push(source.slice(to, tail), change.text);

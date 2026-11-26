@@ -14,32 +14,39 @@ export type LanguageHost = Readonly<{
 }>;
 
 /** A later destination request owns focus even if its result is empty or fails. */
-export function createNavigationHost(host: LanguageHost & { restorePane?: (view: DocumentView) => TextEditor | undefined }) {
+export function createNavigationHost(
+    host: LanguageHost & { restorePane?: (view: DocumentView) => TextEditor | undefined }
+) {
     let latest = 0;
     const history = createNavigationHistory(host.workspace);
     // The link panel has a targeted Return. Track opaque visit identities so it never pops a newer symbol jump.
     const visits = new HostCell<readonly symbol[]>([]);
     function capture(editor: TextEditor, pointedOffset?: number) {
-        const point = history.capture(editor, pointedOffset); if (!point) return;
+        const point = history.capture(editor, pointedOffset);
+        if (!point) return;
         const key = Symbol();
-        return { viewState: point.viewState,
+        return {
+            viewState: point.viewState,
             isNext: () => visits.get().at(-1) === key,
             recorded: () => visits.get().includes(key),
             visit(open: () => boolean) {
-                const opened = point.visit(open), depth = history.getSnapshot().back;
+                const opened = point.visit(open),
+                    depth = history.getSnapshot().back;
                 if (opened && depth && host.workspace.ownsDocumentView(editor.view) && visits.get().at(-1) !== key)
                     visits.set([...visits.get(), key].slice(-depth));
                 return opened;
-            },
+            }
         };
     }
     function back(current: TextEditor | undefined, panes: Iterable<{ editor: TextEditor }>) {
         let origin: TextEditor | undefined;
-        const result = history.back(current, view => {
+        const result = history.back(current, (view) => {
             if (!host.canCapture(view.documentId)) return "busy";
-            for (const { editor } of panes) if (editor.view === view && isMountedEditor(host.workspace, editor)) {
-                origin = editor; return editor;
-            }
+            for (const { editor } of panes)
+                if (editor.view === view && isMountedEditor(host.workspace, editor)) {
+                    origin = editor;
+                    return editor;
+                }
             origin = host.restorePane?.(view);
             return origin;
         });
@@ -52,8 +59,20 @@ export function createNavigationHost(host: LanguageHost & { restorePane?: (view:
         const request = ++latest;
         return () => request === latest;
     }
-    return { ...host, history: { capture, getSnapshot: () => history.getSnapshot().back, subscribe: visits.observable.subscribe,
-        dispose() { history.dispose(); visits.set([]); } }, back, claimNavigationFocus };
+    return {
+        ...host,
+        history: {
+            capture,
+            getSnapshot: () => history.getSnapshot().back,
+            subscribe: visits.observable.subscribe,
+            dispose() {
+                history.dispose();
+                visits.set([]);
+            }
+        },
+        back,
+        claimNavigationFocus
+    };
 }
 export type NavigationHost = ReturnType<typeof createNavigationHost>;
 export type HostLocation = NonNullable<ReturnType<NavigationHost["history"]["capture"]>>;
@@ -61,23 +80,34 @@ export type HostLocation = NonNullable<ReturnType<NavigationHost["history"]["cap
 export const unavailablePaneMessage = "Show a source pane or finish its pending input, then try again.";
 
 export function isMountedEditor(workspace: Workspace, editor: TextEditor): boolean {
-    return editor.element.isConnected && !editor.activity().disposed && workspace.ownsDocumentView(editor.view)
-        && !!workspace.observeDocument(editor.view.documentId).getSnapshot();
+    return (
+        editor.element.isConnected &&
+        !editor.activity().disposed &&
+        workspace.ownsDocumentView(editor.view) &&
+        !!workspace.observeDocument(editor.view.documentId).getSnapshot()
+    );
 }
 
 /** The requesting pane wins when several panes show the same document. */
 export function captureDestinationPanes<S extends { editor: TextEditor }>(
-    origin: S, sessions: Iterable<S>, documents: ReadonlySet<DocumentId>,
+    origin: S,
+    sessions: Iterable<S>,
+    documents: ReadonlySet<DocumentId>
 ) {
     const panes = new Map([[origin.editor.view.documentId, origin]]);
     for (const pane of sessions) {
         const id = pane.editor.view.documentId;
-        if (documents.has(id) && !panes.has(id) && isMountedEditor(origin.editor.workspace, pane.editor)) panes.set(id, pane);
+        if (documents.has(id) && !panes.has(id) && isMountedEditor(origin.editor.workspace, pane.editor))
+            panes.set(id, pane);
     }
     return panes;
 }
 
-export function presentDocument(host: LanguageHost, id: DocumentId, sessions: Iterable<{ editor: TextEditor }>): TextEditor | undefined {
+export function presentDocument(
+    host: LanguageHost,
+    id: DocumentId,
+    sessions: Iterable<{ editor: TextEditor }>
+): TextEditor | undefined {
     const live = (editor: TextEditor) => editor.view.documentId === id && isMountedEditor(host.workspace, editor);
     for (const { editor } of sessions) if (live(editor)) return editor;
     const editor = host.present(id);
@@ -86,11 +116,16 @@ export function presentDocument(host: LanguageHost, id: DocumentId, sessions: It
 
 /** A completed edit identifies a document. Resolve its current editor when the user opens it. */
 export function openChangedFile(
-    host: LanguageHost, id: DocumentId, sessions: Iterable<{ editor: TextEditor }>,
+    host: LanguageHost,
+    id: DocumentId,
+    sessions: Iterable<{ editor: TextEditor }>
 ): string {
     let title: string;
-    try { title = host.workspace.document(id).title; }
-    catch { return "The changed file is no longer available."; }
+    try {
+        title = host.workspace.document(id).title;
+    } catch {
+        return "The changed file is no longer available.";
+    }
     try {
         if (!host.canCapture(id)) return "Finish the current edit before opening the changed file.";
         const editor = presentDocument(host, id, sessions);

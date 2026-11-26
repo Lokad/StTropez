@@ -14,33 +14,50 @@ export function moduleSpecifiers(path, text) {
     const result = [];
     const first = file.parseDiagnostics[0];
     if (first) {
-        throw Object.assign(new Error(`Invalid module syntax in ${path}: ${ts.flattenDiagnosticMessageText(first.messageText, " ")}`), { offset: first.start ?? 0 });
+        throw Object.assign(
+            new Error(`Invalid module syntax in ${path}: ${ts.flattenDiagnosticMessageText(first.messageText, " ")}`),
+            { offset: first.start ?? 0 }
+        );
     }
     /** @param {import("typescript-demo").Node} node */
     function visit(node) {
-        const literal = ts.isImportDeclaration(node) || ts.isExportDeclaration(node) ? node.moduleSpecifier
-            : ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) ? node.argument.literal
-            : ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword ? node.arguments[0]
-            : ts.isExternalModuleReference(node) ? node.expression
-            : ts.isModuleDeclaration(node) ? node.name : undefined;
-        if (literal && ts.isStringLiteralLike(literal)) result.push({ value: literal.text, from: literal.getStart(file), to: literal.end });
+        const literal =
+            ts.isImportDeclaration(node) || ts.isExportDeclaration(node)
+                ? node.moduleSpecifier
+                : ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)
+                  ? node.argument.literal
+                  : ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword
+                    ? node.arguments[0]
+                    : ts.isExternalModuleReference(node)
+                      ? node.expression
+                      : ts.isModuleDeclaration(node)
+                        ? node.name
+                        : undefined;
+        if (literal && ts.isStringLiteralLike(literal))
+            result.push({ value: literal.text, from: literal.getStart(file), to: literal.end });
         ts.forEachChild(node, visit);
     }
-    visit(file); return result;
+    visit(file);
+    return result;
 }
 
 const sourceExtension = /(?:\.d)?\.(ts|tsx|mts|cts)$/;
 /** @param {string} value */
-const relativeSource = value => /^\.\.?\//.test(value) && sourceExtension.test(value);
+const relativeSource = (value) => /^\.\.?\//.test(value) && sourceExtension.test(value);
 /**
  * @param {string} path
  * @param {string} text
  */
 export function portableDeclaration(path, text) {
-    for (const specifier of moduleSpecifiers(path, text).filter(item => relativeSource(item.value)).sort((a, b) => b.from - a.from)) {
-        const value = specifier.value.replace(sourceExtension, (_match, extension) => extension === "mts" ? ".mjs" : extension === "cts" ? ".cjs" : ".js");
+    for (const specifier of moduleSpecifiers(path, text)
+        .filter((item) => relativeSource(item.value))
+        .sort((a, b) => b.from - a.from)) {
+        const value = specifier.value.replace(sourceExtension, (_match, extension) =>
+            extension === "mts" ? ".mjs" : extension === "cts" ? ".cjs" : ".js"
+        );
         text = text.slice(0, specifier.from) + JSON.stringify(value) + text.slice(specifier.to);
     }
-    if (moduleSpecifiers(path, text).some(item => relativeSource(item.value))) throw new Error(`Source module specifier remains in ${path}`);
+    if (moduleSpecifiers(path, text).some((item) => relativeSource(item.value)))
+        throw new Error(`Source module specifier remains in ${path}`);
     return text;
 }

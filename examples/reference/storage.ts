@@ -15,12 +15,19 @@ export function referenceStorage(initial: string) {
         const raw = localStorage.getItem(key);
         if (raw === null) return { version: "initial", text: initial };
         const copy: unknown = JSON.parse(raw);
-        if (!copy || typeof copy !== "object" || !("version" in copy) || typeof copy.version !== "string"
-            || !("text" in copy) || typeof copy.text !== "string") throw new Error("Cannot read the saved quote.");
+        if (
+            !copy ||
+            typeof copy !== "object" ||
+            !("version" in copy) ||
+            typeof copy.version !== "string" ||
+            !("text" in copy) ||
+            typeof copy.text !== "string"
+        )
+            throw new Error("Cannot read the saved quote.");
         return { version: copy.version, text: copy.text };
     }
     async function write(submission: SaveSubmission, mode: StorageMode): Promise<SaveResponse> {
-        if (mode.delay) await new Promise(resolve => setTimeout(resolve, 500));
+        if (mode.delay) await new Promise((resolve) => setTimeout(resolve, 500));
         if (mode.fault === "fail") throw new Error("The write failed. Your edits are still here.");
         const text = mode.canonical ? submission.value.trimEnd() + "\n" : submission.value;
         function commit(): SaveResponse {

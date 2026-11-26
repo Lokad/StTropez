@@ -1,8 +1,12 @@
 import { extname } from "node:path";
 
 const assetTypes = new Map([
-    [".html", "text/html"], [".css", "text/css"], [".js", "text/javascript"],
-    [".json", "application/json"], [".map", "application/json"], [".woff2", "font/woff2"],
+    [".html", "text/html"],
+    [".css", "text/css"],
+    [".js", "text/javascript"],
+    [".json", "application/json"],
+    [".map", "application/json"],
+    [".woff2", "font/woff2"]
 ]);
 
 /**
@@ -12,7 +16,7 @@ const assetTypes = new Map([
  * @param {Uint8Array} bytes
  */
 export function sendAsset(request, response, path, bytes) {
-    const type = path.endsWith("/") ? "text/html" : assetTypes.get(extname(path)) ?? "text/plain";
+    const type = path.endsWith("/") ? "text/html" : (assetTypes.get(extname(path)) ?? "text/plain");
     response.writeHead(200, { "Content-Type": type, "Content-Length": bytes.length });
     response.end(request.method === "HEAD" ? undefined : bytes);
 }
@@ -29,23 +33,34 @@ export function createPackageRequestHandler(handle, failures) {
     /** @type {import("node:http").RequestListener} */
     const listener = (request, response) => {
         /** @param {unknown} error */
-        const failed = error => {
+        const failed = (error) => {
             failures.push(error);
             if (response.destroyed || response.writableEnded) return;
-            if (response.headersSent) { response.destroy(); return; }
+            if (response.headersSent) {
+                response.destroy();
+                return;
+            }
             // A failed read must not retain a successful payload's length or encoding.
             for (const name of response.getHeaderNames()) response.removeHeader(name);
-            response.writeHead(500, { "Content-Length": "0" }); response.end();
+            response.writeHead(500, { "Content-Length": "0" });
+            response.end();
         };
         const work = (async () => {
-            try { await handle(request, response); }
-            catch (error) { failed(error); }
+            try {
+                await handle(request, response);
+            } catch (error) {
+                failed(error);
+            }
         })();
-        pending.add(work); void work.then(() => pending.delete(work));
+        pending.add(work);
+        void work.then(() => pending.delete(work));
     };
-    return Object.freeze({ listener,
+    return Object.freeze({
+        listener,
         // Stop accepting HTTP requests before awaiting handlers that outlive their responses.
-        async settled() { while (pending.size) await Promise.all(pending); },
+        async settled() {
+            while (pending.size) await Promise.all(pending);
+        }
     });
 }
 
@@ -57,13 +72,27 @@ export function createPackageRequestHandler(handle, failures) {
  */
 export function listenPackageServer(server, port = 0) {
     return new Promise((resolve, reject) => {
-        function clear() { server.off("error", failed); server.off("listening", ready); }
+        function clear() {
+            server.off("error", failed);
+            server.off("listening", ready);
+        }
         /** @param {Error} error */
-        function failed(error) { clear(); reject(error); }
-        function ready() { clear(); resolve(); }
-        server.once("error", failed); server.once("listening", ready);
-        try { server.listen(port, "127.0.0.1"); }
-        catch (error) { clear(); reject(error); }
+        function failed(error) {
+            clear();
+            reject(error);
+        }
+        function ready() {
+            clear();
+            resolve();
+        }
+        server.once("error", failed);
+        server.once("listening", ready);
+        try {
+            server.listen(port, "127.0.0.1");
+        } catch (error) {
+            clear();
+            reject(error);
+        }
     });
 }
 
@@ -73,10 +102,12 @@ export function listenPackageServer(server, port = 0) {
  * @returns {Promise<void>}
  */
 export function closePackageServer(server) {
-    return new Promise((resolve, reject) => server.close(error => {
-        if (error && !("code" in error && error.code === "ERR_SERVER_NOT_RUNNING")) reject(error);
-        else resolve();
-    }));
+    return new Promise((resolve, reject) =>
+        server.close((error) => {
+            if (error && !("code" in error && error.code === "ERR_SERVER_NOT_RUNNING")) reject(error);
+            else resolve();
+        })
+    );
 }
 
 /**
@@ -87,8 +118,11 @@ export function closePackageServer(server) {
 export async function closePackageResources(actions, failures = []) {
     const closeErrors = [];
     for (const close of actions) {
-        try { await close(); }
-        catch (error) { closeErrors.push(error); }
+        try {
+            await close();
+        } catch (error) {
+            closeErrors.push(error);
+        }
     }
     // Request failures can be recorded while asynchronous owners are closing.
     const errors = [...failures, ...closeErrors];

@@ -32,6 +32,8 @@
     "./regex-worker.js": "./dist/browser/regex-worker.js"
   },
   "scripts": {
+    "format": "prettier --write \"examples/**/*.{ts,tsx,js,mjs}\" \"scripts/**/*.mjs\"",
+    "check:format": "prettier --check \"examples/**/*.{ts,tsx,js,mjs}\" \"scripts/**/*.mjs\"",
     "demo": "node scripts/serve.mjs",
     "build:demo": "npm run build && node scripts/build-demo.mjs",
     "preview:demo": "node scripts/serve-demo.mjs",
@@ -48,7 +50,7 @@
     "inspect": "node scripts/inspect.mjs",
     "bench": "node scripts/run-benchmarks.mjs --group=default",
     "bench:comparison": "node scripts/run-benchmarks.mjs --suite=comparison --",
-    "check": "npm run typecheck && npm run check:docs && npm test && npm run build && npm run test:browser",
+    "check": "npm run check:format && npm run typecheck && npm run check:docs && npm test && npm run build && npm run test:browser",
     "bench:all": "node scripts/run-benchmarks.mjs --group=all"
   },
   "devDependencies": {
@@ -63,6 +65,7 @@
     "mdast-util-from-markdown": "2.1.0",
     "mdast-util-gfm": "3.1.0",
     "micromark-extension-gfm": "3.0.0",
+    "prettier": "3.10.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "typescript": "7.0.2",

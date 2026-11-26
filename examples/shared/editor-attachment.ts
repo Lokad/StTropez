@@ -6,13 +6,21 @@ export function captureEditorCommand(editor: TextEditor, editOrigin?: "human") {
     const source = captureViewRequest(editor, {
         ...(editOrigin && { editOrigin }),
         available: () => {
-            const activity = editor.activity(), state = editor.getSnapshot();
-            return editor.element.isConnected && !state.disabled
-                && !activity.disposed && activity.input === "idle"
-                && (!editOrigin || state.readOnlyReason === null);
-        },
+            const activity = editor.activity(),
+                state = editor.getSnapshot();
+            return (
+                editor.element.isConnected &&
+                !state.disabled &&
+                !activity.disposed &&
+                activity.input === "idle" &&
+                (!editOrigin || state.readOnlyReason === null)
+            );
+        }
     });
-    if (source) editor.onEditIntent(kind => { if (kind === "compositionstart") source.cancel(); }, source.signal);
+    if (source)
+        editor.onEditIntent((kind) => {
+            if (kind === "compositionstart") source.cancel();
+        }, source.signal);
     return source;
 }
 
@@ -34,17 +42,25 @@ export function scopedCommands(editor: TextEditor, signal: AbortSignal) {
 
 /** A failed mount and either teardown order release the same pane and controller. */
 export function attachPanelSession<S extends { editor: TextEditor }>(
-    sessions: Map<S, () => void>, session: S,
-    bind: (signal: AbortSignal, register: ReturnType<typeof scopedCommands>) => void, retire?: () => void,
-    dispose?: () => void,
+    sessions: Map<S, () => void>,
+    session: S,
+    bind: (signal: AbortSignal, register: ReturnType<typeof scopedCommands>) => void,
+    retire?: () => void,
+    dispose?: () => void
 ) {
-    const scope = new CleanupScope(), events = new AbortController();
+    const scope = new CleanupScope(),
+        events = new AbortController();
     if (dispose) scope.defer(dispose);
     if (retire) scope.defer(retire);
-    scope.defer(() => { sessions.delete(session); events.abort(); });
+    scope.defer(() => {
+        sessions.delete(session);
+        events.abort();
+    });
     sessions.set(session, scope.dispose);
     try {
         bind(events.signal, scopedCommands(session.editor, events.signal));
         return detachWithEditor(session.editor, events.signal, scope.dispose);
-    } catch (error) { return scope.rollback(error); }
+    } catch (error) {
+        return scope.rollback(error);
+    }
 }

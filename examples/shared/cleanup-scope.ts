@@ -13,15 +13,22 @@ export class CleanupScope {
         this.disposed = true;
         const errors: unknown[] = [];
         for (const cleanup of this.cleanups.splice(0).reverse()) {
-            try { cleanup(); } catch (error) { errors.push(error); }
+            try {
+                cleanup();
+            } catch (error) {
+                errors.push(error);
+            }
         }
         if (errors.length === 1) throw errors[0];
         if (errors.length) throw new AggregateError(errors, "Host cleanup failed.");
     };
 
     rollback(error: unknown): never {
-        try { this.dispose(); }
-        catch (cleanupError) { throw new AggregateError([error, cleanupError], "Host attachment and cleanup failed."); }
+        try {
+            this.dispose();
+        } catch (cleanupError) {
+            throw new AggregateError([error, cleanupError], "Host attachment and cleanup failed.");
+        }
         throw error;
     }
 }

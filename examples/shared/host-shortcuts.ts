@@ -1,6 +1,12 @@
 function available(event: KeyboardEvent): boolean {
-    return event.cancelable && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229
-        && !event.getModifierState("AltGraph") && !event.altKey;
+    return (
+        event.cancelable &&
+        !event.defaultPrevented &&
+        !event.isComposing &&
+        event.keyCode !== 229 &&
+        !event.getModifierState("AltGraph") &&
+        !event.altKey
+    );
 }
 
 export function isUnmodifiedShortcut(event: KeyboardEvent): boolean {

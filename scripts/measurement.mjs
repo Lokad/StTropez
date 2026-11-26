@@ -10,30 +10,42 @@ import { arch, cpus, freemem, totalmem, platform, release, loadavg } from "node:
 export function distribution(samples) {
     const sorted = [...samples];
     // Validate the captured values; iteration materializes missing array elements.
-    if (!sorted.length || sorted.some(sample => !Number.isFinite(sample) || sample < 0)) throw new Error("Missing or invalid timing samples.");
+    if (!sorted.length || sorted.some((sample) => !Number.isFinite(sample) || sample < 0))
+        throw new Error("Missing or invalid timing samples.");
     sorted.sort((a, b) => a - b);
     /** @param {0.5 | 0.95 | 1} fraction */
-    const percentile = fraction => {
+    const percentile = (fraction) => {
         // These nearest ranks are within the validated, non-empty array.
         return /** @type {number} */ (sorted[Math.ceil(sorted.length * fraction) - 1]);
     };
-    return { samples, n: sorted.length, max: percentile(1), p50: percentile(.5), p95: percentile(.95),
-        statistic: sorted.length < 20 ? "max" : "p95" };
+    return {
+        samples,
+        n: sorted.length,
+        max: percentile(1),
+        p50: percentile(0.5),
+        p95: percentile(0.95),
+        statistic: sorted.length < 20 ? "max" : "p95"
+    };
 }
 
 /**
  * Small batches describe their observed maximum, not an inferred latency tail.
  * @param {Pick<ReturnType<typeof distribution>, "n" | "p50" | "p95" | "max">} value
  */
-export function timingSummary({ n, p50, p95, max }) { return { n, p50, max, ...(n >= 20 ? { p95 } : {}) }; }
+export function timingSummary({ n, p50, p95, max }) {
+    return { n, p50, max, ...(n >= 20 ? { p95 } : {}) };
+}
 
 export async function sourceIdentity() {
     if (process.env.STTROPEZ_SOURCE_MANIFEST) {
         const manifest = JSON.parse(await readFile(process.env.STTROPEZ_SOURCE_MANIFEST, "utf8"));
         const hash = createHash("sha256");
         for (const file of manifest.files) {
-            if (file.path.startsWith("/") || file.path.includes("..") || file.path.includes(":")) throw new Error("Invalid source manifest path.");
-            const sha256 = createHash("sha256").update(await readFile(file.path)).digest("hex");
+            if (file.path.startsWith("/") || file.path.includes("..") || file.path.includes(":"))
+                throw new Error("Invalid source manifest path.");
+            const sha256 = createHash("sha256")
+                .update(await readFile(file.path))
+                .digest("hex");
             if (sha256 !== file.sha256) throw new Error(`Campaign source mismatch: ${file.path}`);
             hash.update(file.path).update("\0").update(sha256).update("\0");
         }
@@ -42,9 +54,17 @@ export async function sourceIdentity() {
     }
     // Index entries survive an unstaged deletion. Exclude only Git's known removals;
     // a later disappearance or any other read failure still rejects the capture.
-    const deleted = new Set(execFileSync("git", ["ls-files", "--deleted", "-z"], { encoding: "utf8", windowsHide: true }).split("\0"));
-    const paths = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--deduplicate", "-z"], { encoding: "utf8", windowsHide: true })
-        .split("\0").filter(path => path && !deleted.has(path)).sort();
+    const deleted = new Set(
+        execFileSync("git", ["ls-files", "--deleted", "-z"], { encoding: "utf8", windowsHide: true }).split("\0")
+    );
+    const paths = execFileSync(
+        "git",
+        ["ls-files", "--cached", "--others", "--exclude-standard", "--deduplicate", "-z"],
+        { encoding: "utf8", windowsHide: true }
+    )
+        .split("\0")
+        .filter((path) => path && !deleted.has(path))
+        .sort();
     const hash = createHash("sha256");
     const files = [];
     for (const path of paths) {
@@ -54,12 +74,28 @@ export async function sourceIdentity() {
         files.push({ path, sha256 });
     }
     let commit = null;
-    try { commit = execFileSync("git", ["rev-parse", "--verify", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).trim(); } catch { /* New repository. */ }
+    try {
+        commit = execFileSync("git", ["rev-parse", "--verify", "HEAD"], {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "ignore"],
+            windowsHide: true
+        }).trim();
+    } catch {
+        /* New repository. */
+    }
     return { commit, sha256: hash.digest("hex"), files };
 }
 
 export function environment() {
-    return { node: process.version, platform: platform(), release: release(), arch: arch(),
-        cpu: cpus()[0]?.model, logicalCpus: cpus().length, totalMemory: totalmem(), availableMemory: freemem(),
-        loadAverage: platform() === "win32" ? null : loadavg() };
+    return {
+        node: process.version,
+        platform: platform(),
+        release: release(),
+        arch: arch(),
+        cpu: cpus()[0]?.model,
+        logicalCpus: cpus().length,
+        totalMemory: totalmem(),
+        availableMemory: freemem(),
+        loadAverage: platform() === "win32" ? null : loadavg()
+    };
 }

@@ -10,8 +10,8 @@ export const demoBundle = {
     entryPoints: {
         app: "examples/demo/browser-main.ts",
         "demo-syntax-worker": "examples/demo/syntax-worker.ts",
-        "demo-language-worker": "examples/demo/language-worker.ts",
-    },
+        "demo-language-worker": "examples/demo/language-worker.ts"
+    }
 };
 
 export const demoFontFiles = ["FiraCode-Regular.woff2", "FiraCode-LICENSE.txt"];
@@ -26,7 +26,7 @@ export async function demoLibraries() {
     const root = "node_modules/typescript-demo/lib";
     /** @type {Record<string, string>} */
     const libraries = {};
-    for (const name of (await readdir(root)).filter(name => /^lib[\w.-]*\.d\.ts$/.test(name)).sort()) {
+    for (const name of (await readdir(root)).filter((name) => /^lib[\w.-]*\.d\.ts$/.test(name)).sort()) {
         libraries[name] = await readFile(join(root, name), "utf8");
     }
     return JSON.stringify(libraries);

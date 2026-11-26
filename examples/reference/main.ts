@@ -1,8 +1,12 @@
 import { discoverIndentationFolds, TextBuffer, Workspace, type SaveReview, type SaveTicket } from "sttropez";
 import type { ReferenceViewState, TextComparison } from "sttropez/browser";
 import {
-    BrowserLspWorkspace, mountFindBar, createFoldingController,
-    mountTextComparison, mountTextEditor, openWebSocketTransport,
+    BrowserLspWorkspace,
+    mountFindBar,
+    createFoldingController,
+    mountTextComparison,
+    mountTextEditor,
+    openWebSocketTransport
 } from "sttropez/browser";
 import { bindLanguage } from "./language.js";
 import { referenceStorage, type SavedCopy, type StorageMode } from "./storage.js";
@@ -22,7 +26,7 @@ const storage = referenceStorage(initial);
 const pane = document.querySelector<HTMLElement>("#pane")!;
 const workingTools = document.querySelector<HTMLFieldSetElement>("#working-tools")!;
 const find = mountFindBar(document.querySelector<HTMLElement>("#search")!, {
-    createWorker: () => new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" }),
+    createWorker: () => new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" })
 });
 document.querySelector("#find")!.addEventListener("click", () => find.open());
 const saved = document.querySelector<HTMLOutputElement>("#saved")!;
@@ -44,12 +48,11 @@ try {
 }
 
 const workspace = new Workspace();
-const file = workspace.createTextResource({ scope: "quote", resource: name, variant: "working" }, name,
-    {
-        value: opened.text,
-        serverVersion: opened.version,
-        language: { uri: "file:///reference/quote.ts", languageId: "typescript" },
-    });
+const file = workspace.createTextResource({ scope: "quote", resource: name, variant: "working" }, name, {
+    value: opened.text,
+    serverVersion: opened.version,
+    language: { uri: "file:///reference/quote.ts", languageId: "typescript" }
+});
 const view = workspace.createDocumentView(file.id);
 const settings = { minimap: true, bracketMatching: true, language: { tabSize: 4, lineComment: "//" } };
 let baseline = { buffer: workspace.document(file.id).buffer, version: opened.version };
@@ -59,7 +62,7 @@ const provider = new BrowserLspWorkspace(workspace, {
         const url = new URL("/lsp-fixture", location.href);
         url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
         return openWebSocketTransport(url.href, { signal });
-    },
+    }
 });
 const project = provider.createScope();
 let languageEnabled = false;
@@ -73,19 +76,28 @@ function mount(review: boolean) {
         comparison.restoreReferenceView(savedReference);
         savedReference = undefined;
     }
-    const editor = comparison?.panes.working
-        ?? mountTextEditor(pane, workspace, file.id, { ariaLabel: name, view, settings });
-    (comparison ?? editor).commands.register({ id: "source.save", label: "Save", run() { save(); } },
-        { keys: ["Mod+s"], repeat: false });
+    const editor =
+        comparison?.panes.working ?? mountTextEditor(pane, workspace, file.id, { ariaLabel: name, view, settings });
+    (comparison ?? editor).commands.register(
+        {
+            id: "source.save",
+            label: "Save",
+            run() {
+                save();
+            }
+        },
+        { keys: ["Mod+s"], repeat: false }
+    );
     function showReviewSave() {
         saveReviewed.hidden = adopt.hidden = !comparison || !competing;
         saveReviewed.disabled = adopt.disabled = pending > 0 || comparison?.controller.getSnapshot().status !== "ready";
     }
     const stopReview = comparison?.controller.subscribe(showReviewSave);
     showReviewSave();
-    const folds = createFoldingController(editor, doc => discoverIndentationFolds(doc.buffer));
-    const referenceFolds = comparison && createFoldingController(comparison.panes.reference,
-        doc => discoverIndentationFolds(doc.buffer));
+    const folds = createFoldingController(editor, (doc) => discoverIndentationFolds(doc.buffer));
+    const referenceFolds =
+        comparison &&
+        createFoldingController(comparison.panes.reference, (doc) => discoverIndentationFolds(doc.buffer));
     find.attach(editor);
     if (comparison) find.attach(comparison.panes.reference);
     let stopLanguage: (() => void) | undefined;
@@ -93,14 +105,20 @@ function mount(review: boolean) {
         stopLanguage ??= bindLanguage(editor, provider);
     }
     if (languageEnabled) enableLanguage();
-    return { editor, comparison, enableLanguage, showReviewSave, dispose() {
-        stopReview?.();
-        stopLanguage?.();
-        referenceFolds?.dispose();
-        folds.dispose();
-        if (comparison) comparison.dispose();
-        else editor.dispose();
-    } };
+    return {
+        editor,
+        comparison,
+        enableLanguage,
+        showReviewSave,
+        dispose() {
+            stopReview?.();
+            stopLanguage?.();
+            referenceFolds?.dispose();
+            folds.dispose();
+            if (comparison) comparison.dispose();
+            else editor.dispose();
+        }
+    };
 }
 
 let current = mount(false);
@@ -117,11 +135,20 @@ function renderConnection() {
     document.querySelector<HTMLElement>("#tools")!.hidden = !ready;
     serverCommand.disabled = !commandAvailable;
     connect.disabled = !(phase === "disconnected" || (ready && commandRequiresReconnect));
-    connect.textContent = !ready ? "Connect language server"
-        : commandRequiresReconnect ? "Reconnect language server" : "Language server connected";
-    connection.value = error ?? (commandRequiresReconnect ? "Waiting for the cancelled command’s reply. Reconnect to run another command now."
-        : ready && !commandAvailable ? "Server command running…"
-        : phase === "connecting" || phase === "initializing" ? "Connecting…" : "");
+    connect.textContent = !ready
+        ? "Connect language server"
+        : commandRequiresReconnect
+          ? "Reconnect language server"
+          : "Language server connected";
+    connection.value =
+        error ??
+        (commandRequiresReconnect
+            ? "Waiting for the cancelled command’s reply. Reconnect to run another command now."
+            : ready && !commandAvailable
+              ? "Server command running…"
+              : phase === "connecting" || phase === "initializing"
+                ? "Connecting…"
+                : "");
 }
 const stopConnection = provider.subscribe(renderConnection);
 connect.onclick = () => {
@@ -134,8 +161,11 @@ connect.onclick = () => {
 };
 const pendingNotice = "An edit is pending. Try again when it finishes.";
 function showSaveState() {
-    saved.value = competing ? "The saved copy changed. Review it in Changes."
-        : file.metadata.getSnapshot().dirty ? "Unsaved changes" : "No unsaved changes";
+    saved.value = competing
+        ? "The saved copy changed. Review it in Changes."
+        : file.metadata.getSnapshot().dirty
+          ? "Unsaved changes"
+          : "No unsaved changes";
 }
 function editPending() {
     const { input } = current.editor.activity();
@@ -213,7 +243,7 @@ function save(review?: SaveReview): boolean {
         compareVersions: compareVersions.checked,
         delay: delay.checked,
         canonical: canonical.checked,
-        fault: fault.value === "lose-reply" || fault.value === "fail" ? fault.value : "none",
+        fault: fault.value === "lose-reply" || fault.value === "fail" ? fault.value : "none"
     };
     fault.value = "none";
     const issuer = current.editor;
@@ -222,7 +252,7 @@ function save(review?: SaveReview): boolean {
     saved.value = "Saving…";
     previous = previous.then(async () => {
         try {
-            const result = await ticket.run(submission => {
+            const result = await ticket.run((submission) => {
                 if (closed) throw new Error("Host closed");
                 if (!mode.compareVersions && competing && competing.version !== review?.expectedServerVersion) {
                     return { kind: "conflict", serverVersion: competing.version };
@@ -259,8 +289,15 @@ document.querySelector("#save")!.addEventListener("click", () => {
 });
 function reviewed() {
     const state = current.comparison?.controller.getSnapshot();
-    if (pending || !competing || state?.status !== "ready" || !state.working
-        || state.baseline?.buffer !== baseline.buffer || !readyForHostAction()) return;
+    if (
+        pending ||
+        !competing ||
+        state?.status !== "ready" ||
+        !state.working ||
+        state.baseline?.buffer !== baseline.buffer ||
+        !readyForHostAction()
+    )
+        return;
     try {
         const latest = storage.read();
         if (latest.version === competing.version) return { copy: competing, revision: state.working.revision };
@@ -272,14 +309,25 @@ function reviewed() {
 }
 saveReviewed.addEventListener("click", () => {
     const review = reviewed();
-    if (review && save({ target: workspace.captureResource(file.id), expectedRevision: review.revision,
-        expectedServerVersion: review.copy.version })) current.editor.focus();
+    if (
+        review &&
+        save({
+            target: workspace.captureResource(file.id),
+            expectedRevision: review.revision,
+            expectedServerVersion: review.copy.version
+        })
+    )
+        current.editor.focus();
 });
 adopt.addEventListener("click", () => {
     const review = reviewed();
     if (!review) return;
-    const result = workspace.adoptSaved(file.id, { text: baseline.buffer, serverVersion: review.copy.version,
-        expectedRevision: review.revision, history: "record" });
+    const result = workspace.adoptSaved(file.id, {
+        text: baseline.buffer,
+        serverVersion: review.copy.version,
+        expectedRevision: review.revision,
+        history: "record"
+    });
     if (result.status === "done") {
         competing = undefined;
         saved.value = "Using saved copy";
@@ -302,7 +350,7 @@ function beforeUnload(event: BeforeUnloadEvent) {
     if (pending || file.metadata.getSnapshot().dirty || editPending()) event.preventDefault();
 }
 window.addEventListener("beforeunload", beforeUnload);
-window.addEventListener("pagehide", event => {
+window.addEventListener("pagehide", (event) => {
     if (event.persisted) return;
     closed = true;
     clearInterval(polling);

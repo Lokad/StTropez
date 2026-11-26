@@ -22,22 +22,22 @@ try {
     }
     const standard = await read("Win32");
     const apple = await read("MacIntel");
-    const commands = new Map([...standard, ...apple].map(row => [row.id, row.category]));
-    const standardKeys = new Map(standard.map(row => [row.id, row.keys]));
-    const appleKeys = new Map(apple.map(row => [row.id, row.keys]));
+    const commands = new Map([...standard, ...apple].map((row) => [row.id, row.category]));
+    const standardKeys = new Map(standard.map((row) => [row.id, row.keys]));
+    const appleKeys = new Map(apple.map((row) => [row.id, row.keys]));
     const lines = [begin, "", "| Category | Command | Keys | Platform |", "| --- | --- | --- | --- |"];
     const ordered = [...commands].sort(([a, x], [b, y]) => x.localeCompare(y, "en") || a.localeCompare(b, "en"));
     for (const [id, category] of ordered) {
         const keys = standardKeys.get(id) ?? [];
         const mac = appleKeys.get(id) ?? [];
         const bindings = [
-            { platform: "All", keys: keys.filter(key => mac.includes(key)) },
-            { platform: "Windows/Linux", keys: keys.filter(key => !mac.includes(key)) },
-            { platform: "Apple", keys: mac.filter(key => !keys.includes(key)) },
+            { platform: "All", keys: keys.filter((key) => mac.includes(key)) },
+            { platform: "Windows/Linux", keys: keys.filter((key) => !mac.includes(key)) },
+            { platform: "Apple", keys: mac.filter((key) => !keys.includes(key)) }
         ];
         for (const binding of bindings) {
             if (!binding.keys.length) continue;
-            const keys = binding.keys.map(key => "`" + key + "`").join(", ");
+            const keys = binding.keys.map((key) => "`" + key + "`").join(", ");
             lines.push(`| ${category} | \`${id}\` | ${keys} | ${binding.platform} |`);
         }
     }
@@ -47,7 +47,8 @@ try {
     if (first < 0 || last < first) throw new Error("Missing default shortcut markers in docs/editor.md.");
     const next = markdown.slice(0, first) + [...lines, "", end].join("\n") + markdown.slice(last + end.length);
     if (process.argv.includes("--write")) await writeFile(file, next);
-    else if (next !== markdown) throw new Error("Refresh docs/editor.md with node scripts/editor-shortcuts.mjs --write.");
+    else if (next !== markdown)
+        throw new Error("Refresh docs/editor.md with node scripts/editor-shortcuts.mjs --write.");
     console.log(`Read default shortcuts for ${commands.size} commands.`);
 } finally {
     await harness.close();

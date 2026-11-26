@@ -14,11 +14,15 @@ export type OutlineSpan = Pick<ts.OutliningSpan, "textSpan" | "kind">;
 
 /** Project the compiler's source-ordered spans onto complete LF-delimited editor rows. */
 export function typeScriptFolds(text: string, spans: readonly OutlineSpan[], source?: ts.SourceFile) {
-    let statement = 0, header = 0, newline = text.indexOf("\n");
-    return spans.flatMap(span => {
-        const from = span.textSpan.start, to = from + span.textSpan.length;
+    let statement = 0,
+        header = 0,
+        newline = text.indexOf("\n");
+    return spans.flatMap((span) => {
+        const from = span.textSpan.start,
+            to = from + span.textSpan.length;
         while (newline !== -1 && newline < from) {
-            header = newline + 1; newline = text.indexOf("\n", header);
+            header = newline + 1;
+            newline = text.indexOf("\n", header);
         }
         if (newline === -1 || newline + 1 >= to) return [];
         if (span.kind === ts.OutliningSpanKind.Imports) {
@@ -34,18 +38,27 @@ export function typeScriptFolds(text: string, spans: readonly OutlineSpan[], sou
         const last = text.lastIndexOf("\n", to - 1) + 1;
         let end = last;
         if (to > last) {
-            const next = text.indexOf("\n", to), lineEnd = next === -1 ? text.length : next;
+            const next = text.indexOf("\n", to),
+                lineEnd = next === -1 ? text.length : next;
             const tail = text.slice(to, lineEnd).trim();
             const code = span.kind === ts.OutliningSpanKind.Code;
             const closingLine = code && /^[}\])]+[;,]?$/.test(text.slice(last, lineEnd).trim());
-            if (!closingLine && (!tail || code && (tail === ";" || tail === ","))) end = next === -1 ? text.length : next + 1;
+            if (!closingLine && (!tail || (code && (tail === ";" || tail === ","))))
+                end = next === -1 ? text.length : next + 1;
         }
         return end > newline + 1 ? [{ from: header, to: end, group: span.kind }] : [];
     });
 }
 
-export function typeScriptFoldingRanges(text: string, spans: readonly OutlineSpan[], positionAt: (offset: number) => { line: number }, source?: ts.SourceFile) {
-    return typeScriptFolds(text, spans, source).map(range => ({
-        startLine: positionAt(range.from).line, endLine: positionAt(range.to - 1).line, kind: range.group,
+export function typeScriptFoldingRanges(
+    text: string,
+    spans: readonly OutlineSpan[],
+    positionAt: (offset: number) => { line: number },
+    source?: ts.SourceFile
+) {
+    return typeScriptFolds(text, spans, source).map((range) => ({
+        startLine: positionAt(range.from).line,
+        endLine: positionAt(range.to - 1).line,
+        kind: range.group
     }));
 }
