@@ -5,6 +5,7 @@ import { invalidRange, isNonNegativeInteger, isPositiveInteger } from "../core/b
 import { mountInputCaret } from "./input-caret.ts";
 import { autoClosedPairs } from "./auto-closed-pairs.ts";
 import { automaticIndentation } from "./automatic-indentation.ts";
+import { createVerticalMovement, moved, type VisualColumns } from "./caret-navigation.ts";
 import { clientBox, cssZoom } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import { Store, type Observable, type ObservableListener } from "../core/observable.ts";
@@ -13,7 +14,7 @@ import { copyCaretLines, planClipboardPaste } from "../core/clipboard-edits.ts";
 import { collapsedLineBlock } from "../core/folding.ts";
 import { isCodeWordBase, wordBoundary, wordCommandOffset } from "../core/words.ts";
 import { indexGraphemes } from "../core/graphemes.ts";
-import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
+import { createSelectionSet, normalizeSelectionSet, planSelectionEdits, sameSelectionSet } from "../core/selections.ts";
 import { selectionOccurrences } from "../core/selection-occurrences.ts";
 import type { Affinity } from "../core/positions.ts";
 import type { DocumentId, DocumentView, DocumentViewSnapshot, Workspace } from "../core/workspace.ts";
@@ -31,7 +32,7 @@ import type { NativeInsertionTarget } from "./input-target.ts";
 import type { InputContext } from "./input-context.ts";
 import { dispatchTypedText, editRefusedEvent, humanEditRefusal, inputConflictEvent } from "./input-events.ts";
 import type { EditRefusedDetail, InputConflictDetail } from "./input-events.ts";
-import { mountViewport, validateRevealAlignment, viewportPadding } from "./viewport.ts";
+import { mountViewport, validateRevealAlignment } from "./viewport.ts";
 import type { ComparisonPresentation, MountedViewport, RevealAlignment, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { lineColumnScanner, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
@@ -198,7 +199,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     let conflicts = 0, serial = 0, inputEvents = 0, lastInputMs = 0;
     let beforeInputEvents = 0, lastBeforeInputMs = 0;
     let keydownEvents = 0, lastKeydownMs = 0;
-    type VisualColumns = Readonly<{ head: number | undefined; anchor?: number | undefined }>;
     let preferred: Readonly<{ selections: SelectionSet; revision: number; layout: string; columns: readonly (VisualColumns | undefined)[] }> | undefined;
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; tail: ReturnType<typeof typingRun> | "spaces" | undefined; key: string }> | undefined;
     type ColumnDrag = { kind: "column"; middle: boolean; originRow: number; anchorColumn: number; anchorOffset: number; anchorAffinity: Affinity;
@@ -552,9 +552,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     function setSelectionSet(revision: number, { ranges, primary }: SelectionSet): boolean {
         return view.setSelections(revision, ranges, primary);
     }
-    function finishRanges(capture: CommandCapture, ranges: readonly Selection[], type?: string, primary = capture.selectionSet.primary): SelectionSet | undefined {
+    function finishRanges(capture: CommandCapture, ranges: readonly Selection[], type?: string,
+        primary = capture.selectionSet.primary, owners?: number[]): SelectionSet | undefined {
         if (!validCommand(capture)) return;
-        const selections = createSelectionSet(capture.buffer.length, ranges, primary);
+        const selections = normalizeSelectionSet(capture.buffer.length, ranges, primary, owners);
         completeCaptured(capture, () => {
             if (capture.deleting) {
                 const plan = planSelectionEdits(capture.buffer.length, selections, "");
@@ -567,10 +568,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             refresh();
             return true;
         });
-        return currentSelections();
-    }
-    function moved(range: Selection, offset: number, extend: boolean, affinity: Affinity = "after"): Selection {
-        return { anchor: extend ? range.anchor : offset, head: offset, anchorAffinity: extend ? range.anchorAffinity ?? "after" : affinity, headAffinity: affinity };
+        const current = currentSelections();
+        return owners && !sameSelectionSet(current, selections) ? undefined : current;
     }
     function revealSelectionForMovement(): void {
         hostInsertion?.cancel();
@@ -704,15 +703,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             if (validCommand(capture)) prepare(capture, navigationStyle());
         });
     }
-    function verticalCount(page: boolean): number {
-        const state = viewport.getSnapshot(); return page && state.lineHeight > 0 ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
-    }
-    function verticalRows(buffer: TextBuffer, ranges: readonly Selection[], add: boolean, next: (line: number) => number): Set<number> {
-        const lines = new Set<number>();
-        const include = (offset: number) => { const line = buffer.lineAt(offset); lines.add(line); lines.add(next(line)); };
-        for (const range of ranges) { include(range.head); if (add && range.anchor !== range.head) include(range.anchor); }
-        return lines;
-    }
     function prepareMovement(): void {
         revealSelectionForMovement();
         syncSelection(); group = undefined;
@@ -765,69 +755,18 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             if (!validCommand(capture) || navigationStyle() !== style) { activeCommand = undefined; return; }
             const state = viewport.getSnapshot(), layout = navigationLayout(style);
             const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
-            const columns: (VisualColumns | undefined)[] = [], count = verticalCount(page);
-            const cells = new Map<number, { from: number; to: number }>();
-            if (capture.selectionSet.ranges.length > 1 && navigation.fixedPitch()) {
-                const lines = verticalRows(buffer, capture.selectionSet.ranges, add,
-                    line => navigation.navigationLine(line, direction, count, page));
-                for (const line of lines) {
-                    const span = buffer.line(line);
-                    if (span.to - span.from <= 512 && !/[^ -~]/.test(span.text)) cells.set(line, span);
-                }
-            }
-            function columnAt(line: number, offset: number, affinity: Affinity | undefined) {
-                const span = cells.get(line);
-                return span ? viewportPadding + (Math.min(span.to, offset) - span.from) * state.columnWidth
-                    : navigation.columnAt(offset, affinity);
-            }
-            function caretAt(line: number, column: number) {
-                const span = cells.get(line);
-                if (!span) return navigation.caretAtColumn(line, column);
-                const index = Math.round((column - viewportPadding) / state.columnWidth);
-                const offset = Math.max(span.from, Math.min(span.to, span.from + index));
-                const affinity: Affinity = offset === span.to && offset > span.from ? "before" : "after";
-                return { offset, affinity };
-            }
-            let index = 0, pageDelta = 0;
-            eachRange(capture, range => {
-                const at = index++, line = buffer.lineAt(range.head), row = navigation.visualRowAt(line), next = navigation.navigationLine(line, direction, count, page);
-                if (at === capture.selectionSet.primary) pageDelta = (navigation.visualRowAt(next) - row) * state.lineHeight;
-                if (next === line) {
-                    columns.push(prior?.[at]);
-                    return add ? range : moved(range, direction < 0 ? 0 : buffer.length, extend);
-                }
-                const previous = prior?.[at], column = previous?.head ?? columnAt(line, range.head, range.headAffinity);
-                const hit = column === undefined ? undefined : caretAt(next, column);
-                // Both ends can clamp to the same caret on a short row. Keep their goals for the next copy.
-                if (add && (range.head !== range.anchor || previous?.anchor !== undefined)) {
-                    const anchorLine = buffer.lineAt(range.anchor), targetLine = navigation.navigationLine(anchorLine, direction, count, page);
-                    const anchor = previous?.anchor ?? columnAt(anchorLine, range.anchor, range.anchorAffinity);
-                    const anchorHit = anchor !== undefined && targetLine !== anchorLine ? caretAt(targetLine, anchor) : undefined;
-                    columns.push({ head: column, anchor });
-                    return hit && anchorHit ? { head: hit.offset, headAffinity: hit.affinity, anchor: anchorHit.offset, anchorAffinity: anchorHit.affinity } : range;
-                } else {
-                    columns.push({ head: column });
-                    return hit ? moved(range, hit.offset, extend, hit.affinity) : range;
-                }
-            }, destinations => {
-                if (page) viewport.scrollTo({ top: state.scrollTop + pageDelta });
+            const movement = createVerticalMovement(navigation, state, buffer, capture.selectionSet,
+                direction, page, extend, add, prior);
+            eachRange(capture, movement.move, destinations => {
+                if (page) viewport.scrollTo({ top: state.scrollTop + movement.pageDelta() });
                 const ranges = add ? [...capture.selectionSet.ranges, ...destinations] : destinations;
                 const primary = capture.selectionSet.primary + (add ? destinations.length : 0);
-                const selections = finishRanges(capture, ranges, undefined, primary); if (!selections) return;
-                // Normalization may reorder/coalesce targets. Carry the owning range's column,
-                // using the same primary/first-supplied ownership as the public selection model.
-                const ordered = ranges.map((range, at) => ({ from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head), at }))
-                    .sort((a, b) => a.from - b.from || a.to - b.to || a.at - b.at);
-                let cursor = 0;
-                const nextColumns = selections.ranges.map(range => {
-                    const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head); let ownerIndex = Infinity;
-                    while (cursor < ordered.length && ordered[cursor]!.from >= from && ordered[cursor]!.to <= to) {
-                        const at = ordered[cursor++]!.at;
-                        if (at === primary || ownerIndex !== primary && at < ownerIndex) ownerIndex = at;
-                    }
-                    return columns[ownerIndex % columns.length];
-                });
-                preferred = { selections, revision: capture.revision, layout, columns: nextColumns };
+                const owners: number[] = [];
+                const selections = finishRanges(capture, ranges, undefined, primary, owners);
+                if (selections) {
+                    const columns = owners.map(at => movement.columns[at % destinations.length]);
+                    preferred = { selections, revision: capture.revision, layout, columns };
+                }
             }, () => navigationLayout() === layout);
         });
         return true;

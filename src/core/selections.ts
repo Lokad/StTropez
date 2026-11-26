@@ -40,8 +40,17 @@ function overlaps(previousFrom: number, previousTo: number, from: number, to: nu
 
 /** Sort and merge overlaps/occupied carets. Adjacent nonempty ranges remain independent. */
 export function createSelectionSet(length: number, ranges: readonly Selection[], primary = 0): SelectionSet {
+    return normalizeSelectionSet(length, ranges, primary);
+}
+
+/** Internal selection planning can carry per-caret data through sorting and merging. */
+export function normalizeSelectionSet(length: number, ranges: readonly Selection[], primary: number,
+    owners?: number[]): SelectionSet {
     const known = knownSelectionSet(length, ranges, primary);
-    if (known) return known;
+    if (known) {
+        if (owners) for (let i = 0; i < ranges.length; i++) owners.push(i);
+        return known;
+    }
     const sorted = ranges.map((range, index) => { const value = normalizeSelection(length, range);
         return { value, index, from: Math.min(value.anchor, value.head), to: Math.max(value.anchor, value.head) }; });
     const compare = (a: typeof sorted[number], b: typeof sorted[number]) => a.from - b.from || a.to - b.to || a.index - b.index;
@@ -57,6 +66,7 @@ export function createSelectionSet(length: number, ranges: readonly Selection[],
         } else groups.push({ from: item.from, to: item.to, owner: item, primary: item.index === primary });
     }
     const normalized = groups.map(({ from, to, owner }) => {
+        owners?.push(owner.index);
         const value = owner.value;
         if (from === owner.from && to === owner.to) return value;
         return normalizeSelection(length, { anchor: value.anchor <= value.head ? from : to, head: value.anchor <= value.head ? to : from,
