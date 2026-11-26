@@ -2,7 +2,7 @@ import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { reconcileFoldRanges } from "../src/core/fold-discovery.ts";
-import { TextBuffer, Workspace, createFoldRegions, discoverIndentationFolds } from "../src/index.ts";
+import { TextBuffer, Workspace, createFoldRegions, discoverIndentationFolds, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
 import type { IndentationFoldingCursor } from "../src/index.ts";
 
 function finish(cursor: IndentationFoldingCursor) {
@@ -57,6 +57,61 @@ test("rediscovery follows mapped headers, keeps view choices through edit/undo a
         assert.equal(ranges.length, 1); assert.equal(ranges[0]!.to, buffer.offsetAt(3));
     } finally { a.dispose(); b.dispose(); workspace.releaseResource(resource.id, true); }
 });
+test("rediscovery keeps the moved block collapsed through repeated moves, Undo and Redo", () => {
+    const original = "steps\n  prepare\n    check\n    build\n  publish\n    report\nend\n";
+    const workspace = new Workspace();
+    const id = workspace.createDocument({ scope: "test", resource: "outline", variant: "text" }, "Outline", original);
+    const view = workspace.createDocumentView(id);
+    const document = () => workspace.document(id);
+    const folds = view.folding;
+    function discover() {
+        const { buffer } = document();
+        const current = folds.getSnapshot();
+        const ranges = finish(discoverIndentationFolds(buffer));
+        assert.ok(folds.setRanges(current, reconcileFoldRanges(buffer, ranges, current.regions)));
+    }
+    function move(command: "move-line-up" | "move-line-down") {
+        const { revision, buffer } = document();
+        const planner = planLanguageEdit(buffer, view.getSnapshot().selectionSet, command,
+            resolveLanguageConfiguration(), folds.getSnapshot().index);
+        try {
+            const plan = planner.next(4096).result!;
+            assert.ok(workspace.edit({ documentId: id, view, expectedRevision: revision, origin: "human",
+                edits: plan.edits, selectionSet: plan.selectionSet }).applied);
+        } finally { planner.dispose(); }
+    }
+    discover();
+    const header = folds.getSnapshot().index.headerAt(1)!;
+    const peer = workspace.createDocumentView(id);
+    const publish = folds.getSnapshot().index.headerAt(4)!;
+    peer.folding.setRanges(peer.folding.getSnapshot(), [{ ...publish, collapsed: true }]);
+    view.setSelection(0, { anchor: header.from, head: header.from });
+    folds.setCollapsed(folds.getSnapshot(), header.id, true);
+    function check(line: number) {
+        discover();
+        const live = folds.getSnapshot().index.headerAt(line);
+        assert.deepEqual([live?.id, live?.lineTo, live?.collapsed], [header.id, line + 3, true]);
+    }
+    move("move-line-down");
+    check(2);
+    assert.equal(peer.folding.getSnapshot().regions.length, 0);
+    assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).applied);
+    check(1);
+    assert.deepEqual(peer.folding.getSnapshot().regions, [{ ...publish, collapsed: true }]);
+    for (const [key, line] of [["move-line-down", 2], ["move-line-down", 3], ["move-line-up", 2], ["move-line-up", 1]] as const) {
+        move(key);
+        check(line);
+    }
+    assert.equal(document().text(), original);
+    assert.ok(workspace.undo({ documentId: id, expectedRevision: document().revision }).applied);
+    check(2);
+    assert.ok(workspace.redo({ documentId: id, expectedRevision: document().revision }).applied);
+    check(1);
+    assert.equal(document().text(), original);
+    peer.dispose();
+    view.dispose();
+});
+
 test("large off-side discovery yields without exporting the document, including long indentation", () => {
     const buffer = TextBuffer.from("root\n" + "  leaf\n".repeat(10_000) + "end"), iterator = discoverIndentationFolds(buffer);
     let yields = 0, next; do { next = iterator.next(256); if (next.status === "running") { yields++; assert.equal(next.result, null); } } while (next.status === "running");

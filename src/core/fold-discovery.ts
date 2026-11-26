@@ -1,7 +1,8 @@
 import { isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import type { FoldRange, FoldRegion } from "./folding.ts";
-import { prepareFoldRanges } from "./folding.ts";
+import { movedCollapsedRegions, prepareFoldRanges } from "./folding.ts";
+import { partitionPoint } from "./bound-search.ts";
 import { appendNestedFold } from "./fold-nesting.ts";
 import { lineBoundary } from "./newlines.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
@@ -112,16 +113,46 @@ function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work:
 /** Choose one outer range per header and discard crossing discoveries deterministically.
  * Existing view anchors have already followed edits; matching their header/group preserves choice. */
 export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly DiscoveredFold[], previous: readonly FoldRegion[]): readonly FoldRange[] {
-    const sorted = discovered.map(value => {
+    let candidates = discovered.map(value => {
         if (!isOffsetRange(value.from, value.to, buffer.length) || value.from === value.to
             || value.group !== undefined && !value.group) throw new RangeError("Invalid discovered fold range.");
         return { ...value, ...(discoveredRows.get(buffer)?.get(value) ?? { lineFrom: buffer.lineAt(value.from), lineTo: buffer.lineAt(value.to - 1) + 1 }) };
-    }).sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo);
+    });
+    const moved = movedCollapsedRegions(buffer, previous);
+    const retained = moved.length ? new Map<number, FoldRegion>() : undefined;
+    if (retained) {
+        // A line move transports the visible header and its exact hidden text. A parser can temporarily
+        // disagree about those boundaries. Continue discovering folds outside the transported blocks.
+        const containing = (line: number) => {
+            const at = partitionPoint(moved.length, i => moved[i]!.lineFrom <= line);
+            const region = moved[at - 1];
+            return region && line < region.lineTo ? region : undefined;
+        };
+        candidates = candidates.filter(item => {
+            if (containing(item.lineFrom)) return false;
+            const end = containing(item.lineTo - 1);
+            return !end || end.lineTo === item.lineTo;
+        });
+        for (const region of previous) {
+            if (!containing(region.lineFrom)) continue;
+            retained.set(region.lineFrom, region);
+            candidates.push(region);
+        }
+    }
+    const sorted = candidates.sort((a, b) => a.lineFrom - b.lineFrom || b.lineTo - a.lineTo);
     const prior = new Map(previous.map(value => [value.lineFrom, value])), ids = new Set(previous.map(value => value.id));
     const ranges: FoldRange[] = [], regions: FoldRegion[] = [], stack: typeof sorted = [], assigned = new Set<string>(); let last = -1, serial = 0;
     for (const item of sorted) {
         if (item.lineTo < item.lineFrom + 2 || item.lineFrom === last) continue;
         if (!appendNestedFold(stack, item)) continue;
+        const keep = retained?.get(item.lineFrom);
+        if (keep) {
+            ranges.push(keep);
+            regions.push(keep);
+            assigned.add(keep.id);
+            last = item.lineFrom;
+            continue;
+        }
         const old = prior.get(item.lineFrom);
         let id = old?.group === item.group ? old?.id : undefined;
         const collapsed = !id && item.initiallyCollapsed === true;

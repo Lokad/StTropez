@@ -116,9 +116,8 @@ Gutter and command collapse move a hidden caret to the header end, where typing 
 Page keys skip hidden rows. Find, hunk navigation and explicit reveal open their target. A host may retain a
 logical caret inside a fold.
 
-Gutter line selection, triple-click and Ctrl/Cmd+L include the body and following ending. Moving a block
-retains folds through Undo/Redo. A duplicate starts expanded. Undoing Delete Lines restores each pane’s fold
-choices.
+Gutter selection, triple-click and Ctrl/Cmd+L include the body and its line ending. A moved block stays
+collapsed across discovery and Undo/Redo. Copies start expanded. Undoing Delete Lines restores each pane’s folds.
 
 Clicking the disclosure returns editor focus. A focused disclosure handles Enter or Space. Escape returns to
 the input. Clicking the hidden-line count expands while preserving selection. Counts add no clipboard text.

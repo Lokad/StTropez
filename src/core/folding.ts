@@ -85,17 +85,40 @@ export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange
     const result = owned.has(previous) && sameFoldRegions(previous, next) ? previous : next.length ? retain(next) : empty;
     prepareFoldRanges(buffer, result, result); return result;
 }
+const movedCollapsed = new WeakMap<TextBuffer, WeakSet<FoldRegion>>();
+
+export function movedCollapsedRegions(buffer: TextBuffer, regions: readonly FoldRegion[]): FoldRegion[] {
+    const moved = movedCollapsed.get(buffer);
+    const outer: FoldRegion[] = [];
+    if (!moved) return outer;
+    for (const region of regions) {
+        if (moved.has(region) && region.lineFrom >= (outer.at(-1)?.lineTo ?? 0)) outer.push(region);
+    }
+    return outer;
+}
+
 function movedFold(buffer: TextBuffer, previous: TextBuffer, r: FoldRegion, swaps: readonly LineSwap[]): FoldRegion | null | undefined {
     const at = partitionPoint(swaps.length, i => swaps[i]!.first <= r.lineFrom);
     const swap = swaps[at - 1];
-    if (!swap || r.lineTo > swap.end || r.lineFrom < swap.middle && r.lineTo > swap.middle) return;
+    if (!swap || r.lineFrom >= swap.end) return;
+    // Its header moved independently of some of its body. Discovery can rebuild this fold.
+    if (r.lineTo > swap.end || r.lineFrom < swap.middle && r.lineTo > swap.middle) return null;
     const shift = r.lineFrom < swap.middle ? swap.end - swap.middle : swap.first - swap.middle;
     // Internal separators travel with the block. Its last row can acquire a different terminator.
     const delta = buffer.offsetAt(r.lineFrom + shift) - previous.offsetAt(r.lineFrom);
     const end = lineBoundary(buffer, r.lineTo + shift);
     const to = r.to === lineBoundary(previous, r.lineTo) ? end : Math.min(end, r.to + delta);
     // An empty last source row at EOF has no character that can anchor a fold body.
-    return region(buffer, r.id, r.from + delta, to, r.collapsed, r.group) ?? null;
+    const next = region(buffer, r.id, r.from + delta, to, r.collapsed, r.group);
+    if (next?.collapsed) {
+        let moved = movedCollapsed.get(buffer);
+        if (!moved) {
+            moved = new WeakSet();
+            movedCollapsed.set(buffer, moved);
+        }
+        moved.add(next);
+    }
+    return next ?? null;
 }
 
 /** View metadata follows document mappings. Degenerate/merged headers cease to be folds. */
@@ -311,16 +334,18 @@ export function projectFolds(before: TextBuffer, after: TextBuffer, mapping: Pos
             mapped = mapFoldIndex(after, mapping, before, prior, swaps);
             shared?.set(prior, mapped);
         }
-        return replayDeletedFolds(view, prior, mapped, mapping, undo);
+        return replayDeletedFolds(view, prior, mapped, mapping, undo, !!swaps);
     };
 }
 
 /** Only ranges erased by this edit travel back with Undo. Surviving ranges belong to the live view. */
 function replayDeletedFolds(view: FoldHistory, prior: FoldIndex, mapped: FoldIndex,
-    mapping: PositionMapping, undo?: PositionMapping): FoldIndex {
+    mapping: PositionMapping, undo: PositionMapping | undefined, moved: boolean): FoldIndex {
     if (!undo) {
-        if (mapped.lineCount < prior.lineCount && layouts.get(mapped)!.regions.length < layouts.get(prior)!.regions.length) {
-            const removed = prior.regions.filter(r => mapping.map(r.from, "before").offset === mapping.map(r.to, "after").offset);
+        if ((moved || mapped.lineCount < prior.lineCount) && layouts.get(mapped)!.regions.length < layouts.get(prior)!.regions.length) {
+            const surviving = moved ? new Set(mapped.regions.map(r => r.id)) : undefined;
+            const removed = prior.regions.filter(r => surviving ? !surviving.has(r.id)
+                : mapping.map(r.from, "before").offset === mapping.map(r.to, "after").offset);
             if (removed.length) {
                 (view.deleted ??= new WeakMap()).set(mapping, removed);
                 return mapped;
