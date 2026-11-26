@@ -319,8 +319,8 @@ button("Run", () => {
 
 #### Compare saved and working text
 
-**Compare saved** opens the saved buffer next to the live document. Choose it again to pick up
-a later save.
+**Compare saved** opens the saved buffer beside the draft. Click again after saving to refresh it.
+[Review commands](comparison.md#hunk-commands-and-host-tickets)
 
 ```js file=app.js
 import { mountTextComparison } from "sttropez/browser";

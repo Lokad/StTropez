@@ -1,20 +1,17 @@
 # Text comparison
 
-To review unsaved edits, pass the last saved text to `mountTextComparison`. It displays that
-baseline beside the editable document and keeps it fixed as the user types. Your application
-fetches versions, chooses which changes to accept and saves the result. For a headless diff
-between two buffers, use [`TextDiff` from `sttropez/kernels`](#exact-text-and-scheduling).
+Pass a saved version to `mountTextComparison` to review it beside the working document. The host
+chooses the baseline and saves accepted changes. For a headless diff, use the stepped `TextDiff`
+cursor. [Exact text and scheduling](#exact-text-and-scheduling)
 
 ## Use
 
 Pass the working document and its `ComparisonBaseline`. Give the container a height and load the
 editor stylesheet. [Page setup](getting-started.md#open-the-first-editor)
 
-The panes fill the space between the controls and the selected-change preview. At window widths
-of 700 CSS pixels or less they stack and share the available height. While the files differ,
-the preview has a fixed share of the panel, capped at 4.5 rem. Moving the caret between changed
-and unchanged lines keeps both panes the same height. Long excerpts scroll inside the preview.
-Identical files use the full space for the panes.
+The panes stack at window widths of 700 CSS pixels or less. The selected-change preview scrolls
+within its share of the panel (up to 4.5 rem), so moving the caret keeps the pane heights steady.
+Identical files use the full space.
 
 ```ts
 import type { ComparisonBaseline, DocumentId, Workspace } from "sttropez";
@@ -39,22 +36,17 @@ export function showChanges(
 }
 ```
 
-The toolbar lets you navigate changes, revert one, link scrolling and align rows. It shows the
-current change and total using the browser’s number format. The `ariaLabel` option defaults to
-`"Text comparison"`. Pass your working `DocumentView` through `view` to keep
-its selection and folds when you close the comparison. The mount disposes only views it creates.
+Pass a working `DocumentView` as `view` to keep its selection and folds on close. The mount
+disposes the views it creates. The toolbar navigates and restores changes, links scrolling and
+aligns rows. Its change counter uses the browser’s number format.
 
-Pass a partial `TextComparisonStrings` in `strings` when mounting a translated review.
-Both panes use the same navigation labels in their command lists, including with `controls: false`.
-The table also covers pane input names, headings, control hints and the change preview. Omitted
-entries use the English defaults. Formatters run synchronously and return plain text. Return
-`undefined` to keep the default for a particular state. The excerpt formatter receives the side,
-the original hunk range and its bounded text with whitespace marks.
+`ariaLabel` defaults to `"Text comparison"`. Set `strings` to a partial `TextComparisonStrings` to
+translate pane names, headings, commands, hints and previews. Both command lists use the labels even
+with `controls: false`. Formatters return plain text synchronously, or `undefined` for the English
+default. Excerpt formatters receive the side, original hunk range and bounded, whitespace-marked text.
 
-For a custom toolbar, set `controls: false` and mount your buttons outside the two panes.
-The host example returns pointer users to their active pane and leaves keyboard users on the
-navigation button. Its Restore button captures the selected change on press so a baseline
-refresh before release cannot redirect the edit. [Custom toolbar source](../tests/fixtures/comparison/controls.ts)
+For a custom toolbar, pass `controls: false` and put buttons outside the panes. Capture the target
+on press if activation happens on release. [Custom toolbar example](../tests/fixtures/comparison/controls.ts)
 
 ## Contract
 
@@ -80,33 +72,24 @@ old hunk commands. Refresh and acceptance tickets apply to external baselines.
 | `hunks` | Exact when ready; mapped presentation from the preceding comparison while running |
 | `progress`, `failure` | Current diff work counters or a failure message |
 
-Each edit starts a new diff. You may see old change markers move with the text while StTropez
-recomputes the hunks. A gap in revision history or a new baseline clears those markers.
-When the diff is ready, StTropez replaces them all at once and enables navigation and reversion.
-A change to the progress count alone doesn't repaint the panes.
+Typing starts a diff. Until it finishes, both panes show mapped change markers and the toolbar
+keeps its last preview, with “Updating…” for a longer comparison. A baseline change clears the
+preview and markers. A revision-history gap also clears the markers. Both panes replace the markers
+when the result is ready. Progress alone does not repaint.
 
-While checking an edit, the built-in toolbar keeps the last completed preview in place. A longer
-comparison shows “Updating…”. Previous, Next and Use baseline stay disabled until the new result
-is ready. Changing the baseline clears the old preview immediately.
+`TextComparison.getSnapshot()` returns the same immutable `TextComparisonSnapshot` until a field
+changes. Its `comparison` is the controller snapshot. `selectedHunk` follows the last focused
+pane’s caret, including anywhere on a tinted line or a selection covering the line ending. An empty
+change requires its exact offset. An unchanged line or pending result gives `null`. Before either
+pane receives focus, navigation starts at the initial caret.
 
-Subscribe to `TextComparison` for a `TextComparisonSnapshot`. Repeated reads return the same
-immutable object until a field changes. Its `comparison` field holds the controller snapshot.
-`selectedHunk` indexes the change at the last focused pane's caret. Any column on a tinted
-line targets that change, including when the selection covers the line and its ending.
-An empty change is selectable at its exact offset. On an unchanged line or during recomputation,
-`selectedHunk` is `null`. Before the first pane receives focus, Next starts at the initial caret.
-Use `canNavigate` and `canRevert` to enable buttons. They account for pane readiness, active
-composition and edit permission.
-
-Read `scrollLinked`, `alignment` (`ComparisonAlignmentSnapshot`) and `disposed` to find out what
-the panes are doing. Comparison and permission changes publish synchronously. Attaching panes
-and aligning rows can take several turns. Subscribers get the latest alignment counts with each
-published snapshot.
-
-Read snapshots in notifications and queue commands until after delivery. Disposal publishes a final
-snapshot with no selected hunk or available command. Commands check the capture and input state
-again when invoked. Setting the DOM input’s `readOnly` or `disabled` property alone does not publish
-a snapshot.
+Bind buttons to `canNavigate` and `canRevert`, which check pane readiness, composition and edit
+permission as applicable. `scrollLinked`, `alignment` (`ComparisonAlignmentSnapshot`) and `disposed`
+describe the panes. Permission and comparison changes publish synchronously. Pane attachment and
+alignment can take several turns. Read snapshots during notification and run commands after delivery.
+Commands recheck their captures at invocation. Direct changes to the DOM input’s `readOnly` or
+`disabled` property do not publish. Disposal publishes a final snapshot with no available command
+or selected hunk.
 
 ### Exact text and scheduling
 
@@ -157,27 +140,22 @@ validate the budget and return the current progress.
 
 ### Reverting a change or accepting a version
 
-Call `comparison.navigateHunk(1)` for the next change or `comparison.navigateHunk(-1)` for the previous
-one. Both start at the active caret, wrap at either end and place a caret at the start of the first changed line in both panes.
-Each pane registers `comparison.nextChange` (F7) and `comparison.previousChange` (Shift+F7).
-The command starts at that pane’s caret and leaves focus in place. Hosts can rebind either shortcut on
-the pane’s keymap. Clicking Previous or Next returns focus to the last active pane. Activating
-either button from the keyboard keeps focus on the button. Clicking a disabled review button
-preserves editor focus.
+`navigateHunk(1)` and `navigateHunk(-1)` wrap from the active caret and position both carets at the
+first changed line. Each pane binds `comparison.nextChange` to F7 and `comparison.previousChange`
+to Shift+F7. Rebind either in that pane’s keymap. Shortcuts preserve focus. Clicking a navigation
+button returns focus to the last active pane. Keyboard activation keeps focus on the button.
+Clicking a disabled button preserves editor focus.
 
-`comparison.revertSelectedHunk()` restores the change at the active caret and focuses the working pane.
-If a button press or host confirmation spans multiple events, capture `comparison.getSnapshot()` at
-the start and pass it to `revertSelectedHunk(shown)`. It returns `false` if the comparison or
-target changed before activation.
+`revertSelectedHunk()` restores the change at the caret and focuses the working editor. For a
+button or dialog, capture `comparison.getSnapshot()` on press and pass it to
+`revertSelectedHunk(shown)`. A changed target or comparison returns `false`.
 
-Call `comparison.hunkAt(index)` when presenting a change. It returns a handle for that exact change,
-or `undefined` while the diff is pending or the index is out of range. Keep the handle through a
-confirmation dialog. Its `select()` reveals and selects both ranges, unfolding them if needed.
-Its `revert()` restores the baseline range in one undoable edit and leaves a caret at its start. Both return `false` after either
-side changes or the review closes. Browser actions also guard composition, and revert checks
-write access. Headless consumers use `controller.hunkAt(index)?.revert()`. Undo restores
-the text and selection. The built-in **Use baseline** button focuses the working editor so you can
-undo or type there immediately. After a working edit the next ready comparison resolves the target again.
+To act on a particular change, retain `comparison.hunkAt(index)` through confirmation. A pending
+diff or invalid index gives `undefined`. The handle’s `select()` reveals both ranges and unfolds
+them. Its `revert()` restores the baseline text in one Undo step and places the working caret at
+the start. Either action returns `false` after an edit to either side or after close. Browser
+actions check composition, and revert also checks write access. Headless hosts can call
+`controller.hunkAt(index)?.revert()`. Undo restores the text and selection.
 
 Take a ticket before fetching a baseline or asking the user to confirm a change.
 
