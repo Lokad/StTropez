@@ -1,7 +1,7 @@
 # Getting started
 
-StTropez lets several editor panes share a document and its Undo history. Each pane has its own
-selection, folds and scroll position. Your application supplies storage and language services.
+Panes share a document and Undo history. Each keeps its own selection, folds and scroll position.
+Your application supplies storage and language services.
 [Public imports](api.md) · [Architecture](architecture.md)
 
 ## Use
@@ -14,8 +14,8 @@ Run `npm run demo` from the checkout and open the [reference host](http://127.0.
 3. Choose **Connect language server** to try completion and code actions. In Changes, language
    commands act on the working pane. Find can search either pane.
 
-The reference host checks for pending input before Save, remount or reload. Its source shows how
-to share the working view across mounts. [Mount, Find and Save](../examples/reference/main.ts) · [Language commands](../examples/reference/language.ts)
+The reference host keeps the working view across mounts and checks for pending edits before
+Save or reload. [Mount, Find and Save](../examples/reference/main.ts) · [Language commands](../examples/reference/language.ts)
 
 ### Open the first editor
 
@@ -39,9 +39,9 @@ const editor = mountTextEditor(primary, workspace, file.documentId, { ariaLabel:
 editor.focus();
 ```
 
-Copy the NuGet archive’s `assets/` contents into `site/sttropez/`, preserving subdirectories.
-From source, `npm ci` and `npm run build` produce the same modules in `dist/`. Save this as
-`site/index.html`. [Staging the package](packaging.md#use)
+Copy the NuGet archive’s `assets/` tree into `site/sttropez/`, or build `dist/` with
+`npm ci` and `npm run build` and copy its contents there. Save the HTML as `site/index.html`.
+[Staging the package](packaging.md#use)
 
 ```html
 <!doctype html>
@@ -72,7 +72,7 @@ From `site/` run `python -m http.server 8000` and open `http://localhost:8000/`.
 
 ### Add features to a browser IDE
 
-Append the following blocks to `app.js` in order. The tokenizer goes in its own file, `checklist.js`.
+Append each block to `app.js` in order. Save the tokenizer in `checklist.js`.
 
 ```js file=app.js
 const controls = new AbortController();
@@ -103,8 +103,8 @@ const editsReady = panes => {
 
 #### Switch and move tabs
 
-**Notes** opens a second document. **Checklist** switches back. Both panes stay mounted, so each
-keeps its caret and scroll position. **Dock notes** moves the existing tab into a second pane.
+**Notes** opens a second document. **Checklist** switches back. **Dock notes** shows both panes.
+Keeping them mounted preserves each caret and scroll position.
 
 ```js file=app.js
 const notes = workspace.createTextResource(
@@ -143,9 +143,9 @@ button("Dock notes", () => {
 
 #### Close a tab and keep its draft
 
-Choose **Review close**, then **Close notes**. Moving the tab preserves the close decision.
-Editing it or replacing its contents expires the decision. Reopening Notes restores its text and
-history. [Resource lifetime](workspace.md#loading-and-resource-lifetime)
+**Review close** captures the Notes tab for **Close notes**. Moving it keeps the decision valid.
+An edit or replacement expires it. Reopening Notes restores its text and history.
+[Resource lifetime](workspace.md#loading-and-resource-lifetime)
 
 ```js file=app.js
 /** @type {import("sttropez").CloseIntent | undefined} */
@@ -169,8 +169,7 @@ button("Close notes", () => {
 
 #### Propose an edit, apply it later, and undo
 
-Choose **Propose task**, then type in the checklist. **Apply task** rejects the stale offsets.
-A fresh proposal applies in one Undo step.
+**Propose task** captures the revision. **Apply task** appends one undoable row if the revision matches.
 
 ```js file=app.js
 /** @type {(() => boolean) | undefined} */
@@ -207,8 +206,7 @@ export function tokens(prefix) {
 }
 ```
 
-Mount another view of the checklist. Its decoration provider maps the tokenizer’s ranges to
-document offsets and CSS classes. Change a checkbox from `[ ]` to `[x]` to see its color change.
+Mount a second pane. Its decoration provider colors each checkbox using document offsets.
 
 ```js file=app.js
 import { tokens } from "./checklist.js";
@@ -232,9 +230,9 @@ const checklist = split.decorations.addProvider({
 });
 ```
 
-`provide` runs during paint. For a multiline grammar, track lexical state across lines. For an
-asynchronous tokenizer, check the document and revision, cache the spans and call
-`checklist.invalidate(firstLine, endLine)`. [Host tokenization](host-integration.md#tokenization-annotations-and-forms)
+`provide` runs during paint. Track lexical state for multiline tokens. For async tokens, check
+the document and revision, cache spans and call `checklist.invalidate(firstLine, endLine)`.
+[Host tokenization](host-integration.md#tokenization-annotations-and-forms)
 
 #### Paste a list
 
@@ -255,7 +253,7 @@ for (const pane of [editor, split]) {
 
 #### Save the working text
 
-Reflect unsaved changes in the page title.
+Mark unsaved changes in the page title.
 
 ```js file=app.js
 const showDirty = () => { document.title = file.metadata.getSnapshot().dirty ? name + " (unsaved)" : name; };
@@ -263,9 +261,9 @@ const stopDirty = file.metadata.subscribe(showDirty);
 showDirty();
 ```
 
-The stored text doubles as the version for this local example. If it changes before Save,
-**Compare saved** shows the competing copy alongside the draft. A remote service must check
-the expected version when writing. [Reviewed saves](workspace.md#retry-after-review)
+This example uses the stored text as its version. A conflicting Save shows the competing copy
+in **Compare saved**. For asynchronous storage, capture each Save and queue its write.
+[Save queue and reviewed retries](workspace.md#save-and-conflicts)
 
 ```js file=app.js
 import { TextBuffer } from "sttropez";
@@ -273,7 +271,13 @@ import { TextBuffer } from "sttropez";
 /** @type {import("sttropez/browser").TextComparison | undefined} */
 let review;
 const checklistReady = () => editsReady([editor, split, review?.panes.working]);
-let baseline = { buffer: TextBuffer.from(openedText), version: "opened" };
+let baseline = { buffer: workspace.document(file.documentId).buffer, version: "opened" };
+/** @param {import("sttropez").ComparisonBaseline} next */
+function showSaved(next) {
+    if (baseline.buffer.equals(next.buffer)) return;
+    baseline = next;
+    review?.controller.beginRefresh().complete(next);
+}
 button("Save", () => {
     if (!checklistReady()) return;
     const ticket = workspace.captureSave(file);
@@ -282,13 +286,13 @@ button("Save", () => {
         const stored = readSaved();
         if (stored !== submission.expectedServerVersion && stored !== submission.value) {
             ticket.conflict();
-            baseline = { buffer: TextBuffer.from(stored), version: "saved in this tab" };
-            output.textContent = "Another view saved first. Choose Compare saved.";
+            showSaved({ buffer: TextBuffer.from(stored), version: "saved in this tab" });
+            output.textContent = "Another view saved first. See Compare saved.";
             return;
         }
         sessionStorage.setItem(name, submission.value);
         ticket.accept({ serverVersion: submission.value });
-        baseline = { buffer: workspace.document(file.documentId).buffer, version: String(ticket.revision) };
+        showSaved({ buffer: workspace.document(file.documentId).buffer, version: String(ticket.revision) });
         output.textContent = "Saved";
     } catch (error) {
         ticket.fail();
@@ -319,7 +323,7 @@ button("Run", () => {
 
 #### Compare saved and working text
 
-**Compare saved** opens the saved buffer beside the draft. Click again after saving to refresh it.
+**Compare saved** opens or refocuses the review. Save refreshes its baseline in place.
 [Review commands](comparison.md#hunk-commands-and-host-tickets)
 
 ```js file=app.js
@@ -329,16 +333,15 @@ const reviewHost = document.getElementById("review");
 if (!reviewHost) throw new Error("Missing review container.");
 button("Compare saved", () => {
     if (!checklistReady()) return;
-    review?.dispose();
-    review = mountTextComparison(reviewHost, workspace, file.documentId, baseline);
+    review ??= mountTextComparison(reviewHost, workspace, file.documentId, baseline);
+    review.activePane().focus();
 });
 ```
 
 #### Connect a language server
 
-To use completion, supply a Markdown language server at `/lsp` on the same origin. The static
-file server above serves only the page and assets. The provider uses WebSocket, LSP 3.17 and
-UTF-16 positions. [Language server](language-server.md)
+Supply a Markdown language server at `/lsp` on the same origin for completion. It uses WebSocket,
+LSP 3.17 and UTF-16 positions. [Language server](language-server.md)
 
 ```js file=app.js
 import { BrowserLspWorkspace, attachEditorLanguage, openWebSocketTransport } from "sttropez/browser";
