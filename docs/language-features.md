@@ -225,11 +225,11 @@ on refusal. Empty edits create no Undo entry.
 
 ### Code actions and commands
 
-Enable `codeActions: { popup: true }`. Ctrl/Cmd+. or `quickfix.show` reveals the caret and opens
-fixes for the selection and its current diagnostics. Arrows select. Enter previews a lazy fix or
-applies a ready preview. Escape closes the list. To reuse choices obtained for a diagnostic,
-pass them to `editor.commands.run("quickfix.show", choices)`. `popup.quickApply` can approve
-edit-only fixes. Commands require confirmation.
+With `codeActions: { popup: true }`, Ctrl/Cmd+. opens fixes at the caret. Arrows select, Enter
+previews or applies, and Escape closes. Pass a diagnostic’s choices to
+`editor.commands.run("quickfix.show", choices)` to reuse them. `popup.quickApply` can approve
+edit-only fixes. Commands need confirmation. A delayed fix leaves focus where the user moved it.
+A custom toolbar can call `editor.focus()` to return to the source.
 
 ```ts
 import type { CodeActionChoice, CodeActionController } from "sttropez/browser";

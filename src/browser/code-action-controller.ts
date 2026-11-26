@@ -152,9 +152,8 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
         }
         const status = failure ? "failed" : !action.command || changed.size ? "applied" : "executed";
         const changes = finish(status, failure ? afterEdits(message, changed.size) : message);
-        if (!failure && !action.command && editor.element.isConnected && !editor.signal.aborted) {
+        if (!failure && !action.command && editor.element.isConnected && editor.getSnapshot().focused) {
             editor.viewport.revealOffset(view.getSnapshot().selection.head);
-            editor.focus();
         }
         return failure ?? done(changes);
     }

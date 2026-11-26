@@ -133,8 +133,15 @@ test("explicit lazy fix activation applies once after resolution and expires wit
     await expect.poll(() => resolutions).toBe(1);
     await page.keyboard.press("Enter");
     await expect(source).toHaveValue(original);
-    await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)"); release!();
+    await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)");
+    await page.locator("#find-toggle").click();
+    const query = page.getByRole("textbox", { name: "Find text", exact: true });
+    await expect(query).toBeFocused();
+    release!();
     await expect(popup).toBeHidden(); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, 0.1)");
+    await page.keyboard.insertText("pricing");
+    await expect(query).toHaveValue("pricing");
+    await query.press("Escape");
     await source.press("Control+z"); await expect(page.locator("#editor")).toContainText("calculateTotl(cart, 0.1)");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await page.getByRole("button", { name: /main\.ts:\d+:\d+ · TS2552:/ }).click();
