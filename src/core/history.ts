@@ -15,8 +15,8 @@ export type HistoryEntry = Readonly<{ id: number; origin: string; kind: EditKind
 const selectionRanges = (change: HistoryChange): number => change.selections.reduce((sum, view) =>
     sum + view.before.ranges.length + view.after.ranges.length, 0);
 
-function textStep({ before, after, mapping, parts }: HistoryChange): TextStep {
-    return { before, after, mapping, parts };
+function textStep({ before, after, mapping, parts, wholeText }: HistoryChange): TextStep {
+    return { before, after, mapping, parts, wholeText };
 }
 
 type StoredEntry = HistoryEntry & { run?: StepRun };
@@ -106,6 +106,7 @@ export class TextHistory {
             let joined: TextStep | undefined;
             const step = () => joined ??= finishSteps(run);
             const change = Object.freeze({ ...first, before: old.before,
+                wholeText: first.wholeText || old.wholeText,
                 get mapping() { return step().mapping; }, get parts() { return step().parts; },
                 units: old.units + first.units, selections: Object.freeze(old.selections.map((view, i) => Object.freeze({ ...view, after: first.selections[i]!.after }))) });
             entry = Object.freeze({ ...previous, id: ++this.#nextId, changes: Object.freeze([change]), steps: previous.steps + 1, units: change.units, run });

@@ -12,7 +12,7 @@ import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } fro
 import type { Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
-import { selectionToRestore } from "./view-state.ts";
+import { mapViewAnchor, selectionToRestore } from "./view-state.ts";
 import type { ViewRestoreOptions, ViewRestoreResult, ViewState } from "./view-state.ts";
 import { scrollAxis } from "./scroll.ts";
 import type { ScrollAxis } from "./scroll.ts";
@@ -474,17 +474,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 const offset = gapAt(renderedIndex, visibleRow)?.offset ?? Math.min(end, start + Math.floor(left / columnWidth));
                 anchor = { revision: previous.revision, offset, topRemainder: top - renderedIndex.rowAt(previous.buffer.lineAt(offset)) * lineHeight, leftRemainder: left - (offset - start) * columnWidth };
             }
-            if (anchor.revision !== current.revision) {
-                anchor = current.change?.previousRevision === anchor.revision
-                    ? { ...anchor, revision: current.revision, offset: current.change.mapping.map(anchor.offset, "before").offset } : undefined;
-            }
+            anchor = mapViewAnchor(anchor, current.revision, current.change);
             if (reveal && current.change?.previousRevision === reveal.revision) {
-                const offset = current.change.mapping.map(reveal.offset, reveal.affinity).offset;
+                const offset = current.change.mapViewOffset(reveal.offset, reveal.affinity);
                 reveal = { ...reveal, revision: current.revision, offset,
-                    ...(reveal.end !== undefined && { end: Math.max(offset, current.change.mapping.map(reveal.end, "before").offset) }) };
+                    ...(reveal.end !== undefined && { end: Math.max(offset, current.change.mapViewOffset(reveal.end, "before")) }) };
             }
-            if (horizontalAnchor && horizontalAnchor.revision !== current.revision) horizontalAnchor = current.change?.previousRevision === horizontalAnchor.revision
-                ? { ...horizontalAnchor, revision: current.revision, offset: current.change.mapping.map(horizontalAnchor.offset, horizontalAnchor.affinity).offset } : undefined;
+            horizontalAnchor = mapViewAnchor(horizontalAnchor, current.revision, current.change);
             fragmentPlacement = undefined;
         } else if (!current) { anchor = undefined; reveal = undefined; horizontalAnchor = undefined; fragmentPlacement = undefined; }
         schedule();
@@ -1143,14 +1139,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 && (!saved || value.revision === saved.revision)) {
                 const primary = selected.set.ranges[selected.set.primary]!;
                 value = { ...value, revision: document.revision, offset: primary.head, affinity: primary.headAffinity ?? "after" };
-            } else if (value && value.revision !== document.revision) {
-                value = document.change?.previousRevision === value.revision
-                    ? { ...value, revision: document.revision, offset: document.change.mapping.map(value.offset, value.affinity).offset } : undefined;
-            }
-            if (vertical && vertical.revision !== document.revision) {
-                vertical = document.change?.previousRevision === vertical.revision
-                    ? { ...vertical, revision: document.revision, offset: document.change.mapping.map(vertical.offset, "before").offset } : undefined;
-            }
+            } else value = mapViewAnchor(value, document.revision, document.change);
+            vertical = mapViewAnchor(vertical, document.revision, document.change);
             notifications.batch(() => {
                 if (!sameSelectionSet(selected.set, viewState().selectionSet)) view.setSelections(document.revision, selected.set.ranges, selected.set.primary);
                 if (regions) view.folding.setRanges(currentFolds(), regions);

@@ -6,15 +6,16 @@ import type { TextBuffer } from "./text-buffer.ts";
 
 export type TextTransaction = Readonly<{ buffer: TextBuffer; edit: (edits: readonly TextEdit[]) => void }>;
 export type TextStep = Readonly<{ before: TextBuffer; after: TextBuffer; mapping: PositionMapping;
-    parts?: readonly TextStep[] | undefined }>;
+    wholeText?: boolean | undefined; parts?: readonly TextStep[] | undefined }>;
 export type StagedText = Pick<TextStep, "mapping" | "parts"> & Readonly<{ buffer: TextBuffer; changedUnits: number }>;
 export type StepRun = { size: number; step: TextStep; earlier?: StepRun };
 
 function joinSteps(parts: TextStep[]): TextStep {
-    // A position map compacts ordinary edits. A row move also needs its neighboring blocks during fold projection.
+    // Ordinary edits share a compact map. Whole-text offsets and moved folds follow their individual steps.
+    const wholeText = parts.some(part => part.wholeText);
     return { before: parts[0]!.before, after: parts.at(-1)!.after,
-        mapping: composePositionMapList(parts.map(part => part.mapping)),
-        parts: parts.some(part => part.parts || positionChanges(part.mapping)?.[0]?.lineMove) ? parts : undefined };
+        mapping: composePositionMapList(parts.map(part => part.mapping)), wholeText,
+        parts: wholeText || parts.some(part => part.parts || positionChanges(part.mapping)?.[0]?.lineMove) ? parts : undefined };
 }
 
 /** Join equal-sized runs once. An ordinary group keeps logarithmically many spans while it grows. */

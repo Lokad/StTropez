@@ -1,5 +1,5 @@
 import type { Affinity } from "../core/positions.ts";
-import type { DocumentId, DocumentSnapshot, DocumentView, ViewId } from "../core/workspace.ts";
+import type { DocumentChange, DocumentId, DocumentSnapshot, DocumentView, ViewId } from "../core/workspace.ts";
 import type { Selection } from "../core/history.ts";
 import { createSelectionSet } from "../core/selections.ts";
 import type { SelectionSet } from "../core/selections.ts";
@@ -16,6 +16,14 @@ export type ViewRestoreResult = Readonly<{
     selection: "captured" | "current" | "mapped" | "clamped";
     foldsRestored: boolean; horizontalAnchorRestored: boolean; verticalAnchorRestored: boolean;
 }>;
+
+export function mapViewAnchor<T extends { revision: number; offset: number; affinity?: Affinity }>(
+    anchor: T | undefined, revision: number, change: DocumentChange | null,
+) {
+    if (!anchor || anchor.revision === revision) return anchor;
+    if (change?.previousRevision === anchor.revision)
+        return { ...anchor, revision, offset: change.mapViewOffset(anchor.offset, anchor.affinity ?? "before") };
+}
 
 /** A retained view has followed every edit. A fresh view can map through the last document change. */
 export function selectionToRestore(document: DocumentSnapshot, view: DocumentView, state: ViewState, options: ViewRestoreOptions):

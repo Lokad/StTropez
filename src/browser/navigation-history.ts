@@ -3,6 +3,7 @@ import type { Observable } from "../core/observable.ts";
 import type { DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { ViewState } from "./view-state.ts";
+import { mapViewAnchor } from "./view-state.ts";
 import { createSelectionSet } from "../core/selections.ts";
 
 export type NavigationOrigin = Readonly<{ viewState: ViewState; visit: (open: () => boolean) => boolean }>;
@@ -32,14 +33,11 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
             if (entry.revision !== change.previousRevision) return;
             const { state } = entry;
             const selections = change.mapSelections(state.selectionSet ?? { ranges: [state], primary: 0 });
-            const horizontal = state.horizontalAnchor, vertical = state.verticalAnchor;
+            const horizontalAnchor = mapViewAnchor(state.horizontalAnchor, change.revision, change);
+            const verticalAnchor = mapViewAnchor(state.verticalAnchor, change.revision, change);
             entry.revision = change.revision;
             entry.state = { ...selections.ranges[selections.primary]!, selectionSet: selections, scrollLeft: state.scrollLeft,
-                scrollTop: state.scrollTop,
-                ...(horizontal?.revision === change.previousRevision && { horizontalAnchor: { ...horizontal, revision: change.revision,
-                    offset: change.mapping.map(horizontal.offset, horizontal.affinity).offset } }),
-                ...(vertical?.revision === change.previousRevision && { verticalAnchor: { ...vertical, revision: change.revision,
-                    offset: change.mapping.map(vertical.offset, "before").offset } }) };
+                scrollTop: state.scrollTop, ...(horizontalAnchor && { horizontalAnchor }), ...(verticalAnchor && { verticalAnchor }) };
         }) };
         return entry;
     }

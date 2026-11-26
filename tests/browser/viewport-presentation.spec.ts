@@ -353,28 +353,42 @@ test("Back restores the origin selections across edits at a same-file destinatio
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor, createNavigationHistory } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace();
+        const padding = "abc\n".repeat(60);
         const resource = workspace.createTextResource({ scope: "test", resource: "jump", variant: "source" }, "Jump",
-            { value: "abc\norigin line\n" });
+            { value: padding + "abc\norigin line\n" + padding });
         const { documentId } = resource;
         const host = document.body.appendChild(document.createElement("section"));
+        host.style.height = "160px";
         const editor = mountTextEditor(host, workspace, documentId), history = createNavigationHistory(workspace);
         try {
-            const { view } = editor, revision = workspace.document(documentId).revision;
-            view.setSelections(revision, [{ anchor: 10, head: 4 }, { anchor: 13, head: 13 }], 1);
+            const { view, viewport } = editor, revision = workspace.document(documentId).revision;
+            const at = padding.length;
+            view.setSelections(revision, [{ anchor: at + 10, head: at + 4 }, { anchor: at + 13, head: at + 13 }], 1);
+            editor.reveal({ line: 60, column: 0 }, { align: "start" });
+            viewport.flush();
+            const top = viewport.getSnapshot().scrollTop;
             const origin = history.capture(editor)!;
-            origin.visit(() => view.setSelection(revision, { anchor: 1, head: 1 }));
+            origin.visit(() => !!editor.reveal({ from: 1, to: 1 }, { select: true, align: "start" }));
+            viewport.flush();
             for (const insert of ["xx", "y"]) workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision,
                 edits: [{ from: 1, to: 1, insert }], origin: "human" });
             const save = workspace.captureSave(resource);
             save.start();
-            save.accept({ serverVersion: "formatted", canonical: "0123456789ABCDEFGH\n" });
+            save.accept({ serverVersion: "formatted", canonical: workspace.document(documentId).text().toUpperCase() });
             save.finish();
+            workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision });
+            workspace.redo({ documentId, expectedRevision: workspace.document(documentId).revision });
             const restored = history.back(() => editor);
+            viewport.flush();
             const { ranges, primary } = view.getSnapshot().selectionSet;
-            return { restored, primary, ranges: ranges.map(({ anchor, head }) => [anchor, head]), depth: history.getSnapshot() };
+            return { restored, primary, ranges: ranges.map(({ anchor, head }) => [anchor - at, head - at]),
+                depth: history.getSnapshot(), top, restoredTop: viewport.getSnapshot().scrollTop,
+                visible: !!viewport.coordsAt(ranges[primary]!.head) };
         } finally { history.dispose(); editor.dispose(); host.remove(); }
     });
-    expect(result).toEqual({ restored: "restored", primary: 1, ranges: [[13, 7], [16, 16]], depth: 0 });
+    expect(result.top).toBeGreaterThan(160);
+    expect(result).toEqual({ restored: "restored", primary: 1, ranges: [[13, 7], [16, 16]], depth: 0,
+        top: result.top, restoredTop: result.top, visible: true });
 });
 
 test("revealing a source range in a read-only editor aligns the painted rows and preserves the caller's focus", async ({ page }) => {

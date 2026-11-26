@@ -183,8 +183,9 @@ direction and its endpoints at the start or end of the file. An empty view start
 Endpoints in unchanged text follow that text. Inside the replacement they keep their relative
 UTF-16 offset, clamped to the new span and moved back if they fall inside a surrogate pair or CRLF.
 A selection supplied for the initiating view takes precedence. To carry a saved selection from
-`change.previousRevision` to `change.revision`, call `change.mapSelections(set)`. It follows
-these whole-text rules for replacements and endpoint affinities for range edits.
+`change.previousRevision` to `change.revision`, call `change.mapSelections(set)`. Use
+`change.mapViewOffset(offset, affinity)` for a scroll anchor. Both follow the whole-text rules
+through Undo and Redo and use endpoint affinities for range edits.
 
 Use `transact(documentId, expectedRevision, callback, options)` when later edits depend on earlier
 ones. Inside the synchronous callback, `tx.buffer` holds the staged text and `tx.edit(ranges)` uses

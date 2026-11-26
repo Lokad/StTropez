@@ -297,16 +297,17 @@ test("later edits block linked undo; branching invalidates dependent redo and re
 test("undo and redo map a later view through a long group of separated edits", () => {
     const workspace = new Workspace();
     const id = workspace.createDocument({ scope: "history", resource: "group", variant: "working" }, "Group", "abc".repeat(1_101));
+    const request = { documentId: id, origin: "human", history: { kind: "typing", group: "one" } } as const;
+    workspace.editDocuments([{ ...request, expectedRevision: 0, text: "ABC".repeat(1_101) }]);
     for (let i = 0; i < 1_101; i++) {
         const at = i * 4 + 1;
-        workspace.edit({ documentId: id, expectedRevision: i, origin: "human", history: { kind: "typing", group: "one" },
-            edits: [{ from: at, to: at + 1, insert: "BB" }] });
+        workspace.edit({ ...request, expectedRevision: i + 1, edits: [{ from: at, to: at + 1, insert: "BB" }] });
     }
     assert.equal(workspace.observeHistory(id).getSnapshot().undoDepth, 1);
     const view = workspace.createDocumentView(id, { anchor: 4 * 999, head: 4 * 503 });
-    assert.ok(workspace.undo({ documentId: id, expectedRevision: 1_101 }).applied);
+    assert.ok(workspace.undo({ documentId: id, expectedRevision: 1_102 }).applied);
     assert.deepEqual(view.getSnapshot().selection, { anchor: 3 * 999, head: 3 * 503, anchorAffinity: "before", headAffinity: "after" });
-    assert.ok(workspace.redo({ documentId: id, expectedRevision: 1_102 }).applied);
+    assert.ok(workspace.redo({ documentId: id, expectedRevision: 1_103 }).applied);
     assert.deepEqual(view.getSnapshot().selection, { anchor: 4 * 999, head: 4 * 503, anchorAffinity: "before", headAffinity: "after" });
     view.dispose();
 });

@@ -3,6 +3,7 @@ import type { TextEdit } from "./changes.ts";
 import type { Affinity, PositionMapping } from "./positions.ts";
 import { unchangedPositionEdges } from "./positions.ts";
 import type { TextBuffer } from "./text-buffer.ts";
+import type { TextStep } from "./text-transaction.ts";
 import { splitsTextPair } from "./utf16.ts";
 
 export type Selection = Readonly<{ anchor: number; head: number; anchorAffinity?: Affinity; headAffinity?: Affinity }>;
@@ -95,9 +96,26 @@ function mapEndpoints(length: number, value: SelectionSet, map: (offset: number,
     }), value.primary);
 }
 
-/** Apply the same selection policy to live views and saved locations. */
-export function documentSelectionMapper(mapping: PositionMapping, after?: TextBuffer): (set: SelectionSet) => SelectionSet {
-    if (!after) return set => mapSelectionSet(mapping, set);
+/** Selections and viewport anchors follow the same text across a document change. */
+export type DocumentViewMapping = Readonly<{
+    mapViewOffset(offset: number, affinity: Affinity): number;
+    mapSelections(set: SelectionSet): SelectionSet;
+}>;
+export function documentViewMapping(mapping: PositionMapping, after?: TextBuffer,
+    parts?: readonly TextStep[], undo = false): DocumentViewMapping {
+    if (!after) return {
+        mapSelections: (set: SelectionSet) => mapSelectionSet(mapping, set),
+        mapViewOffset: (offset: number, affinity: Affinity) => mapping.map(offset, affinity).offset,
+    };
+    if (parts) {
+        const steps = parts.map(part => documentViewMapping(undo ? part.mapping.invert() : part.mapping,
+            part.wholeText ? (undo ? part.before : part.after) : undefined, part.parts, undo));
+        if (undo) steps.reverse();
+        return {
+            mapViewOffset: (offset, affinity) => steps.reduce((at, step) => step.mapViewOffset(at, affinity), offset),
+            mapSelections: set => steps.reduce((current, step) => step.mapSelections(current), set),
+        };
+    }
     const { prefix, suffix } = unchangedPositionEdges(mapping)!;
     const oldEnd = mapping.oldLength - suffix, newEnd = after.length - suffix;
     const map = (offset: number, affinity?: Affinity) => {
@@ -108,7 +126,13 @@ export function documentSelectionMapper(mapping: PositionMapping, after?: TextBu
         const next = oldEnd === prefix ? mapping.map(offset, affinity).offset : offset === oldEnd ? newEnd : Math.min(offset, newEnd);
         return splitsTextPair(after, next) ? next - 1 : next;
     };
-    return set => mapEndpoints(after.length, createSelectionSet(mapping.oldLength, set.ranges, set.primary), map);
+    return {
+        mapSelections: (set: SelectionSet) => mapEndpoints(after.length, createSelectionSet(mapping.oldLength, set.ranges, set.primary), map),
+        mapViewOffset(offset: number, affinity: Affinity) {
+            checkEndpoints(mapping.oldLength, offset, offset);
+            return map(offset, affinity);
+        },
+    };
 }
 
 /** Preserve each endpoint's relative offset inside a replacement, including backwards selections. */

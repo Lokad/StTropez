@@ -12,8 +12,8 @@ import type { PositionMapping } from "./positions.ts";
 import { replacementMap } from "./positions.ts";
 import { TextHistory, validateHistoryGroup } from "./history.ts";
 import type { EditKind, HistoryChange, HistoryOptions, HistorySnapshot, Selection } from "./history.ts";
-import { createSelectionSet, documentSelectionMapper, sameSelectionSet } from "./selections.ts";
-import type { SelectionSet } from "./selections.ts";
+import { createSelectionSet, documentViewMapping, sameSelectionSet } from "./selections.ts";
+import type { DocumentViewMapping, SelectionSet } from "./selections.ts";
 import { NotificationScope, Store } from "./observable.ts";
 import type { AfterDelivery, Observable } from "./observable.ts";
 import { collapseFoldRegions, createFoldRegions, foldingSnapshot, projectFolds,
@@ -70,8 +70,7 @@ export type DocumentSnapshot = Readonly<{
     language: DocumentLanguage | null; change: DocumentChange | null;
 }>;
 export type DocumentChange = Readonly<{ previousRevision: number; revision: number; transactionId: number; origin: EditOrigin;
-    source?: string; kind: EditKind | "undo" | "redo"; mapping: PositionMapping; edits: readonly TextEdit[];
-    mapSelections: (set: SelectionSet) => SelectionSet }>;
+    source?: string; kind: EditKind | "undo" | "redo"; mapping: PositionMapping; edits: readonly TextEdit[] } & DocumentViewMapping>;
 export type DocumentViewSnapshot = Readonly<{ documentId: DocumentId; revision: number; selection: Selection; selectionSet: SelectionSet }>;
 export type DocumentView = Observable<DocumentViewSnapshot> & Readonly<{ id: ViewId; documentId: DocumentId;
     folding: DocumentFolding;
@@ -150,12 +149,12 @@ type ViewRecord = { handle: DocumentView; state: Store<DocumentViewSnapshot>; fo
     deleted?: WeakMap<PositionMapping, readonly FoldRegion[]> };
 type PreparedView = Readonly<{ view: ViewRecord; state: DocumentViewSnapshot; folds: FoldingSnapshot }>;
 type PreparedText = Readonly<{ record: ResourceRecord; buffer: TextBuffer; mapping: PositionMapping; parts?: HistoryChange["parts"];
-    state: ResourceSnapshot<SnapshotValue>; views: readonly PreparedView[]; mapSelections: DocumentChange["mapSelections"] }>;
+    wholeText?: boolean | undefined; state: ResourceSnapshot<SnapshotValue>; views: readonly PreparedView[]; viewMapping: DocumentViewMapping }>;
 function historyChange(text: PreparedText, units: number, initiatingView: string | null = null): HistoryChange {
     const selections = Object.freeze(text.views.map(({ view, state }) => Object.freeze({ viewId: view.handle.id,
         before: view.state.get().selectionSet, after: state.selectionSet })));
     return Object.freeze({ documentId: text.record.documentId!, before: text.record.buffer!, after: text.buffer,
-        mapping: text.mapping, parts: text.parts, units, initiatingView, selections });
+        mapping: text.mapping, parts: text.parts, wholeText: text.wholeText, units, initiatingView, selections });
 }
 type ResourceRecord = {
     handle: ResourceHandle<SnapshotValue>; documentId: DocumentId | null; language: DocumentLanguage | null;
@@ -544,7 +543,7 @@ export class Workspace {
             const mapping = direction === "undo" ? forward.invert() : forward;
             return this.#prepareText(participant, direction === "undo" ? change.before : change.after, mapping,
                 { selectionFor: view => selections.get(view.handle.id), undo: direction === "undo" ? forward : undefined,
-                    parts: change.parts });
+                    parts: change.parts, wholeText: change.wholeText });
         });
         this.#history.move(entry, direction);
         const changed = new Set<Store<unknown>>(), transactionId = ++this.#nextTransaction, revisions = [];
@@ -556,19 +555,19 @@ export class Workspace {
     }
     /** Prepare every projection before history, resource or view mutation, including linked documents. */
     #prepareText(record: ResourceRecord, buffer: TextBuffer, mapping: PositionMapping,
-        options: { selectionFor?: (view: ViewRecord) => SelectionSet | undefined; wholeText?: boolean;
+        options: { selectionFor?: (view: ViewRecord) => SelectionSet | undefined; wholeText?: boolean | undefined;
             undo?: PositionMapping | undefined; parts?: HistoryChange["parts"]; adopted?: ResourceMetadata } = {}): PreparedText {
         const current = record.state.get(), revision = current.revision + 1, before = record.buffer!;
         const state = readySnapshot(options.adopted ?? { ...current.metadata, dirty: record.savedBuffer === null || !buffer.equals(record.savedBuffer) }, revision, buffer), views = [];
         const project = projectFolds(before, buffer, mapping, record.views.size > 1, options.undo, options.parts);
-        const mapSelections = documentSelectionMapper(mapping, options.wholeText ? buffer : undefined);
+        const viewMapping = documentViewMapping(mapping, options.wholeText ? buffer : undefined, options.parts, !!options.undo);
         for (const view of record.views.values()) {
             const previous = view.state.get().selectionSet;
-            const selections = options.selectionFor?.(view) ?? mapSelections(previous);
+            const selections = options.selectionFor?.(view) ?? viewMapping.mapSelections(previous);
             const prior = view.folds.get().index;
             views.push(this.#prepareView(view, record.documentId!, revision, buffer, selections, project(view, prior)));
         }
-        return { record, buffer, mapping, parts: options.parts, state, views, mapSelections };
+        return { record, buffer, mapping, parts: options.parts, wholeText: options.wholeText, state, views, viewMapping };
     }
     #prepareView(view: ViewRecord, documentId: DocumentId, revision: number, buffer: TextBuffer,
         selections: SelectionSet, mapped: FoldIndex): PreparedView {
@@ -582,9 +581,9 @@ export class Workspace {
         prepared.view.folds.set(prepared.folds, changed); prepared.view.state.set(prepared.state, changed);
     }
     #commitText(prepared: PreparedText, origin: EditOrigin, kind: DocumentChange["kind"], transactionId: number, changed: Set<Store<unknown>>, source?: string): void {
-        const { record, buffer, mapping, state, views, mapSelections } = prepared;
+        const { record, buffer, mapping, state, views, viewMapping } = prepared;
         record.change = documentChange({ previousRevision: record.state.get().revision, revision: state.revision, mapping,
-            transactionId, origin, kind, mapSelections, ...(source === undefined ? {} : { source }) }, record.buffer!, buffer);
+            transactionId, origin, kind, ...viewMapping, ...(source === undefined ? {} : { source }) }, record.buffer!, buffer);
         record.buffer = buffer; this.#setRecord(record, state, changed);
         for (const view of views) this.#commitView(view, changed);
     }
