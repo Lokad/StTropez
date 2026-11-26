@@ -47,6 +47,7 @@ export function createEdgeAutoscroll<C>(host: Host, viewport: Viewport, options:
             const speed = options.velocity(capture);
             if (!speed.x && !speed.y && !options.updateAtRest) { previousTime = undefined; return; }
             const elapsed = previousTime === undefined ? 1000 / 60 : Math.max(0, Math.min(32, time - previousTime)); previousTime = time;
+            if (elapsed === 0) { request(); return; }
             const before = viewport.getSnapshot();
             viewport.scrollTo({ left: before.scrollLeft + speed.x * elapsed / 1000, top: before.scrollTop + speed.y * elapsed / 1000 }); viewport.flush();
             if (!valid(capture, epoch)) return;

@@ -35,6 +35,7 @@ function fixture(maximum = 1000) {
 test("one frame chain bounds delayed movement, stops at scroll limits and rejects cancelled callbacks", () => {
     const f = fixture(80); f.scroll.schedule(); f.scroll.schedule(); assert.equal(f.frames.size, 1);
     f.step(100); assert.equal(f.position().scrollTop, 1000 / 60);
+    f.step(100); assert.equal(f.position().scrollTop, 1000 / 60); assert.equal(f.frames.size, 1);
     f.step(10000); assert.equal(f.position().scrollTop, 1000 / 60 + 32);
     const late = [...f.frames.values()][0]!; f.scroll.stop(); f.replace(); f.scroll.schedule(); late(20000);
     assert.deepEqual(f.updates, [1, 1]); assert.equal(f.frames.size, 1); assert.equal(f.scroll.pending(), true);
