@@ -47,6 +47,23 @@ Extend the case that already reaches the failure. Model tests own text, history,
 and revision checks. Browser tests own native-event routing, focus, geometry and paint. The plain host owns
 shared workflows, React owns attachment and render isolation, and a shadow root exercises event retargeting.
 
+| Feature | Model owner | Browser owner |
+| --- | --- | --- |
+| Typing and Undo | [Input targets](../tests/input-target.test.ts), [history](../tests/history.test.ts) | [Input events](../tests/browser/input-target.spec.ts), [editing](../tests/browser/editing.spec.ts) |
+| Find and replace | [Match retention](../tests/find-retention.test.ts), [regex](../tests/find-regex.test.ts) | [Search in an editor](../tests/browser/language-find.spec.ts) |
+| Shortcuts, completion and navigation | [Keymap](../tests/editor-keymap.test.ts), [completion](../tests/completion-controller.test.ts), [navigation](../tests/navigation-controller.test.ts) | [Controls](../tests/browser/editor-controls.spec.ts), [pane attachments](../tests/browser/editor-language-attachment.spec.ts) |
+| Folding and minimap | [Fold projection](../tests/folding.test.ts), [discovery](../tests/fold-discovery.test.ts) | [Disclosure and Undo](../tests/browser/folding.spec.ts), [minimap gestures and review](../tests/browser/minimap.spec.ts) |
+| Pane lifetime and scroll | [Navigation history](../tests/navigation-history.test.ts) | [Remount and reveal](../tests/browser/editor-view-state.spec.ts), [viewport paint](../tests/browser/viewport-presentation.spec.ts) |
+| Save and conflicts | [Review and adoption](../tests/save-review.test.ts) | [Competing reference-host tabs](../tests/browser/reference.spec.ts) |
+
+CI runs the full Chromium suite. For Firefox and WebKit, select the affected files below when a change
+touches input routing, pointer capture, text geometry or clipboard events. These cases use page-local
+events and leave the OS clipboard alone.
+
+```sh
+npm run test:browsers -- --project=firefox --project=webkit tests/browser/input-target.spec.ts tests/browser/editor-pointer-focus.spec.ts tests/browser/text-geometry.spec.ts tests/browser/clipboard-delegation.spec.ts
+```
+
 For a race, [hold the reply](../tests/helpers/lsp-replies.ts), edit or close its target, then release it.
 Assert the resulting document, selection and whether a fresh action works. For Save, check stored text and
 later dirty edits. [Save retries](../tests/browser/save-conflicts.spec.ts) ·

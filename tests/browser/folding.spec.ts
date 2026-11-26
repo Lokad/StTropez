@@ -1,4 +1,6 @@
-import { ready, test, expect } from "./fixtures.ts";
+import { mountShadowEditor, shadowText } from "./shadow-editor.ts";
+import { presentationTest } from "./presentation-fixture.ts";
+import { isolatedTest, ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 const input = (page: Page, name = "Primary source") => page.getByRole("textbox", { name, exact: true });
 
@@ -568,4 +570,57 @@ test("a folded range keeps row work bounded, maps edits and undo, and reveals a 
     expect(state.primary.selection.head).toBe(middle + 1); expect(state.primary.viewport.visibleLines).toBe(1002);
     expect(await page.evaluate(at => window.editingFixture.range(at, at + 5), middle)).toBe("!" + text.slice(middle, middle + 4));
     await page.evaluate(() => window.editingFixture.dispose()); expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });
+});
+
+presentationTest("fold labels describe the hidden imports and their changes in each review pane", async ({ page }) => {
+    const review = await page.evaluateHandle(async () => {
+        const path = "/presentation-fixture/";
+        const { Workspace, TextBuffer } = await import(path + "core.js") as typeof import("../../src/index.ts");
+        const { mountTextComparison } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
+        const workspace = new Workspace();
+        const id = workspace.createDocument({ scope: "review", resource: "source", variant: "working" }, "source", "first\nnew\nshared\nlast");
+        const host = document.body.appendChild(document.createElement("section"));
+        host.style.height = "400px";
+        const review = mountTextComparison(host, workspace, id, { version: "1", buffer: TextBuffer.from("first\nold\nshared\nlast") }, {
+            settings: { foldLabels: {
+                action: region => region.group === "imports" ? `${region.collapsed ? "Ouvrir" : "Fermer"} les imports` : undefined,
+                summary: (region, changed) => `Lignes ${region.lineFrom + 2} à ${region.lineTo}${changed ? " · modifiées" : ""}`,
+            } },
+        });
+        for (const { view } of Object.values(review.panes)) {
+            const fold = view.folding;
+            fold.setRanges(fold.getSnapshot(), [{ id: "imports", group: "imports", from: 0, to: 17, collapsed: true }]);
+        }
+        return review;
+    });
+    const panes = page.locator(".st-comparison-panes > section");
+    const reference = panes.first();
+    const working = panes.last();
+    await expect(reference.getByRole("textbox")).toHaveAttribute("readonly", "");
+    await expect(reference.locator(".st-fold-summary")).toHaveAttribute("data-label", "Lignes 2 à 3 · modifiées");
+    await expect(working.locator(".st-fold-summary")).toHaveAttribute("data-label", "Lignes 2 à 3 · modifiées");
+    const open = reference.getByRole("button", { name: "Ouvrir les imports" });
+    await expect(open).toHaveAttribute("title", "Ouvrir les imports");
+    await open.press("Space");
+    await expect(reference.getByRole("button", { name: "Fermer les imports" })).toHaveAttribute("aria-expanded", "true");
+    await review.evaluate(review => review.panes.working.configure({ foldLabels: {} }));
+    await expect(working.getByRole("button", { name: "Expand imports" })).toHaveAttribute("aria-expanded", "false");
+    await expect(working.locator(".st-fold-summary")).toHaveAttribute("data-label", "… 2 lines hidden · contains changes");
+    await review.evaluate(review => review.dispose());
+});
+
+isolatedTest("discovering an expanded fold while typing preserves one undo group", async ({ page }) => {
+    const input = await mountShadowEditor(page, false), original = await shadowText(page);
+    await input.focus();
+    await page.keyboard.type("c");
+    await page.evaluate(() => {
+        const { editor, workspace, source } = window.shadowFocus;
+        const { folding } = editor.view, buffer = workspace.document(source.id).buffer;
+        const from = buffer.offsetAt(0), to = buffer.length;
+        if (!folding.setRanges(folding.getSnapshot(), [{ id: "body", from, to }])) throw Error("Fold installation failed");
+    });
+    await page.keyboard.type("ache");
+    expect(await shadowText(page)).toBe("cache" + original);
+    await page.keyboard.press("Control+z");
+    expect(await shadowText(page)).toBe(original);
 });

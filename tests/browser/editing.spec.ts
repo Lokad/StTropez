@@ -1,4 +1,5 @@
-import { ready, test, expect } from "./fixtures.ts";
+import { mountShadowEditor, shadowText } from "./shadow-editor.ts";
+import { isolatedTest, ready, test, expect } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { recordTypedText } from "../helpers/typed-text.ts";
 
@@ -868,4 +869,39 @@ test("a staged dead key occupies one cell and cancellation preserves the selecte
     });
     await page.keyboard.press("ControlOrMeta+z"); expect(await page.evaluate(() => window.editingFixture.range(0, 11))).toBe("alpha omega");
     await cdp.detach();
+});
+
+isolatedTest("native undo and redo belong to the focused text field", async ({ page }) => {
+    const input = await mountShadowEditor(page, false), original = await shadowText(page);
+    await input.focus();
+    await page.keyboard.type("X");
+    const edited = await shadowText(page);
+    expect(edited).not.toBe(original);
+    const field = page.getByRole("textbox", { name: "Search the document" });
+    await page.evaluate(() => {
+        const search = document.createElement("input");
+        search.setAttribute("aria-label", "Search the document");
+        document.body.append(search);
+    });
+    await field.fill("query");
+    await field.press("Control+z");
+    await expect(field).toHaveValue("");
+    await field.press("Control+z");
+    // Engines can deliver native history events to the last edited textarea after focus moves.
+    const dispatchHistory = (inputType: string) => input.evaluate((node, inputType) => {
+        for (const type of ["beforeinput", "input"]) {
+            node.dispatchEvent(new InputEvent(type, { inputType, bubbles: true, cancelable: type === "beforeinput" }));
+        }
+    }, inputType);
+    await dispatchHistory("historyUndo");
+    expect(await shadowText(page)).toBe(edited);
+    await input.focus();
+    await page.keyboard.press("Control+z");
+    expect(await shadowText(page)).toBe(original);
+    await field.focus();
+    await dispatchHistory("historyRedo");
+    expect(await shadowText(page)).toBe(original);
+    await input.focus();
+    await page.keyboard.press("Control+Shift+z");
+    expect(await shadowText(page)).toBe(edited);
 });
