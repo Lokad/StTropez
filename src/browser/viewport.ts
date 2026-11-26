@@ -18,7 +18,7 @@ import type { ScrollAxis } from "./scroll.ts";
 import { rowGeometry } from "./text-geometry.ts";
 import type { CaretRectangle } from "./text-geometry.ts";
 import type { Affinity } from "../core/positions.ts";
-import { unchangedPositionEdges } from "../core/positions.ts";
+import { viewportRows } from "./viewport-rows.ts";
 import { createFoldRegions, FoldIndex } from "../core/folding.ts";
 import type { FoldingSnapshot, FoldRegion, FoldVersion } from "../core/folding.ts";
 import { sameSelectionSet } from "../core/selections.ts";
@@ -327,10 +327,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
     let selectionMetrics: { font: string; height: number; zoom: number } | undefined;
     let paintEpoch = 0;
     let painted: Readonly<{ key: readonly unknown[]; horizontalAnchor: typeof horizontalAnchor; placement: typeof fragmentPlacement }> | undefined;
-    const rows = new Map<number, HTMLDivElement>();
-    // Source spans advance through transactions without changing the last painted DOM identities.
-    const rowSources = new Map<HTMLDivElement, Pick<Row, "start" | "end">>();
-    let rowSourceRevision: number | null = null;
+    const rowCache = viewportRows(layer);
+    const rows = rowCache.elements;
     const paddingRows = new Map<number, HTMLDivElement>();
     type Geometry = Readonly<{ value: ReturnType<typeof rowGeometry>; from: number; revision: number; height: number }>;
     const geometries = new Map<number, Geometry>();
@@ -423,46 +421,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
         root.scrollTop = y.toPhysical(top);
     }, line => decorations.present(line, true), line => decorations.lineClasses(line, true));
     let minimap = settings.minimap ? createMinimap() : undefined;
-    function mapRowSources(current: DocumentSnapshot | undefined): void {
-        if (current?.revision === rowSourceRevision) return;
-        const change = current?.change;
-        if (!current || !change || change.previousRevision !== rowSourceRevision) rowSources.clear();
-        else {
-            const mapping = change.mapping, edges = unchangedPositionEdges(mapping), delta = mapping.newLength - mapping.oldLength;
-            for (const [element, source] of rowSources) {
-                if (edges && source.start < edges.prefix && source.end <= edges.prefix) continue;
-                if (edges && source.start >= mapping.oldLength - edges.suffix) {
-                    if (delta) rowSources.set(element, { start: source.start + delta, end: source.end + delta });
-                    continue;
-                }
-                // An empty row still owns a terminator; consuming it must not steal a neighboring empty row.
-                const mapped = mapping.mapRange({ from: source.start, to: Math.min(mapping.oldLength, Math.max(source.end, source.start + 1)),
-                    fromAffinity: "after", toAffinity: "before", onDelete: "invalidate" });
-                if (mapped) rowSources.set(element, { start: mapped.from, end: source.start === source.end ? mapped.from : mapped.to });
-                else rowSources.delete(element);
-            }
-        }
-        rowSourceRevision = current?.revision ?? null;
-    }
-    function retainRows(document: DocumentSnapshot, next: readonly Row[]): void {
-        // A host can flush before this viewport's document notification is delivered.
-        mapRowSources(document);
-        if (renderedRevision === document.revision || !rows.size) return;
-        const targets = new Map(next.map(item => [item.start, item])), retained = new Map<number, HTMLDivElement>(), used = new Set<HTMLDivElement>();
-        for (const [element, source] of rowSources) {
-            const item = targets.get(source.start);
-            if (item && item.end === source.end && !retained.has(item.line)) { retained.set(item.line, element); used.add(element); }
-        }
-        // Reserve every mapped row before recycling changed rows at their old line numbers.
-        // The ordinary painter still validates text, decorations and selection parts for every node.
-        for (const item of next) {
-            const element = rows.get(item.line);
-            if (!retained.has(item.line) && element && !used.has(element)) { retained.set(item.line, element); used.add(element); }
-        }
-        for (const element of rows.values()) if (!used.has(element)) { element.remove(); rowSources.delete(element); }
-        rows.clear(); for (const [line, element] of retained) rows.set(line, element);
-        geometries.clear();
-    }
     function rebindComparison(document: DocumentSnapshot, folds: FoldingSnapshot) {
         if (!comparisonRows || comparisonRows.index.matches(document.buffer, folds.index)) return;
         const change = document.change;
@@ -473,7 +431,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
     }
     const documentChanged = () => {
         const current = currentDocument();
-        mapRowSources(current);
+        rowCache.advance(current);
         if (current && previous && current.revision !== previous.revision) {
             if (comparisonRows) rebindComparison(current, currentFolds());
             if (!anchor) {
@@ -789,7 +747,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
         const paintedGeometry = { lineFrom, lineTo, scrollTop: top, scrollLeft: left, width, height, gutterWidth,
             lineHeight, naturalLineHeight, columnWidth, verticalExtent: y.extent, horizontalExtent: x.extent };
         visibleItems = next; dirtyRows.clear();
-        retainRows(document, next);
+        if (rowCache.retain(document, next, renderedRevision)) geometries.clear();
         partialRows = next.filter(row => !row.complete).length;
         // A fitting document must not fill rounded client metrics: a fractional viewport can be
         // slightly smaller, making classic scrollbars repeatedly add/remove each other.
@@ -813,8 +771,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
         }
         textUnits = 0;
         for (const item of next) {
-            let element = rows.get(item.line);
-            if (!element) { element = editorElement(owner, "div", "viewport-row"); rows.set(item.line, element); layer.append(element); }
+            const element = rowCache.forLine(item.line);
             const placement = fragmentPlacement, shift = placement?.revision === document.revision && placement.line === item.line
                 && placement.from === item.from && placement.to === item.to && placement.left === left ? placement.shift : 0;
             element.style.setProperty("--st-fragment-left", `${item.left + shift}px`);
@@ -823,11 +780,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
             element.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
             if (paintRow(element, item, document, selectionSet, highlightedLine, index)) geometries.delete(item.line);
             textUnits += item.text.length;
-            rowSources.set(element, item);
+            rowCache.painted(element, item);
         }
-        const visibleLines = new Set(next.map(item => item.line));
-        for (const [line, element] of rows) if (!visibleLines.has(line)) { element.remove(); rows.delete(line); rowSources.delete(element); geometries.delete(line); }
-        next.forEach((item, index) => { const element = rows.get(item.line)!; if (layer.children.item(index) !== element) layer.insertBefore(element, layer.children.item(index)); });
+        rowCache.finish(next, document.revision, line => geometries.delete(line));
         const visiblePadding = new Set(blanks);
         for (const [at, element] of paddingRows) if (!visiblePadding.has(at)) { element.remove(); paddingRows.delete(at); }
         for (const at of blanks) {
@@ -835,7 +790,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
             element.style.transform = `translate(0px, ${padding + at * lineHeight - top}px)`; element.style.height = `${lineHeight}px`; element.style.width = `${width}px`;
         }
         root.removeAttribute("aria-disabled"); root.dataset.revision = String(document.revision);
-        renderedRevision = document.revision; rowSourceRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renderedAlignmentId = comparisonRows?.id ?? null; renders++;
+        renderedRevision = document.revision; renderedSelection = selected; renderedSelectionSet = selectionSet; previous = document; renderedIndex = index; renderedFoldGeneration = folds.generation; renderedAlignmentId = comparisonRows?.id ?? null; renders++;
         const visibleFolds = new Set<string>(), orderedButtons: HTMLButtonElement[] = [];
         let nextHead = -1;
         let headRow = -1;
@@ -1204,10 +1159,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
         numbers.replaceChildren();
         foldButtons.clear();
         foldLayer.replaceChildren();
-        layer.replaceChildren();
-        rows.clear();
-        rowSources.clear();
-        rowSourceRevision = null;
+        rowCache.clear();
         geometries.clear();
         dirtyRows.clear();
         visibleItems = [];
