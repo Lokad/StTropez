@@ -196,17 +196,19 @@ function batch(root: Root, edits: readonly TextEdit[]): Root {
     // Adjacent short fragments form their own backing. A lone source fragment stays shared.
     const parts: string[] = [];
     let units = 0, singleSource: Leaf | undefined;
-    const endRun = () => {
-        if (parts.length === 1) emit(singleSource ?? parts[0]!);
-        else if (parts.length) emit(original(parts.join(""))!);
+    const endRun = (next?: string | Node) => {
+        if (units) emit(parts.length === 1 ? singleSource ?? parts[0]! : original(parts.join(""))!);
         parts.length = 0;
         units = 0;
         singleSource = undefined;
+        if (next) emit(next);
     };
+    const retainedLeaf = (source: Leaf, from: number, length: number) =>
+        length === source.length ? source : piece(source.backing, from, length);
     const appendText = (text: string, source?: Leaf, offset = 0) => {
         if (units + text.length > capacity) endRun();
         if (!units && source) {
-            singleSource = text.length === source.length ? source : piece(source.backing, offset, text.length);
+            singleSource = retainedLeaf(source, offset, text.length);
         }
         parts.push(text);
         units += text.length;
@@ -214,18 +216,14 @@ function batch(root: Root, edits: readonly TextEdit[]): Root {
     const keepLeaf = (leaf: Leaf, offset: number, length: number) => {
         const from = leaf.from + offset;
         if (length > smallPieceUnits) {
-            endRun();
-            emit(length === leaf.length ? leaf : piece(leaf.backing, from, length));
+            endRun(retainedLeaf(leaf, from, length));
         } else appendText(leaf.backing.text.slice(from, from + length), leaf, from);
     };
     const consume = (until: number, keep: boolean) => {
         while (position < until && node) {
             if (node.kind === "branch") {
                 if (node.length <= until - position) {
-                    if (keep) {
-                        endRun();
-                        emit(node);
-                    }
+                    if (keep) endRun(node);
                     position += node.length;
                     node = pending.pop();
                 } else {
@@ -247,13 +245,14 @@ function batch(root: Root, edits: readonly TextEdit[]): Root {
     for (const edit of edits) {
         consume(edit.from, true);
         consume(edit.to, false);
-        if (edit.insert.length) appendText(edit.insert);
+        if (edit.insert.length > smallPieceUnits) endRun(edit.insert);
+        else if (edit.insert.length) appendText(edit.insert);
     }
     consume(root?.length ?? 0, true);
     endRun();
     if (insertedUnits) flushInserts();
     let result: Root = null;
-    for (let index = forest.length - 1; index >= 0; index--) result = join(forest[index]!, result);
+    while (forest.length) result = join(forest.pop()!, result);
     return result;
 }
 

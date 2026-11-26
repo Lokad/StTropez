@@ -275,6 +275,11 @@ test("dense batches bound fragmentation while sparse batches share large unchang
     const tail = mixed.replace(0, half * (line.length - 2), "");
     assert.equal(tail.text(), before.slice(half * line.length, tailEdit) + "!" + before.slice(tailEdit + 1, before.length));
     assert.equal(TextBuffer.retained([before, tail]).backingTextUnits, before.length + 1);
+    const inserted = "x".repeat(40_000);
+    const pasted = before.apply([{ from: 0, to: 0, insert: inserted }, { from: 1, to: 2, insert: "" }]).buffer;
+    const trimmed = pasted.replace(0, inserted.length, "");
+    assert.equal(trimmed.text(), before.slice(0, 1) + before.slice(2, before.length));
+    assert.equal(TextBuffer.retained([before, trimmed]).backingTextUnits, before.length);
     const sparse = before.apply([{ from: 1, to: 2, insert: "!" }, { from: before.length - 2, to: before.length - 1, insert: "!" }]).buffer;
     assert.ok(TextBuffer.retained([before, sparse]).backingTextUnits <= before.length + 128);
     assert.equal(sparse.slice(100, 200), before.slice(100, 200)); assert.equal(bufferReads(before).textExports, 0); assert.equal(bufferReads(changed).textExports, 0);
