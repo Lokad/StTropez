@@ -28,8 +28,19 @@ test("occurrence shortcuts wrap, keep the current word primary and type over the
     expect((await snapshot(page)).primary.selection).toMatchObject({ anchor: 7, head: 4 });
     await page.keyboard.type("Y");
     await expect(row).toHaveJSProperty("textContent", "Y Y sYter CAT Y");
-    await setup(page, "name\n" + "other\n".repeat(10_000) + "name", 2);
-    await page.keyboard.press("Control+Shift+l"); await page.keyboard.type("Z"); await ready(page);
+    await setup(page, "name\n" + "other\n".repeat(75_000) + "name", 2);
+    const input = page.locator("#primary textarea");
+    await input.evaluate(field => {
+        const read = (event: KeyboardEvent) => {
+            if (event.code !== "KeyL") return;
+            document.removeEventListener("keydown", read);
+            field.dataset.occurrences = String(window.editingFixture.selectionSet().ranges.length);
+        };
+        document.addEventListener("keydown", read);
+    });
+    await page.keyboard.press("Control+Shift+l");
+    expect(await input.getAttribute("data-occurrences")).toBe("2");
+    await page.keyboard.type("Z"); await ready(page);
     expect(await page.evaluate(() => { const f = window.editingFixture, length = f.snapshot().document!.length; return [f.range(0, 2), f.range(length - 2, length)]; })).toEqual(["Z\n", "\nZ"]);
 });
 

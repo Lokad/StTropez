@@ -4,8 +4,8 @@ import type { Selection, SelectionSet } from "./selections.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 
 /** Search on either side of the primary selection so overlapping literals never displace it. */
-export function* selectionOccurrences(buffer: TextBuffer, selections: SelectionSet, seed: Selection, all: boolean,
-    wholeWord: boolean): Generator<void, SelectionSet> {
+export function selectionOccurrences(buffer: TextBuffer, selections: SelectionSet, seed: Selection, all: boolean,
+    wholeWord: boolean): SelectionSet {
     const from = Math.min(seed.anchor, seed.head), to = Math.max(seed.anchor, seed.head);
     if (to === from) return selections;
     const ranges: Selection[] = [];
@@ -38,7 +38,6 @@ export function* selectionOccurrences(buffer: TextBuffer, selections: SelectionS
                     ranges.push(range);
                 }
                 if (step.done) break;
-                yield;
             }
         } finally { search.dispose(); }
     }

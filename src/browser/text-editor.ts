@@ -213,7 +213,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let pendingDeletion: Readonly<{ revision: number; selectionSet: SelectionSet; command: DeletionCommand }> | undefined;
     let insertion: InputCapture | undefined, composition: InputCapture | undefined;
     let projectedSet = currentSelections();
-    let rangeCommand: Readonly<{ capture: CommandCapture; purpose: OrderedInput<CommandCapture>["purpose"]; release: () => void }> | undefined, cancelRangeTask: (() => void) | undefined;
+    let rangeCommand: Readonly<{ capture: CommandCapture; purpose: OrderedInput<CommandCapture>["purpose"] }> | undefined, cancelRangeTask: (() => void) | undefined;
     let nativeOrder: { order: OrderedInput<CommandCapture>; capture: InputCapture; type: string; data: string | null; action?: InputKey; invalid: boolean; reported: boolean } | undefined;
     const inputQueue = createOrderedInputQueue<CommandCapture>(win.performance, commandRunner, {
         command: () => rangeCommand, capture: () => commandCapture(false), disposed: () => disposed,
@@ -260,10 +260,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         cancelGraphemeTask?.(); cancelGraphemeTask = undefined;
     }
     function cancelPendingCommand(): void {
-        const command = rangeCommand; rangeCommand = undefined;
+        rangeCommand = undefined;
         cancelRangeTask?.(); cancelRangeTask = undefined;
         const pending = inputQueue.take();
-        try { cancelScans(); command?.release(); }
+        try { cancelScans(); }
         finally { if (pending) inputQueue.recover(pending, "pending-input-cancelled"); }
     }
     const caretLayer = mountInputCaret(root, input, view, viewport,
@@ -552,7 +552,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         options: Readonly<{ validLayout?: () => boolean; navigation?: boolean; inline?: boolean }> = {}): void {
         const sourceRanges = capture.selectionSet.ranges;
         const validLayout = options.validLayout ?? (() => true), turn = options.navigation ? navigationTurn : (work: () => void) => work();
-        const job = { capture, purpose, release: () => {} }; rangeCommand = job;
+        const job = { capture, purpose }; rangeCommand = job;
         const ranges: Selection[] = []; let index = 0, pumping = false, waiting = false;
         const active = () => rangeCommand === job && validCommand(capture);
         const pump = () => turn(() => commandTurn(() => {
@@ -715,7 +715,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         cancelPendingCommand(); if (disposed || composing || input.disabled || !live()) return;
         stopDrag(); group = undefined; preferred = undefined; focus(); syncSelection();
         const capture = commandCapture(false);
-        rangeCommand = { capture, purpose: "word", release: () => {} };
+        rangeCommand = { capture, purpose: "word" };
         wordRange(capture, offset, range => {
             rangeCommand = undefined; completeCaptured(capture, () => {
                 if (!range) return true;
@@ -745,8 +745,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const { selection, selectionSet } = capture;
         const empty = selection.head === selection.anchor;
         const wholeWord = empty || wholeWordSelections.get(currentView()) === true;
-        let search: ReturnType<typeof selectionOccurrences> | undefined;
-        rangeCommand = { capture, purpose: "word", release: () => { search?.return(selectionSet); } };
+        rangeCommand = { capture, purpose: "word" };
         const finish = (result: SelectionSet) => {
             rangeCommand = undefined;
             completeCaptured(capture, () => {
@@ -761,14 +760,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 const ranges = selectionSet.ranges.slice(); ranges[selectionSet.primary] = seed;
                 finish({ ranges, primary: selectionSet.primary }); return;
             }
-            const cursor = search = selectionOccurrences(capture.buffer, selectionSet, seed, all, wholeWord);
-            const step = () => commandTurn(() => {
-                if (!validCommand(capture)) { cancelPendingCommand(); return; }
-                const result = commandRunner.slice(() => cursor.next(), result => !result.done, commandBudget.graphemeCalls);
-                if (result.done) finish(result.value);
-                else cancelRangeTask = commandRunner.schedule(() => { cancelRangeTask = undefined; step(); });
+            commandTurn(() => {
+                if (validCommand(capture)) finish(selectionOccurrences(capture.buffer, selectionSet, seed, all, wholeWord));
+                else cancelPendingCommand();
             });
-            step();
         };
         if (empty) wordRange(capture, selection.head, begin, true); else begin(selection);
     }
@@ -791,7 +786,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     function beginNavigation(prepare: (capture: CommandCapture, style: string, inline: boolean) => void, canInline?: (capture: CommandCapture) => boolean): void {
         cancelPendingCommand(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
         navigationTurn(() => commandTurn(() => {
-            const capture = commandCapture(false), job = { capture, purpose: "grapheme" as const, release: () => {} };
+            const capture = commandCapture(false), job = { capture, purpose: "grapheme" as const };
             if (!validCommand(capture)) return; rangeCommand = job;
             const inline = canInline?.(capture) ?? false, style = navigationStyle();
             const initialize = (resumed: boolean) => commandTurn(() => {
@@ -1537,7 +1532,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         cancelPendingCommand(); projection.count = count;
         // Extending down the same columns only measures newly crossed rows.
         const ranges = projection.ranges;
-        const job = { capture, purpose: "column" as const, release: () => {} }; rangeCommand = job;
+        const job = { capture, purpose: "column" as const }; rangeCommand = job;
         const step = () => commandTurn(() => {
             if (rangeCommand !== job) return;
             if (!validCommand(capture) || !root.isConnected || navigationLayout() !== layout) { cancelPendingCommand(); return; }
@@ -1587,7 +1582,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (unit.kind === "line") { applyUnits(unit.range, wholeLine(currentDocument().buffer, point.offset)); return; }
             draggedWord = true; cancelPendingCommand();
             const capture = commandCapture(false);
-            rangeCommand = { capture, purpose: "word", release: () => {} };
+            rangeCommand = { capture, purpose: "word" };
             const extendWord = (origin: Selection = { anchor: unit.origin, head: unit.origin }) => {
                 unit.range = origin;
                 const finish = (target: Selection = { anchor: point.offset, head: point.offset }) => {

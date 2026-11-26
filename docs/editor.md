@@ -123,6 +123,9 @@ export function defaultKeys(command: TextEditorCommand, platform: keyof typeof d
 | Mod+G / Mod+Shift+Backslash | Go to line / jump to bracket. |
 | Ctrl+Up / Down, Alt+PageUp / PageDown | Scroll a row or page while keeping the selection. |
 
+With text already selected, Mod+D and Mod+Shift+L commit the new selections before the key handler returns.
+An empty selection first resolves the word at the caret.
+
 | Editing | Action |
 | --- | --- |
 | Backspace / Delete | Delete the selection or adjacent grapheme. The word modifier deletes a run. Backspace in indentation uses tab stops. |
