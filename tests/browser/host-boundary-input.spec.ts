@@ -9,7 +9,7 @@ async function waitForReview(page: Page): Promise<void> {
 }
 async function exact(page: Page, text: string): Promise<void> { expect(await hostTextEquals(page, text)).toBe(true); }
 
-for (const journey of ["primary", "comparison", "resize and queued input"] as const)
+for (const journey of ["primary", "comparison", "resize and immediate input"] as const)
 test(`plain ${journey} boundaries finish before immediate typing`, async ({ page }) => {
     test.setTimeout(120000);  await page.goto(`/hosts/plain/`);
     const bodyRows = 128, rowUnits = "const unchanged = 123;\r\n".length;
@@ -19,7 +19,7 @@ test(`plain ${journey} boundaries finish before immediate typing`, async ({ page
     await waitForReview(page);
     // Each editor journey owns its deadline; repeating all review/history waits in one body
     // exhausted the whole-test budget even while every individual operation kept progressing.
-    if (journey !== "resize and queued input") {
+    if (journey !== "resize and immediate input") {
     const view = journey;
     for (const mode of ["document", "line", "arrow", "vertical", "page"]) for (const key of ["Home", "End"] as const) for (const extend of [false, true]) {
         const documentBoundary = mode === "document", arrow = mode === "arrow", vertical = mode === "vertical" || mode === "page";
@@ -81,7 +81,7 @@ test(`plain ${journey} boundaries finish before immediate typing`, async ({ page
     expect(resized.pending).toBe(false); expect(resized.heads).toEqual(resizeHeads.map(head => head + resized.pageLines * rowUnits));
     let resizedText = original; for (const head of resizeHeads.slice().reverse()) { const at = head + resized.pageLines * rowUnits; resizedText = resizedText.slice(0, at) + "!" + resizedText.slice(at); }
     await waitForReview(page); await exact(page, resizedText); await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(page); await exact(page, original);
-    // The bounded fast path also handles 32 independent anchors in read-only sources.
+    // Navigation also updates every caret in a read-only source.
     await page.getByRole("textbox", { name: "Primary source", exact: true }).focus();
     await page.evaluate(() => { const f = window.hostFixture, n = f.snapshot().source.length;
         f.selectSourceSet("primary", f.snapshot().source.revision, Array.from({ length: 32 }, (_, i) => ({ anchor: Math.floor(i * (n - 1) / 32), head: Math.floor(i * (n - 1) / 32) })), 17); f.setSourceReadOnly(true);
@@ -99,7 +99,7 @@ test(`plain ${journey} boundaries finish before immediate typing`, async ({ page
         expect(movement.selectionSet.ranges.map(r => r.head)).toEqual([...new Set(ends)].sort((a, b) => a - b));
         await page.getByRole("textbox", { name: "Primary source", exact: true }).pressSequentially("x"); await exact(page, original); expect((await snapshot(page)).history).toEqual(readonly.history);
     }
-    // Cooperative vertical/page commands preserve immediate typing for thirty-two carets.
+    // The next input sees the completed move at every caret.
     const heads = Array.from({ length: 32 }, (_, i) => bodyStart + (31 + i * 2) * rowUnits + 6);
     for (const key of ["ArrowRight", "ArrowDown", "PageDown"]) {
     await page.evaluate(heads => { const f = window.hostFixture; f.setSourceReadOnly(false); f.selectSourceSet("primary", f.snapshot().source.revision, heads.map(head => ({ anchor: head, head })), 17); }, heads); await waitForReview(page);
@@ -111,10 +111,10 @@ test(`plain ${journey} boundaries finish before immediate typing`, async ({ page
         const state = window.hostFixture.snapshot().bindings.views.find(v => v.id === "primary")!;
         const accepted = input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "!", bubbles: true, cancelable: true }));
         if (accepted) { input.setRangeText("!", input.selectionStart, input.selectionEnd, "end"); input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "!", bubbles: true })); }
-        return { pending: state.metrics!.pendingGrapheme, accepted, heads: state.selectionSet.ranges.map(r => r.head) };
+        return { pending: state.metrics!.pendingGrapheme, heads: state.selectionSet.ranges.map(r => r.head) };
     }, key);
-    if (moved.pending) expect(moved.accepted).toBe(false);
-    else expect(moved.heads).toEqual(heads.map(head => head + delta));
+    expect(moved.pending).toBe(false);
+    expect(moved.heads).toEqual(heads.map(head => head + delta));
     let expected = original; for (const head of heads.slice().reverse()) expected = expected.slice(0, head + delta) + "!" + expected.slice(head + delta);
     await waitForReview(page); await exact(page, expected); await page.getByRole("textbox", { name: "Secondary source", exact: true }).press("Control+z"); await waitForReview(page); await exact(page, original);
     }

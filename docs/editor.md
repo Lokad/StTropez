@@ -69,8 +69,8 @@ Select and focus are opt-in, including in read-only panes. `align` accepts `"nea
 
 ### What happens when you type during a command
 
-Typing during a long move lands at the new caret. A following paste has its own Undo step.
-Escape, composition, selection changes or a closed view can interrupt the queue. Listen for
+Keyboard navigation updates every selection before the next keystroke. A following paste has its own Undo step.
+Escape, composition, selection changes or a closed view can interrupt input during a column drag. Listen for
 `inputConflictEvent` through disposal to recover unapplied text. Before saving or running the
 current draft, check composition, pending input and pending commands in every pane that can
 edit it. [Runnable checklist](getting-started.md#add-features-to-a-browser-ide)
@@ -229,7 +229,8 @@ external writes and drops bypass the transform. [Snippet mirroring](language-fea
 
 `jump-to-bracket` checks at the caret, then just before it. Inside a pair it seeks the enclosing
 closer, otherwise the next eligible bracket. A mismatch or exhausted budget leaves the caret in
-place. `bracketMatching: true` paints the match. Read `editor.bracketMatching.getSnapshot()` for
+place. Multi-caret jumps can share the result of `allowPair` for a delimiter during the command.
+`bracketMatching: true` paints the match. Read `editor.bracketMatching.getSnapshot()` for
 the primary caret and call `refresh()` when lexical rules change.
 
 ### View state, activity and limits

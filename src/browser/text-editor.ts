@@ -510,7 +510,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             recoveryText, typedText: type === "insertText" ? insert : undefined });
     }
     // Delayed commands belong to this captured tab, revision and complete selection set.
-    // cancelPendingCommand releases scans, row preparation and ordered input; no focused-view lookup occurs later.
+    // Revalidate after host callbacks or pending pointer input before applying their results.
     const validCommand = (capture: CommandCapture) => !disposed && !composing && !input.disabled
         && !(capture.deleting && input.readOnly) && live()
         && source.getSnapshot()?.revision === capture.revision
@@ -532,37 +532,21 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const document = currentDocument(), { selection, selectionSet } = currentView();
         return { buffer: document.buffer, revision: document.revision, selection, selectionSet, deleting };
     }
-    function eachRange(capture: CommandCapture, purpose: "word" | "grapheme", resolve: (range: Selection, done: (range: Selection) => void) => void,
-        done: (ranges: readonly Selection[]) => void,
-        options: Readonly<{ validLayout?: () => boolean; navigation?: boolean; inline?: boolean }> = {}): void {
-        const sourceRanges = capture.selectionSet.ranges;
-        const validLayout = options.validLayout ?? (() => true), turn = options.navigation ? navigationTurn : (work: () => void) => work();
-        const job = { capture, purpose }; rangeCommand = job;
-        const ranges: Selection[] = []; let index = 0, pumping = false, waiting = false;
-        const active = () => rangeCommand === job && validCommand(capture);
-        const pump = () => turn(() => commandTurn(() => {
-            if (!active() || !validLayout()) { if (rangeCommand === job) cancelPendingCommand(); return; }
-            const began = win.performance.now();
-            let count = 0;
-            pumping = true;
-            try {
-                // Cheap caret moves share a time slice. The count limit also bounds work on a coarse clock.
-                while (index < sourceRanges.length && !waiting && (options.inline
-                    || count++ < commandBudget.maxCalls && win.performance.now() - began < commandBudget.sliceMs)) {
-                    waiting = true;
-                    resolve(sourceRanges[index]!, range => {
-                        if (!active()) return;
-                        ranges.push(range);
-                        index++;
-                        waiting = false;
-                        if (!pumping) pump();
-                    });
-                }
-            } finally { pumping = false; }
-            if (!active()) return;
-            if (index === sourceRanges.length) { rangeCommand = undefined; if (validLayout()) done(ranges); }
-            else if (!waiting) cancelRangeTask = commandRunner.schedule(() => { if (rangeCommand === job) cancelRangeTask = undefined; pump(); }, 0, turn);
-        })); pump();
+    function eachRange(capture: CommandCapture, purpose: "word" | "grapheme", resolve: (range: Selection) => Selection,
+        complete: (ranges: readonly Selection[]) => void, layoutValid?: () => boolean): void {
+        commandTurn(() => {
+            const job = { capture, purpose };
+            rangeCommand = job;
+            const ranges: Selection[] = [];
+            for (const range of capture.selectionSet.ranges) {
+                if (rangeCommand !== job) return;
+                ranges.push(resolve(range));
+            }
+            if (rangeCommand !== job) return;
+            rangeCommand = undefined;
+            if (validCommand(capture) && (!layoutValid || layoutValid())) complete(ranges);
+            else cancelPendingCommand();
+        });
     }
     function completeCaptured(capture: CommandCapture, work: () => boolean): boolean {
         if (!validCommand(capture)) { cancelPendingCommand(); return false; }
@@ -607,36 +591,32 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const capture = captureTextMovement(true);
         if (!capture) return false;
         const scanColumns = lineColumnScanner((from, to) => capture.buffer.slice(from, to), language.tabSize);
-        eachRange(capture, "grapheme", (range, done) => {
-            if (range.anchor !== range.head) { done(range); return; }
-            const offset = range.head;
-            if (direction < 0 && paired.emptyAt(offset)) { done({ anchor: offset - 1, head: offset + 1 }); return; }
-            const adjacent = () => {
-                const point = graphemePoint(capture.buffer, offset, direction);
-                const from = direction < 0 && point.floor === offset ? point.preceding ?? offset : point.floor;
-                const to = direction > 0 ? point.following ?? offset : point.ceil;
-                done({ anchor: from, head: to });
-            };
-            if (direction > 0 || !offset || !/[ \t]/.test(capture.buffer.slice(offset - 1, offset))) { adjacent(); return; }
-            const start = capture.buffer.offsetAt(capture.buffer.lineAt(offset));
-            const columns = scanColumns(start, offset, true);
-            if (columns.indentation) done({ anchor: columns.previousStop, head: offset });
-            else adjacent();
-        }, ranges => finishRanges(capture, ranges, direction < 0 ? "deleteContentBackward" : "deleteContentForward"), { inline: true });
+        eachRange(capture, "grapheme", range => {
+            if (range.anchor !== range.head) return range;
+            const at = range.head;
+            if (direction < 0 && paired.emptyAt(at)) return { anchor: at - 1, head: at + 1 };
+            if (direction < 0 && at && /[ \t]/.test(capture.buffer.slice(at - 1, at))) {
+                const start = capture.buffer.offsetAt(capture.buffer.lineAt(at));
+                const columns = scanColumns(start, at, true);
+                if (columns.indentation) return { anchor: columns.previousStop, head: at };
+            }
+            const point = graphemePoint(capture.buffer, at, direction);
+            const from = direction < 0 && point.floor === at ? point.preceding ?? at : point.floor;
+            const to = direction > 0 ? point.following ?? at : point.ceil;
+            return { anchor: from, head: to };
+        }, ranges => finishRanges(capture, ranges, direction < 0 ? "deleteContentBackward" : "deleteContentForward"));
         return true;
     }
     function word(direction: -1 | 1, deleting: boolean, extend = false): boolean {
         const capture = captureTextMovement(deleting);
         if (!capture) return false;
         group = undefined;
-        eachRange(capture, "word", (selected, done) => {
+        eachRange(capture, "word", selected => {
             if (deleting && selected.anchor !== selected.head) {
-                done(selected);
-                return;
+                return selected;
             }
             if (deleting && direction < 0 && paired.emptyAt(selected.head)) {
-                done({ anchor: selected.head - 1, head: selected.head + 1 });
-                return;
+                return { anchor: selected.head - 1, head: selected.head + 1 };
             }
             const side = deleting ? (direction < 0 ? 1 : -1) : direction;
             const startPoint = graphemePoint(capture.buffer, selected.head, side);
@@ -644,8 +624,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             const offset = wordCommandOffset(capture.buffer, start, direction, deleting, capture.selectionSet.ranges.length);
             const endPoint = graphemePoint(capture.buffer, offset, direction);
             const end = direction < 0 ? endPoint.floor : endPoint.ceil;
-            done(deleting ? { anchor: Math.min(start, end), head: Math.max(start, end) } : moved(selected, end, extend));
-        }, ranges => finishRanges(capture, ranges), { inline: true });
+            return deleting ? { anchor: Math.min(start, end), head: Math.max(start, end) } : moved(selected, end, extend);
+        }, ranges => finishRanges(capture, ranges));
         return true;
     }
     function wordRange(buffer: TextBuffer, offset: number, wordsOnly = false): Selection | undefined {
@@ -726,39 +706,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const state = viewport.getSnapshot();
         return [style, root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, viewport.activity().rowGeneration, currentFolding().generation].join("|");
     }
-    function beginNavigation(prepare: (capture: CommandCapture, style: string, inline: boolean) => void, canInline?: (capture: CommandCapture) => boolean): void {
-        cancelPendingCommand(); navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
+    function beginNavigation(prepare: (capture: CommandCapture, style: string) => void): void {
+        cancelPendingCommand();
+        navigationTurns = navigationPreparationMs = maxNavigationTurnMs = navigationWorkMs = 0;
         navigationTurn(() => commandTurn(() => {
-            const capture = commandCapture(false), job = { capture, purpose: "grapheme" as const };
-            if (!validCommand(capture)) return; rangeCommand = job;
-            const inline = canInline?.(capture) ?? false, style = navigationStyle();
-            const initialize = (resumed: boolean) => commandTurn(() => {
-                if (rangeCommand !== job) return;
-                // No host callback separates an immediate initializer from its capture.
-                // Resumed work and preparation after viewport callbacks still recheck style.
-                if (!validCommand(capture) || resumed && navigationStyle() !== style) { cancelPendingCommand(); return; }
-                prepare(capture, style, inline);
-                if (rangeCommand === job) cancelPendingCommand();
-            });
-            if (capture.selectionSet.ranges.length === 1 || inline) initialize(false);
-            else cancelRangeTask = commandRunner.schedule(() => { if (rangeCommand === job) cancelRangeTask = undefined; initialize(true); }, 0, navigationTurn);
+            const capture = commandCapture(false);
+            if (validCommand(capture)) prepare(capture, navigationStyle());
         }));
-    }
-    function shortHorizontal(capture: CommandCapture): boolean {
-        // Small selection sets on short rows can complete in the key handler.
-        if (capture.selectionSet.ranges.length > commandBudget.inlineRanges) return false;
-        const buffer = capture.buffer, folds = currentFolds(), lines = new Set<number>();
-        for (const range of capture.selectionSet.ranges) {
-            const line = buffer.lineAt(range.head), row = folds.rowAt(line);
-            lines.add(line); lines.add(buffer.lineAt(range.anchor));
-            if (line) lines.add(line - 1); if (line + 1 < buffer.lineCount) lines.add(line + 1);
-            if (row) lines.add(folds.lineAt(row - 1)); if (row + 1 < folds.visibleLineCount) lines.add(folds.lineAt(row + 1));
-        }
-        return shortRows(buffer, lines);
-    }
-    function shortRows(buffer: TextBuffer, lines: Iterable<number>): boolean {
-        for (const line of lines) if (lineBoundary(buffer, line + 1) - buffer.offsetAt(line) > 514) return false;
-        return true;
     }
     function verticalCount(page: boolean): number {
         const state = viewport.getSnapshot(); return page && state.lineHeight > 0 ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
@@ -778,129 +732,117 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         navigationTurns = 0; navigationPreparationMs = 0; maxNavigationTurnMs = 0; navigationWorkMs = 0;
         const capture = commandCapture(false), buffer = capture.buffer, firstNonblank = new Map<number, number>();
         if (!validCommand(capture)) return false;
-        eachRange(capture, "grapheme", (range, done) => {
-            const move = (offset: number) => done(moved(range, offset, extend));
-            if (documentBoundary) { move(key === "Home" ? 0 : buffer.length); return; }
-            const line = buffer.lineAt(range.head), end = lineContentEnd(buffer, line);
-            if (key === "End") { move(end); return; }
+        navigationTurn(() => eachRange(capture, "grapheme", range => {
+            if (documentBoundary) return moved(range, key === "Home" ? 0 : buffer.length, extend);
+            const line = buffer.lineAt(range.head);
+            if (key === "End") return moved(range, lineContentEnd(buffer, line), extend);
             const start = buffer.offsetAt(line);
-            const home = (offset: number) => move(range.head === offset ? start : offset);
-            const cached = firstNonblank.get(line);
-            if (cached !== undefined) { home(cached); return; }
-            let at = start;
-            const scan = () => commandTurn(() => {
-                if (!validCommand(capture)) { cancelPendingCommand(); return; }
-                const result = commandRunner.slice(() => {
-                    const to = Math.min(end, at + commandBudget.cursorUnits), index = buffer.slice(at, to).search(/\S/u);
-                    if (index >= 0) return at + index;
-                    at = to; return at === end ? start : undefined;
-                }, result => result === undefined, commandBudget.wordCalls);
-                if (result === undefined) {
-                    cancelRangeTask = commandRunner.schedule(() => { cancelRangeTask = undefined; scan(); }, 0, navigationTurn);
-                } else { firstNonblank.set(line, result); home(result); }
-            });
-            scan();
-        }, ranges => finishRanges(capture, ranges), { navigation: true, inline: capture.selectionSet.ranges.length <= commandBudget.inlineRanges });
+            let first = firstNonblank.get(line);
+            if (first === undefined) {
+                const indent = buffer.line(line).text.search(/\S/u);
+                first = start + Math.max(0, indent);
+                firstNonblank.set(line, first);
+            }
+            return moved(range, range.head === first ? start : first, extend);
+        }, ranges => finishRanges(capture, ranges)));
         return true;
     }
     function horizontal(key: "ArrowLeft" | "ArrowRight", extend: boolean): boolean {
         prepareMovement(); preferred = undefined;
-        beginNavigation((capture, style, inline) => {
-        const began = win.performance.now(); viewport.flush();
-        if (!validCommand(capture) || navigationStyle() !== style) { cancelPendingCommand(); return; }
-        const layout = navigationLayout(style);
-        const direction = key === "ArrowLeft" ? -1 : 1;
-        navigationPreparationMs = win.performance.now() - began;
-        eachRange(capture, "grapheme", (range, done) => {
-            const point = navigation.horizontalPoint(capture.buffer, range, direction, extend);
-            if (point) {
-                done(moved(range, point.offset, extend, point.affinity));
-                return;
-            }
-            if (!extend && range.anchor !== range.head) { done(moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false)); return; }
-            const at = graphemePoint(capture.buffer, range.head, direction);
-            done(moved(range, direction < 0 ? at.preceding ?? range.head : at.following ?? range.head, extend));
-        }, ranges => finishRanges(capture, ranges), { validLayout: () => navigationLayout() === layout, navigation: true, inline });
-        }, shortHorizontal);
+        beginNavigation((capture, style) => {
+            const began = win.performance.now(); viewport.flush();
+            if (!validCommand(capture) || navigationStyle() !== style) { cancelPendingCommand(); return; }
+            const layout = navigationLayout(style);
+            const direction = key === "ArrowLeft" ? -1 : 1;
+            navigationPreparationMs = win.performance.now() - began;
+            eachRange(capture, "grapheme", range => {
+                const point = navigation.horizontalPoint(capture.buffer, range, direction, extend);
+                if (point) return moved(range, point.offset, extend, point.affinity);
+                if (!extend && range.anchor !== range.head) {
+                    return moved(range, direction < 0 ? Math.min(range.anchor, range.head) : Math.max(range.anchor, range.head), false);
+                }
+                const at = graphemePoint(capture.buffer, range.head, direction);
+                return moved(range, direction < 0 ? at.preceding ?? range.head : at.following ?? range.head, extend);
+            }, ranges => finishRanges(capture, ranges), () => navigationLayout() === layout);
+        });
         return true;
     }
     function vertical(direction: -1 | 1, page: boolean, extend: boolean, add = false): boolean {
         prepareMovement();
         // Use source columns on ordinary fixed-pitch rows. Tabs, shaped text and proportional fonts keep their geometry.
-        const cells = new Map<number, { from: number; to: number }>();
-        function captureRows(capture: CommandCapture): boolean {
-            viewport.flush();
-            const buffer = capture.buffer, count = verticalCount(page);
-            const lines = verticalRows(buffer, capture.selectionSet.ranges, add,
-                line => navigation.navigationLine(line, direction, count, page));
-            if (capture.selectionSet.ranges.length === 1) return shortRows(buffer, lines);
-            if (!navigation.fixedPitch()) return false;
-            for (const line of lines) {
-                const span = buffer.line(line);
-                if (span.to - span.from <= 512 && !/[^ -~]/.test(span.text)) cells.set(line, span);
-            }
-            return cells.size === lines.size;
-        }
-        beginNavigation((capture, style, inline) => {
-        const began = win.performance.now(); viewport.flush();
-        const buffer = capture.buffer, selected = capture.selection;
-        if (!viewport.coordsAt(selected.head, selected.headAffinity)) { revealCaret(selected); viewport.flush(); }
-        if (!validCommand(capture) || navigationStyle() !== style) { cancelPendingCommand(); return; }
-        const state = viewport.getSnapshot(), layout = navigationLayout(style);
-        const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
-        const columns: (VisualColumns | undefined)[] = [], count = verticalCount(page);
-        navigationPreparationMs = win.performance.now() - began;
-        function columnAt(line: number, offset: number, affinity: Affinity | undefined) {
-            const span = cells.get(line);
-            return span ? viewportPadding + (Math.min(span.to, offset) - span.from) * state.columnWidth
-                : navigation.columnAt(offset, affinity);
-        }
-        function caretAt(line: number, column: number) {
-            const span = cells.get(line);
-            if (!span) return navigation.caretAtColumn(line, column);
-            const index = Math.round((column - viewportPadding) / state.columnWidth);
-            const offset = Math.max(span.from, Math.min(span.to, span.from + index));
-            const affinity: Affinity = offset === span.to && offset > span.from ? "before" : "after";
-            return { offset, affinity };
-        }
-        let index = 0, pageDelta = 0;
-        eachRange(capture, "grapheme", (range, done) => {
-            const at = index++, line = buffer.lineAt(range.head), row = navigation.visualRowAt(line), next = navigation.navigationLine(line, direction, count, page);
-            if (at === capture.selectionSet.primary) pageDelta = (navigation.visualRowAt(next) - row) * state.lineHeight;
-            if (next === line) { columns.push(prior?.[at]); done(add ? range : moved(range, direction < 0 ? 0 : buffer.length, extend)); return; }
-            const previous = prior?.[at], column = previous?.head ?? columnAt(line, range.head, range.headAffinity);
-            const hit = column === undefined ? undefined : caretAt(next, column);
-            // Both ends can clamp to the same caret on a short row. Keep their goals for the next copy.
-            if (add && (range.head !== range.anchor || previous?.anchor !== undefined)) {
-                const anchorLine = buffer.lineAt(range.anchor), targetLine = navigation.navigationLine(anchorLine, direction, count, page);
-                const anchor = previous?.anchor ?? columnAt(anchorLine, range.anchor, range.anchorAffinity);
-                const anchorHit = anchor !== undefined && targetLine !== anchorLine ? caretAt(targetLine, anchor) : undefined;
-                columns.push({ head: column, anchor });
-                done(hit && anchorHit ? { head: hit.offset, headAffinity: hit.affinity, anchor: anchorHit.offset, anchorAffinity: anchorHit.affinity } : range);
-            } else {
-                columns.push({ head: column }); done(hit ? moved(range, hit.offset, extend, hit.affinity) : range);
-            }
-        }, destinations => {
-            if (page) viewport.scrollTo({ top: state.scrollTop + pageDelta });
-            const ranges = add ? [...capture.selectionSet.ranges, ...destinations] : destinations;
-            const primary = capture.selectionSet.primary + (add ? destinations.length : 0);
-            const selections = finishRanges(capture, ranges, undefined, primary); if (!selections) return;
-            // Normalization may reorder/coalesce targets. Carry the owning range's column,
-            // using the same primary/first-supplied ownership as the public selection model.
-            const ordered = ranges.map((range, at) => ({ from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head), at }))
-                .sort((a, b) => a.from - b.from || a.to - b.to || a.at - b.at);
-            let cursor = 0;
-            const nextColumns = selections.ranges.map(range => {
-                const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head); let ownerIndex = Infinity;
-                while (cursor < ordered.length && ordered[cursor]!.from >= from && ordered[cursor]!.to <= to) {
-                    const at = ordered[cursor++]!.at;
-                    if (at === primary || ownerIndex !== primary && at < ownerIndex) ownerIndex = at;
+        beginNavigation((capture, style) => {
+            const began = win.performance.now(); viewport.flush();
+            const buffer = capture.buffer, selected = capture.selection;
+            if (!viewport.coordsAt(selected.head, selected.headAffinity)) { revealCaret(selected); viewport.flush(); }
+            if (!validCommand(capture) || navigationStyle() !== style) { cancelPendingCommand(); return; }
+            const state = viewport.getSnapshot(), layout = navigationLayout(style);
+            const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
+            const columns: (VisualColumns | undefined)[] = [], count = verticalCount(page);
+            const cells = new Map<number, { from: number; to: number }>();
+            if (capture.selectionSet.ranges.length > 1 && navigation.fixedPitch()) {
+                const lines = verticalRows(buffer, capture.selectionSet.ranges, add,
+                    line => navigation.navigationLine(line, direction, count, page));
+                for (const line of lines) {
+                    const span = buffer.line(line);
+                    if (span.to - span.from <= 512 && !/[^ -~]/.test(span.text)) cells.set(line, span);
                 }
-                return columns[ownerIndex % columns.length];
-            });
-            preferred = { selections, revision: capture.revision, layout, columns: nextColumns };
-        }, { validLayout: () => navigationLayout() === layout, navigation: true, inline });
-        }, captureRows);
+            }
+            navigationPreparationMs = win.performance.now() - began;
+            function columnAt(line: number, offset: number, affinity: Affinity | undefined) {
+                const span = cells.get(line);
+                return span ? viewportPadding + (Math.min(span.to, offset) - span.from) * state.columnWidth
+                    : navigation.columnAt(offset, affinity);
+            }
+            function caretAt(line: number, column: number) {
+                const span = cells.get(line);
+                if (!span) return navigation.caretAtColumn(line, column);
+                const index = Math.round((column - viewportPadding) / state.columnWidth);
+                const offset = Math.max(span.from, Math.min(span.to, span.from + index));
+                const affinity: Affinity = offset === span.to && offset > span.from ? "before" : "after";
+                return { offset, affinity };
+            }
+            let index = 0, pageDelta = 0;
+            eachRange(capture, "grapheme", range => {
+                const at = index++, line = buffer.lineAt(range.head), row = navigation.visualRowAt(line), next = navigation.navigationLine(line, direction, count, page);
+                if (at === capture.selectionSet.primary) pageDelta = (navigation.visualRowAt(next) - row) * state.lineHeight;
+                if (next === line) {
+                    columns.push(prior?.[at]);
+                    return add ? range : moved(range, direction < 0 ? 0 : buffer.length, extend);
+                }
+                const previous = prior?.[at], column = previous?.head ?? columnAt(line, range.head, range.headAffinity);
+                const hit = column === undefined ? undefined : caretAt(next, column);
+                // Both ends can clamp to the same caret on a short row. Keep their goals for the next copy.
+                if (add && (range.head !== range.anchor || previous?.anchor !== undefined)) {
+                    const anchorLine = buffer.lineAt(range.anchor), targetLine = navigation.navigationLine(anchorLine, direction, count, page);
+                    const anchor = previous?.anchor ?? columnAt(anchorLine, range.anchor, range.anchorAffinity);
+                    const anchorHit = anchor !== undefined && targetLine !== anchorLine ? caretAt(targetLine, anchor) : undefined;
+                    columns.push({ head: column, anchor });
+                    return hit && anchorHit ? { head: hit.offset, headAffinity: hit.affinity, anchor: anchorHit.offset, anchorAffinity: anchorHit.affinity } : range;
+                } else {
+                    columns.push({ head: column });
+                    return hit ? moved(range, hit.offset, extend, hit.affinity) : range;
+                }
+            }, destinations => {
+                if (page) viewport.scrollTo({ top: state.scrollTop + pageDelta });
+                const ranges = add ? [...capture.selectionSet.ranges, ...destinations] : destinations;
+                const primary = capture.selectionSet.primary + (add ? destinations.length : 0);
+                const selections = finishRanges(capture, ranges, undefined, primary); if (!selections) return;
+                // Normalization may reorder/coalesce targets. Carry the owning range's column,
+                // using the same primary/first-supplied ownership as the public selection model.
+                const ordered = ranges.map((range, at) => ({ from: Math.min(range.anchor, range.head), to: Math.max(range.anchor, range.head), at }))
+                    .sort((a, b) => a.from - b.from || a.to - b.to || a.at - b.at);
+                let cursor = 0;
+                const nextColumns = selections.ranges.map(range => {
+                    const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head); let ownerIndex = Infinity;
+                    while (cursor < ordered.length && ordered[cursor]!.from >= from && ordered[cursor]!.to <= to) {
+                        const at = ordered[cursor++]!.at;
+                        if (at === primary || ownerIndex !== primary && at < ownerIndex) ownerIndex = at;
+                    }
+                    return columns[ownerIndex % columns.length];
+                });
+                preferred = { selections, revision: capture.revision, layout, columns: nextColumns };
+            }, () => navigationLayout() === layout);
+        });
         return true;
     }
     function hasCommentSyntax(command: TextEditorCommand | Readonly<{ character: string }>): boolean {
@@ -1016,37 +958,26 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             case "jump-to-bracket": {
                 prepareSelectionCommand();
                 const capture = commandCapture(false);
-                eachRange(capture, "grapheme", (range, done) => {
-                    const cursor = brackets!.navigationCursor(capture.buffer, range.head);
-                    const active = () => rangeCommand?.capture === capture && validCommand(capture);
-                    const advance = () => commandTurn(() => {
-                        const result = commandRunner.slice(() => cursor.next(commandBudget.languageUnits),
-                            step => step.status === "running" && active(), commandBudget.graphemeCalls);
-                        if (!active()) { cursor.dispose(); return; }
-                        if (result.status === "running") {
-                            const cancel = commandRunner.schedule(() => { cancelRangeTask = undefined; advance(); });
-                            cancelRangeTask = () => { cancel(); cursor.dispose(); };
-                            return;
-                        }
-                        cursor.dispose();
-                        const destination = result.result?.match ?? result.result?.next;
-                        done(destination == null ? range : moved(range, destination, false));
-                    });
-                    advance();
-                }, ranges => finishRanges(capture, ranges), { navigation: true });
+                let navigate: ((caret: number) => number | undefined) | undefined;
+                eachRange(capture, "grapheme", range => {
+                    navigate ??= brackets!.navigation(capture.buffer, capture.selectionSet.ranges.length,
+                        () => rangeCommand?.capture === capture);
+                    const destination = navigate(range.head);
+                    return destination === undefined ? range : moved(range, destination, false);
+                }, ranges => finishRanges(capture, ranges));
                 return true;
             }
             case "select-line": {
                 prepareSelectionCommand();
                 const capture = commandCapture(false);
                 const buffer = capture.buffer, folds = currentFolds();
-                eachRange(capture, "grapheme", (range, done) => {
+                eachRange(capture, "grapheme", range => {
                     const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head);
                     const { anchor } = wholeLine(buffer, from, folds);
                     const endsAtStart = from < to && to === buffer.offsetAt(buffer.lineAt(to));
                     const head = endsAtStart && from !== anchor ? to : wholeLine(buffer, to, folds).head;
-                    done({ anchor, head });
-                }, ranges => finishRanges(capture, ranges), { navigation: true, validLayout: () => folds.sameProjection(currentFolds()) });
+                    return { anchor, head };
+                }, ranges => finishRanges(capture, ranges), () => folds.sameProjection(currentFolds()));
                 return true;
             }
             case "scroll-line-up": case "scroll-line-down": case "scroll-page-up": case "scroll-page-down": {

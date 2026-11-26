@@ -8,10 +8,8 @@ export type CooperativeRunner = Readonly<{
 }>;
 const direct: Turn = work => work();
 
-export const commandBudget = Object.freeze({ sliceMs: 4, cursorUnits: 4096, wordCalls: 32, graphemeCalls: 8,
-    foldCalls: 64, languageUnits: 256, maxCalls: 512, columnCalls: 64,
-    inlineRanges: 32,
-    queuedCalls: 8, queuedActions: 256, queuedUnits: 65536 });
+export const commandBudget = Object.freeze({ sliceMs: 4, cursorUnits: 4096, foldCalls: 64,
+    columnCalls: 64, queuedCalls: 8, queuedActions: 256, queuedUnits: 65536 });
 
 /** Shared task mechanics. Owners retain captures, iterator disposal, failure handling and completion. */
 export function createCooperativeRunner(host: Host): CooperativeRunner {

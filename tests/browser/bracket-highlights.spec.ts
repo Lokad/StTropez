@@ -69,7 +69,7 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} brac
     await page.evaluate(() => window.bracketFixture.editor.configure({ bracketMatching: false })); expect((await state(page)).status).toBe("disabled");
 });
 
-test("bracket jump works without highlights and a delayed jump cannot move a replacement selection", async ({ page }) => {
+test("bracket jumps update the selection before the following edit, including with highlights disabled", async ({ page }) => {
     await fixture(page); await input(page).focus();
     await input(page).dispatchEvent("keydown", { key: "µ", code: "Backslash", ctrlKey: true, shiftKey: true });
     await page.keyboard.type("X");
@@ -82,16 +82,30 @@ test("bracket jump works without highlights and a delayed jump cannot move a rep
     await input(page).press("Control+Shift+Backslash");
     await page.keyboard.type("!");
     await expect(page.locator(".st-viewport-row").first()).toHaveText("()  call![0]");
-    const pending = await page.evaluate(() => {
+    const offsets = await page.evaluate(() => {
         const f = window.bracketFixture;
-        f.set("[" + "x".repeat(50_000) + "]", 25_000);
+        const row = "(value)\n";
+        f.set(row.repeat(2000), 0);
+        const ranges = Array.from({ length: 2000 }, (_, i) => ({ anchor: i * row.length, head: i * row.length }));
+        const view = f.editor.view;
+        view.setSelections(view.getSnapshot().revision, ranges, 0);
         f.editor.commands.run("jump-to-bracket");
-        const pending = f.editor.activity().pendingCommand;
-        f.set("new", 1);
-        return pending;
+        return view.getSnapshot().selectionSet.ranges.map(range => range.head);
     });
-    expect(pending).toBe(true); await page.keyboard.type("!");
-    await expect(page.locator(".st-viewport-row").first()).toHaveJSProperty("textContent", "n!ew");
+    expect(offsets).toEqual(Array.from({ length: 2000 }, (_, i) => 8 * i + 6));
+    const replacement = await page.evaluate(() => {
+        const f = window.bracketFixture;
+        let calls = 0;
+        f.editor.configure({ language: { allowPair: () => {
+            if (++calls === 1) f.set("new", 1);
+            return true;
+        } } });
+        f.editor.commands.run("jump-to-bracket");
+        return { calls, head: f.editor.view.getSnapshot().selection.head };
+    });
+    expect(replacement).toEqual({ calls: 1, head: 1 });
+    await page.keyboard.type("!");
+    await expect(page.locator(".st-viewport-row").first()).toHaveText("n!ew");
 });
 
 test("bracket budgets, syntax refresh and reentrant cancellation never publish stale matches or leak owners", async ({ page }) => {

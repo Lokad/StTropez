@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { nextSeed } from "./fixtures/workloads.ts";
 import test from "node:test";
 import { TextBuffer } from "../src/index.ts";
-import { BracketMatcher, createBracketNavigationCursor, type BracketMatchCursor } from "../src/core/bracket-matching.ts";
+import { BracketMatcher, bracketNavigation, createBracketNavigationCursor, type BracketMatchCursor } from "../src/core/bracket-matching.ts";
 import type { BracketMatchOptions, LanguageConfiguration, PairingContext } from "../src/index.ts";
 
 function checkedCursor(matcher: BracketMatcher, buffer: TextBuffer, caret: number, options?: BracketMatchOptions): BracketMatchCursor {
@@ -96,6 +96,36 @@ test("interior navigation skips balanced neighbors and shares eligibility, depth
     assert.equal(jump("( left [] )", 3, { maxDepth: 1 }).result!.limit, "depth");
     const limited = jump("(" + "x".repeat(1200) + ")", 600, { maxWorkUnits: 1000 });
     assert.equal(limited.result!.limit, "work"); assert.equal(limited.workUnits, 1000);
+});
+
+test("multi-caret bracket jumps agree with individual scans on incomplete text and at search limits", () => {
+    let seed = 638;
+    const alphabet = "()[]{}<>a?. ";
+    const cases = ["", "plain text", "[ () outer (inner) tail ]", "  )  [] > [ end", "([])   {} next"];
+    for (let i = 0; i < 48; i++) {
+        let value = "";
+        for (let j = 0; j < 27; j++) {
+            seed = nextSeed(seed);
+            value += alphabet[seed % alphabet.length];
+        }
+        cases.push(value);
+    }
+    const shared = { open: "<", close: ">" };
+    const configurations = [new BracketMatcher(), new BracketMatcher({ pairs: [shared, { open: "a", close: ">" }] }),
+        new BracketMatcher({ pairs: [shared, { open: ">", close: "?" }] }),
+        new BracketMatcher({ pairs: [shared, { open: "a", close: ">" }, { open: ">", close: "?" }],
+            allowPair: ({ from, pair, operation }) => (from + pair.open.charCodeAt(0) + operation.length) % 3 !== 0 })];
+    for (const { configuration } of configurations) for (const text of cases) {
+        const mid = text.length >> 1;
+        const buffer = TextBuffer.from(text.slice(0, mid)).replace(mid, mid, text.slice(mid));
+        for (const options of [{}, { maxDepth: 1 }, { maxWorkUnits: 9 }, { maxDepth: 2, maxWorkUnits: 21 }]) {
+            const scan = bracketNavigation(configuration, buffer, options, 1);
+            const indexed = bracketNavigation(configuration, buffer, options, text.length + 1);
+            for (let caret = 0; caret <= text.length; caret++) {
+                assert.equal(indexed(caret), scan(caret), JSON.stringify({ text, caret, options }));
+            }
+        }
+    }
 });
 
 test("host veto examines each existing delimiter with its direction, exact immutable buffer and range", () => {

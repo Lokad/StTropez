@@ -1,3 +1,4 @@
+import { partitionPoint } from "./bound-search.ts";
 import { isOffset, isPositiveInteger } from "./bounds.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
@@ -40,6 +41,108 @@ export function createClosingBracketCursor(configuration: ResolvedLanguageConfig
 /** Jump to the partner, the enclosing closer, or the next eligible bracket. */
 export function createBracketNavigationCursor(configuration: ResolvedLanguageConfiguration, buffer: TextBuffer, caret: number, options?: BracketMatchOptions) {
     return bracketCursor(configuration, buffer, caret, options ?? {}, "enclosing");
+}
+type Delimiter = {
+    offset: number;
+    roles: Roles;
+    workBefore: number;
+    workAfter: number;
+    enclosing: Delimiter | null | undefined;
+    depthBefore: number;
+    partner?: Delimiter;
+    pairDepth: number;
+};
+
+/** One command shares the nesting and work counts for its immutable document across carets. */
+export function bracketNavigation(configuration: ResolvedLanguageConfiguration, buffer: TextBuffer,
+    options: BracketMatchOptions | undefined, count: number, current?: () => boolean): (caret: number) => number | undefined {
+    const { maxWorkUnits, maxDepth } = bracketMatchLimits(options);
+    // Small bounded searches can examine less source than constructing the shared index.
+    if (count === 1 || maxWorkUnits * count < buffer.length) {
+        return caret => {
+            const cursor = createBracketNavigationCursor(configuration, buffer, caret, options);
+            try {
+                const { result } = cursor.next(Number.MAX_SAFE_INTEGER);
+                return result?.match ?? result?.next;
+            } finally {
+                cursor.dispose();
+            }
+        };
+    }
+    const roles = bracketTokens(configuration);
+    if (!roles.size) return () => undefined;
+    const allow = configuration.allowPair;
+    const vetoed = new Map<number, number>();
+    const pattern = new RegExp("[" + Array.from(roles.keys(),
+        char => "\\u" + char.charCodeAt(0).toString(16).padStart(4, "0")).join("") + "]", "g");
+    const delimiters: Delimiter[] = [];
+    // Undefined reaches the start of the document. Null marks a crossed or ambiguous pair.
+    let enclosing: Delimiter | null | undefined;
+    // Peak depth of the backwards scan to the enclosing opener, or to the start.
+    let depth = 0;
+    let roleChecks = 0;
+    let base = 0;
+    for (const chunk of buffer.chunks()) {
+        for (let hit = pattern.exec(chunk); hit; hit = pattern.exec(chunk)) {
+            let entry = roles.get(hit[0])!;
+            const offset = base + hit.index;
+            const workBefore = offset + roleChecks;
+            const probes = (entry.open ? 1 : 0) + entry.close.size;
+            roleChecks += probes;
+            if (allow) {
+                const permitted = (pair: EditingPair, operation: "open" | "close") =>
+                    allow(Object.freeze({ buffer, from: offset, to: offset + 1, pair, operation }));
+                const open = entry.open && permitted(entry.open, "open") ? entry.open : undefined;
+                const close = new Set<EditingPair>();
+                for (const pair of entry.close) if (permitted(pair, "close")) close.add(pair);
+                if (current && !current()) return () => undefined;
+                if (!open && !close.size) {
+                    vetoed.set(offset, probes);
+                    continue;
+                }
+                entry = open ? { open, close } : { close };
+            }
+            const node: Delimiter = { offset, roles: entry, workBefore, workAfter: offset + 1 + roleChecks,
+                enclosing, depthBefore: depth, pairDepth: 0 };
+            delimiters.push(node);
+            if (entry.open && !entry.close.size) {
+                enclosing = node;
+                depth = 0;
+            } else if (entry.open) {
+                enclosing = null;
+            } else if (enclosing && entry.close.has(enclosing.roles.open!)) {
+                node.partner = enclosing;
+                enclosing.partner = node;
+                node.pairDepth = enclosing.pairDepth = depth + 1;
+                depth = Math.max(enclosing.depthBefore, node.pairDepth);
+                enclosing = enclosing.enclosing;
+            } else {
+                if (enclosing) enclosing = null;
+                depth++;
+            }
+        }
+        base += chunk.length;
+    }
+    return caret => {
+        const i = partitionPoint(delimiters.length, index => delimiters[index]!.offset < caret);
+        const next = delimiters[i];
+        const previous = delimiters[i - 1];
+        const direct = next?.offset === caret ? next : previous?.offset === caret - 1 ? previous : undefined;
+        const probes = (caret < buffer.length ? 1 + (vetoed.get(caret) ?? 0) : 0)
+            + (caret > 0 && next?.offset !== caret ? 1 + (vetoed.get(caret - 1) ?? 0) : 0);
+        const opening = next ? next.enclosing : enclosing;
+        const node = direct ?? opening;
+        if (node?.partner) {
+            const mate = node.partner;
+            const work = Math.max(node.workAfter, mate.workAfter) - Math.min(node.workBefore, mate.workBefore);
+            // The initial probe already counted the character at an adjacent delimiter.
+            if (node.pairDepth <= maxDepth && work + probes - (direct ? 1 : 0) <= maxWorkUnits) return mate.offset;
+        } else if (!direct && opening === undefined && next && !(next.roles.open && next.roles.close.size)) {
+            // With no enclosing pair the cursor scans to the start, then to the next delimiter.
+            if (next.depthBefore < maxDepth && next.workAfter + probes <= maxWorkUnits) return next.offset;
+        }
+        return undefined;
+    };
 }
 const compiled = new WeakMap<ResolvedLanguageConfiguration, Map<string, Roles>>();
 function bracketTokens(configuration: ResolvedLanguageConfiguration) {
