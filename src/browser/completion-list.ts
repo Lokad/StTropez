@@ -5,22 +5,16 @@ import { mountAnchoredOverlay } from "./anchored-overlay.ts";
 import type { CompletionSnapshot } from "./completion-controller.ts";
 import type { TextEditor } from "./text-editor.ts";
 
-export type CompletionListStrings = Readonly<{
-    label?: string;
-    status?: (state: CompletionSnapshot) => string;
-    omitted?: (state: CompletionSnapshot) => string;
-    loadingDetail?: string;
-}>;
-
 /** The scroll track represents every candidate. Each mounted button retains its captured choice. */
 export function mountCompletionList(editor: TextEditor, source: Observable<CompletionSnapshot>,
-    strings: CompletionListStrings, filterManual: boolean) {
+    filterManual: boolean) {
+    const { strings } = editor;
     const doc = editor.element.ownerDocument;
     const popup = editorElement(doc, "div", "completion");
     const count = editorElement(doc, "div", "completion-count");
     const detail = doc.createElement("pre");
     popup.setAttribute("role", "listbox");
-    popup.setAttribute("aria-label", strings.label ?? "Completions");
+    popup.setAttribute("aria-label", strings.text("Completions"));
     popup.append(count);
     const rows = choiceRows(popup, 30, "completion-choices");
     popup.append(detail);
@@ -35,12 +29,9 @@ export function mountCompletionList(editor: TextEditor, source: Observable<Compl
             overlay.hide();
             return;
         }
-        const omitted = state.omittedCompletions;
-        count.textContent = strings.status?.(state) ?? ((state.choiceIndex + 1) + " of " + state.choices.length
-            + (state.completionIncomplete ? " · partial list" : "") + (omitted.length ? " · " + omitted.length + " unsupported" : "")
-            + (filterManual ? " · type to filter" : ""));
-        count.title = strings.omitted?.(state) ?? omitted.map(item => item.label + ": " + item.reason).join("\n");
-        detail.textContent = state.resolving ? strings.loadingDetail ?? "Loading details…" : state.completionDetail;
+        count.textContent = strings.completionStatus(state, filterManual);
+        count.title = strings.omittedCompletions(state);
+        detail.textContent = state.resolving ? strings.text("Loading details…") : state.completionDetail;
         if (current?.choices !== state.choices || current?.choiceIndex !== state.choiceIndex) {
             current = state;
             rows.set(state.choices.length, state.choiceIndex, (index, button) => {

@@ -112,7 +112,7 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
         else if (range) range = Object.freeze({ from: Math.max(left, range.from), to: Math.min(right, range.to) });
         if (matches.length || symbol) {
             const messages = matches.map(match => match.message);
-            if (matches.length && source.diagnosticsPending) messages.push("Awaiting recheck.");
+            if (matches.length && source.diagnosticsPending) messages.push(editor.strings.text("Awaiting recheck."));
             const content: DocumentationContent = Object.freeze([...messages.map(value => Object.freeze({ kind: "plaintext" as const, value })), ...(symbol?.content ?? [])]);
             if (symbol) messages.push(symbol.text);
             publish({ status: "ready", message: "", revision, range, text: messages.join("\n\n"), content,

@@ -19,9 +19,7 @@ export function showChanges(
         ariaLabel: "Révision",
         rowsAligned: true,
         strings: {
-            previousChange: "Précédente",
-            nextChange: "Suivante",
-            useBaseline: "Rétablir",
+            text: label => label === "Use baseline" ? "Rétablir" : label,
             statusText: ({ selectedHunk, comparison }) => selectedHunk === null
                 ? undefined : `Différence ${selectedHunk + 1} sur ${comparison.hunks.length}`,
         },

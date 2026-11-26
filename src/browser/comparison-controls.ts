@@ -1,5 +1,6 @@
 import { listenUntil } from "./listen.ts";
-import type { TextComparison, TextComparisonSnapshot, TextComparisonStrings } from "./comparison.ts";
+import type { TextComparison, TextComparisonSnapshot } from "./comparison.ts";
+import type { resolveControlStrings } from "./control-strings.ts";
 import { textExcerpt } from "../core/utf16.ts";
 
 export function sameControlState(a: TextComparisonSnapshot, b: TextComparisonSnapshot): boolean {
@@ -12,7 +13,7 @@ export function sameControlState(a: TextComparisonSnapshot, b: TextComparisonSna
 /** Optional presentation. Pane ownership and command validation stay with the comparison. */
 export function mountComparisonControls(
     comparison: Pick<TextComparison, "element" | "activePane" | "getSnapshot" | "subscribe" | "revertSelectedHunk" | "setScrollLinked" | "setRowsAligned">,
-    referencePane: HTMLElement, workingPane: HTMLElement, strings: TextComparisonStrings
+    referencePane: HTMLElement, workingPane: HTMLElement, strings: ReturnType<typeof resolveControlStrings>
 ): () => void {
     const owner = comparison.element.ownerDocument;
     const element = <K extends keyof HTMLElementTagNameMap>(tag: K) => owner.createElement(tag);
@@ -29,14 +30,14 @@ export function mountComparisonControls(
     };
     const previous = navigationButton("comparison.previousChange");
     const next = navigationButton("comparison.nextChange");
-    const revert = button(strings.useBaseline ?? "Use baseline");
+    const revert = button(strings.text("Use baseline"));
     listen(controls, "pointerdown", event => {
         if (event.pointerType === "mouse" && event.button === 0
             && (event.target === previous || event.target === next || event.target === revert)) event.preventDefault();
     }, { capture: true });
     function navigationButton(id: string): HTMLButtonElement {
         const control = button(comparison.activePane().commands.get(id)!.label);
-        const hint = () => { control.title = comparison.activePane().keymap.getShortcuts(id).join(strings.shortcutSeparator ?? " or "); };
+        const hint = () => { control.title = comparison.activePane().keymap.getShortcuts(id).join(strings.text(" or ")); };
         listen(control, "pointerenter", hint);
         listen(control, "focus", hint);
         listen(control, "click", event => {
@@ -54,16 +55,16 @@ export function mountComparisonControls(
         controls.append(wrapper);
         return input;
     };
-    const link = checkbox(strings.linkScrolling ?? "Link review scrolling");
-    const align = checkbox(strings.alignRows ?? "Align review rows");
+    const link = checkbox(strings.text("Link review scrolling"));
+    const align = checkbox(strings.text("Align review rows"));
     const status = element("output");
     controls.append(status);
     const message = element("span");
     status.append(message);
-    status.dataset.pendingLabel = strings.updating ?? "Updating…";
+    status.dataset.pendingLabel = strings.text("Updating…");
     const preview = element("div");
     preview.className = "st-comparison-preview";
-    preview.setAttribute("aria-label", strings.previewLabel ?? "Change preview");
+    preview.setAttribute("aria-label", strings.text("Change preview"));
     const panes = (["baseline", "working"] as const).map(side => {
         const heading = element("h3");
         const section = side === "baseline" ? referencePane : workingPane;
@@ -73,7 +74,7 @@ export function mountComparisonControls(
         return { side, heading, excerpt };
     });
     const previewHint = element("span");
-    previewHint.textContent = strings.selectChange ?? "Select a changed line to preview it.";
+    previewHint.textContent = strings.text("Select a changed line to preview it.");
     preview.append(previewHint);
     comparison.element.prepend(controls);
     comparison.element.append(preview);
@@ -105,10 +106,10 @@ export function mountComparisonControls(
             && state.working?.change != null && (state.generation === old.comparison.generation
                 || state.working.change.previousRevision === old.comparison.working?.revision);
         controls.toggleAttribute("data-updating", retainResult);
-        align.title = layout.pending ? strings.preparingRows ?? "Preparing aligned rows" : "";
+        align.title = layout.pending ? strings.text("Preparing aligned rows") : "";
         if (retainResult) {
             status.setAttribute("aria-busy", "true");
-            preview.title = strings.lastCompleted ?? "Last completed comparison";
+            preview.title = strings.text("Last completed comparison");
             return;
         }
         status.removeAttribute("aria-busy"); preview.removeAttribute("title");

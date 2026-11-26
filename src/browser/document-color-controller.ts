@@ -16,7 +16,7 @@ import { isStaleRequest } from "../protocol/wire.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { retainDocuments } from "./retained-documents.ts";
 import { writableDocument } from "./edit-project.ts";
-import { mountColorPicker, type ColorPickerOptions } from "./color-picker.ts";
+import { mountColorPicker } from "./color-picker.ts";
 import { mountSwatches } from "./document-color-swatches.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -36,7 +36,7 @@ export type DocumentColorSnapshot = Readonly<{
     message: string; changed: boolean;
 }>;
 export type DocumentColorControllerOptions = Readonly<{
-    picker?: boolean | ColorPickerOptions;
+    picker?: boolean;
     swatches?: boolean | ((item: LspDocumentColor) => void);
     canCapture?: () => boolean; prepareRequest?: (kind: "discovery" | "presentation") => LspPrepare | undefined;
 }>;
@@ -282,7 +282,7 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
     });
     try {
         if (options.picker && typeof options.swatches !== "function") {
-            picker = mountColorPicker(editor, controller, capture, signal, options.picker === true ? {} : options.picker);
+            picker = mountColorPicker(editor, controller, capture, signal);
         }
         setSwatches(!!(options.swatches ?? picker));
         return controller;

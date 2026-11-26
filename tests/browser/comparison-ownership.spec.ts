@@ -85,13 +85,17 @@ test("a translated review toolbar shares navigation labels with both panes", asy
         const id = workspace.createDocument({ scope: "review", resource: "test", variant: "working" }, "Test", "a\nb\nc");
         const host = document.body.appendChild(document.createElement("section"));
         host.id = "translated-review";
+        let commandLabels: Record<string, string> = { "select-all": "Tout sélectionner" };
         const review = mountTextComparison(host, workspace, id, { buffer: TextBuffer.from("a\nB\nc"), version: "1" }, {
-            settings: { commandLabel: id => id === "select-all" ? "Tout sélectionner" : undefined },
             strings: {
-                previousChange: "Précédente", nextChange: "Suivante", useBaseline: "Rétablir",
-                linkScrolling: "Lier le défilement", alignRows: "Aligner les lignes",
-                baselineInput: "Texte de référence", workingInput: "Texte modifié", commandCategory: "Révision",
-                previewLabel: "Aperçu", selectChange: "Choisir une ligne modifiée",
+                commandLabel: id => commandLabels[id],
+                text: label => new Map([
+                    ["Previous change", "Précédente"], ["Next change", "Suivante"], ["Use baseline", "Rétablir"],
+                    ["Link review scrolling", "Lier le défilement"], ["Align review rows", "Aligner les lignes"],
+                    ["Comparison baseline source", "Texte de référence"], ["Comparison working source", "Texte modifié"],
+                    ["Comparison", "Révision"], ["Change preview", "Aperçu"],
+                    ["Select a changed line to preview it.", "Choisir une ligne modifiée"],
+                ]).get(label) ?? label,
                 heading: side => side === "baseline" ? "Référence" : "Version de travail",
                 excerpt: (side, _range, text) => `<${side === "baseline" ? "Avant" : "Après"}> ${text}`,
                 statusText: ({ selectedHunk, comparison }) => {
@@ -113,9 +117,9 @@ test("a translated review toolbar shares navigation labels with both panes", asy
             keys: pane.keymap.getShortcuts("select-all"),
         });
         const before = Object.values(review.panes).map(commands);
-        review.panes.working.configure({ commandLabel: id => id === "undo" ? "Annuler" : undefined });
+        commandLabels = { undo: "Annuler" };
         const after = commands(review.panes.working);
-        review.panes.working.configure({ commandLabel: null });
+        commandLabels = {};
         return { before, after, restored: review.panes.working.commands.get("undo")?.label };
     });
     const original = { stock: "Tout sélectionner", undo: "Undo", navigation: ["Précédente", "Suivante"], keys: ["Mod+a"] };

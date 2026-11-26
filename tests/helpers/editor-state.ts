@@ -1,4 +1,5 @@
 import { NotificationScope, Store } from "../../src/core/observable.ts";
+import { resolveControlStrings } from "../../src/browser/control-strings.ts";
 import type { TextEditor, TextEditorSnapshot } from "../../src/browser/index.ts";
 
 /** Editor state used by controller tests that run without a DOM. */
@@ -10,7 +11,7 @@ export function editorState(initial: Partial<TextEditorSnapshot> = {}) {
         composition.addEventListener("compositionstart", start, signal ? { signal } : {});
         return { dispose() { composition.removeEventListener("compositionstart", start); } };
     };
-    return { ...state.observable, onEditIntent,
+    return { ...state.observable, strings: resolveControlStrings(), onEditIntent,
         setReadOnly(value: boolean) { scope.publish(state, { ...state.get(), readOnlyReason: value ? "read-only" : null }); },
         startComposition() { composition.dispatchEvent(new Event("compositionstart")); },
     };

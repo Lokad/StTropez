@@ -1,3 +1,4 @@
+import { resolveControlStrings, type ControlStrings } from "./control-strings.ts";
 import { listenUntil } from "./listen.ts";
 import { isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
 import { mountInputCaret } from "./input-caret.ts";
@@ -72,20 +73,19 @@ export type TextEditorSnapshot = Readonly<{ focused: boolean; disabled: boolean;
 export type TextEditorCommand = EditingCommand | ViewCommand | DeletionCommand | "undo" | "redo";
 export type LinePrompt = (request: Readonly<{ currentLine: number; lineCount: number; signal: AbortSignal }>) =>
     number | undefined | PromiseLike<number | undefined>;
-type CommandLabel = (id: string, fallback: string) => string | undefined;
-export type EditorSettings = Partial<ViewportSettings> & Readonly<{ language?: LanguageConfiguration; commandLabel?: CommandLabel | null;
+export type EditorSettings = Partial<ViewportSettings> & Readonly<{ language?: LanguageConfiguration;
     pasteLineEndings?: "local" | "preserve"; bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions }>;
-export type ResolvedEditorSettings = ViewportSettings & Readonly<{ language: ResolvedLanguageConfiguration; commandLabel: CommandLabel | null;
+export type ResolvedEditorSettings = ViewportSettings & Readonly<{ language: ResolvedLanguageConfiguration;
     pasteLineEndings: "local" | "preserve"; bracketMatching: false | Required<BracketMatchOptions>; characterWarnings: false | CharacterWarningConfiguration }>;
 export type EditorRevealRange = Readonly<{ from: number; to: number }>;
 type RevealTarget = BufferPosition | EditorRevealRange | Readonly<{ start: BufferPosition; end: BufferPosition }>;
 export type EditorRevealOptions = Readonly<{ align?: RevealAlignment; select?: boolean; focus?: boolean; expectedRevision?: number }>;
-export type TextEditorOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; readOnly?: boolean; requestLine?: LinePrompt; settings?: EditorSettings }>;
+export type TextEditorOptions = Readonly<{ strings?: ControlStrings; ariaLabel?: string; view?: DocumentView; readOnly?: boolean; requestLine?: LinePrompt; settings?: EditorSettings }>;
 export type EditorPasteHandler = (data: DataTransfer) => ((insertion: CapturedInsertion) => void) | undefined;
 const editIntents = ["beforeinput", "compositionstart", "paste", "cut"] as const;
 export type EditorEditIntent = typeof editIntents[number];
 type PasteOwner = { handler: EditorPasteHandler; pending?: CapturedInsertion };
-export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
+export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; strings: ReturnType<typeof resolveControlStrings>; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
     registerPasteHandler: (handler: EditorPasteHandler) => () => void;
@@ -126,11 +126,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (value !== "local" && value !== "preserve") throw new TypeError("Invalid paste line-ending policy.");
         return value;
     };
-    function labelPolicy(value: CommandLabel | null) {
-        if (value !== null && typeof value !== "function") throw new TypeError("Invalid command label callback.");
-        return value;
-    }
-    let commandLabel = labelPolicy(initial?.commandLabel ?? null);
+    const strings = resolveControlStrings(options.strings);
     let language = resolveLanguageConfiguration(initial?.language);
     let pasteLineEndings: ResolvedEditorSettings["pasteLineEndings"] = pastePolicy(initial?.pasteLineEndings ?? "local");
     let bracketOptions: ResolvedEditorSettings["bracketMatching"] = matching(initial?.bracketMatching ?? false);
@@ -238,7 +234,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         () => !disposed && !composing && !input.disabled && live() && (!comparison || comparison.epoch() !== undefined), () => {
             const version = revision, selection = currentSelections(), epoch = comparison?.epoch();
             return () => version === revision && selection === currentSelections() && epoch === comparison?.epoch();
-        }, () => editor, comparison?.commands, (id, fallback) => commandLabel?.(id, fallback));
+        }, () => editor, comparison?.commands, (id, fallback) => strings.commandLabel?.(id, fallback) ?? strings.text(fallback));
     listen(win, "keyup", registry.releaseKey, { capture: true });
     listen(win, "blur", () => registry.releaseKey());
     for (const [id, label] of editorCommandLabels) {
@@ -1725,10 +1721,10 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const presentation = viewport.settings();
         if (cachedSettings && cachedViewport === presentation) return cachedSettings;
         cachedViewport = presentation;
-        return cachedSettings = Object.freeze({ ...presentation, language, commandLabel, pasteLineEndings, bracketMatching: bracketOptions,
+        return cachedSettings = Object.freeze({ ...presentation, language, pasteLineEndings, bracketMatching: bracketOptions,
             characterWarnings: warningOptions?.configuration ?? false });
     };
-    const editor: TextEditor = Object.freeze({ element: root, workspace, tab: target, signal: listeners.signal, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
+    const editor: TextEditor = Object.freeze({ element: root, strings, workspace, tab: target, signal: listeners.signal, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
         getSnapshot: editorState.observable.getSnapshot,
         subscribe(listener: ObservableListener) {
             if (disposed) throw new Error("Editor is disposed.");
@@ -1767,7 +1763,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         configure: changes => {
             if (disposed || composing && changes.language !== undefined) return false;
             const nextLanguage = changes.language === undefined ? language : resolveLanguageConfiguration(changes.language);
-            const nextLabel = changes.commandLabel === undefined ? commandLabel : labelPolicy(changes.commandLabel);
             const nextPaste = changes.pasteLineEndings === undefined ? pasteLineEndings : pastePolicy(changes.pasteLineEndings);
             const nextBrackets = changes.bracketMatching === undefined ? bracketOptions : matching(changes.bracketMatching);
             const nextWarnings = changes.characterWarnings === undefined ? warningOptions : classifyWarnings(changes.characterWarnings);
@@ -1780,9 +1775,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                     pair.open !== nextLanguage.pairs[i]!.open || pair.close !== nextLanguage.pairs[i]!.close)) paired.clear();
                 cancelPendingCommand(); group = undefined; preferred = undefined;
             }
-            if (nextLabel !== commandLabel || languageChanged || nextPaste !== pasteLineEndings || nextWarnings !== warningOptions || nextBrackets !== bracketOptions)
+            if (languageChanged || nextPaste !== pasteLineEndings || nextWarnings !== warningOptions || nextBrackets !== bracketOptions)
                 cachedSettings = undefined;
-            commandLabel = nextLabel;
             language = nextLanguage; pasteLineEndings = nextPaste;
             const warningsChanged = nextWarnings !== warningOptions;
             bracketOptions = nextBrackets; warningOptions = nextWarnings;

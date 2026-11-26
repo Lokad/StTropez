@@ -6,13 +6,12 @@ import type { TextEditor } from "./text-editor.ts";
 import { createFindController, type FindController, type FindSnapshot } from "./find.ts";
 import { createRegexFindBackend } from "./regex-find.ts";
 import { bindFindCommands } from "./find-controls.ts";
-import { findStatus } from "./find-status.ts";
+import { resolveControlStrings, type ControlStrings } from "./control-strings.ts";
 
 export type FindBarOptions = Readonly<{
     createWorker?: () => Worker;
     targetLabel?: (editor: TextEditor) => string;
-    text?: (label: string) => string;
-    status?: (snapshot: FindSnapshot) => string;
+    strings?: ControlStrings;
 }>;
 export type FindBar = Observable<FindSnapshot | null> & Readonly<{
     element: HTMLElement;
@@ -43,7 +42,8 @@ function selectedFindQuery(source: TextEditor, regex: boolean): string | undefin
 /** Mount outside the editor subtree. One bar can follow several independently mounted panes. */
 export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): FindBar {
     const doc = host.ownerDocument;
-    const text = options.text ?? (label => label);
+    const strings = resolveControlStrings(options.strings);
+    const { text } = strings;
     function node<K extends keyof HTMLElementTagNameMap>(tag: K, part: string, parent: HTMLElement) {
         const child = editorElement(doc, tag, part);
         parent.append(child);
@@ -139,7 +139,7 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
         const readOnly = !!target?.getSnapshot().readOnlyReason;
         const label = target && (options.targetLabel?.(target) ?? target.workspace.document(target.view.documentId).title);
         name.textContent = readOnly ? label + " · " + text("read-only") : "";
-        const message = state ? (options.status ?? findStatus)(state) : "";
+        const message = state ? strings.findStatus(state) : "";
         status.textContent = message;
         const ready = state?.status === "ready";
         const searching = state?.status === "searching";
@@ -149,7 +149,7 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
         previous.disabled = next.disabled = !(searching || ready && matches);
         replace.disabled = readOnly || !matches || !(ready || searching && state.retained);
         all.disabled = readOnly || !matches || !ready;
-        const reason = readOnly ? text("{file} is read-only.").replace("{file}", () => label ?? "")
+        const reason = readOnly ? strings.readOnlyFile(label ?? "")
             : searching ? text("Waiting for search results.") : state?.status === "replacing"
             ? text("Replacement in progress.") : message || text("Enter text to find.");
         replace.title = replace.disabled ? reason : text("Replace the current match");
@@ -245,7 +245,6 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
         }
         try {
             const bindings = bindFindCommands(editor, {
-                text,
                 open(replace) { setTarget(editor); open(replace); },
                 navigate(direction) {
                     if (!query.value) return false;

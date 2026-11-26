@@ -6,13 +6,10 @@ import type { TextEditor } from "./text-editor.ts";
 type ReadEdits = { readEdits(first: number, end: number): LspEditNotes | undefined };
 const pageSize = 64;
 
-function excerpt(value: string, length: number) {
-    return value + (length > value.length ? `… (${length} UTF-16 units)` : "");
-}
-
 /** Buttons belong to the page that created them. A held press cannot advance a replacement page. */
-export function reviewPanel(editor: TextEditor, signal: AbortSignal, className: string, title: string,
-    text = (label: string) => label) {
+export function reviewPanel(editor: TextEditor, signal: AbortSignal, className: string, title: string) {
+    const { text, location, truncated } = editor.strings;
+    const excerpt = (value: string, units: number) => units > value.length ? truncated(value, units) : value;
     const doc = editor.element.ownerDocument;
     const node = <K extends keyof HTMLElementTagNameMap>(tag: K) => doc.createElement(tag);
     const panel = node("section");
@@ -67,7 +64,7 @@ export function reviewPanel(editor: TextEditor, signal: AbortSignal, className: 
             before.textContent = excerpt(note.before, note.to - note.from);
             after.textContent = excerpt(note.insert, note.insertUnits);
             code.append(before, " → ", after);
-            row.append(`${note.title} · ${line + 1}:${column + 1} `, code);
+            row.append(location(note.title, line + 1, column + 1) + " ", code);
             list.append(row);
         }
         list.scrollTop = 0;

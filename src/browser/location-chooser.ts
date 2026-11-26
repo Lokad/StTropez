@@ -15,9 +15,10 @@ export type LocationChooserOptions = Readonly<{
 }>;
 
 export function mountLocationChooser(editor: TextEditor, navigation: NavigationController, options: LocationChooserOptions) {
+    const { strings } = editor;
     const doc = editor.element.ownerDocument;
     const panel = editorElement(doc, "section", "locations");
-    panel.setAttribute("aria-label", "Symbol locations");
+    panel.setAttribute("aria-label", strings.text("Symbol locations"));
     const status = editorElement(doc, "div", "locations-count");
     panel.append(status);
     const rows = choiceRows(panel, 50, "locations-choices");
@@ -39,12 +40,12 @@ export function mountLocationChooser(editor: TextEditor, navigation: NavigationC
     }
     function render(search: Search) {
         const result = search.result!;
-        status.textContent = (search.index + 1) + " of " + result.count;
+        status.textContent = strings.resultPosition(search.index + 1, result.count);
         rows.set(result.count, search.index, (index, button) => {
             const target = result.locationAt(index)!;
             const excerpt = locationExcerpt(target);
             const file = options.fileLabel?.(target) ?? target.document.uri;
-            button.textContent = file + " · " + excerpt.line + ":" + excerpt.column;
+            button.textContent = strings.location(file, excerpt.line, excerpt.column);
             button.dataset.location = String(index);
             const code = doc.createElement("code"), mark = doc.createElement("mark");
             mark.textContent = excerpt.match;
@@ -70,7 +71,7 @@ export function mountLocationChooser(editor: TextEditor, navigation: NavigationC
         if (pointed === undefined) editor.viewport.revealOffset(offset, {
             affinity: selection.headAffinity ?? "after", vertical: "center-if-outside", horizontal: "nearest",
         });
-        status.textContent = kind === "definition" ? "Finding definition…" : "Finding references…";
+        status.textContent = strings.text(kind === "definition" ? "Finding definition…" : "Finding references…");
         overlay.show({ revision, offset });
         const outcome = await navigation.request(kind, offset, includeDeclaration);
         if (active === search) {
@@ -80,7 +81,7 @@ export function mountLocationChooser(editor: TextEditor, navigation: NavigationC
                 search.result = outcome.value;
                 if (outcome.value.count === 1) choose(search, 0);
                 else if (outcome.value.count) render(search);
-                else status.textContent = kind === "definition" ? "No definition found." : "No references found.";
+                else status.textContent = strings.text(kind === "definition" ? "No definition found." : "No references found.");
             }
         }
         return outcome;
@@ -93,7 +94,7 @@ export function mountLocationChooser(editor: TextEditor, navigation: NavigationC
         }
     })];
     const register = (id: string, label: string, key: string, run: () => void, enabled = () => !!active && !panel.hidden) => {
-        stops.push(editor.commands.register({ id: "locations." + id, label, enabled, run },
+        stops.push(editor.commands.register({ id: "locations." + id, label, owner: "editor", enabled, run },
             { keys: [key], priority: builtinKeyPriority.completion, shared: true }).dispose);
     };
     const blur = () => { if (active) cancel(); };

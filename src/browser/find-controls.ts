@@ -10,21 +10,20 @@ export type FindCommandOptions = Readonly<{
     replaceAll?: Action;
     insertLineBreak?: Action;
     close?: Action;
-    text?: (label: string) => string;
 }>;
 
 /** Bind the shared Find shortcuts to one pane and the host fields that act on it. */
 export function bindFindCommands(editor: TextEditor, options: FindCommandOptions) {
     editor.signal.throwIfAborted();
     const handles: { dispose(): void }[] = [];
-    const text = options.text ?? (label => label);
+    const { text } = editor.strings;
     const keys = builtinKeyPriority;
     function dispose() {
         editor.signal.removeEventListener("abort", dispose);
         for (const handle of handles.splice(0)) handle.dispose();
     }
     function bind(id: string, label: string, key: string, action: Action | undefined, priority: number, repeat = false) {
-        if (action) handles.push(editor.commands.register({ ...action, id: "find." + id, label: text(label), category: text("Find") },
+        if (action) handles.push(editor.commands.register({ ...action, id: "find." + id, label, owner: "editor", category: text("Find") },
             { keys: [key], shared: true, priority, repeat }));
     }
     try {

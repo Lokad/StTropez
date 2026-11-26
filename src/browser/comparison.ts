@@ -1,3 +1,4 @@
+import { resolveControlStrings, type ControlStrings } from "./control-strings.ts";
 import { onAbort } from "./listen.ts";
 import { editorElement } from "./editor-element.ts";
 import { Store } from "../core/observable.ts";
@@ -22,32 +23,12 @@ import { builtinKeyPriority, commandRegistration, type EditorCommand, type Edito
 import { createComparisonPanes } from "./comparison-panes.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 
-export type TextComparisonStrings = Readonly<{
-    baselineInput?: string;
-    workingInput?: string;
-    commandCategory?: string;
-    previousChange?: string;
-    nextChange?: string;
-    useBaseline?: string;
-    linkScrolling?: string;
-    alignRows?: string;
-    updating?: string;
-    preparingRows?: string;
-    shortcutSeparator?: string;
-    previewLabel?: string;
-    selectChange?: string;
-    lastCompleted?: string;
-    heading?: (side: "baseline" | "working", state: TextComparisonSnapshot) => string | undefined;
-    excerpt?: (side: "baseline" | "working", range: DiffRange, visibleText: string) => string | undefined;
-    statusText?: (state: TextComparisonSnapshot) => string | undefined;
-    restoreHint?: (state: TextComparisonSnapshot) => string | undefined;
-}>;
 export type TextComparisonOptions = Readonly<{
     ariaLabel?: string;
     workBudget?: number;
     view?: DocumentView;
     controls?: boolean;
-    strings?: TextComparisonStrings;
+    strings?: ControlStrings;
     scrollLinked?: boolean;
     rowsAligned?: boolean;
     settings?: EditorSettings;
@@ -100,7 +81,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const requestedBudget = options.workBudget ?? 4096;
     validateWorkBudget(requestedBudget, "Comparison");
     const budget = Math.min(requestedBudget, 4096);
-    const strings = { ...options.strings };
+    const strings = resolveControlStrings(options.strings);
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
     let display: TextResourceHandle | undefined;
@@ -151,7 +132,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
         const range = firstHunkInLines(side, line.line)?.[side];
         return range && range.from < range.to ? `st-comparison-line-${side}` : undefined;
     };
-    const paneOptions = { ...(options.settings ? { settings: options.settings } : {}), ...(options.requestLine ? { requestLine: options.requestLine } : {}) };
+    const paneOptions = { strings, ...(options.settings ? { settings: options.settings } : {}), ...(options.requestLine ? { requestLine: options.requestLine } : {}) };
     const sharedCommands = new Map<string, EditorCommand>();
     const presentation = (side: "baseline" | "working") => ({
         commands: sharedCommands,
@@ -163,7 +144,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     let workingMount: ReturnType<typeof mountEditor>;
     try {
         workingMount = mountEditor(workingPane.content, workspace, identity, {
-            view: controller.view, ...paneOptions, ariaLabel: strings.workingInput ?? "Comparison working source",
+            view: controller.view, ...paneOptions, ariaLabel: strings.text("Comparison working source"),
         }, presentation("working"));
     }
     catch (error) { root.remove(); controller.dispose(); throw error; }
@@ -241,7 +222,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false }, { visibility: "internal" });
             const referenceId = typeof baseline === "string" ? baseline : display!.documentId;
             const mounted = mountEditor(referencePane.content, workspace, referenceId, {
-                ariaLabel: strings.baselineInput ?? "Comparison baseline source", readOnly: true, ...paneOptions,
+                ariaLabel: strings.text("Comparison baseline source"), readOnly: true, ...paneOptions,
             }, presentation("baseline"));
             commandScopes[1] = mounted.commandScope;
             const editor = mounted.editor;
@@ -367,9 +348,9 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             list: () => activePane().commands.list(),
         });
         for (const [id, label, key, direction] of [
-            ["comparison.nextChange", strings.nextChange ?? "Next change", "F7", 1],
-            ["comparison.previousChange", strings.previousChange ?? "Previous change", "Shift+F7", -1],
-        ] as const) commands.register({ id, label, owner: "editor", category: strings.commandCategory ?? "Comparison",
+            ["comparison.nextChange", "Next change", "F7", 1],
+            ["comparison.previousChange", "Previous change", "Shift+F7", -1],
+        ] as const) commands.register({ id, label, owner: "editor", category: strings.text("Comparison"),
             enabled: () => stateStore.get().canNavigate, run: (_, pane) => navigateFrom(pane, direction) }, { keys: [key], priority: builtinKeyPriority.editor });
         const review: TextComparison = Object.freeze({ element: root, controller, commands, panes: editors, activePane, ...stateStore.observable, navigateHunk, revertSelectedHunk, hunkAt, setScrollLinked, setRowsAligned,
             getDiagnostics: () => {

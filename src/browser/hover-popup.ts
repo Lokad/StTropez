@@ -13,7 +13,6 @@ import type { TextEditor } from "./text-editor.ts";
 
 export type HoverPopupAction = Readonly<{ label: string; run: () => void }>;
 export type HoverPopupOptions = DocumentationOptions & Readonly<{
-    closeHint?: string;
     actions?: (point: OverlayPosition, state: HoverSnapshot) => readonly HoverPopupAction[];
     beforeInspect?: (trigger: "pointer" | "keyboard") => boolean;
 }>;
@@ -27,7 +26,7 @@ export function mountHoverPopup(editor: TextEditor, hover: HoverController, opti
     popup.setAttribute("role", "tooltip");
     const content = mountDocumentation(popup, options);
     const hint = doc.createElement("small");
-    hint.textContent = options.closeHint ?? "Esc to close";
+    hint.textContent = editor.strings.text("Esc to close");
     const actions = doc.createElement("footer");
     popup.append(actions, hint);
     const events = new AbortController();

@@ -2,7 +2,7 @@ import { moveChoice } from "./choice-rows.ts";
 import { transientSurface } from "./transient-surface.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
 import { listenUntil } from "./listen.ts";
-import { mountCompletionList, type CompletionListStrings } from "./completion-list.ts";
+import { mountCompletionList } from "./completion-list.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { isIndex, isPositiveInteger } from "../core/bounds.ts";
@@ -46,7 +46,7 @@ export type CompletionSnapshot = Readonly<{ message: string; connected: boolean;
     choices: readonly string[]; choiceIndex: number; completionAt: (index: number) => CompletionChoice | undefined; completionIncomplete: boolean; completionDetail: string; resolving: boolean }>;
 export type CompletionControllerOptions = Readonly<{ autoConnect?: boolean; automatic?: boolean;
     /** Mount a caret-anchored list. Omit for host-rendered choices. */
-    list?: boolean | CompletionListStrings;
+    list?: boolean;
     /** Narrow explicit requests using each item's captured edit prefix, as automatic requests do. */
     filterManualCompletions?: boolean; canCapture?: () => boolean;
     /** Visible choice rows for PageUp/Down. Defaults to ten. Return zero for a hidden list. */
@@ -624,8 +624,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             register("completion." + mode, mode === "insert" ? "Insert completion" : "Replace with completion",
                 mode === "insert" ? ["Tab"] : ["Enter", "Alt+Enter"], visible, () => { if (!accept(mode) && job) closeList("Completion expired."); });
         }
-        if (options.list) list = mountCompletionList(editor, cell.observable,
-            options.list === true ? {} : options.list, !!options.filterManualCompletions);
+        if (options.list) list = mountCompletionList(editor, cell.observable, !!options.filterManualCompletions);
     } catch (error) { dispose(); throw error; }
     if (options.autoConnect !== false) connect();
     return Object.freeze({ ...controllerObservable(cell, "Completion", () => disposed, notifications), request: () => request(),

@@ -14,7 +14,6 @@ import type { TextEditor } from "./text-editor.ts";
 import type { Observable } from "../core/observable.ts";
 
 export type RenamePopupOptions = Readonly<{
-    text?: (label: string) => string;
     review?: boolean;
     beforeOpen?: () => void;
     onNotice?: (message: string) => void;
@@ -57,7 +56,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     const win = doc.defaultView!;
     const listen = listenUntil(signal);
     const { panel, text, node, button, status, pages, list, showEdits } =
-        reviewPanel(editor, signal, "st-rename", "Rename symbol", options.text);
+        reviewPanel(editor, signal, "st-rename", "Rename symbol");
     panel.setAttribute("role", "dialog");
     const label = node("label");
     const name = node("input");
@@ -75,6 +74,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     let edited = false;
     let pendingSubmit: "preview" | "apply" | undefined;
     let shown: RenamePreview | null = null;
+    let editCount = 0;
     const preview = button(controls, "Preview rename", () => { name.focus(); submit("preview"); });
     let apply = button(controls, "Apply rename", () => {});
     button(controls, "Cancel rename", () => close(true));
@@ -113,13 +113,13 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         const result = state.preview;
         preview.disabled = checking || state.status === "pending" || !name.value.trim();
         const hint = options.review ? "Enter to preview." : "Enter to rename. Ctrl/Cmd+Enter to preview.";
-        status.textContent = text(checking ? "Checking rename target…" : state.message || hint);
         if (shown !== result) {
             shown = result;
             apply = button(controls, "Apply rename", () => accept(result), apply);
-            const total = showEdits(result);
-            if (result?.canApply) status.textContent = text(`Review ${total} ${total === 1 ? "change" : "changes"}.`);
+            editCount = showEdits(result);
         }
+        status.textContent = result?.canApply ? editor.strings.reviewChanges(editCount)
+            : text(checking ? "Checking rename target…" : state.message || hint);
         apply.disabled = !result?.canApply;
     }
     function submit(mode: "preview" | "apply") {
@@ -193,7 +193,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     onAbort(signal, () => hide(false));
     onAbort(signal, review.subscribe(render));
     function bind(id: string, label: string, key: string, enabled: () => boolean, run: (arg: unknown) => boolean | void, priority: number) {
-        onAbort(signal, commands.register({ id, label: text(label), owner: "editor", category: "Rename", enabled, run },
+        onAbort(signal, commands.register({ id, label, owner: "editor", category: "Rename", enabled, run },
             { keys: [key], priority, shared: true, repeat: false }).dispose);
     }
     bind("rename.start", "Rename symbol", "F2", () => editor.getSnapshot().readOnlyReason === null, open, builtinKeyPriority.open);

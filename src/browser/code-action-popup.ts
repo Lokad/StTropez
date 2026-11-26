@@ -9,7 +9,6 @@ import { reviewPanel } from "./review-controls.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type CodeActionPopupOptions = Readonly<{
-    text?: (label: string) => string;
     beforeOpen?: () => boolean | void;
     quickApply?: (choice: CodeActionChoice, preview: CodeActionPreview) => boolean;
 }>;
@@ -19,7 +18,7 @@ const pageSize = 16;
 export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner, actions: CodeActionController,
     signal: AbortSignal, options: CodeActionPopupOptions) {
     const { panel, status, list: edits, pages: editPages, showEdits, paging, node, button, text } =
-        reviewPanel(editor, signal, "st-code-actions", "Quick fixes", options.text);
+        reviewPanel(editor, signal, "st-code-actions", "Quick fixes");
     const body = node("div"), footer = node("footer");
     const choices = node("div"), count = node("small"), pages = node("div");
     status.setAttribute("aria-label", text("Quick-fix status"));
@@ -71,7 +70,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
             control.onclick = () => void pick(choice);
             choices.append(control);
         }
-        count.textContent = items.length <= pageSize ? "" : `${start + 1}–${start + visible.length} of ${items.length}`;
+        count.textContent = items.length <= pageSize ? "" : editor.strings.resultPage(start + 1, start + visible.length, items.length);
         paging(pages, "fixes", start, items.length, pageSize, next => {
             page(items, next);
             markChoice();
@@ -163,7 +162,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
     onAbort(signal, editor.view.subscribe(() => { if (open && command) anchor(); }));
     function bind(id: string, label: string, key: string, run: (arg: unknown) => boolean | void, opening = false) {
         const enabled = () => opening || !panel.hidden && (editor.getSnapshot().focused || panel.matches(":focus-within"));
-        onAbort(signal, editor.commands.register({ id, label: text(label), category: text("Code actions"), owner: "editor", enabled, run },
+        onAbort(signal, editor.commands.register({ id, label, category: text("Code actions"), owner: "editor", enabled, run },
             { keys: [key], priority: opening ? builtinKeyPriority.open : builtinKeyPriority.quickFix, shared: key !== "Enter", repeat: key !== "Enter" }).dispose);
     }
     bind("quickfix.show", "Show quick fixes", "Mod+.", show, true);

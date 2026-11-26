@@ -45,12 +45,11 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [browser/character-warnings.ts](../src/browser/character-warnings.ts) | `CharacterWarningCapture`, `CharacterWarningHighlights` |
 | [browser/code-action-controller.ts](../src/browser/code-action-controller.ts) | `CodeActionChoice`, `CodeActionController`, `CodeActionControllerOptions`, `CodeActionPreview`, `CodeActionSnapshot` |
 | [browser/code-action-popup.ts](../src/browser/code-action-popup.ts) | `CodeActionPopupOptions` |
-| [browser/color-picker.ts](../src/browser/color-picker.ts) | `ColorPickerOptions` |
 | [browser/command-registry.ts](../src/browser/command-registry.ts) | `EditorCommand`, `EditorCommands`, `EditorKeymap` |
 | [browser/comparison-alignment.ts](../src/browser/comparison-alignment.ts) | `ComparisonAlignmentSnapshot` |
-| [browser/comparison.ts](../src/browser/comparison.ts) | `TextComparison`, `TextComparisonDiagnostics`, `TextComparisonHunk`, `TextComparisonOptions`, `TextComparisonSnapshot`, `TextComparisonStrings`, `mountTextComparison` |
+| [browser/comparison.ts](../src/browser/comparison.ts) | `TextComparison`, `TextComparisonDiagnostics`, `TextComparisonHunk`, `TextComparisonOptions`, `TextComparisonSnapshot`, `mountTextComparison` |
 | [browser/completion-controller.ts](../src/browser/completion-controller.ts) | `CompletionChoice`, `CompletionController`, `CompletionControllerOptions`, `CompletionSnapshot`, `CompletionSnippet` |
-| [browser/completion-list.ts](../src/browser/completion-list.ts) | `CompletionListStrings` |
+| [browser/control-strings.ts](../src/browser/control-strings.ts) | `ControlStrings` |
 | [browser/decoration-layers.ts](../src/browser/decoration-layers.ts) | `DecorationLayer`, `DecorationLayerOptions`, `DecorationLayers`, `DecorationProvider` |
 | [browser/diagnostic-controller.ts](../src/browser/diagnostic-controller.ts) | `DiagnosticController`, `DiagnosticControllerOptions`, `DiagnosticSnapshot`, `EditorDiagnostic`, `diagnosticDecoration` |
 | [browser/document-color-controller.ts](../src/browser/document-color-controller.ts) | `ColorPresentationChoice`, `ColorPresentationReview`, `DocumentColorChoice`, `DocumentColorController`, `DocumentColorControllerOptions`, `DocumentColorSnapshot` |

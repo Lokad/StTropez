@@ -1,5 +1,6 @@
 import { Workspace } from "sttropez";
 import { attachEditorLanguage, BrowserLspWorkspace, mountFindBar, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
+import type { ControlStrings } from "sttropez/browser";
 import "sttropez/editor.css";
 
 const workspace = new Workspace();
@@ -7,8 +8,13 @@ const name = "colors.ts";
 const file = workspace.createTextResource({ scope: "controls", resource: name, variant: "working" }, name,
     { value: 'const accent = "#5fae99";\nuse(accent);' }, undefined,
     { language: { uri: "file:///colors.ts", languageId: "typescript" } });
-export const editor = mountTextEditor(document.querySelector("main")!, workspace, file.documentId);
-const find = mountFindBar(document.querySelector("#find")!);
+const strings: ControlStrings = location.search === "?locale=fr" ? {
+    text: label => label === "New name" ? "Nouveau nom" : label,
+    reviewChanges: count => String(count) + (count === 1 ? " modification" : " modifications"),
+    findStatus: state => String(state.count) + " résultats",
+} : {};
+export const editor = mountTextEditor(document.querySelector("main")!, workspace, file.documentId, { strings });
+const find = mountFindBar(document.querySelector("#find")!, { strings });
 find.attach(editor);
 const provider = new BrowserLspWorkspace(workspace, {
     workspaceEdits: true,

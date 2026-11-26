@@ -63,7 +63,7 @@ const mounts: Mounts = {
             ...popup, actions(point, state) {
                 const actions: HoverPopupAction[] = [];
                 if (state.status === "ready" && options.codeActions?.popup && editor.commands.get("quickfix.show")?.enabled) {
-                    actions.push({ label: "Code actions", run() {
+                    actions.push({ label: editor.strings.text("Code actions"), run() {
                         const { selection } = editor.view.getSnapshot();
                         if ((point.offset < Math.min(selection.head, selection.anchor) || point.offset > Math.max(selection.head, selection.anchor))
                             && !editor.reveal({ from: point.offset, to: point.offset }, { expectedRevision: point.revision, select: true })) return;
@@ -71,11 +71,11 @@ const mounts: Mounts = {
                     } });
                 }
                 const mark = options.colors?.picker && features.colors?.colorAt(point.offset);
-                if (mark) actions.push({ label: "Edit color", run: () => { features.colors?.openPicker(mark); } });
+                if (mark) actions.push({ label: editor.strings.text("Edit color"), run: () => { features.colors?.openPicker(mark); } });
                 const link = features.links?.linkAt(point.offset);
                 const openLink = popup.openLink;
                 if (link && openLink && (link.target === null ? link.canResolve : popup.canOpenLink?.(link.target) !== false)) {
-                    actions.push({ label: "Open link", run: () => { void link.open(uri => {
+                    actions.push({ label: editor.strings.text("Open link"), run: () => { void link.open(uri => {
                         if (features.hover?.getSnapshot() === state && popup.canOpenLink?.(uri) !== false) openLink(uri);
                     }); } });
                 }

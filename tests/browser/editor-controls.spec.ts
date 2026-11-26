@@ -155,7 +155,7 @@ test("accepting a completion keeps its visible line at the same scroll position"
 });
 
 test("clicking the rename status or disabled Apply keeps the next keystroke in the name field", async ({ page }) => {
-    await page.goto("/controls/");
+    await page.goto("/controls/?locale=fr");
     const source = page.getByRole("textbox", { name: "colors.ts" });
     await expect(page.locator(".st-color-swatch")).toBeVisible();
     await source.press("Control+Home");
@@ -163,7 +163,7 @@ test("clicking the rename status or disabled Apply keeps the next keystroke in t
     await source.press("ArrowRight");
     await source.press("F2");
     const dialog = page.getByRole("dialog", { name: "Rename symbol" });
-    const name = dialog.getByRole("textbox", { name: "New name" });
+    const name = dialog.getByRole("textbox", { name: "Nouveau nom" });
     await name.fill("palette");
     await dialog.getByLabel("Rename status").click();
     await page.keyboard.type("s");
@@ -172,7 +172,14 @@ test("clicking the rename status or disabled Apply keeps the next keystroke in t
     await expect(apply).toBeDisabled();
     await apply.click({ force: true });
     await page.keyboard.press("Control+Enter");
-    await expect(dialog.getByLabel("Rename edits")).toContainText("palettes");
+    const edits = dialog.getByLabel("Rename edits");
+    await expect(edits).toContainText("palettes");
+    const count = await edits.locator("li").count();
+    await expect(dialog.getByLabel("Rename status")).toHaveText(String(count) + (count === 1 ? " modification" : " modifications"));
+    await name.press("Escape");
+    await source.press("Control+f");
+    await page.getByRole("textbox", { name: "Find text" }).fill("accent");
+    await expect(page.locator(".st-find-status")).toHaveText("2 résultats");
     await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);');
 });
 

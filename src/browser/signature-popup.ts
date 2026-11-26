@@ -7,11 +7,6 @@ import type { SignatureSnapshot } from "./signature-controller.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type SignaturePopupOptions = DocumentationOptions & Readonly<{
-    label?: string;
-    parameterLabel?: string;
-    missingParameter?: string;
-    previous?: string;
-    next?: string;
     overloadControls?: boolean;
 }>;
 
@@ -25,14 +20,14 @@ export function mountSignaturePopup(editor: TextEditor, source: Observable<Signa
     label.append(before, parameter, after);
     popup.append(label);
     popup.setAttribute("role", "tooltip");
-    popup.setAttribute("aria-label", options.label ?? "Signature help");
-    parameter.setAttribute("aria-label", options.parameterLabel ?? "Active signature parameter");
+    popup.setAttribute("aria-label", editor.strings.text("Signature help"));
+    parameter.setAttribute("aria-label", editor.strings.text("Active signature parameter"));
     popup.onpointerdown = event => event.preventDefault();
     const documentation = mountDocumentation(popup, options);
     const detail = mountDocumentation(popup, options);
     const controls = owner.createElement("div");
     popup.append(controls);
-    const missing = [{ kind: "plaintext", value: options.missingParameter ?? "No declared parameter for this argument in this overload." }] as const;
+    const missing = [{ kind: "plaintext", value: editor.strings.text("No declared parameter for this argument in this overload.") }] as const;
     const overlay = mountAnchoredOverlay(editor, popup, { prefer: "above" });
     const stop = source.subscribe(() => {
         const state = source.getSnapshot();
@@ -52,7 +47,7 @@ export function mountSignaturePopup(editor: TextEditor, source: Observable<Signa
                 const command = editor.commands.get(id)!;
                 const button = owner.createElement("button");
                 button.type = "button";
-                button.textContent = options[direction] ?? command.label;
+                button.textContent = command.label;
                 button.title = editor.keymap.getShortcuts(id).join(", ").replace(/arrowup/gi, "↑").replace(/arrowdown/gi, "↓");
                 button.disabled = !command.enabled;
                 button.onclick = () => { if (source.getSnapshot() === state) editor.commands.run(id); };

@@ -47,6 +47,13 @@ return host buttons with a `label` and a `run` callback. Stale buttons expire wi
 One result opens directly. For several, the chooser shows file, line and excerpt. Use arrows or Page Up/Down,
 Enter to open and Escape to dismiss. `fileLabel` names host URIs. Results expire on focus or selection changes.
 
+Pass the same `ControlStrings` table as `{ strings }` to `mountTextEditor`, `mountTextComparison`
+and an external `mountFindBar`. Both review panes inherit it. Use `text(label)` for fixed captions.
+Command menus read `commandLabel(id, fallback)` when queried, so the host can update its labels.
+Use `reviewChanges(count)` for plural forms, `resultPage(first, last, total)` for page ranges and
+`location(file, line, column)` for one-based positions. Find and completion formatters receive
+their snapshots. Omitted formatters use English. Source excerpts and provider titles keep their text.
+
 Borders, secondary text, fields and hovered rows derive from the surface and text colors. The selected
 row uses the selection color. In forced colors, the current completion, quick fix and pressed Find
 toggle use the system highlight and an outline.

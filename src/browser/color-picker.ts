@@ -8,7 +8,6 @@ import { reviewPanel } from "./review-controls.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 type Capture = CapturedViewRequest<TextEditor["tab"]>;
-export type ColorPickerOptions = Readonly<{ text?: (label: string) => string }>;
 
 const channels = ["red", "green", "blue"] as const;
 const hex = (color: LspColor) => "#" + channels
@@ -16,9 +15,9 @@ const hex = (color: LspColor) => "#" + channels
 
 /** Review formats against the swatch that opened the picker, even when the caret is elsewhere. */
 export function mountColorPicker(editor: TextEditor, colors: DocumentColorController, capture: () => Capture | undefined,
-    signal: AbortSignal, options: ColorPickerOptions) {
+    signal: AbortSignal) {
     const { panel, status: message, list, pages, showEdits, node, button, text } =
-        reviewPanel(editor, signal, "st-color-picker", "Color picker", options.text);
+        reviewPanel(editor, signal, "st-color-picker", "Color picker");
     panel.setAttribute("role", "dialog");
     const fields = node("div");
     const rgb = node("input");
