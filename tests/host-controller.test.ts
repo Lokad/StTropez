@@ -143,19 +143,23 @@ test("immutable Run/log resources link captured inputs and keep older progress/r
         if (state.inspection) { assert.ok(Object.isFrozen(state.inspection)); assert.ok(Object.isFrozen(state.inspection.links)); }
     });
     try {
+        const beforeRun = h.debug().diagnostics;
         const first = h.run(); await settled(); const id = h.runResources.state.getSnapshot().runs[0]!.id, input = h.runResources.capture(id)!;
         const sourceId: import("../src/index.ts").ResourceId = input.source.id; assert.equal(sourceId, h.source.id); assert.equal(input.configuration.id, h.connection.id); assert.equal(input.transfer.id, h.transfer.resource.id); assert.equal(input.source.value, "start");
-        const snapshot = h.workspace.resource(id).getSnapshot(); assert.equal(Object.isFrozen(input.transfer.value), true);
-        assert.equal(h.workspace.updateResource(h.workspace.resource(id), { expectedRevision: 0, origin: "host", value: { ...input, mode: "tampered" } }).applied, false);
-        const initialLog = h.runResources.state.getSnapshot().runs[0]!.logs[0]!, oldLog = h.workspace.resource(initialLog).getSnapshot();
+        assert.ok(Object.isFrozen(input) && Object.isFrozen(input.transfer) && Object.isFrozen(input.transfer.value));
+        const initialLog = h.runResources.state.getSnapshot().runs[0]!.logs[0]!;
+        h.runResources.open(initialLog);
+        const oldLog = h.runResources.inspect();
+        assert.equal(h.debug().diagnostics.resources, beforeRun.resources);
+        assert.equal(h.debug().diagnostics.tabs, beforeRun.tabs);
         sourceEdit(h, " later"); h.setPath("later-connection.csv"); h.transfer.update("destination", "later-target.csv"); const second = h.run(); await settled(); const latest = h.debug().activity.lastRun;
         const secondId = h.runResources.state.getSnapshot().runs[1]!.id; h.runResources.open(secondId); const selection = h.runResources.state.getSnapshot().selected, before = h.debug();
         const capturedInspection = outputs.state.getSnapshot();
         h.runResources.advance(id); h.runResources.advance(id); assert.equal(h.runResources.state.getSnapshot().runs[0]!.progress, 60); assert.deepEqual(h.debug().source, before.source); assert.deepEqual(h.debug().configuration, before.configuration); assert.deepEqual(h.debug().transfer, before.transfer);
         assert.equal(outputs.state.getSnapshot().inspection, capturedInspection.inspection); assert.equal(capturedInspection.runs[0]!.progress, 0);
         h.finishRun(); await first; assert.equal(h.runResources.state.getSnapshot().runs[0]!.status, "completed"); assert.equal(h.debug().activity.pendingRuns, 1); assert.equal(h.runResources.state.getSnapshot().selected, selection); assert.deepEqual(h.debug().activity.lastRun, latest);
-        h.failRun(); await second; assert.equal(h.runResources.state.getSnapshot().runs[1]!.status, "failed"); assert.equal(h.workspace.resource(id).getSnapshot(), snapshot); assert.equal(h.workspace.resource(initialLog).getSnapshot(), oldLog);
-        assert.equal(h.runResources.capture(id), input); h.runResources.open(initialLog); assert.equal(h.runResources.inspect()?.links[0]?.id, id);
+        h.failRun(); await second; assert.equal(h.runResources.state.getSnapshot().runs[1]!.status, "failed");
+        assert.equal(h.runResources.capture(id), input); h.runResources.open(initialLog); assert.deepEqual(h.runResources.inspect(), oldLog); assert.equal(h.runResources.inspect()?.links[0]?.id, id);
         const logModel = runPanelModel(outputs, outputs.state.getSnapshot()); outputs.open(secondId); logModel.inspection.links()[0]!.invoke();
         assert.equal(outputs.state.getSnapshot().selected, id); assert.equal(h.runResources.inspect()?.preview, "start");
         h.runResources.open(h.source.id); const sourceSnapshot = outputs.state.getSnapshot(), sourceModel = runPanelModel(outputs, sourceSnapshot);

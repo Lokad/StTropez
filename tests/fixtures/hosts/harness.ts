@@ -46,7 +46,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         externalWrite: (text: string) => controller.externalWrite(text), finishConflictReview: controller.finishConflictReview, saveReviewedSource: controller.saveReviewedSource,
         configurationCapture: () => controller.configurationSave.capture(), configurationValue: () => { const s = controller.connection.getSnapshot(); return s.state === "ready" ? s.value() : null; },
         transferCapture: () => controller.transfer.save.capture(), transferValue: () => { const s = controller.transfer.resource.getSnapshot(); return s.state === "ready" ? s.value() : null; },
-        setTransfer: controller.transfer.update, runInput: (id: ResourceId) => controller.runResources.capture(id),
+        setTransfer: controller.transfer.update, runInput: (id: number) => controller.runResources.capture(id),
         range: (from: number, to: number) => controller.workspace.document(controller.source.documentId).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => bindings.referenceRange(from, to),
         onSourceRender: (id: "primary" | "secondary" | "comparison", listener: () => void) => bindings.onSourceRender(id, listener),
@@ -104,7 +104,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     externalWrite: (text: string) => void; finishConflictReview: () => boolean; saveReviewedSource: () => void;
     configurationCapture: () => ReturnType<HostController["configurationSave"]["capture"]>; configurationValue: () => Connection | null;
     transferCapture: () => ReturnType<HostController["transfer"]["save"]["capture"]>; transferValue: () => import("./transfers.ts").TransferSettings | null;
-    setTransfer: HostController["transfer"]["update"]; runInput: (id: ResourceId) => ReturnType<HostController["runResources"]["capture"]>;
+    setTransfer: HostController["transfer"]["update"]; runInput: (id: number) => ReturnType<HostController["runResources"]["capture"]>;
     referenceRange: (from: number, to: number) => string | undefined;
     onSourceRender: (id: "primary" | "secondary" | "comparison", listener: () => void) => () => void;
     selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => boolean;

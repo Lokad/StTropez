@@ -1,8 +1,7 @@
-import type { ResourceId } from "../../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import type { HostTransfer, TransferSettings } from "./transfers.ts";
 import type { FormSavePresentation } from "./form-save.ts";
-import type { RunResources, RunResourcesSnapshot } from "./run-resources.ts";
+import type { InspectionId, RunResources, RunResourcesSnapshot } from "./run-resources.ts";
 import { formSavePanelModel, formSaveKey } from "./configuration-panel.ts";
 
 export function transferFormModel(transfer: Pick<HostTransfer, "update" | "save">, saved: FormSavePresentation<TransferSettings>) {
@@ -20,7 +19,7 @@ export function transferFormModel(transfer: Pick<HostTransfer, "update" | "save"
 /** Run/log links and refresh commands retain the displayed resource, never a later selection. */
 export function runPanelModel(outputs: Pick<RunResources, "open" | "advance">, state: RunResourcesSnapshot) {
     const inspection = state.inspection;
-    const link = (label: string, id: ResourceId) => ({ key: id, label, invoke: () => outputs.open(id) });
+    const link = <Key extends InspectionId>(label: string, id: Key) => ({ key: id, label, invoke: () => outputs.open(id) });
     return { title: "Captured Runs and logs", rows: { identity: state.runs, items: () => state.runs.map(run => ({
         key: run.id, status: `Run ${run.number}: ${run.status}, ${run.progress}% · ${run.id} `,
         inspect: link(`Inspect Run ${run.number}`, run.id),
@@ -47,8 +46,8 @@ export function mountTransferPanel(host: HTMLElement, controller: HostController
     const runTitle = owner.createElement("h3"), list = owner.createElement("ul"), inspector = owner.createElement("section"), heading = owner.createElement("h3"), text = owner.createElement("p"), source = owner.createElement("pre"), links = owner.createElement("div"), refresh = button(initialRuns.inspection.refresh);
     runTitle.textContent = initialRuns.title; inspector.setAttribute("aria-label", initialRuns.inspection.label); inspector.append(heading, text, source, links, refresh);
     host.replaceChildren(title, form, runTitle, list, inspector);
-    const rows = new Map<ResourceId, { status: HTMLSpanElement; inspect: HTMLButtonElement; progress: HTMLButtonElement; logs: HTMLSpanElement; entries: Map<ResourceId, HTMLButtonElement> }>();
-    let previousRows: RunResourcesSnapshot["runs"] | undefined, selected: ResourceId | null | undefined, inspectionLinks: HTMLButtonElement[] = [];
+    const rows = new Map<number, { status: HTMLSpanElement; inspect: HTMLButtonElement; progress: HTMLButtonElement; logs: HTMLSpanElement; entries: Map<number, HTMLButtonElement> }>();
+    let previousRows: RunResourcesSnapshot["runs"] | undefined, selected: RunResourcesSnapshot["selected"] | undefined, inspectionLinks: HTMLButtonElement[] = [];
     const renderForm = () => {
         const model = transferFormModel(transfer, transfer.save.presentation.getSnapshot()); fieldGroup.hidden = !model.available; unavailable.hidden = model.available; unavailable.textContent = model.status;
         model.fields.forEach((value, i) => { const field = fields[i]!; if (field.value !== value.value) field.value = value.value; field.readOnly = value.readOnly; field.setAttribute("aria-invalid", String(value.invalid)); });
