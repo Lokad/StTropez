@@ -97,6 +97,16 @@ function create(source: GraphemeSource, length: number, options: GraphemeOptions
     const c: Counters = { phase: "scan", scanned: 0, reads: 0, points: 0, boundaries: 0, clusters: 0, work: 0 }; return drive(segment(source, from, to, maxOperations, maxClusters, c), c);
 }
 export function createGraphemeCursor(source: TextBuffer | string, options: GraphemeOptions = {}): GraphemeCursor { return create(typeof source === "string" ? Object.freeze({ kind: "string", text: source }) : Object.freeze({ kind: "buffer", buffer: source }), source.length, options); }
+/** Build the complete index for one synchronous editor command. */
+export function indexGraphemes(source: TextBuffer | string, options?: GraphemeOptions): GraphemeIndex {
+    const cursor = createGraphemeCursor(source, options);
+    try {
+        return cursor.next(Number.MAX_SAFE_INTEGER).result!;
+    } finally {
+        cursor.dispose();
+    }
+}
+
 export function graphemeBoundaries(text: string): readonly number[] {
-    const cursor = createGraphemeCursor(text); try { let step = cursor.next(65536); while (step.status === "running") step = cursor.next(65536); return step.result!.boundaries(); } finally { cursor.dispose(); }
+    return indexGraphemes(text).boundaries();
 }

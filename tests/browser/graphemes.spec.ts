@@ -98,36 +98,19 @@ test("local ASCII deletion avoids whole-line indexing while nearby Unicode and C
     }
 });
 
-test("a pending whole-line deletion expires when its captured input changes", async ({ page }) => {
-    for (const changed of ["revision", "secondary", "selection", "generation", "permission", "dispose"] as const) {
-        await page.goto("/editing/"); await ready(page); await setup(page, "x" + "\u0301".repeat(100_000), 100_001);
-        const before = await state(page);
-        const pending = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate((input, changed) => {
-            input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
-            const pending = window.editingFixture.snapshot().primary.pendingGrapheme;
-            if (changed === "revision") window.editingFixture.edit([{ from: 0, to: 0, insert: "!" }]);
-            if (changed === "secondary") {
-                window.editingFixture.focus("secondary");
-                const other = document.activeElement as HTMLTextAreaElement;
-                const event = { inputType: "insertText", data: "!", bubbles: true };
-                if (other.dispatchEvent(new InputEvent("beforeinput", { ...event, cancelable: true }))) {
-                    other.setRangeText("!", other.selectionStart, other.selectionEnd, "end");
-                    other.dispatchEvent(new InputEvent("input", event));
-                }
-            }
-            if (changed === "selection") window.editingFixture.select("primary", { anchor: 2, head: 2 });
-            if (changed === "generation") window.editingFixture.replacePrimary();
-            if (changed === "permission") window.editingFixture.readOnly(true);
-            if (changed === "dispose") window.editingFixture.dispose();
-            return pending;
-        }, changed);
-        expect(pending).toBe(true);
-        await expect.poll(async () => (await state(page)).primary.pendingGrapheme).toBe(false);
-        const after = await state(page);
-        if (changed === "dispose") expect(after.diagnostics.resources).toBe(0);
-        else {
-            const inserted = changed === "revision" || changed === "secondary" ? 1 : 0;
-            expect(after.document).toMatchObject({ revision: before.document!.revision + inserted, length: 100_001 + inserted });
-        }
-    }
+test("deleting a long cluster commits before the next edit and Undo restores it", async ({ page }) => {
+    await page.goto("/editing/"); await ready(page);
+    const cluster = "x" + "\u0301".repeat(100_000);
+    await setup(page, cluster, cluster.length);
+    const before = await state(page);
+    const after = await page.getByRole("textbox", { name: "Primary source", exact: true }).evaluate(input => {
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+        return window.editingFixture.snapshot().document;
+    });
+    expect(after).toMatchObject({ revision: before.document!.revision + 1, length: 0 });
+    await page.keyboard.type("!");
+    await page.keyboard.press("Control+z");
+    await page.keyboard.press("Control+z");
+    await expect.poll(() => page.evaluate(() => window.editingFixture.range(0, window.editingFixture.snapshot().document!.length))).toBe(cluster);
+
 });

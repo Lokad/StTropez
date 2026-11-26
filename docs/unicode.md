@@ -63,8 +63,9 @@ include exact matches. `preceding`/`following` exclude them and return `null` pa
 `clusterIndexAt` requires an offset below `to`, `isBoundary` accepts `to`. `index.boundaries()` materializes
 an interval. `graphemeBoundaries(text)` builds the whole array synchronously.
 
-Deletion at a caret removes a cluster, including CRLF. Nonempty selections keep exact bounds. The editor may
-index a whole line and ending or the preceding line when moving back from line start.
+Deletion at a caret removes one cluster, including CRLF. A nonempty selection keeps its exact bounds.
+For context-sensitive characters the editor indexes the full logical line and its ending before moving or
+deleting. Repeated queries reuse that index until the buffer or line changes.
 
 Word movement groups letters, numbers and connector punctuation. Marks and join controls attach to their
 base. Other symbols form runs. Word commands scan within a logical line, stop at its boundaries and snap

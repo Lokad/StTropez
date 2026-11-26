@@ -117,16 +117,6 @@ test(`plain Unicode and word deletion merge overlapping targets into one undo tr
     await select(page, Array.from({ length: 1024 }, (_, index) => ({ anchor: index * 3 + 2, head: index * 3 + 2 })), 1023);
     const manyBefore = await snapshot(page); await input(page).press("Backspace"); await ready(page); await exact(page, "a ".repeat(1024));
     expect((await snapshot(page)).source.revision).toBe(manyBefore.source.revision + 1); expect((await snapshot(page)).history.undoDepth).toBe(manyBefore.history.undoDepth + 1);
-    const long = "start\r\n" + "e\u0301".repeat(40000);
-    await page.evaluate(text => { const f = window.hostFixture; f.editSource(f.snapshot().source.revision, [{ from: 0, to: f.snapshot().source.length, insert: text }]); }, long);
-    await select(page, [{ anchor: 0, head: 0 }, { anchor: long.length, head: long.length }], 1); const pendingBefore = await snapshot(page);
-    const yielded = await input(page).evaluate(node => { node.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", ctrlKey: true, bubbles: true, cancelable: true }));
-        const f = window.hostFixture, s = f.snapshot(), m = s.bindings.views.find(v => v.id === "primary")!.metrics!;
-        f.selectSourceSet("primary", s.source.revision, [{ anchor: 1, head: 1 }, { anchor: s.source.length, head: s.source.length }], 1);
-        return m.pendingWord || m.pendingGrapheme; });
-    expect(yielded).toBe(true); await ready(page);
-    await page.evaluate(() => new Promise<void>(resolve => { let turns = 16; const tick = () => { if (--turns) setTimeout(tick, 0); else resolve(); }; setTimeout(tick, 0); }));
-    await exact(page, long); expect((await snapshot(page)).history).toEqual(pendingBefore.history);
     await page.evaluate(() => window.hostFixture.dispose());
 });
 
