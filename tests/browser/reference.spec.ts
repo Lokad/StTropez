@@ -466,6 +466,11 @@ test("returning to Changes restores the saved view and layout across working edi
 });
 
 test("the reference app edits, reviews and saves the document while its language tools follow the working view", async ({ page }) => {
+    const bindings: string[] = [];
+    page.on("websocket", socket => socket.on("framesent", frame => {
+        const { method } = JSON.parse(frame.payload.toString());
+        if (method === "textDocument/didOpen" || method === "textDocument/didClose") bindings.push(method);
+    }));
     await page.goto("/reference/");
     const source = page.getByRole("textbox", { name: "quote.ts" });
     await expect(page.locator("#pane .st-minimap")).toBeVisible();
@@ -527,6 +532,8 @@ test("the reference app edits, reviews and saves the document while its language
     await expect(page.locator("#saved")).toHaveText("Saved");
     await page.getByRole("button", { name: "Source", exact: true }).click();
     await expect(source).toBeFocused();
+    await expect(page.getByRole("button", { name: "Resolve this placeholder." })).toBeVisible();
+    expect(bindings).toEqual(["textDocument/didOpen"]);
     await page.reload();
     await expect(page.locator("#pane .st-viewport-row").first()).toHaveText("// Approved // Review this quote");
 });

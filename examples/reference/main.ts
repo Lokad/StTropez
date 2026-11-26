@@ -50,6 +50,7 @@ const provider = new BrowserLspWorkspace(workspace, {
         return openWebSocketTransport(url.href, { signal });
     },
 });
+const project = provider.createScope();
 let languageEnabled = false;
 let reviewLayout = { scrollLinked: false, rowsAligned: false };
 let savedReference: SavedReferenceView | undefined;
@@ -114,6 +115,7 @@ function renderConnection() {
 const stopConnection = provider.subscribe(renderConnection);
 connect.onclick = () => {
     focusActivePane();
+    project.attachDocument(file.documentId);
     languageEnabled = true;
     current.enableLanguage();
     const attempt = provider.getSnapshot().commandRequiresReconnect ? provider.reconnect() : provider.connect();
