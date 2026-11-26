@@ -141,7 +141,7 @@ export function undoFrom(workspace: Workspace, documentId: DocumentId) {
 ```
 
 Consecutive edits can share a group when origin, kind, group and views match. Selection or visible-fold
-changes, Undo, Redo, save capture and acceptance seal it. Use `sealHistory(id)` for an explicit boundary.
+changes, Undo, Redo, save capture and acceptance seal it.
 
 #### Reset a draft
 

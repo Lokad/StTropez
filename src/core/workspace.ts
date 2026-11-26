@@ -519,8 +519,6 @@ export class Workspace {
         this.#syncHistory(changed); if (changed.size) { if (actual.length) this.#publish(changed); else this.#scope.deliver([...changed]); }
         return Object.freeze({ applied: true, revisions });
     }
-    /** End grouping without creating an undo entry or changing the document revision. */
-    sealHistory(id: DocumentId): void { this.#scope.assertWritable(); this.document(id); this.#history.seal(id); }
     undo(request: HistoryRequest): BatchEditResult { return this.#moveHistory(request, "undo"); }
     redo(request: HistoryRequest): BatchEditResult { return this.#moveHistory(request, "redo"); }
     #moveHistory(request: HistoryRequest, direction: "undo" | "redo"): BatchEditResult {
