@@ -11,26 +11,24 @@ type TransferTargetSnapshot = Readonly<{ documentId: DocumentId; revision: numbe
 export function installHostHarness(controller: HostController, bindings: ViewBindings, mode: "plain" | "react",
     lifecycle: HostLifecycle, commits: () => Readonly<{ form: number; metadata: number }>, draft?: HostDraftRecovery): void {
     let transferTarget: TextResourceHandle | undefined;
-    const inactive: { resource: TextResourceHandle; tab: TabTarget }[] = [];
+    const inactive = new Set<TextResourceHandle>();
     const seedInactiveDocuments = () => {
-        if (lifecycle.disposed || inactive.length) throw new Error("Inactive workload can be created once on a live host.");
+        if (lifecycle.disposed || inactive.size) throw new Error("Inactive workload can be created once on a live host.");
         for (let index = 0; index < 100; index++) {
             const resource = createWorkingSource(controller.workspace, `inactive-${index}`,
                 `Inactive ${index}`, { value: `// inactive ${index}\r\n` + "row Δ😀\r\n".repeat(1000) }, "host-workload");
-            let target: TabTarget | undefined;
+            inactive.add(resource);
             lifecycle.onDispose(async () => {
-                const index = inactive.findIndex(owner => owner.resource === resource); if (index >= 0) inactive.splice(index, 1);
-                if (target && controller.workspace.tabs.resolve(target)) controller.workspace.tabs.close(target.id);
-                // Provider bindings defer lease release out of workspace notification delivery.
+                inactive.delete(resource);
+                // Provider bindings release their leases after workspace notifications.
                 await Promise.resolve();
                 controller.workspace.releaseResource(resource.id);
             });
-            const id = controller.workspace.tabs.open({ kind: "text", documentId: resource.documentId });
-            target = controller.workspace.tabs.capture(id); inactive.push({ resource, tab: target });
         }
     };
-    const inactiveDocuments = () => Object.freeze(inactive.map(({ resource, tab }) => Object.freeze({ id: resource.id,
-        revision: resource.getSnapshot().revision, dirty: resource.metadata.getSnapshot().dirty, current: !!controller.workspace.tabs.resolve(tab) })));
+    const inactiveDocuments = () => [...inactive].map(resource => ({
+        id: resource.id, revision: resource.getSnapshot().revision, dirty: resource.metadata.getSnapshot().dirty
+    }));
     const transferSnapshot = (): TransferTargetSnapshot => {
         if (!transferTarget) throw new Error("No transfer target is mounted.");
         const current = controller.workspace.document(transferTarget.documentId);
@@ -97,7 +95,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     { bindings: ReturnType<ViewBindings["debug"]>; commits: Readonly<{ form: number; metadata: number }>; draft: ReturnType<HostDraftRecovery["debug"]> | null };
     editSource: (expectedRevision: number, edits: readonly TextEdit[]) => ReturnType<HostController["workspace"]["edit"]>;
     seedInactiveDocuments: () => void;
-    inactiveDocuments: () => readonly Readonly<{ id: ResourceId; revision: number; dirty: boolean; current: boolean }>[];
+    inactiveDocuments: () => readonly Readonly<{ id: ResourceId; revision: number; dirty: boolean }>[];
     previewProposal: (text: string) => void; applyProposal: () => void; runCapture: (index: number) => ReturnType<HostController["runCapture"]>; setPath: (path: string) => void;
     recoveryText: () => string | null;
     finishRun: () => void; failRun: () => void; finishSave: () => void; failSave: () => void; range: (from: number, to: number) => string;

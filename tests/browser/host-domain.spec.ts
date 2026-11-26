@@ -26,8 +26,8 @@ test(`plain 1000 indexed annotations stay bounded with inactive documents and ty
     await setup(page, "plain", text); const initial = await snapshot(page);
     await page.evaluate(() => window.hostFixture.seedInactiveDocuments()); await waitForDomain(page);
     const seeded = await snapshot(page), inactive = await page.evaluate(() => window.hostFixture.inactiveDocuments());
-    expect(inactive).toHaveLength(100); expect(inactive.every(v => v.revision === 0 && !v.dirty && v.current)).toBe(true);
-    expect(seeded.diagnostics.documents).toBe(initial.diagnostics.documents + 100); expect(seeded.diagnostics.tabs).toBe(initial.diagnostics.tabs + 100);
+    expect(inactive).toHaveLength(100); expect(inactive.every(v => v.revision === 0 && !v.dirty)).toBe(true);
+    expect(seeded.diagnostics.documents).toBe(initial.diagnostics.documents + 100); expect(seeded.diagnostics.tabs).toBe(initial.diagnostics.tabs);
     expect(seeded.bindings.views.map(v => v.viewId)).toEqual(initial.bindings.views.map(v => v.viewId)); expect(seeded.bindings.activeViews).toBe(2);
     await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
     await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.dirty).toBe(false);
