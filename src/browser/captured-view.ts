@@ -3,19 +3,25 @@ import type { FoldingSnapshot } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { TextEditor } from "./text-editor.ts";
 
-export function requireLanguageView(editor: TextEditor): void {
-    if (editor.signal.aborted || !editor.workspace.ownsDocumentView(editor.view, editor.tab)) {
-        throw new Error("Language features require a live document view.");
-    }
+function ownsEditorView(editor: TextEditor) {
+    return !editor.signal.aborted && editor.workspace.ownsDocumentView(editor.view, editor.tab);
 }
 
-export function editorReadyForRequest(editor: TextEditor, activity = editor.activity()): boolean {
-    return editor.element.isConnected && !editor.getSnapshot().disabled && !activity.disposed && activity.input === "idle";
+export function requireLanguageView(editor: TextEditor): void {
+    if (!ownsEditorView(editor)) throw new Error("Language features require a live document view.");
+}
+
+export function isMountedEditor(editor: TextEditor, workspace = editor.workspace): boolean {
+    return workspace === editor.workspace && editor.element.isConnected && ownsEditorView(editor);
+}
+
+export function editorReadyForRequest(editor: TextEditor): boolean {
+    const activity = editor.activity();
+    return isMountedEditor(editor) && !editor.getSnapshot().disabled && !activity.disposed && activity.input === "idle";
 }
 
 export function canInspectView(editor: TextEditor, canCapture?: () => boolean): boolean {
-    return editorReadyForRequest(editor) && editor.workspace.ownsDocumentView(editor.view, editor.tab)
-        && (canCapture?.() ?? true);
+    return editorReadyForRequest(editor) && (canCapture?.() ?? true);
 }
 
 /** Changes to the text, selections, fold projection or mounted tab can retire a view request. */

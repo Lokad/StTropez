@@ -1,3 +1,4 @@
+import { isMountedEditor } from "./captured-view.ts";
 import { emptyList } from "../core/empty-list.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { controllerObservable } from "./controller-observable.ts";
@@ -38,13 +39,13 @@ const empty: DiagnosticSnapshot = Object.freeze({ diagnostics: emptyList, diagno
 /** Displays pushed diagnostics for one view, including positions mapped while analysis is pending. */
 export function mountDiagnostic(editor: TextEditor, { scope, binding }: LspDocumentOwner,
     options: DiagnosticControllerOptions): DiagnosticController {
-    const { workspace, view, tab } = editor;
+    const { workspace, tab } = editor;
     const source = scope.observeDiagnostics(binding);
     const layer = editor.decorations.add({ order: 40 });
     const notifications = workspace.createNotificationScope(options.onError);
     const cell = new Store<DiagnosticSnapshot>(empty, notifications);
     let displayed: LspDiagnostics | null = null, disposed = false, stop: (() => void) | undefined;
-    const available = () => !disposed && !editor.signal.aborted && editor.element.isConnected && workspace.ownsDocumentView(view, tab);
+    const available = () => !disposed && isMountedEditor(editor);
     const clear = () => {
         displayed = null;
         if (cell.get() !== empty) { layer.clear(); notifications.publish(cell, empty); }

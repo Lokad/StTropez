@@ -24,7 +24,7 @@ import type { FoldingSnapshot } from "../core/folding.ts";
 import type { TextEditor } from "./text-editor.ts";
 import { editorInput } from "./editor-input.ts";
 import type { DecorationLayer } from "./decoration-layers.ts";
-import { sameEditAuthority } from "./captured-view.ts";
+import { isMountedEditor, sameEditAuthority } from "./captured-view.ts";
 import type { LspCall, LspCompletion, LspCompletions, LspCompletionFallback, LspScopeAccess, LspWorkspaceSnapshot } from "../protocol/index.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
@@ -93,7 +93,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     const notifications = workspace.createNotificationScope(error => options.onError?.(error));
     let providerPhase = connectionPhase();
     const cell = new Store<CompletionSnapshot>(Object.freeze({ message: connectionMessage(providerPhase), connected: providerPhase === "ready", pending: false, offerText: null, anchor: null, choices: emptyList, choiceIndex: 0, completionAt: () => undefined, completionIncomplete: false, completionDetail: "", resolving: false, snippet: null, omittedCompletions: emptyList }), notifications);
-    const available = () => !disposed && editor.element.isConnected && !editor.signal.aborted && workspace.ownsDocumentView(view, target);
+    const available = () => !disposed && isMountedEditor(editor);
     const idle = () => { const m = editor.activity(); return m.input === "idle" && !m.disposed && !editor.getSnapshot().disabled && (options.canCapture?.() ?? true); };
     const authority = resource.metadata.getSnapshot;
     const authorityCurrent = (before: ResourceMetadata) => sameEditAuthority(before, authority());

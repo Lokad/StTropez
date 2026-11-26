@@ -10,7 +10,7 @@ import type { LspLocation } from "../protocol/lsp-features.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspPrepare } from "../protocol/lsp-workspace.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
-import { captureViewRequest, editorReadyForRequest } from "./captured-view.ts";
+import { canInspectView, captureViewRequest } from "./captured-view.ts";
 import { observeProjectDocument } from "./retained-documents.ts";
 import { bindDefinitionPointer } from "./definition-pointer.ts";
 import type { DefinitionHit } from "./definition-pointer.ts";
@@ -60,7 +60,7 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
     const { workspace, view, tab } = editor;
     const notifications = workspace.createNotificationScope(), state = new Store(idle, notifications);
     const events = new AbortController();
-    const available = () => !events.signal.aborted && editorReadyForRequest(editor) && (options.canCapture?.() ?? true);
+    const available = () => !events.signal.aborted && canInspectView(editor, options.canCapture);
     const capture = () => captureViewRequest(editor, { available });
     type Source = NonNullable<ReturnType<typeof capture>>;
     type Hover = { hit: DefinitionHit; client: LspNavigationClient; source: Source; reply?: Promise<LspDefinitionPreview>; result?: LspDefinitionPreview };

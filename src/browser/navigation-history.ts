@@ -1,3 +1,4 @@
+import { isMountedEditor } from "./captured-view.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
 import type { DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
@@ -40,8 +41,7 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
     }
     const owns = (entry: Entry) => workspace.ownsDocumentView(entry.view, entry.tab);
     function live(editor: TextEditor) {
-        return !disposed && !editor.signal.aborted && editor.element.isConnected
-            && workspace.ownsDocumentView(editor.view, editor.tab);
+        return !disposed && isMountedEditor(editor, workspace);
     }
     function busy(editor: TextEditor) {
         const state = editor.activity();
