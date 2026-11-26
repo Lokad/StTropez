@@ -99,6 +99,8 @@ const editsReady = panes => {
     }
     return true;
 };
+const checklistPanes = [editor];
+const checklistReady = () => editsReady(checklistPanes);
 ```
 
 #### Switch and move tabs
@@ -169,12 +171,14 @@ button("Close notes", () => {
 
 #### Propose an edit, apply it later, and undo
 
-**Propose task** captures the revision. **Apply task** appends one undoable row if the revision matches.
+**Propose task** captures the revision. **Apply task** appends one undoable row if it matches.
+If a checklist pane has a pending edit, retry the action when it finishes.
 
 ```js file=app.js
 /** @type {(() => boolean) | undefined} */
 let proposal;
 button("Propose task", () => {
+    if (!checklistReady()) return;
     const before = workspace.document(file.documentId);
     const end = before.buffer.length;
     const newline = end > 0 && before.buffer.slice(end - 1, end) !== "\n" ? "\n" : "";
@@ -183,12 +187,14 @@ button("Propose task", () => {
     output.textContent = "Append an unchecked task?";
 });
 button("Apply task", () => {
-    if (!proposal) return;
+    if (!proposal || !checklistReady()) return;
     output.textContent = proposal() ? "Task added." : "File changed. Propose again.";
     proposal = undefined;
 });
-button("Undo", () => workspace.undo({ documentId: file.documentId,
-    expectedRevision: workspace.document(file.documentId).revision }));
+button("Undo", () => {
+    if (!checklistReady()) return;
+    workspace.undo({ documentId: file.documentId, expectedRevision: workspace.document(file.documentId).revision });
+});
 ```
 
 <a id="split-the-view-and-color-tokens"></a>
@@ -218,6 +224,7 @@ const split = mountTextEditor(second, workspace, file.documentId, {
     ariaLabel: "Checklist split", settings: { minimap: true,
         language: { tabSize: 2, insertSpaces: true, blockComment: { open: "<!--", close: "-->" } } }
 });
+checklistPanes.push(split);
 const checklist = split.decorations.addProvider({
     order: 0,
     provide(line) {
@@ -261,8 +268,8 @@ const stopDirty = file.metadata.subscribe(showDirty);
 showDirty();
 ```
 
-This example uses the stored text as its version. A conflicting Save shows the competing copy
-in **Compare saved**. For asynchronous storage, capture each Save and queue its write.
+The stored text acts as its version. A conflict shows the other copy in **Compare saved**.
+Queue Save presses when writing asynchronously.
 [Save queue and reviewed retries](workspace.md#save-and-conflicts)
 
 ```js file=app.js
@@ -270,7 +277,6 @@ import { TextBuffer } from "sttropez";
 
 /** @type {import("sttropez/browser").TextComparison | undefined} */
 let review;
-const checklistReady = () => editsReady([editor, split, review?.panes.working]);
 let baseline = { buffer: workspace.document(file.documentId).buffer, version: "opened" };
 /** @param {import("sttropez").ComparisonBaseline} next */
 function showSaved(next) {
@@ -333,7 +339,10 @@ const reviewHost = document.getElementById("review");
 if (!reviewHost) throw new Error("Missing review container.");
 button("Compare saved", () => {
     if (!checklistReady()) return;
-    review ??= mountTextComparison(reviewHost, workspace, file.documentId, baseline);
+    if (!review) {
+        review = mountTextComparison(reviewHost, workspace, file.documentId, baseline);
+        checklistPanes.push(review.panes.working);
+    }
     review.activePane().focus();
 });
 ```
@@ -375,8 +384,7 @@ applying it. [Rename example](language-features.md#rename-and-workspace-edits)
 
 ## Contract
 
-Typing and Undo advance the document revision. A successful Save advances the stored version.
-Undo back to the saved text and the document becomes clean. [Save and conflicts](workspace.md#save-and-conflicts)
+Typing and Undo advance the revision. Undo to the saved text marks the file clean. [Save and conflicts](workspace.md#save-and-conflicts)
 
 ## Host responsibilities
 

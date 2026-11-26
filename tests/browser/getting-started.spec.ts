@@ -8,7 +8,7 @@ const serveModules = fixtureModules(
     Object.fromEntries(libraryModules.map(entry => [entry.output.slice(0, -3), entry.source])),
 );
 
-test("the tutorial keeps a pending split edit through Save and Close", async ({ page }) => {
+test("the tutorial keeps a pending split edit through host commands", async ({ page }) => {
     const path = "docs/getting-started.md";
     const guide = parseDocumentation(path, await readFile(path, "utf8"));
     const html = guide.tree.children.find(node => node.type === "code" && node.lang === "html");
@@ -29,12 +29,20 @@ test("the tutorial keeps a pending split edit through Save and Close", async ({ 
     await page.goto("/checklist/");
     const split = page.getByRole("textbox", { name: "Checklist split" });
     const save = page.getByRole("button", { name: "Save", exact: true });
+    const propose = page.getByRole("button", { name: "Propose task" });
+    const apply = page.getByRole("button", { name: "Apply task" });
+    const undo = page.getByRole("button", { name: "Undo", exact: true });
+    const output = page.locator("body > output");
     const lines = 40_000;
     await split.press("Control+a");
     await page.keyboard.insertText("0\n".repeat(lines));
+    await propose.click();
     await split.press("Control+a");
     const resume = await pauseBetweenCommandTurns(page);
     await page.keyboard.press("Control+]");
+    await apply.click({ force: true });
+    await expect(output).toHaveText("An edit is pending. Try again when it finishes.");
+    await undo.click({ force: true });
     await save.click({ force: true });
     expect(await page.evaluate(() => sessionStorage.getItem("tasks.md"))).toBeNull();
     let confirmations = 0;
@@ -49,6 +57,13 @@ test("the tutorial keeps a pending split edit through Save and Close", async ({ 
     await expect(page.locator("main .st-viewport-row").first()).toHaveJSProperty("textContent", "  0");
     await save.click();
     expect(await page.evaluate(() => sessionStorage.getItem("tasks.md"))).toBe("  0\n".repeat(lines));
+    await apply.click();
+    await expect(output).toHaveText("File changed. Propose again.");
+    await propose.click();
+    await apply.click();
+    await expect(output).toHaveText("Task added.");
+    await undo.click();
+    await expect(page).toHaveTitle("tasks.md");
     await page.evaluate(() => sessionStorage.setItem("tasks.md", "Another saved checklist"));
     await save.click();
     await expect(page.locator("body > output")).toHaveText("Another view saved first. See Compare saved.");
