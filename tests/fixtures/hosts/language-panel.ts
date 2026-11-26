@@ -1,7 +1,7 @@
 import { completionFeedback } from "../../../examples/shared/language/completion-feedback.ts";
 import type { HostLanguageTools } from "./language.ts";
 type LanguageSnapshot = ReturnType<HostLanguageTools["state"]["getSnapshot"]>;
-type LanguagePanelTools = Pick<HostLanguageTools, "state" | "toolsRef" | "queryRef" | "replacementRef" | "keyFromTools" | "disconnect" | "reconnect" | "next" | "previous" | "replaceCurrent" | "replaceAll" | "cancelFind" | "foldSelection" | "expandFolds" | "focusEditor" | "setQuery" | "setReplacement" | "setWholeWord" | "setMatchCase" | "setRegularExpression">;
+type LanguagePanelTools = Pick<HostLanguageTools, "state" | "toolsRef" | "keyFromTools" | "disconnect" | "reconnect" | "foldSelection" | "expandFolds" | "focusEditor">;
 const capturedCommand = (tools: Pick<LanguagePanelTools, "state">, state: LanguageSnapshot, invoke: () => void) => () => {
     if (tools.state.getSnapshot() === state) invoke();
 };
@@ -10,23 +10,13 @@ function languageActions(tools: LanguagePanelTools, state: LanguageSnapshot): re
     label: string; invoke: () => void; disabled: boolean;
 }>[] {
     const available = state.view !== null;
-    const found = !!state.find?.count && (state.find.status === "ready" || state.find.status === "searching" && state.find.retained);
     return [
         { label: "Disconnect provider", invoke: tools.disconnect, disabled: !state.provider?.connected },
         { label: "Reconnect provider", invoke: tools.reconnect, disabled: !available || state.readOnlyReference },
-        { label: "Find next", invoke: tools.next, disabled: !found },
-        { label: "Find previous", invoke: tools.previous, disabled: !found },
-        { label: "Replace current", invoke: tools.replaceCurrent, disabled: !found || state.readOnlyReference },
-        { label: "Replace all", invoke: tools.replaceAll, disabled: !found || state.find?.status !== "ready" || state.readOnlyReference },
-        { label: "Cancel find", invoke: tools.cancelFind, disabled: !available },
         { label: "Fold selected lines", invoke: tools.foldSelection, disabled: !available },
         { label: "Expand all folds", invoke: tools.expandFolds, disabled: !state.folds?.index.collapsedCount },
         { label: "Return to source", invoke: tools.focusEditor, disabled: !available }
     ] as const;
-}
-function findText(active: LanguageSnapshot): string {
-    const state = active.find;
-    return state ? state.message || `${active.readOnlyReference ? "Read-only reference · " : ""}${state.count} matches · ${state.status}` : "Find in the active source view.";
 }
 function foldText(state: LanguageSnapshot): string {
     const count = state.folds?.index.collapsedCount ?? 0;
@@ -43,12 +33,7 @@ export function languagePanelModel(tools: LanguagePanelTools, state: LanguageSna
         diagnostics: { label: "Source diagnostics", items: () => (state.provider?.diagnostics ?? []).map((diagnostic, index) => ({ key: `${diagnostic.from}:${diagnostic.to}:${index}`,
             label: `${diagnostic.from}: ${diagnostic.message}`, invoke: capturedCommand(tools, state, diagnostic.select) } as const)) },
         uncertain: { label: "Unversioned diagnostics", items: () => state.provider?.unversionedDiagnostics ?? [] },
-        query: { label: "Find source", value: state.query, bind: tools.queryRef, change: tools.setQuery, disabled: false },
-        replacement: { label: "Replacement", value: state.replacement, bind: tools.replacementRef, change: tools.setReplacement, disabled: state.readOnlyReference },
-        options: [{ label: "Whole word", checked: state.wholeWord, change: tools.setWholeWord },
-            { label: "Match case", checked: state.matchCase, change: tools.setMatchCase },
-            { label: "Regular expression", checked: state.regularExpression, change: tools.setRegularExpression }],
-        find: { label: "Find status", text: findText(state) }, folds: { label: "Fold status", text: foldText(state) }, actions: languageActions(tools, state),
+        folds: { label: "Fold status", text: foldText(state) }, actions: languageActions(tools, state),
     } as const;
 }
 
@@ -56,30 +41,26 @@ export function languagePanelModel(tools: LanguagePanelTools, state: LanguageSna
 export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools): () => void {
     const initial = languagePanelModel(tools, tools.state.getSnapshot()), owner = host.ownerDocument, listeners = new AbortController();
     initial.bind(host); host.setAttribute("aria-label", initial.label); host.addEventListener("keydown", initial.key, { signal: listeners.signal });
-    const heading = owner.createElement("h2"), help = owner.createElement("p"), status = owner.createElement("output"), diagnosticStatus = owner.createElement("output"), findStatus = owner.createElement("output"), foldStatus = owner.createElement("output");
+    const heading = owner.createElement("h2"), help = owner.createElement("p"), status = owner.createElement("output"), diagnosticStatus = owner.createElement("output"), foldStatus = owner.createElement("output");
     heading.textContent = initial.title; help.textContent = initial.help;
-    for (const [element, model] of [[status, initial.status], [diagnosticStatus, initial.diagnosticStatus], [findStatus, initial.find], [foldStatus, initial.folds]] as const) element.setAttribute("aria-label", model.label);
+    for (const [element, model] of [[status, initial.status], [diagnosticStatus, initial.diagnosticStatus], [foldStatus, initial.folds]] as const) element.setAttribute("aria-label", model.label);
     const diagnostics = owner.createElement("ul"), uncertain = owner.createElement("ul"), nav = owner.createElement("div");
     diagnostics.setAttribute("aria-label", initial.diagnostics.label); uncertain.setAttribute("aria-label", initial.uncertain.label);
     diagnostics.addEventListener("pointerdown", event => event.preventDefault(), { signal: listeners.signal });
-    const fields = [initial.query, initial.replacement].map(model => {
-        const label = owner.createElement("label"), field = owner.createElement("input"); label.append(model.label, field); model.bind(field);
-        field.addEventListener("input", () => model.change(field.value), { signal: listeners.signal }); return { label, field };
-    });
-    const options = initial.options.map(model => {
-        const label = owner.createElement("label"), field = owner.createElement("input"); field.type = "checkbox"; label.append(field, model.label);
-        field.addEventListener("change", () => model.change(field.checked), { signal: listeners.signal }); return { label, field };
-    });
+    const find = owner.createElement("div");
+    tools.findRef(find);
     const buttons = initial.actions.map(action => {
         const button = owner.createElement("button"); button.textContent = action.label; nav.append(button);
         return button;
     });
-    host.append(heading, help, status, diagnosticStatus, diagnostics, uncertain, ...fields.map(f => f.label), ...options.map(f => f.label), findStatus, foldStatus, nav);
+    host.append(heading, help, status, diagnosticStatus, diagnostics, uncertain, find, foldStatus, nav);
     const setText = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text; };
     let diagnosticButtons: HTMLButtonElement[] = [];
     const render = () => {
-        const model = languagePanelModel(tools, tools.state.getSnapshot());
-        for (const [element, value] of [[status, model.status], [diagnosticStatus, model.diagnosticStatus], [findStatus, model.find], [foldStatus, model.folds]] as const) setText(element, value.text);
+        const state = tools.state.getSnapshot();
+        const model = languagePanelModel(tools, state);
+        find.hidden = state.view === null;
+        for (const [element, value] of [[status, model.status], [diagnosticStatus, model.diagnosticStatus], [foldStatus, model.folds]] as const) setText(element, value.text);
         const messages = model.uncertain.items();
         if (uncertain.childElementCount !== messages.length || messages.some((message, index) => uncertain.children.item(index)?.textContent !== message)) {
             uncertain.replaceChildren(...messages.map(message => { const item = owner.createElement("li"); item.textContent = message; return item; }));
@@ -92,9 +73,7 @@ export function mountLanguagePanel(host: HTMLElement, tools: HostLanguageTools):
         // Retaining a row must still renew its captured activation snapshot.
         for (const [index, row] of currentDiagnostics.entries()) diagnosticButtons[index]!.onclick = row.invoke;
         for (const [index, action] of model.actions.entries()) { const button = buttons[index]!; button.onclick = action.invoke; if (button.disabled !== action.disabled) button.disabled = action.disabled; }
-        for (const [index, value] of [model.query, model.replacement].entries()) { const field = fields[index]!.field; if (field.value !== value.value) field.value = value.value; field.disabled = value.disabled; }
-        for (const [index, option] of model.options.entries()) options[index]!.field.checked = option.checked;
     };
     const unsubscribe = tools.state.subscribe(render); render();
-    return () => { unsubscribe(); listeners.abort(); for (const button of [...buttons, ...diagnosticButtons]) button.onclick = null; initial.query.bind(null); initial.replacement.bind(null); initial.bind(null); host.replaceChildren(); };
+    return () => { unsubscribe(); listeners.abort(); for (const button of [...buttons, ...diagnosticButtons]) button.onclick = null; tools.findRef(null); initial.bind(null); host.replaceChildren(); };
 }

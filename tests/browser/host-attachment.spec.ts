@@ -32,11 +32,11 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
                 const mount = bindings[id];
                 // Warm retained view state belongs to the bindings, independently of mounted UI.
                 mount(host); mount(null); await Promise.resolve();
-                const before = ownership(), colors = bindings.colors.attach, reference = bindings.language.attachReferenceFind, hover = bindings.hover.bind;
+                const before = ownership(), colors = bindings.colors.attach, reference = bindings.language.attachReference, hover = bindings.hover.bind;
                 const attachError = new Error("Attachment refused"), cleanupError = new Error("Cleanup reported failure");
                 let retiredInput: HTMLTextAreaElement | undefined;
                 const fail = () => { retiredInput = host.querySelector<HTMLTextAreaElement>("textarea")!; throw attachError; };
-                if (id === "comparison") bindings.language.attachReferenceFind = fail;
+                if (id === "comparison") bindings.language.attachReference = fail;
                 else bindings.colors.attach = fail;
                 if (id === "primary") bindings.hover.bind = (...args) => {
                     const stop = hover.call(bindings.hover, ...args);
@@ -44,7 +44,7 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
                 };
                 let failure: string[] = [];
                 try { mount(host); } catch (error) { failure = messages(error); }
-                finally { bindings.colors.attach = colors; bindings.language.attachReferenceFind = reference; bindings.hover.bind = hover; }
+                finally { bindings.colors.attach = colors; bindings.language.attachReference = reference; bindings.hover.bind = hover; }
                 await Promise.resolve();
                 // Detached listeners must not reactivate a retired language/hover session.
                 retiredInput?.dispatchEvent(new FocusEvent("focus"));
@@ -73,7 +73,7 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
                 finally { bindings.colors.attach = colors; }
                 result.push({ id, failure, before, afterFailure, afterRetry: ownership(), children, retired: retiredInput?.isConnected === false,
                     active: failed.activeViews, comparison: failed.comparison !== null, language: failed.language.sessions.length,
-                    reference: failed.language.referenceFind.length, languageActive: failed.language.active, hoverAvailable, paste: failed.tablePaste.sessions,
+                    reference: failed.language.referenceViews.length, languageActive: failed.language.active, hoverAvailable, paste: failed.tablePaste.sessions,
                     instruction: failed.instruction !== null, retryError, detachFailure, edited });
             }
         } finally { bindings.dispose(); await controller.dispose(); }

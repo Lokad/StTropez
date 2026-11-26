@@ -30,8 +30,8 @@ test(`plain folding preserves independent views, review, history, captured Save/
     const working = input(page, "Comparison working source"); await working.focus();
     await page.evaluate(to => { const f = window.hostFixture; f.selectSourceSet("comparison", f.snapshot().source.revision, [{ anchor: 0, head: to }]); }, footer);
     await button(page, "Fold selected lines").click(); await ready(page); expect((await snapshot(page)).bindings.comparison!.workingViewport.collapsedFolds).toBe(1);
-    await working.press("Control+f"); await page.getByRole("textbox", { name: "Find source", exact: true }).fill("needle two");
-    await expect(page.getByLabel("Find status", { exact: true })).toContainText("1 matches · ready"); await button(page, "Find next").click(); await ready(page);
+    await working.press("Control+f"); await page.getByRole("textbox", { name: "Find text", exact: true }).fill("needle two");
+    await expect(page.locator(".st-find-status")).toHaveText(/1 match|of 1/); await button(page, "Next match").click(); await ready(page);
     s = await snapshot(page); expect(s.bindings.comparison!.selection).toMatchObject({ anchor: original.indexOf("needle two"), head: original.indexOf("needle two") + 10 });
     expect(s.bindings.comparison!.workingViewport.collapsedFolds).toBe(0); expect(s.bindings.views.find(v => v.id === "primary")!.metrics!.viewport.collapsedFolds).toBe(1);
     await working.press("Control+Shift+["); await ready(page); expect((await snapshot(page)).bindings.comparison!.workingViewport.collapsedFolds).toBe(1);

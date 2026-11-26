@@ -1,18 +1,15 @@
 import { onSourceFocus } from "../../../examples/shared/source-focus.ts";
-import { captureEditorCommand, scopedCommands } from "../../../examples/shared/editor-attachment.ts";
-import { bindFindCommands, createFindController, createRegexFindBackend } from "../../../src/browser/index.ts";
-import type { TextEditor, FindController, FindSnapshot } from "../../../src/browser/index.ts";
+import { scopedCommands } from "../../../examples/shared/editor-attachment.ts";
+import { mountFindBar, type TextEditor } from "../../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../../src/index.ts";
 import type { LspProviderController, LspProviderFactory } from "../language/lsp-provider-controller.ts";
 import { EditingPresentation } from "../language/presentation.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 
 type Session = { id: string; editor: TextEditor; target: TabTarget; presentation: EditingPresentation;
-    provider?: LspProviderController; stopProvider?: () => void; providerError?: string; reference?: () => ComparisonBaseline | null; find?: FindController; stopFind?: () => void; initialized: boolean };
+    provider?: LspProviderController; stopProvider?: () => void; providerError?: string; reference?: () => ComparisonBaseline | null; initialized: boolean };
 type DetachedOwner = Readonly<{ id: string; target: TabTarget; documentId: DocumentId; reference?: ComparisonBaseline }>;
-type FindCommand = Readonly<{ kind: "navigate"; direction: 1 | -1 } | { kind: "replace"; text: string }>;
-
-type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ReturnType<LspProviderController["getSnapshot"]> | null; providerError: string | null; find: FindSnapshot | null; folds: FoldingSnapshot | null; foldMessage: string; query: string; replacement: string; wholeWord: boolean; matchCase: boolean; regularExpression: boolean }>;
+type LanguageSnapshot = Readonly<{ readOnlyReference: boolean; view: string | null; provider: ReturnType<LspProviderController["getSnapshot"]> | null; providerError: string | null; folds: FoldingSnapshot | null; foldMessage: string }>;
 
 /** Host-owned tools follow an explicit mounted view; delayed commands never consult focus later. */
 export class HostLanguageTools {
@@ -23,28 +20,32 @@ export class HostLanguageTools {
     private active: Session | undefined;
     private detachedOwner: DetachedOwner | undefined;
     private stopFolds: (() => void) | undefined;
-    private pendingFind: { kind: FindCommand["kind"]; session: Session; stop: () => void } | undefined;
-    private readonly cell = new HostCell<LanguageSnapshot>({ readOnlyReference: false, view: null, provider: null, providerError: null, find: null, folds: null, foldMessage: "", query: "", replacement: "", wholeWord: false, matchCase: true, regularExpression: false });
+    private readonly find = mountFindBar(document.createElement("div"), {
+        createWorker: () => new Worker("/regex-worker.js", { type: "module" })
+    });
+    readonly findRef = (host: HTMLElement | null): void => {
+        if (host) host.append(this.find.element);
+        else this.find.element.remove();
+    };
+    private readonly cell = new HostCell<LanguageSnapshot>({ readOnlyReference: false, view: null, provider: null, providerError: null, folds: null, foldMessage: "" });
     readonly state = this.cell.observable;
-    private queryElement: HTMLInputElement | null = null;
-    private replacementElement: HTMLInputElement | null = null;
     private toolsElement: HTMLElement | null = null;
-    readonly queryRef = (element: HTMLInputElement | null): void => { this.queryElement = element; };
-    readonly replacementRef = (element: HTMLInputElement | null): void => { this.replacementElement = element; };
-    readonly toolsRef = (element: HTMLElement | null): void => { if (this.toolsElement !== element) this.cancelFindCommand(); this.toolsElement = element; };
+    readonly toolsRef = (element: HTMLElement | null): void => { this.toolsElement = element; };
     constructor(workspace: Workspace, options: Readonly<{ providerFactory: LspProviderFactory; canCapture?: (documentId: DocumentId) => boolean }>) {
         this.workspace = workspace; this.providerFactory = options.providerFactory; this.canCapture = options.canCapture ?? (() => true);
     }
     private publish(): void {
         const previous = this.cell.get(), folds = this.active?.editor.view.folding.getSnapshot() ?? null;
         this.cell.set({ ...previous, readOnlyReference: this.active?.reference !== undefined, view: this.active?.id ?? null, provider: this.active?.provider?.getSnapshot() ?? null,
-            providerError: this.active?.providerError ?? null, find: this.active?.find?.getSnapshot() ?? null, folds, foldMessage: folds === previous.folds ? previous.foldMessage : "" });
+            providerError: this.active?.providerError ?? null, folds, foldMessage: folds === previous.folds ? previous.foldMessage : "" });
     }
     private activate(session: Session, initialize = true): void {
         this.detachedOwner = undefined;
         if (this.active !== session) {
-            this.cancelFindCommand();
-            this.stopFolds?.(); this.active?.provider?.cancel(); this.active?.find?.cancel(); this.active = session;
+            this.stopFolds?.();
+            this.active?.provider?.cancel();
+            this.active = session;
+            this.find.setTarget(session.editor);
             let revision = session.editor.view.folding.getSnapshot().revision;
             this.stopFolds = session.editor.view.folding.subscribe(() => {
                 const current = session.editor.view.folding.getSnapshot(); if (current.revision === revision) session.provider?.cancel(); revision = current.revision;
@@ -63,10 +64,13 @@ export class HostLanguageTools {
             ? previous.reference.buffer === reference.buffer && previous.reference.version === reference.version
             : !previous.reference && !session.reference && previous.documentId === session.editor.view.documentId
                 && previous.target.workspace === session.target.workspace && previous.target.id === session.target.id && previous.target.generation === session.target.generation;
-        // A new attachment owns new jobs. Restoring the logical context starts none and never focuses.
+        // Only the same resource can resume as the toolbar target without a new focus gesture.
         if (compatible && !this.active) this.activate(session, false);
     }
-    clearRetainedView(): void { this.cancelFindCommand(); this.detachedOwner = undefined; }
+    dispose(): void {
+        this.find.dispose();
+        this.detachedOwner = undefined;
+    }
     private attachProvider(session: Session): void {
         const { editor } = session;
         let provider: LspProviderController;
@@ -89,7 +93,7 @@ export class HostLanguageTools {
         onSourceFocus(editor, listeners.signal, () => this.activate(session));
         this.resume(session); return this.detachSession(session, listeners);
     }
-    attachReferenceFind(id: string, editor: TextEditor, presentation: EditingPresentation, reference: () => ComparisonBaseline | null, target: TabTarget): () => void {
+    attachReference(id: string, editor: TextEditor, presentation: EditingPresentation, reference: () => ComparisonBaseline | null, target: TabTarget): () => void {
         if (this.sessions.has(id)) throw new Error("Find view already mounted.");
         const session: Session = { id, target, editor, presentation, initialized: true, reference }, listeners = new AbortController();
         if (!this.ownsSession(session)) throw new Error("Reference Find requires its captured view and baseline.");
@@ -110,7 +114,8 @@ export class HostLanguageTools {
     private bindCommands(session: Session, listeners: AbortController): void {
         const { editor } = session;
         try {
-            this.bindFind(session, listeners.signal);
+            const binding = this.find.attach(editor);
+            listeners.signal.addEventListener("abort", binding.dispose, { once: true });
             const register = scopedCommands(editor, listeners.signal);
             for (const [id, label, code, apply] of [
                 ["fold.selection", "Fold selected lines", "BracketLeft", () => this.collapseSelection(session)],
@@ -121,86 +126,6 @@ export class HostLanguageTools {
                     run: () => { this.activate(session); apply(); } }, { keys: ["Mod+Shift+Code:" + code] });
             }
         } catch (error) { listeners.abort(); throw error; }
-    }
-    private bindFind(session: Session, signal: AbortSignal): void {
-        const current = () => this.active === session && this.ownsSession(session);
-        const register = scopedCommands(session.editor, signal);
-        const bindings = bindFindCommands(session.editor, { open: replace => {
-            if (!this.ownsSession(session)) return;
-            this.cancelFindCommand(); this.activate(session); this.ensureFind();
-            const field = replace && !session.reference ? this.replacementElement : this.queryElement;
-            field?.focus(); field?.select();
-        }, navigate: direction => {
-            if (this.ownsSession(session)) { this.activate(session); this.runFind(session, { kind: "navigate", direction }); }
-        }, queryFocused: () => current() && !!this.queryElement?.matches(":focus") });
-        signal.addEventListener("abort", bindings.dispose, { once: true });
-        register({ id: "find.replaceCurrent", label: "Replace current match",
-            enabled: () => current() && !!this.replacementElement?.matches(":focus:enabled"),
-            run: () => this.runFind(session, { kind: "replace", text: this.cell.get().replacement }) },
-            { keys: ["Enter"], shared: true, priority: 41, repeat: false });
-        register({ id: "find.returnToSource", label: "Return to source",
-            enabled: () => current() && !!this.toolsElement?.matches(":focus-within"),
-            run: () => { session.find?.cancel(); session.editor.focus(); } }, { keys: ["Escape"], shared: true, priority: -1, repeat: false });
-    }
-    private cancelFindCommand(session?: Session): void {
-        if (!session || this.pendingFind?.session === session) this.pendingFind?.stop();
-    }
-    private runFind(session: Session, command: FindCommand): void {
-        if (command.kind === "replace" && session.reference) return;
-        this.cancelFindCommand();
-        const find = this.ensureFind(); if (!find) return;
-        const captured = find.getSnapshot();
-        const execute = () => command.kind === "navigate" ? find.next(command.direction) : find.replaceCurrent(command.text);
-        if (captured.status === "ready") { execute(); return; }
-        if (captured.status !== "searching") return;
-        if (captured.retained && execute()) return;
-        const editor = session.editor, clock = editor.element.ownerDocument.defaultView!;
-        const sourceFocused = editor.getSnapshot().focused;
-        const origin = sourceFocused ? editor.element : editor.element.querySelector<HTMLElement>(":focus") ?? this.toolsElement?.querySelector<HTMLElement>(":focus");
-        if (!origin) return;
-        const source = captureEditorCommand(editor, command.kind === "replace" ? "human" : undefined);
-        if (!source) return;
-        const stop = () => {
-            if (this.pendingFind?.stop !== stop) return;
-            this.pendingFind = undefined;
-            // A workspace observer can withdraw the command before it may release its lease.
-            queueMicrotask(source.cancel);
-        };
-        this.pendingFind = { kind: command.kind, session, stop };
-        const events = { signal: source.signal };
-        origin.addEventListener(sourceFocused ? "focusout" : "blur", stop, events);
-        origin.addEventListener("input", stop, events);
-        origin.addEventListener("compositionstart", stop, events);
-        clock.addEventListener("blur", stop, events);
-        // A control can be disabled and reenabled before the browser sends blur.
-        const disabled = new clock.MutationObserver(stop);
-        for (let node: HTMLElement | null = origin; node; node = node.parentElement) {
-            disabled.observe(node, { attributes: true, attributeFilter: ["disabled"] });
-        }
-        const changed = () => {
-            const { status } = find.getSnapshot();
-            if (status === "searching") return;
-            if (status !== "ready") { stop(); return; }
-            queueMicrotask(() => {
-                if (this.pendingFind?.stop !== stop) return;
-                try {
-                    if (find.getSnapshot().status === "ready" && this.ownsSession(session)
-                        && !disabled.takeRecords().length && origin.isConnected
-                        && (sourceFocused ? editor.getSnapshot().focused : origin.matches(":focus"))
-                        && !(origin.closest("button,input,select,textarea") ?? origin).matches(":disabled")) {
-                        source.commit(execute);
-                    }
-                } catch (error) { reportError(error); }
-                finally { stop(); }
-            });
-        };
-        const unsubscribe = find.subscribe(changed);
-        source.signal.addEventListener("abort", () => {
-            disabled.disconnect();
-            unsubscribe();
-            stop();
-        }, { once: true });
-        changed();
     }
     private toolsSession(event: KeyboardEvent): Session | undefined {
         const root = this.toolsElement, target = event.target, realm = root?.ownerDocument.defaultView, session = this.active;
@@ -217,29 +142,16 @@ export class HostLanguageTools {
         let detached = false;
         return () => {
             if (detached) return; detached = true;
-            this.cancelFindCommand(session);
             if (this.active === session) {
                 const reference = session.reference?.();
                 this.detachedOwner = Object.freeze({ id: session.id, target: session.target, documentId: session.editor.view.documentId, ...(reference ? { reference } : {}) });
                 this.stopFolds?.(); this.stopFolds = undefined;
             }
-            session.stopProvider?.(); listeners.abort(); session.stopFind?.(); session.find?.dispose();
+            session.stopProvider?.();
+            listeners.abort();
             session.provider?.dispose(); session.presentation.clear(); this.sessions.delete(session.id);
             if (this.active === session) this.active = undefined; this.publish();
         };
-    }
-    private ensureFind(): FindController | undefined {
-        const session = this.active; if (!session) return;
-        if (!session.find) {
-            const clock = session.editor.element.ownerDocument.defaultView!;
-            session.find = createFindController(session.editor, { regularExpressionBackend: createRegexFindBackend({ clock,
-                createWorker: () => new Worker("/regex-worker.js", { type: "module" }) }) });
-            session.stopFind = session.find.subscribe(() => { if (this.active === session) this.publish(); });
-        }
-        const state = session.find.getSnapshot(), { query, wholeWord, matchCase, regularExpression } = this.cell.get();
-        if (state.wholeWord !== wholeWord || state.matchCase !== matchCase || state.regularExpression !== regularExpression) session.find.setFlags({ wholeWord, matchCase, regularExpression });
-        if (state.query !== query || state.status === "cancelled") session.find.setQuery(query);
-        return session.find;
     }
     readonly request = (): void => { if (this.active) { this.activate(this.active); this.active.provider?.request(); } };
     readonly disconnect = (): void => { this.active?.provider?.disconnect(); };
@@ -248,16 +160,6 @@ export class HostLanguageTools {
         if (!session.provider) this.attachProvider(session); else session.provider.disconnect();
         session.initialized = true; session.provider?.connect();
     };
-    readonly setQuery = (query: string): void => { this.cancelFindCommand(); this.cell.set({ ...this.cell.get(), query }); this.ensureFind(); };
-    readonly setWholeWord = (wholeWord: boolean): void => { this.cancelFindCommand(); this.cell.set({ ...this.cell.get(), wholeWord }); this.ensureFind(); };
-    readonly setMatchCase = (matchCase: boolean): void => { this.cancelFindCommand(); this.cell.set({ ...this.cell.get(), matchCase }); this.ensureFind(); };
-    readonly setRegularExpression = (regularExpression: boolean): void => { this.cancelFindCommand(); this.cell.set({ ...this.cell.get(), regularExpression }); this.ensureFind(); };
-    readonly setReplacement = (replacement: string): void => { if (this.pendingFind?.kind === "replace") this.cancelFindCommand(); this.cell.set({ ...this.cell.get(), replacement }); };
-    readonly next = (): void => { if (this.active) this.runFind(this.active, { kind: "navigate", direction: 1 }); };
-    readonly previous = (): void => { if (this.active) this.runFind(this.active, { kind: "navigate", direction: -1 }); };
-    readonly replaceCurrent = (): void => { if (this.active) this.runFind(this.active, { kind: "replace", text: this.cell.get().replacement }); };
-    readonly replaceAll = (): void => { if (this.active?.reference) return; this.ensureFind()?.replaceAll(this.cell.get().replacement, { focusEditor: true }); };
-    readonly cancelFind = (): void => { this.active?.find?.cancel(); this.active?.editor.focus(); };
     readonly focusEditor = (): void => { this.active?.editor.focus(); };
     private foldTarget(): Session | undefined {
         const session = this.active; if (!session) return;
@@ -305,11 +207,9 @@ export class HostLanguageTools {
         const sessions = [...this.sessions.values()];
         return {
             active: this.active?.id ?? null,
-            navigationPending: this.pendingFind?.kind === "navigate",
-            findCommandPending: this.pendingFind?.kind ?? null,
             subscriptions: this.cell.count(),
-            referenceFind: sessions.filter(s => s.reference).map(s => ({
-                id: s.id, documentId: s.editor.view.documentId, viewId: s.editor.view.id, find: s.find?.getSnapshot() ?? null
+            referenceViews: sessions.filter(s => s.reference).map(s => ({
+                id: s.id, documentId: s.editor.view.documentId, viewId: s.editor.view.id
             })),
             sessions: sessions.flatMap(s => {
                 if (!s.provider) return [];

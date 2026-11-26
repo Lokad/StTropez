@@ -88,16 +88,15 @@ test("domain annotation callbacks retain session and revision when another view 
 test("diagnostic actions belong to the view and snapshot that rendered them", () => {
     type Snapshot = Parameters<typeof languagePanelModel>[1];
     const diagnostics: number[] = [];
-    const state: Snapshot = Object.freeze({ readOnlyReference: false, view: "primary", providerError: null, find: null, folds: null, foldMessage: "Captured folds", query: "sa", replacement: "sample", wholeWord: false, matchCase: true, regularExpression: false,
+    const state: Snapshot = Object.freeze({ readOnlyReference: false, view: "primary", providerError: null, folds: null, foldMessage: "Captured folds",
         provider: Object.freeze({ status: "ready" as const, reason: null, connected: true, pending: false, anchor: { revision: 0, from: 0, to: 2 }, choices: Object.freeze(["sample"]),
             choiceIndex: 0, completionDetail: "", completionIncomplete: false, resolving: false, snippet: null, omittedCompletions: [],
             diagnosticsPending: false, unversionedDiagnostics: [],
             completionAt: () => undefined,
             diagnostics: Object.freeze([Object.freeze({ from: 5, to: 9, message: "First diagnostic", severity: null, source: null, select: () => { diagnostics.push(5); return true; } })]), diagnosticRevision: 1 }) });
     let current = state, reads = 0;
-    const tools: Parameters<typeof languagePanelModel>[0] = { state: { getSnapshot: () => { reads++; return current; }, subscribe: () => noop }, toolsRef: noop, queryRef: noop, replacementRef: noop, keyFromTools: noop,
-        disconnect: noop, reconnect: noop, next: noop, previous: noop, replaceCurrent: noop, replaceAll: noop, cancelFind: noop, foldSelection: noop, expandFolds: noop, focusEditor: noop,
-        setQuery: noop, setReplacement: noop, setWholeWord: noop, setMatchCase: noop, setRegularExpression: noop };
+    const tools: Parameters<typeof languagePanelModel>[0] = { state: { getSnapshot: () => { reads++; return current; }, subscribe: () => noop }, toolsRef: noop, keyFromTools: noop,
+        disconnect: noop, reconnect: noop, foldSelection: noop, expandFolds: noop, focusEditor: noop };
     const first = languagePanelModel(tools, state), oldDiagnostic = first.diagnostics.items()[0]!;
     assert.equal(reads, 0); assert.equal(first.folds.text, "Captured folds");
     current = { ...state, view: "secondary", provider: { ...state.provider!, diagnostics: [{ from: 10, to: 14, message: "Second diagnostic", severity: null, source: null, select: () => { diagnostics.push(10); return true; } }] } };
@@ -106,12 +105,12 @@ test("diagnostic actions belong to the view and snapshot that rendered them", ()
     assert.deepEqual(diagnostics, []);
     newer.diagnostics.items()[0]!.invoke();
     assert.deepEqual(diagnostics, [10]);
-    const oldCurrentDiagnostic = newer.diagnostics.items()[0]!; current = { ...current, query: "changed" }; const status = languagePanelModel(tools, current);
+    const oldCurrentDiagnostic = newer.diagnostics.items()[0]!; current = { ...current, foldMessage: "changed" }; const status = languagePanelModel(tools, current);
     assert.equal(status.diagnostics.items()[0]!.key, oldCurrentDiagnostic.key); oldCurrentDiagnostic.invoke(); assert.deepEqual(diagnostics, [10]);
     status.diagnostics.items()[0]!.invoke(); assert.deepEqual(diagnostics, [10, 10], "retained rows renew their activation snapshot");
     const reference = languagePanelModel(tools, { ...current, readOnlyReference: true, provider: null });
-    assert.equal(reference.replacement.disabled, true); assert.match(reference.status.text, /read-only reference/);
-    assert.equal(first.query.bind, tools.queryRef); assert.equal(first.replacement.bind, tools.replacementRef); assert.equal(first.bind, tools.toolsRef);
+    assert.match(reference.status.text, /read-only reference/);
+    assert.equal(first.bind, tools.toolsRef);
 });
 
 test("color controls keep the reference and reviewed Apply from the displayed snapshot", () => {

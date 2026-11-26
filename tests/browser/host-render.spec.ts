@@ -30,7 +30,7 @@ test(`react review typing retains unchanged labels and controls while new refere
     const probe = await page.evaluateHandle(() => {
         const root = document.querySelector('.st-comparison[aria-label="Source review"]')!, heading = [...root.querySelectorAll("h3")].find(h => h.textContent!.startsWith("Baseline ·"))!;
         const fields = new Map<Node, string>([[heading, "reference"], [document.querySelector('[aria-label="Language status"]')!, "language"],
-            [document.querySelector('[aria-label="Find status"]')!, "find"], [document.querySelector('[aria-label="Host operation status"]')!, "host"]]);
+            [document.querySelector('.st-find-status')!, "find"], [document.querySelector('[aria-label="Host operation status"]')!, "host"]]);
         const first = heading.firstChild, duplicates: Record<string, number> = { reference: 0, language: 0, find: 0, host: 0 };
         const collect = (records: readonly MutationRecord[]) => { for (const record of records) { const key = fields.get(record.target); if (!key) continue;
             const before = [...record.removedNodes].map(n => n.textContent).join(""), after = [...record.addedNodes].map(n => n.textContent).join("");

@@ -118,8 +118,8 @@ test.describe(`plain integrated pilot commands`, () => {
         await primary(page).press("Control+Home"); for (let i = 0; i < 8; i++) await primary(page).press("ArrowRight");
         await primary(page).press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
         await primary(page).press("Alt+Enter"); expect(await source(page)).toBe(corrected);
-        await primary(page).press("Control+f"); const query = page.getByRole("textbox", { name: "Find source", exact: true });
-        await query.fill("const"); await expect(page.getByLabel("Find status", { exact: true })).toContainText("3 matches · ready"); await query.press("Enter");
+        await primary(page).press("Control+f"); const query = page.getByRole("textbox", { name: "Find text", exact: true });
+        await query.fill("const"); await expect(page.locator(".st-find-status")).toHaveText(/3 matches|of 3/); await query.press("Enter"); await query.press("Escape");
         const third = corrected.indexOf("const third"), rev = (await snapshot(page)).source.revision;
         await page.evaluate(({ rev, third }) => { if (!window.hostFixture.selectSource("secondary", rev, { anchor: third + 6, head: third + 6 })) throw new Error("Selection setup failed."); }, { rev, third });
         await primary(page).press("Control+Home"); await primary(page).press("Shift+ArrowDown"); await primary(page).press("Shift+ArrowDown");
@@ -150,7 +150,6 @@ test.describe(`plain integrated pilot commands`, () => {
         await form.pressSequentially(" host"); expect(await source(page)).toBe(later); expect((await snapshot(page)).history).toEqual(retained.history);
         await form.press("Shift+Tab"); await expect(primary(page)).toBeFocused();
         expect((await snapshot(page)).bindings.views.find(v => v.id === "primary")!.selection).toEqual(retained.bindings.views.find(v => v.id === "primary")!.selection);
-        await ready(page); await expect(page.getByLabel("Find status", { exact: true })).toContainText("3 matches · ready");
         await page.evaluate(() => window.hostFixture.dispose());
     });
     test("read-only editing commands cannot change text or shared history while copying and focus navigation remain usable", async ({ page }) => {

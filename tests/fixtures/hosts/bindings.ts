@@ -108,7 +108,7 @@ export class ViewBindings {
             scope.defer(() => referencePresentation.clear());
             const reference = review.panes.reference;
             reference.decorations.addProvider({ order: 0, provide: referencePresentation.decorate });
-            scope.defer(this.language.attachReferenceFind("reference", reference, referencePresentation, () => review.controller.getSnapshot().baseline, saveTarget));
+            scope.defer(this.language.attachReference("reference", reference, referencePresentation, () => review.controller.getSnapshot().baseline, saveTarget));
             const state = this.states.get("comparison")?.get(view.documentId);
             if (state) review.panes.working.restoreView(state, { selection: "current" });
             if (!restoreReferenceView(reference, baseline, this.referenceState)) this.referenceState = undefined;
@@ -363,7 +363,7 @@ export class ViewBindings {
     dispose(): void {
         this.stopInputCapture(); this.stopDocumentCleanup();
         this.comparison(null); this.unmount(); this.colors.dispose(); this.links.dispose(); this.actions.dispose(); this.rename.dispose(); this.signature.dispose(); this.project.dispose(); this.navigation.dispose(); this.domain.dispose(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
-        this.selections.clear(); this.states.clear(); this.referenceState = undefined; this.language.clearRetainedView();
+        this.selections.clear(); this.states.clear(); this.referenceState = undefined; this.language.dispose();
         this.locationHistory.dispose(); this.lspOwner?.dispose();
         this.controller.collectLoadedDocument();
     }
