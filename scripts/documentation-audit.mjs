@@ -16,7 +16,7 @@ import { apiIndexPath } from "./api-index.mjs";
 /** UTF-8 bytes with LF line endings. @type {Record<string, number>} */
 const pageBudgets = {
     "docs/architecture.md": 8_000,
-    "docs/comparison.md": 18_000,
+    "docs/comparison.md": 9_600,
     "docs/editor.md": 18_000,
     "docs/examples.md": 5_000,
     "docs/folding.md": 10_900,
