@@ -29,7 +29,7 @@ Open `http://127.0.0.1:4173/`. Override the port with `STTROPEZ_PORT`.
 2. In **Fix a type error**, select the misspelled property in **Problems** and apply **Change spelling to 'quantity'**. Inspect **Changes**. In **Unopened files & navigation**, try F12 for definition or F2 for rename.
 3. In **Large file**, enable **View → Minimap**, drag to the middle, edit and Undo. In **Host outline**, fold a nested rule. [Sample catalogue](../examples/demo/samples.ts)
 
-For regex replacement in Shopping cart, enable **Use regular expression**, find `quantity:\s*(\d+)` and
+For regex replacement in Shopping cart, press the **.\*** regex toggle, find `quantity:\s*(\d+)` and
 replace all with `quantity: $1 + 1`. One Undo restores both quantities.
 
 To try conflicts, edit the same sample in two tabs and save one. In the other, **Review saved copy** lets

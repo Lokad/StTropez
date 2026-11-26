@@ -19,7 +19,8 @@ export function mountSearch(toolbar: HTMLElement, pane: TextEditor, workerUrl: U
 }
 ```
 
-Focus or `setTarget(editor)` selects the pane. Ctrl+Alt+Enter replaces all and keeps Replace focused.
+Use `bar.setTarget(editor)` when opening Find from a menu. `bar.open()` focuses Find and `bar.open(true)` opens Replace.
+`bar.close()` returns focus to the target. `bar.element` is the toolbar root. Focusing an attached editor also selects it. Ctrl+Alt+Enter replaces all and keeps Replace focused.
 Find starts with a single-line selection or the word at the caret. A multiline selection keeps the last query.
 Paste multiline text or use Ctrl/Cmd+Enter to insert a line break. In Replace, Tab moves from the query to
 the replacement. Ctrl/Cmd+F returns to the query and keeps both fields open.

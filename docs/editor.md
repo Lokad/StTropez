@@ -183,7 +183,7 @@ export function undoMenuItem(editor: TextEditor) {
 ```
 
 `commands.register(command, { keys, priority })` installs both until disposal.
-Translate with `strings.commandLabel(id, fallback)`. Bind chords with `keymap.bind("Mod+k Mod+i", id)`.
+Translate with `strings.commandLabel(id, fallback)`. For a host chord, choose a free sequence such as `editor.keymap.bind("Mod+k Mod+y", id)`.
 `keymap.unbind(keys)` clears those keys.
 
 - Logical keys win over physical keys such as `Code:BracketLeft`. `Space` and `Plus` are literals.

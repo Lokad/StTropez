@@ -126,8 +126,7 @@ columns to line end and lines to EOF.
 
 ### Capabilities and supported subset
 
-The [WebSocket fixture](../tests/fixtures/protocol/reference-peer.ts) uses `vscode-languageserver-protocol`
-3.17.5 as its development reference. The runtime has zero third-party dependencies.
+The WebSocket fixture checks the client against the 3.17.5 reference implementation. The runtime has zero third-party dependencies. [Fixture peer](../tests/fixtures/protocol/reference-peer.ts)
 
 The client supports initialization, capability negotiation and dynamic registration, incremental sync,
 cancellation and reconnect. Features include pushed diagnostics, completion and resolve, hover, definitions,

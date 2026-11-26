@@ -101,7 +101,9 @@ export function applyPeerBatches(
 }
 ```
 
-For delayed writes, pass `expectedRevision`. Origin selects edit permission. On refusal, inspect the reason
+For delayed writes, pass `expectedRevision`. `capabilities.edit` lists the allowed origins. Use `"human"` for
+user input, `"agent"` for automated edits and `"host"` for application writes. A pane becomes read-only when
+`"human"` is absent. `capabilities.save` controls persistence separately. On refusal, inspect the reason
 before retrying. Equal text keeps its buffer and revision but can move the initiating selection.
 
 #### Selections across replacements
@@ -231,7 +233,18 @@ Failure or conflict leaves both draft and baseline intact. `ticket.run` releases
 #### Retry after review
 
 Show the competing and working copies. On approval, pass `save(review)` the captured resource, revision and
-remote version. A stale capture or outstanding save blocks retry. Another storage conflict requires a fresh
+remote version. Capture all three while showing the review.
+
+```ts
+import type { SaveReview, TextResourceHandle, Workspace } from "sttropez";
+
+export function reviewVersion(workspace: Workspace, file: TextResourceHandle, remoteVersion: string): SaveReview {
+    return { target: workspace.captureResource(file.id), expectedRevision: file.getSnapshot().revision,
+        expectedServerVersion: remoteVersion };
+}
+```
+
+A stale capture or outstanding save blocks retry. Another storage conflict requires a fresh
 review.
 
 Success advances the baseline. The receipt records submission, saved value, version and canonical-text
@@ -269,7 +282,8 @@ export function forwardEdits(workspace: Workspace, uri: string,
 ```
 
 `subscribe(after => …)` and document change and release listeners can call `after(work)` to write after
-delivery. Unsubscribe to cancel queued work. Follow-up chains allow 256 callbacks.
+delivery. A synchronous write inside a listener throws `Reentrant mutation during a read-only callback.`
+Unsubscribe to cancel queued work. Follow-up chains allow 256 callbacks.
 
 `createNotificationScope().batch(action)` groups notifications. Writes survive exceptions. Captured
 callbacks run once in order. For atomic writes use `editDocuments`.

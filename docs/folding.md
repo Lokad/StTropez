@@ -69,7 +69,7 @@ start leaves that line visible. Folds must nest or stay disjoint, one per header
 and at most 256 units. Optional groups must be nonempty. New folds start expanded.
 
 `view.folding.setRanges(expected, ranges)` returns `false` on stale revision or generation. Invalid ranges
-throw before publication. `setCollapsed` accepts one ID or an array. An empty array or any unknown ID
+throw before publication. `view.folding.setCollapsed(expected, ids, collapsed)` accepts one ID or an array. An empty array or any unknown ID
 refuses the whole request. `{ moveHiddenCarets: true }` gathers hidden carets at header ends and merges
 duplicates. Nonempty selections retain both endpoints. Folds and selections publish together.
 

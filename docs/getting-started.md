@@ -11,7 +11,8 @@ fixes in the working pane.
 
 ### Open the first editor
 
-Start `site/app.js` with the working document.
+Start `site/app.js` with the working document. This session-storage example uses the saved text itself as a version
+so a later save can detect a competing write. A backend can supply a version or ETag instead.
 
 ```js file=app.js
 import { Workspace } from "sttropez";
@@ -333,7 +334,10 @@ button("Compare saved", () => {
 
 #### Connect a language server
 
-Supply a Markdown LSP server at `/lsp` with WebSocket and UTF-16 positions. [Protocol](language-server.md)
+For a local provider, start `npm run demo` in the repository and set `endpoint` below to
+`new URL("ws://127.0.0.1:4173/lsp-fixture")` when serving the tutorial over HTTP. The fixture offers
+completion for the open file. For an application server, use its WebSocket URL and UTF-16 positions.
+[Protocol](language-server.md)
 
 ```js file=app.js
 import { BrowserLspWorkspace, attachEditorLanguage, openWebSocketTransport } from "sttropez/browser";

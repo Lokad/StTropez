@@ -43,6 +43,10 @@ lines, positions or reversed ranges fail validation.
 ### Diagnostics
 
 `diagnostics: {}` paints pushes. `item.select()` reveals, `cancel()` pauses paint and `request()` resumes.
+Each `EditorDiagnostic` has UTF-16 offsets `from` and `to`, a message, severity, source and optional code and
+tags. Severity 1–4 selects `.st-diagnostic-error`, `.st-diagnostic-warning`, `.st-diagnostic-information`
+or `.st-diagnostic-hint`. A missing severity uses the error style. Tag 2 adds `.st-deprecated`.
+
 For problems, read `scope.observeDiagnostics(binding)`. During edits, `lastReport` retains provider messages,
 `status` is `pending` and `result` maps surviving ranges. Disconnect or source replacement clears both results.
 
@@ -131,6 +135,19 @@ Ctrl/Cmd+hover underlines a symbol. In `onDefinition`, `navigation.request("defi
 lookup. `request("references", offset, false)` excludes declarations. Use the [location chooser](controls.md) or read `locationAt(index)` up to `count`.
 `choice.open(present)` validates the target. `resultLifetime: "view"` expires results on selection or fold changes.
 
+A host menu can open a unique definition immediately. With multiple results, keep the captured choices
+until the user picks one. Pass `"references"` and `false` to omit the declaration.
+
+```ts
+import type { NavigationController, NavigationDestination } from "sttropez/browser";
+
+export async function openUniqueDefinition(navigation: NavigationController, offset: number,
+    present: (destination: NavigationDestination) => void) {
+    const reply = await navigation.request("definition", offset);
+    if (reply.status === "done" && reply.value.count === 1) reply.value.locationAt(0)?.open(present);
+}
+```
+
 Supply open snapshots in `documents`. For a missing URI, `resolveTarget(uri, context)` gives the operation
 and source. Authorize the URI and honor cancellation. Return `{ document: workspace.document(id) }` for a
 matching workspace file, `{ text, languageId }` for a read-only string or `TextBuffer`, or `undefined` to
@@ -201,7 +218,8 @@ Supply `documents()` for cross-file edits. Edits commit in one Undo before the c
 incoming edit via `reviewCommandEdit(request, context, writable)` and close approval on `context.onCancel`.
 Earlier edits stay undoable on later failure.
 
-Build menus from `provider.commandNames()`. `codeActions.commandPolicy` receives the exact command and
+For a pane menu, attach `commands: {}` and call `attachment.commands.run(name, args)` with an advertised
+name. A `done` outcome lists the changed documents. Build menus from `provider.commandNames()`. `codeActions.commandPolicy` receives the exact command and
 arguments. Return a revocable server or local route, or `null`. After cancelling a sent command check
 `commandRequiresReconnect`. [Command review](language-server.md#commands-and-edit-decisions)
 
