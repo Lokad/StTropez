@@ -233,7 +233,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
                 id: previous?.id ?? workspace.allocateIdentity(), revision: document.revision, buffer: document.buffer,
                 caret, selections,
                 indentation: editor.settings().language, authority: authority(), folding: currentFolding(),
-                lease: workspace.acquire(resource.id), choice: display?.choice ?? 0, listStatus: "pending",
+                lease: workspace.acquire(documentId), choice: display?.choice ?? 0, listStatus: "pending",
                 visible: display?.visible ?? emptyList,
                 filterPrefix: moving?.filterPrefix ?? (invocation.automatic === true || options.filterManualCompletions === true),
                 ...(previous?.batch ? { batch: previous.batch } : {}),

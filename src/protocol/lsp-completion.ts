@@ -8,7 +8,7 @@ import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspPosit
 import { decodeLspCompletions, decodeLspResolvedCompletion, rebaseLspCompletion, UnsupportedLspSnippetError } from "./lsp-features.ts";
 import type { LspCompletion, LspCompletions, LspCompletionFallback } from "./lsp-features.ts";
 import type { LspCall } from "./lsp-session.ts";
-import type { LspBindingCapture, LspPrepare, LspWorkspace } from "./lsp-workspace.ts";
+import { sameDocument, type LspBindingCapture, type LspPrepare, type LspWorkspace } from "./lsp-workspace.ts";
 
 export type LspCompletionBatch = LspCompletions & Readonly<{ document: DocumentSnapshot; offset: number;
     isCurrent: () => boolean; isBindingCurrent: () => boolean }>;
@@ -24,8 +24,6 @@ export type LspCompletionClient = LspFeatureClient<"textDocument/completion", Ls
 }>;
 
 type Batch = { binding: LspBindingCapture; value: LspCompletionBatch; requestedAt: number };
-const same = (left: DocumentSnapshot | undefined, right: DocumentSnapshot) => !!left && left.id === right.id
-    && left.key === right.key && left.revision === right.revision && left.buffer === right.buffer;
 
 /** One current choice batch and one request/resolve intent; host view and acceptance policy stay outside. */
 export function completionClient(provider: LspWorkspace | LspDocumentOwner): LspCompletionClient {
@@ -33,7 +31,7 @@ export function completionClient(provider: LspWorkspace | LspDocumentOwner): Lsp
     let active: Batch | undefined, sequence = 0, disposed = false;
     let pending: LspCall<unknown> | undefined;
     const cancelPending = () => { sequence++; const old = pending; pending = undefined; old?.cancel(); };
-    const current = (batch: Batch) => !disposed && active === batch && same(batch.binding.getSnapshot(), batch.value.document);
+    const current = (batch: Batch) => !disposed && active === batch && sameDocument(batch.binding.getSnapshot(), batch.value.document);
     const requireBatch = (value: LspCompletionBatch) => {
         const batch = batches.get(value); if (!batch || !current(batch)) throw staleRequest(); return batch;
     };
@@ -64,12 +62,12 @@ export function completionClient(provider: LspWorkspace | LspDocumentOwner): Lsp
                 fallback = options.fallback && (typeof options.fallback === "function" ? options.fallback : Object.freeze({ ...options.fallback }));
             if (options.retain) {
                 requireBatch(options.retain);
-                if (!same(document, options.retain.document) || offset !== options.retain.offset) throw staleRequest();
+                if (!sameDocument(document, options.retain.document) || offset !== options.retain.offset) throw staleRequest();
             } else active = undefined;
             cancelPending();
             const call = client.request(options, completionMethod, capture => ({ position: capture.index.at(offset), context }), value => value.decode(() => {
                 const binding = client.scope.captureBinding(value.target, completionMethod), local = binding?.getSnapshot();
-                if (!binding || !local || !same(local, document)) throw staleRequest();
+                if (!binding || !local || !sameDocument(local, document)) throw staleRequest();
                 const configuration = client.options(document, completionMethod),
                     commitCharacters = configuration.flatMap(option => Array.isArray(option.allCommitCharacters) ? option.allCommitCharacters.filter((value): value is string => typeof value === "string") : []);
                 const choices = decodeLspCompletions(value.response, value.capture, offset, fallback, {
@@ -82,7 +80,7 @@ export function completionClient(provider: LspWorkspace | LspDocumentOwner): Lsp
         },
         rebase: (value: LspCompletionBatch, document: DocumentSnapshot): LspCompletionBatch | undefined => {
             const batch = batches.get(value), local = batch?.binding.getSnapshot();
-            if (disposed || !batch || active !== batch || !local || !same(local, document) || !local.change || !value.items.length) return;
+            if (disposed || !batch || active !== batch || !local || !sameDocument(local, document) || !local.change || !value.items.length) return;
             // The provider may have omitted choices that didn't match its original query.
             if (value.offset + local.buffer.length - value.document.buffer.length < batch.requestedAt) return;
             const source = Object.freeze({ ...batch.binding.document, revision: local.revision, buffer: local.buffer });

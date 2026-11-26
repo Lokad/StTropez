@@ -1,9 +1,8 @@
 import type { HostPane } from "./layout.ts";
 import { registerCommandPalette } from "./command-palette.ts";
 import { focusSource, onSourceFocus } from "../../../examples/shared/source-focus.ts";
-import { restoreReferenceView, type SavedReferenceView } from "../../../examples/shared/reference-view.ts";
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../../src/browser/index.ts";
-import type { TextEditor, TextComparison, ViewState } from "../../../src/browser/index.ts";
+import type { ReferenceViewState, TextEditor, TextComparison, ViewState } from "../../../src/browser/index.ts";
 import type { ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, Observable } from "../../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../language/presentation.ts";
@@ -59,7 +58,7 @@ export class ViewBindings {
     readonly colors: HostDocumentColors;
     private readonly tools: readonly ViewTool[];
     private reviewScope: CleanupScope | undefined;
-    private referenceState: SavedReferenceView | undefined;
+    private referenceState: ReferenceViewState | undefined;
     private reviewStatus: HTMLOutputElement | undefined;
     private readonly reviewTickets: ComparisonTicket[] = [];
     private readonly discardTickets: { ticket: ComparisonReversion; variantGeneration: number }[] = [];
@@ -77,8 +76,7 @@ export class ViewBindings {
             const review = this.review.getSnapshot();
             this.reviewScrollLinked = review.scrollLinked;
             this.reviewRowsAligned = review.alignment.enabled;
-            const baseline = this.review.controller.getSnapshot().baseline, reference = this.review.panes.reference;
-            if (baseline) this.referenceState = { baseline, state: reference.captureView() };
+            this.referenceState = this.review.captureReferenceView();
             if (this.review.controller.getSnapshot().working) this.retainState("comparison", this.review.panes.working.view.documentId, this.review.panes.working.captureView());
         }
         const previous = this.reviewScope; this.reviewScope = undefined; previous?.dispose();
@@ -113,7 +111,7 @@ export class ViewBindings {
             scope.defer(this.language.attachReference("reference", reference, referencePresentation, () => review.controller.getSnapshot().baseline));
             const state = this.states.get("comparison")?.get(view.documentId);
             if (state) review.panes.working.restoreView(state, { selection: "current" });
-            if (!restoreReferenceView(reference, baseline, this.referenceState)) this.referenceState = undefined;
+            if (!review.restoreReferenceView(this.referenceState)) this.referenceState = undefined;
             const documentId = review.panes.working.view.documentId;
             review.panes.working.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
             this.registerPaneCommands(review.panes.working, pane, scope);
@@ -249,9 +247,10 @@ export class ViewBindings {
         // its input, selection, provider target and pending commands on the same document.
         for (const ticket of this.reviewTickets.splice(0)) ticket.cancel();
         try {
-            const ticket = review.controller.beginRefresh();
-            try { if (ticket.complete(next)) { this.referenceState = undefined; this.referenceGeneration = publication.generation; } }
-            finally { ticket.finish(); }
+            if (review.controller.replaceBaseline(next)) {
+                this.referenceState = undefined;
+                this.referenceGeneration = publication.generation;
+            }
         } catch (error) { this.controller.reportError(error); }
     }
     private retainedView(id: string, documentId: DocumentId): DocumentView {

@@ -51,5 +51,5 @@ export type { FindController, FindSnapshot, FindDiagnostics, FindReason, FindFla
 export { createRegexFindBackend } from "./regex-find.ts";
 export type { RegexFindBackendOptions } from "./regex-find.ts";
 export { mountTextComparison } from "./comparison.ts";
-export type { TextComparison, TextComparisonHunk, TextComparisonOptions, TextComparisonSnapshot, TextComparisonDiagnostics } from "./comparison.ts";
+export type { ReferenceViewState, TextComparison, TextComparisonHunk, TextComparisonOptions, TextComparisonSnapshot, TextComparisonDiagnostics } from "./comparison.ts";
 export type { ComparisonAlignmentSnapshot } from "./comparison-alignment.ts";

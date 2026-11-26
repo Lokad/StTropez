@@ -143,7 +143,7 @@ test("a translated review toolbar shares navigation labels with both panes", asy
 });
 
 test("a document reference follows edits in its source editor and stays read-only in review", async ({ page }) => {
-    const followsReference = await page.evaluate(async () => {
+    const result = await page.evaluate(async () => {
         const path = "/comparison-ownership/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextComparison, mountTextEditor } = await import(path + "tools.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace();
@@ -152,10 +152,13 @@ test("a document reference follows edits in its source editor and stays read-onl
         const host = document.createElement("section"); host.id = "follow-document"; document.body.append(host);
         const source = mountTextEditor(host, workspace, baseline, { ariaLabel: "Reference source editor" });
         const review = mountTextComparison(host, workspace, working, baseline);
+        const other = mountTextComparison(host, workspace, baseline, baseline);
+        const restoredToOther = other.restoreReferenceView(review.captureReferenceView());
+        other.dispose();
         host.addEventListener("release", () => { review.dispose(); source.dispose(); host.remove(); }, { once: true });
-        return review.panes.reference.view.documentId === baseline;
+        return { followsReference: review.panes.reference.view.documentId === baseline, restoredToOther };
     });
-    expect(followsReference).toBe(true);
+    expect(result).toEqual({ followsReference: true, restoredToOther: false });
     const host = page.locator("#follow-document"), source = host.getByRole("textbox", { name: "Reference source editor" });
     const reference = host.getByRole("textbox", { name: "Comparison baseline source" });
     await expect(host.locator(".st-comparison-controls output")).toHaveText("No changes");

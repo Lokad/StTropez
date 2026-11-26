@@ -1,11 +1,10 @@
 import { discoverIndentationFolds, TextBuffer, Workspace, type SaveReview } from "sttropez";
-import type { TextComparison } from "sttropez/browser";
+import type { ReferenceViewState, TextComparison } from "sttropez/browser";
 import {
     BrowserLspWorkspace, mountFindBar, createFoldingController,
     mountTextComparison, mountTextEditor, openWebSocketTransport,
 } from "sttropez/browser";
 import { bindLanguage } from "./language.js";
-import { restoreReferenceView, type SavedReferenceView } from "../shared/reference-view.js";
 
 const name = "quote.ts";
 const initial = `export const accent = "#5fae99";
@@ -53,13 +52,13 @@ const provider = new BrowserLspWorkspace(workspace, {
 const project = provider.createScope();
 let languageEnabled = false;
 let reviewLayout = { scrollLinked: false, rowsAligned: false };
-let savedReference: SavedReferenceView | undefined;
+let savedReference: ReferenceViewState | undefined;
 
 function mount(review: boolean) {
     let comparison: TextComparison | undefined;
     if (review) {
         comparison = mountTextComparison(pane, workspace, file.id, baseline, { view, settings, ...reviewLayout });
-        restoreReferenceView(comparison.panes.reference, baseline, savedReference);
+        comparison.restoreReferenceView(savedReference);
         savedReference = undefined;
     }
     const editor = comparison?.panes.working
@@ -149,8 +148,7 @@ function switchView(review: boolean) {
         if (comparison) {
             const state = comparison.getSnapshot();
             reviewLayout = { scrollLinked: state.scrollLinked, rowsAligned: state.alignment.enabled };
-            const shown = state.comparison.baseline;
-            if (shown) savedReference = { baseline: shown, state: comparison.panes.reference.captureView() };
+            savedReference = comparison.captureReferenceView();
         }
         current.dispose();
         current = mount(review);
@@ -161,10 +159,7 @@ function switchView(review: boolean) {
     focusActivePane();
 }
 function refreshBaseline() {
-    const refresh = current.comparison?.controller.beginRefresh();
-    if (refresh) {
-        try { refresh.complete(baseline); } finally { refresh.finish(); }
-    }
+    current.comparison?.controller.replaceBaseline(baseline);
 }
 const stopDirty = workspace.onDocumentChange(file.id, showSaveState);
 function save(review?: SaveReview): boolean {

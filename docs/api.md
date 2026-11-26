@@ -44,7 +44,7 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [browser/code-action-popup.ts](../src/browser/code-action-popup.ts) | `CodeActionPopupOptions` |
 | [browser/command-registry.ts](../src/browser/command-registry.ts) | `EditorCommand`, `EditorCommands`, `EditorKeymap` |
 | [browser/comparison-alignment.ts](../src/browser/comparison-alignment.ts) | `ComparisonAlignmentSnapshot` |
-| [browser/comparison.ts](../src/browser/comparison.ts) | `TextComparison`, `TextComparisonDiagnostics`, `TextComparisonHunk`, `TextComparisonOptions`, `TextComparisonSnapshot`, `mountTextComparison` |
+| [browser/comparison.ts](../src/browser/comparison.ts) | `ReferenceViewState`, `TextComparison`, `TextComparisonDiagnostics`, `TextComparisonHunk`, `TextComparisonOptions`, `TextComparisonSnapshot`, `mountTextComparison` |
 | [browser/completion-controller.ts](../src/browser/completion-controller.ts) | `CompletionChoice`, `CompletionController`, `CompletionControllerOptions`, `CompletionSnapshot`, `CompletionSnippet` |
 | [browser/control-strings.ts](../src/browser/control-strings.ts) | `ControlStrings` |
 | [browser/decoration-layers.ts](../src/browser/decoration-layers.ts) | `DecorationLayer`, `DecorationLayerOptions`, `DecorationLayers`, `DecorationProvider` |

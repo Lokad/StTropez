@@ -66,7 +66,7 @@ export function captureRequest({ workspace, view, signal }: CaptureOwner,
     const resource = workspace.resource(document.id), permission = resource.metadata.getSnapshot();
     if (permission.state !== "ready" || editOrigin !== undefined && !permission.capabilities.edit.includes(editOrigin)) return;
     const selectionSet = view.getSnapshot().selectionSet, folding = view.folding.getSnapshot();
-    const lease = workspace.acquire(resource.id), abort = new AbortController();
+    const lease = workspace.acquire(document.id), abort = new AbortController();
     let active = true; const stops: (() => void)[] = [];
     const detach = () => { active = false; for (const stop of stops.splice(0)) stop(); };
     const release = () => { try { lease.release(); } finally { abort.abort(); } };

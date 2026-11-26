@@ -33,6 +33,7 @@ export type ComparisonHunk = DiffHunk & Readonly<{ revert: () => boolean }>;
 export type ComparisonController = Observable<ComparisonSnapshot> & Readonly<{
     view: DocumentView; advance: (workBudget?: number) => ComparisonSnapshot;
     hunkAt: (index: number) => ComparisonHunk | undefined;
+    replaceBaseline: (baseline: ComparisonBaseline) => boolean;
     beginRefresh: () => ComparisonTicket; beginAcceptance: () => ComparisonTicket; beginReversion: () => ComparisonReversion;
     dispose: () => void;
 }>;
@@ -50,7 +51,7 @@ export function compareText(workspace: Workspace, documentId: DocumentId, initia
     const fromDocument = (value: DocumentSnapshot, epoch: number) => baseline({ buffer: value.buffer, version: String(value.revision) }, epoch);
     const initialBaseline = typeof initial === "string" ? fromDocument(workspace.document(initial), 0) : baseline(initial, 0);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to another document or workspace.");
-    const retention = workspace.acquire(resource.id);
+    const retention = workspace.acquire(documentId);
     let view: DocumentView;
     try { view = options.view ?? workspace.createDocumentView(documentId); } catch (error) { retention.release(); throw error; }
     const referenceLease = referenceDocument && workspace.acquire(referenceDocument.getSnapshot()!.id);
@@ -98,7 +99,7 @@ export function compareText(workspace: Workspace, documentId: DocumentId, initia
         const capture: ComparisonCapture = Object.freeze({ baselineEpoch: reference.epoch, baselineVersion: reference.version,
             working, serverVersion: resource.metadata.getSnapshot().serverVersion });
         const generation = kind === "refresh" ? ++refreshGeneration : ++acceptanceGeneration;
-        const lease: ResourceLease = workspace.acquire(resource.id); let finished = false;
+        const lease: ResourceLease = workspace.acquire(documentId); let finished = false;
         const finish = () => { scope.assertWritable(); if (finished) return; lease.release(); finished = true; pending.delete(finish); };
         pending.add(finish);
         const isCurrent = () => !finished && live() && state.get().baseline!.epoch === capture.baselineEpoch
@@ -126,7 +127,7 @@ export function compareText(workspace: Workspace, documentId: DocumentId, initia
             generation: current.generation, selectionSet: view.getSnapshot().selectionSet });
         const refresh = refreshGeneration, acceptance = acceptanceGeneration,
             policy = reversionPolicyGeneration, generation = ++reversionGeneration;
-        const lease = workspace.acquire(resource.id); let finished = false;
+        const lease = workspace.acquire(documentId); let finished = false;
         const finish = () => { scope.assertWritable(); if (finished) return; finished = true; pending.delete(finish); lease.release(); };
         pending.add(finish);
         const isCurrent = () => !finished && canAccept() && policy === reversionPolicyGeneration && generation === reversionGeneration && refresh === refreshGeneration && acceptance === acceptanceGeneration
@@ -172,7 +173,8 @@ export function compareText(workspace: Workspace, documentId: DocumentId, initia
                 history: { kind: "replace" }, edits: [{ from: hunk.working.from, to: hunk.working.to, insert }],
                 selection: { anchor: hunk.working.from, head: hunk.working.from } }).applied;
         } });
-    }, beginRefresh: () => begin("refresh"), beginAcceptance: () => begin("accept"), beginReversion, dispose: () => {
+    }, replaceBaseline: value => begin("refresh").complete(value),
+    beginRefresh: () => begin("refresh"), beginAcceptance: () => begin("accept"), beginReversion, dispose: () => {
         scope.assertWritable(); if (disposed) return;
         retention.release();
         for (const finish of [...pending]) finish();

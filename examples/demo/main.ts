@@ -1,13 +1,12 @@
 import { isSaveKey, isUnmodifiedShortcut, usesAppleShortcuts } from "../shared/host-shortcuts.ts";
 import { mountTextEditor, mountTextComparison, mountFindBar, createFoldingController, diagnosticDecoration, editRefusedEvent } from "../../src/browser/index.ts";
 import type {
-    EditorCommands, TextEditor, TextComparison, FoldingController,
+    EditorCommands, TextEditor, TextComparison, ReferenceViewState, FoldingController,
     DecorationLayer, DecorationProvider, NavigationOrigin,
 } from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
-import { restoreReferenceView, type SavedReferenceView } from "../shared/reference-view.ts";
 import type { DemoProviderFactory } from "./provider-contract.ts";
 import type { DemoFile } from "./project.ts";
 import { DemoPresentation } from "./presentation.ts";
@@ -353,13 +352,13 @@ function refusePendingEdit(pending = editorBusy()): boolean {
     return true;
 }
 const savedViews = new WeakMap<DemoFile, ReturnType<TextEditor["captureView"]>>();
-const savedReferences = new WeakMap<DemoFile, SavedReferenceView>();
+const savedReferences = new WeakMap<DemoFile, ReferenceViewState>();
 
 function rememberView(): void {
     if (!active || !editor) return;
     savedViews.set(active, editor.captureView());
-    const baseline = comparison?.controller.getSnapshot().baseline;
-    if (comparison && baseline) savedReferences.set(active, { baseline, state: comparison.panes.reference.captureView() });
+    const reference = comparison?.captureReferenceView();
+    if (reference) savedReferences.set(active, reference);
 }
 
 function mountFile(file: DemoFile, focus?: "working" | "reference"): void {
@@ -385,7 +384,7 @@ function mountFile(file: DemoFile, focus?: "working" | "reference"): void {
         setReviewCollapsed = reviewLayout(surface, comparison);
         editor = comparison.panes.working;
         const reference = comparison.panes.reference, plain = hostLanguage();
-        if (!restoreReferenceView(reference, baseline, savedReferences.get(file))) savedReferences.delete(file);
+        if (!comparison.restoreReferenceView(savedReferences.get(file))) savedReferences.delete(file);
         let tokens: DecorationProvider | undefined;
         const syntax: DemoPresentation | undefined = plain ? undefined : new DemoPresentation(() => {
             tokens?.invalidate(); if (syntax?.status === "ready") refreshBrackets(reference); renderMetadata();
@@ -532,7 +531,7 @@ function refreshReviewBaseline(): void {
     const shown = comparison.controller.getSnapshot().baseline;
     const saved = project.baseline(active);
     if (shown && (shown.buffer !== saved.buffer || shown.version !== saved.version)) {
-        comparison.controller.beginRefresh().complete(saved);
+        comparison.controller.replaceBaseline(saved);
     }
 }
 function setPanel(next: DemoPanel): void {
