@@ -31,6 +31,7 @@ type ScopeAccess = Pick<LspSession, "flush" | "bindDocument" | "synchronized" | 
 }>;
 /** Optional host custom-message preparation, inside the feature's captured request lifetime. */
 export type LspPrepare = (scope: LspScopeAccess) => Promise<unknown>;
+/** Own document bindings, requests and subscriptions that share a workspace connection. */
 export type LspWorkspaceScope = ScopeAccess & Observable<LspWorkspaceSnapshot> & Readonly<{
     [beginReadRequest]: (interrupted: () => void, documents: () => Iterable<LspDocument>) => LspReadRequest;
     [bindProject]: (documents: readonly DocumentSnapshot[]) => ReadonlyMap<string, LspDocument>;
@@ -64,6 +65,7 @@ const emptyDiagnostics: LspDiagnosticState = Object.freeze({
     status: "empty", result: null, lastReport: null, isCurrent: () => false, isPlacementCurrent: () => false
 });
 const expiredDiagnostics: LspDiagnosticState = Object.freeze({ ...emptyDiagnostics, status: "expired" });
+/** Configure the shared session, diagnostic delivery and host resolution of unopened targets. */
 export type LspWorkspaceOptions = LspSessionOptions & Readonly<{
     /** Authorize an opaque URI and return a project document or read-only contents. */
     resolveTarget?: LspTargetResolver;

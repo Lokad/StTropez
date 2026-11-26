@@ -24,6 +24,7 @@ import { builtinKeyPriority, commandRegistration, type EditorCommand, type Edito
 import { createComparisonPanes } from "./comparison-panes.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 
+/** Set the working view, pane settings, scroll linking and optional review controls. */
 export type TextComparisonOptions = Readonly<{
     ariaLabel?: string;
     workBudget?: number;
@@ -42,11 +43,14 @@ export type TextComparisonSnapshot = Readonly<{
     canNavigate: boolean; canRevert: boolean;
     scrollLinked: boolean; alignment: ComparisonAlignmentSnapshot; disposed: boolean;
 }>;
+/** Diff step durations and the current scroll and row-alignment state. */
 export type TextComparisonDiagnostics = Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; scrollLinked: boolean; pendingScroll: boolean; rowsAligned: boolean; alignment: ComparisonAlignmentSnapshot; disposed: boolean }>;
 export type TextComparisonHunk = ComparisonHunk & Readonly<{ select: () => boolean }>;
+/** Scroll, folds and selection retained for the same working resource and reference baseline. */
 export type ReferenceViewState = Readonly<{
     working: ResourceKey; reference: DocumentId | null; baseline: ComparisonBaseline; view: ViewState;
 }>;
+/** Two review panes with hunk navigation and guarded reversion against the captured baseline. */
 export type TextComparison = Observable<TextComparisonSnapshot> & Readonly<{
     element: HTMLDivElement; controller: ComparisonController; commands: EditorCommands;
     panes: Readonly<{ working: TextEditor; reference: TextEditor }>; activePane: () => TextEditor;

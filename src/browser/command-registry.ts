@@ -16,12 +16,14 @@ export const builtinKeyPriority = {
     editor: -10, open: -9, signature: -8, hover: -7, completion: -6,
     renameSubmit: -5, quickFix: -4, renameDismiss: -3, field: -2, replacement: -1,
 } as const;
+/** Register, inspect and run commands on a specific editor mount. */
 export type EditorCommands = Readonly<{
     register: (command: EditorCommand, shortcuts?: BindingOptions & { readonly keys: readonly string[] }) => { dispose(): void };
     run: (id: string, argument?: unknown) => boolean;
     get: (id: string, argument?: unknown) => CommandInfo | undefined;
     list: () => readonly CommandInfo[];
 }>;
+/** Bind shortcuts for this mount and forward a shared shortcut from a host control. */
 export type EditorKeymap = Readonly<{
     bind: (keys: string, id: string, options?: BindingOptions) => { dispose(): void };
     unbind: (keys: string) => void;

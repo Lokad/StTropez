@@ -48,6 +48,7 @@ export type LspRegistration = Readonly<{ id: string; method: string; registerOpt
 export type LspSessionSnapshot = Readonly<{ phase: "disconnected" | "connecting" | "initializing" | "ready" | "stopping" | "disposed";
     epoch: number; clientFeatures: readonly LspClientFeature[]; capabilities: Readonly<Record<string, JsonValue>>; registrations: readonly LspRegistration[];
     registrationGeneration: number; registrationVersion: (method: RegistrationMethod) => number; documents: number; error: string | null }>;
+/** Provide the connection factory, scheduler and configuration for a protocol session. */
 export type LspSessionOptions = Readonly<{ connect: (context: LspConnectContext) => Promise<RpcTransport>; schedule: RpcScheduler;
     /** Millisecond clock for cooperative scan slices; defaults to Date.now. */
     now?: () => number;

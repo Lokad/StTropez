@@ -16,6 +16,7 @@ import { mountLanguageCommands, type LanguageCommands, type LanguageCommandOptio
 import { mountNavigation, type NavigationController, type NavigationControllerOptions } from "./navigation-controller.ts";
 import { mountRename, type RenameController, type RenameControllerOptions } from "./rename-controller.ts";
 
+/** Select the language features to attach to this editor and configure their UI. */
 export type EditorLanguageOptions = {
     navigation?: NavigationControllerOptions;
     rename?: RenameControllerOptions;
@@ -42,6 +43,7 @@ type Features = {
     colors: DocumentColorController;
     links: DocumentLinkController;
 };
+/** The selected controllers and one disposer for their shared attachment. */
 export type EditorLanguageAttachment<O extends EditorLanguageOptions = EditorLanguageOptions> =
     Readonly<{ [K in keyof O]: K extends keyof Features ? Features[K] : never }>
     & Readonly<{ dispose: () => void }>;

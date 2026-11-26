@@ -73,7 +73,7 @@ export function sameSelectionSet(a: SelectionSet, b: SelectionSet): boolean {
     });
 }
 
-/** Map every range with its own affinities, then coalesce ranges that now overlap. */
+/** Map each range using its endpoint affinities, then merge overlapping ranges. */
 export function mapSelectionSet(mapping: PositionMapping, value: SelectionSet): SelectionSet {
     const before = createSelectionSet(mapping.oldLength, value.ranges, value.primary);
     const after = mapSelectionRanges(mapping, before);

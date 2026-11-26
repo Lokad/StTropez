@@ -39,6 +39,10 @@ local links and anchors. The handbook shares a 14,000-word prose budget across i
 and the generated index are excluded. API examples compile against public entries. Use `file=app.js` and
 companion filenames to compile a tutorial together. Type errors cite Markdown lines. [Public index](api.md)
 
+After changing a default binding, run `node scripts/editor-shortcuts.mjs --write`. It reads the command
+registries on a mounted editor and comparison in headless Chromium with each platform setting.
+Omit `--write` to compare the handbook with the current bindings. [Keyboard reference](editor.md#default-key-bindings)
+
 <a id="test-ownership"></a>
 
 ### Where to put a regression test

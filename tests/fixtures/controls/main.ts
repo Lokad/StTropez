@@ -1,5 +1,6 @@
 import { Workspace } from "sttropez";
-import { attachEditorLanguage, BrowserLspWorkspace, mountFindBar, mountTextEditor, openWebSocketTransport } from "sttropez/browser";
+import { attachEditorLanguage, BrowserLspWorkspace, createFoldingController, mountFindBar, mountTextComparison,
+    mountTextEditor, openWebSocketTransport } from "sttropez/browser";
 import type { ControlStrings } from "sttropez/browser";
 import "sttropez/editor.css";
 
@@ -50,3 +51,29 @@ window.addEventListener("pagehide", event => {
     find.dispose();
     editor.dispose();
 });
+
+/** Read the shortcut reference from the same mounted controls the host can inspect. */
+export function readDefaultShortcuts() {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const folding = createFoldingController(editor, () => []);
+    let comparison: ReturnType<typeof mountTextComparison> | undefined;
+    try {
+        comparison = mountTextComparison(container, workspace, file.id, {
+            buffer: workspace.document(file.id).buffer, version: "saved",
+        });
+        const rows = new Map<string, { id: string; category: string; keys: readonly string[] }>();
+        for (const pane of [editor, comparison.panes.working]) {
+            for (const { id, owner, category } of pane.commands.list()) {
+                if (owner !== "editor" || rows.has(id)) continue;
+                const keys = pane.keymap.getShortcuts(id);
+                if (keys.length) rows.set(id, { id, category, keys });
+            }
+        }
+        return [...rows.values()];
+    } finally {
+        comparison?.dispose();
+        folding.dispose();
+        container.remove();
+    }
+}

@@ -67,28 +67,36 @@ export type TextEditorActivity = Readonly<{
     pendingCaret: boolean;
     pendingDragScroll: boolean;
 }>;
+/** Input-handler measurements and activity captured when diagnostics are read. */
 export type TextEditorDiagnostics = TextEditorActivity & Readonly<{
     inputUnits: number; inputEvents: number; lastInputMs: number; beforeInputEvents: number; lastBeforeInputMs: number;
     keydownEvents: number; lastKeydownMs: number;
     conflicts: number;
 }>;
+/** The mount’s focus, composition and edit availability. */
 export type TextEditorSnapshot = Readonly<{ focused: boolean; disabled: boolean; composing: boolean;
     readOnlyReason: EditRefusedDetail["reason"] | null }>;
 export type TextEditorCommand = EditingCommand | ViewCommand | DeletionCommand | "undo" | "redo";
+/** Ask the host for a one-based line number and cancel the prompt if its target expires. */
 export type LinePrompt = (request: Readonly<{ currentLine: number; lineCount: number; signal: AbortSignal }>) =>
     number | undefined | PromiseLike<number | undefined>;
+/** Per-view language rules, drawing options and input preferences accepted by configure. */
 export type EditorSettings = Partial<ViewportSettings> & Readonly<{ language?: LanguageConfiguration;
     pasteLineEndings?: "local" | "preserve"; bracketMatching?: boolean | BracketMatchOptions; characterWarnings?: boolean | CharacterWarningOptions }>;
 export type ResolvedEditorSettings = ViewportSettings & Readonly<{ language: ResolvedLanguageConfiguration;
     pasteLineEndings: "local" | "preserve"; bracketMatching: false | Required<BracketMatchOptions>; characterWarnings: false | CharacterWarningConfiguration }>;
 export type EditorRevealRange = Readonly<{ from: number; to: number }>;
 type RevealTarget = BufferPosition | EditorRevealRange | Readonly<{ start: BufferPosition; end: BufferPosition }>;
+/** Set scrolling, selection and focus behavior and optionally require a specific revision. */
 export type EditorRevealOptions = Readonly<{ align?: RevealAlignment; select?: boolean; focus?: boolean; expectedRevision?: number }>;
+/** Choose the retained view, initial settings, read-only mode and Go to Line prompt at mount. */
 export type TextEditorOptions = Readonly<{ strings?: ControlStrings; ariaLabel?: string; view?: DocumentView; readOnly?: boolean; requestLine?: LinePrompt; settings?: EditorSettings }>;
+/** Read custom formats during the paste event and return a converter for the captured insertion. */
 export type EditorPasteHandler = (data: DataTransfer) => ((insertion: CapturedInsertion) => void) | undefined;
 const editIntents = ["beforeinput", "compositionstart", "paste", "cut"] as const;
 export type EditorEditIntent = typeof editIntents[number];
 type PasteOwner = { handler: EditorPasteHandler; pending?: CapturedInsertion };
+/** One mounted editor with its own input, viewport, commands and lifetime signal. */
 export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; strings: ReturnType<typeof resolveControlStrings>; workspace: Workspace; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
@@ -101,7 +109,7 @@ export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HT
     settings: () => ResolvedEditorSettings;
     bracketMatching: BracketHighlights;
     characterWarnings: CharacterWarningHighlights;
-    /** Returns whether the command was accepted; long selections finish asynchronously. */
+    /** Runs registered commands on this mount and reports whether they were accepted. */
     commands: EditorCommands; keymap: EditorKeymap;
     reveal: (target: RevealTarget, options?: EditorRevealOptions) => Outcome<EditorRevealRange>;
     focus: () => void; captureView: () => ViewState; restoreView: TextViewport["restoreView"];

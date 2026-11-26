@@ -27,7 +27,9 @@ const replacementMessages: Partial<Record<ReplacementRefusal, string>> = {
     "not-ready": "The document is unavailable.",
     "composition-active": "Finish composition before replacing."
 };
+/** Case, whole-word and regular-expression options for one query. */
 export type FindFlags = Readonly<{ wholeWord?: boolean; matchCase?: boolean; regularExpression?: boolean }>;
+/** Choose highlights, an optional regex backend and its query delay at construction. */
 export type FindControllerOptions = Readonly<{ regularExpressionBackend?: FindBackend; regularExpressionDelayMs?: number; highlightMatches?: boolean }>;
 type FindEvents = Pick<EventTarget, "addEventListener" | "removeEventListener">;
 /** View operations consumed by find. A mounted TextEditor satisfies this contract directly. */
@@ -49,6 +51,7 @@ export type FindHost = Readonly<{
 export type FindReason = ReplacementRefusal | "backend-unavailable" | "invalid-pattern" | "search-failed"
     | "replacement-failed" | "view-unavailable" | "cancelled" | "replaced";
 type FindNotice = Readonly<{ reason: FindReason | null; message: string; replacedCount: number }>;
+/** Current query, revision, match count and replacement notice. */
 export type FindSnapshot = FindNotice & Readonly<{
     highlightMatches: boolean;
     query: string;
@@ -65,12 +68,14 @@ export type FindSnapshot = FindNotice & Readonly<{
     wrappedTo: "start" | "end" | null;
     matchesVersion: number;
 }>;
+/** Maximum search step and last replacement transaction durations, in milliseconds. */
 export type FindDiagnostics = Readonly<{ maxScanStepMs: number; replaceTransactionMs: number }>;
 /** Immediate effect of a Find command. A queued operation publishes its final state to the controller. */
 type FindAction = Outcome<"selected" | "replaced" | "queued">;
 const selected = done("selected" as const);
 const replaced = done("replaced" as const);
 const queued = done("queued" as const);
+/** Find and replace within one captured editor view and observe progress as matches arrive. */
 export type FindController = Observable<FindSnapshot> & Readonly<{
     getDiagnostics: () => FindDiagnostics;
     matchesIn: (from: number, to: number, capture?: FindSnapshot) => readonly SearchMatch[];

@@ -66,6 +66,7 @@ type ViewportNavigation = Readonly<{
     columnSelections: (anchor: number, head: number) => (line: number) => (Selection & { reaches: boolean }) | undefined;
     fixedPitch: () => boolean;
 }>;
+/** The mounted document surface for scrolling, decoration layers and text geometry. */
 export type TextViewport = Observable<ViewportSnapshot> & Readonly<{ element: HTMLDivElement; view: DocumentView; decorations: DecorationLayers;
     /** Observe completed paints and consumed scheduled renders, including unchanged paints. */
     onRender: (listener: () => void) => () => void;
@@ -145,7 +146,9 @@ function renderRowChildren(element: HTMLElement, parts: readonly RowChild[]): bo
 }
 export type InlineDecoration = Readonly<{ from: number; to: number; className: string;
     properties?: Readonly<Record<`--${string}`, string>>; before?: string; afterLine?: string }>;
+/** The visible UTF-16 fragment of a source line, identified by document and revision. */
 export type PresentedLine = Readonly<{ documentId: DocumentId; revision: number; line: number; lineStart: number; from: number; to: number; text: string }>;
+/** Return decorations for one requested fragment using absolute document offsets. */
 export type LineDecorator = (line: PresentedLine) => readonly InlineDecoration[];
 export type LineClass = (line: PresentedLine) => string | undefined;
 export type RevealAlignment = "start" | "center" | "nearest" | "center-if-outside";
@@ -157,6 +160,7 @@ export type FoldLabels = Readonly<{
     action?: (region: FoldRegion) => string | undefined;
     summary?: (region: FoldRegion, containsChanges: boolean) => string | undefined;
 }>;
+/** Presentation choices shared by source and comparison panes. */
 export type ViewportSettings = Readonly<{ columnRulers: readonly number[]; highlightCurrentLine: boolean; gutter: boolean;
     fontLigatures: boolean; scrollBeyondLastLine: boolean; minimap: boolean; minimapLabel: (line: number | null) => string; foldLabels: FoldLabels }>;
 export type TextViewportOptions = Readonly<{ ariaLabel?: string; view?: DocumentView; settings?: Partial<ViewportSettings> }>;

@@ -20,8 +20,10 @@ import type { DocumentFolding, FoldIndex, FoldRegion, FoldingSnapshot, FoldVersi
 export type DocumentId = string & { readonly documentId: unique symbol };
 export type ViewId = string & { readonly viewId: unique symbol };
 
+/** Persistent host key for a resource, scoped by project and variant. */
 export type ResourceKey = Readonly<{ scope: string; resource: string; variant: string }>;
 export type EditOrigin = "human" | "agent" | "host";
+/** Edit origins allowed to change the document and permission to save its text. */
 export type Capabilities = Readonly<{ edit: readonly EditOrigin[]; save: boolean }>;
 export type ResourceVisibility = "workspace" | "internal";
 export type DocumentLanguage = Readonly<{ uri: string; languageId: string }>;
@@ -31,6 +33,7 @@ export type TextResourceOptions = Readonly<{
     capabilities?: Capabilities | undefined;
     language?: DocumentLanguage | null;
 }> & (Readonly<{ value: string | TextBuffer; serverVersion?: string | null }> | Readonly<{ value?: never; serverVersion?: never }>);
+/** Loading, permission, dirty and save state available without reading the document text. */
 export type ResourceMetadata = Readonly<{
     id: DocumentId; key: ResourceKey; title: string;
     visibility: ResourceVisibility;
@@ -41,17 +44,21 @@ export type ResourceMetadata = Readonly<{
 export type ResourceSnapshot = Readonly<{ revision: number; metadata: ResourceMetadata }> & Readonly<
     { state: "ready"; value: () => string } | { state: "loading" | "failed" | "released" }
 >;
+/** Observe one resource from its creation through release, including periods when its text is unavailable. */
 export type TextResourceHandle = Observable<ResourceSnapshot> & Readonly<{
     id: DocumentId; metadata: Observable<ResourceMetadata>;
 }>;
 export type LoadedResource = Readonly<{ value: string; serverVersion?: string | null }>;
+/** An immutable buffer and its local revision. Keep them together across asynchronous work. */
 export type DocumentSnapshot = Readonly<{
     id: DocumentId; key: ResourceKey; title: string; buffer: TextBuffer; text: () => string; revision: number;
     language: DocumentLanguage | null; change: DocumentChange | null;
 }>;
+/** The edits and position mapping between two revisions of one document. */
 export type DocumentChange = Readonly<{ previousRevision: number; revision: number; transactionId: number; origin: EditOrigin;
     source?: string; kind: EditKind | "undo" | "redo"; mapping: PositionMapping; edits: readonly TextEdit[] } & DocumentViewMapping>;
 export type DocumentViewSnapshot = Readonly<{ documentId: DocumentId; revision: number; selection: Selection; selectionSet: SelectionSet }>;
+/** A retained selection and fold state that can outlive the editor mounted on it. */
 export type DocumentView = Observable<DocumentViewSnapshot> & Readonly<{ id: ViewId; documentId: DocumentId;
     folding: DocumentFolding;
     setSelection: (expectedRevision: number, selection: Selection) => boolean;
@@ -60,17 +67,22 @@ export type WorkspaceSnapshot = Readonly<{
     revision: number; resources: readonly ResourceMetadata[];
     documents: readonly DocumentSnapshot[];
 }>;
+/** Identifies a document in its originating workspace across a delayed operation. */
 export type ResourceTarget = Readonly<{ workspace: symbol; id: DocumentId }>;
 export type ResourceLease = Readonly<{ resourceId: DocumentId; active: () => boolean; release: () => void }>;
+/** Accept or reject the result of one load while it owns the resource. */
 export type ResourceLoad = Readonly<{
     accept: (loaded: LoadedResource) => boolean; fail: (message: string) => boolean; dispose: () => void;
 }>;
+/** Captured text, revision and expected storage version supplied to a host write. */
 export type SaveSubmission = Readonly<{ id: string; target: ResourceTarget; key: ResourceKey;
     revision: number; value: string; expectedServerVersion: string | null }>;
 /** Host-confirmed remote version for saving the explicitly reviewed local revision. No baseline adoption. */
 export type SaveReview = Readonly<{ target: ResourceTarget; expectedRevision: number; expectedServerVersion: string }>;
+/** The acknowledged baseline for a write and its relation to the current working copy. */
 export type SaveReceipt = Readonly<{ submission: SaveSubmission; savedValue: string; serverVersion: string;
     canonicalApplied: boolean }>;
+/** Holds text and revision for a save. The host calls run when its write queue reaches this ticket. */
 export type SaveTicket = Readonly<{ target: ResourceTarget; revision: number; value: string;
     start: () => SaveSubmission; accept: (response: Readonly<{ serverVersion: string; canonical?: string }>, options?: Readonly<{ applyCanonical?: boolean }>) => SaveReceipt;
     conflict: () => void; fail: () => void; finish: () => void;
@@ -84,6 +96,7 @@ export type EditRequest = Readonly<{
     documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; source?: string;
     history?: Readonly<{ kind: EditKind; group?: string; reset?: boolean }>; view?: DocumentView; selection?: Selection; selectionSet?: SelectionSet;
 }>;
+/** Range edits or replacement text for a captured revision of one document. */
 export type DocumentEditRequest = EditRequest | (Omit<EditRequest, "edits"> & Readonly<{ text: string | TextBuffer; edits?: never }>);
 export type TextTransactionOptions = Readonly<{
     origin: EditOrigin; source?: string; view?: DocumentView;
@@ -100,6 +113,7 @@ export type EditResult = EditOutcome<number>;
 /** Success carries one resulting revision per document, in request order. */
 export type BatchEditResult = EditOutcome<readonly Readonly<{ documentId: DocumentId; revision: number }>[]>;
 export type HistoryRequest = Readonly<{ documentId: DocumentId; expectedRevision: number; origin?: EditOrigin; source?: string }>;
+/** History limits and the handler for errors thrown by observable listeners. */
 export type WorkspaceOptions = Readonly<{ onListenerError?: (error: unknown) => void; history?: HistoryOptions }>;
 
 function singleRevision(result: BatchEditResult): EditResult {

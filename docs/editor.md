@@ -101,34 +101,20 @@ after a mouse or pen rests (default 300 ms). Keys cancel dwell until the pointer
 `Mod` is Cmd on Apple and Ctrl elsewhere. The word modifier is Option on Apple and Ctrl elsewhere.
 `editor.keymap.getShortcuts(id)` lists the active shortcuts, including host bindings.
 
-| Navigation and selection | Action |
-| --- | --- |
-| Left / Right | Move by grapheme. Add the word modifier for words, Shift to extend. |
-| Up / Down, PageUp / PageDown | Move a visible row or page at the retained column. |
-| Home / End | First nonblank or line end. Press Home again for line start. |
-| Mod+Home / End | Document start / end. On Apple, Cmd+Left / Right reaches line ends and Cmd+Up / Down reaches document ends. |
-| Mod+A / Mod+L | Select all / touched lines with endings. Repeat Mod+L to extend. |
-| Mod+D / Mod+Shift+L | Select the next / all occurrences of the selection or current word. |
-| Mod+Alt+Up / Down | Copy carets or selections to the adjacent visible row. |
-| Mod+U | Undo this view’s last selection change. An edit resets selection history. |
-| Mod+G / Mod+Shift+Backslash | Go to line / jump to bracket. |
-| Ctrl+Up / Down, Alt+PageUp / PageDown | Scroll a row or page while keeping the selection. |
+The [default bindings](#default-key-bindings) list the keys installed by each control. In a writable pane,
+Tab indents selected lines and Backspace in indentation removes a tab stop. In a read-only pane Tab moves
+focus. Escape followed by Tab or Shift+Tab leaves the editor. With several selections the first Escape
+keeps the primary range.
 
-With text already selected, Mod+D and Mod+Shift+L commit the new selections before the key handler returns.
-An empty selection first resolves the word at the caret.
+Up and Down retain the caret’s visual column across visible rows. Home alternates between the first
+nonblank character and line start. Select Line includes the ending and extends on a second press.
+Select Next Occurrence and Select All Occurrences resolve an empty selection to the word at the caret.
+Scrolling by command leaves selections in place. Undo Caret restores the previous selection until the
+next edit.
 
-| Editing | Action |
-| --- | --- |
-| Backspace / Delete | Delete the selection or adjacent grapheme. The word modifier deletes a run. Backspace in indentation uses tab stops. |
-| Mod+Z / Mod+Shift+Z or Ctrl+Y | Undo / Redo. |
-| Tab / Shift+Tab | Indent / outdent. In read-only views, move focus. |
-| Enter or Shift+Enter | Insert a contextual newline. |
-| Mod+/ or Shift+Alt+A | Toggle line or block comment. Mod+K then Mod+C adds a line marker, Mod+K then Mod+U removes one. |
-| Mod+] / Mod+[ | Indent / outdent touched lines. |
-| Alt+Up / Down | Move lines. Add Shift to copy them and select the copies. |
-| Mod+Shift+K | Delete lines and keep the column on the surviving line, up to its end. |
-| Mod+Enter / Mod+Shift+Enter | Insert a line below / above. A sibling of a collapsed block inherits the header’s indentation. Before its visible closing delimiter, the language’s Enter rule can indent the new line inside the block. |
-| Escape then Tab / Shift+Tab | Leave the editor forward / backward. With multiple ranges, the first Escape keeps the primary range. |
+Move Line keeps the selection with its text. Copy Line selects the copy. Delete Lines keeps the caret’s
+column where the surviving line allows it. Inserting a sibling of a collapsed block uses the header’s
+indentation. The language’s Enter rule can indent the new line inside a block before its closing delimiter.
 
 Go to line passes `requestLine` one-based `currentLine`, `lineCount` and an abort signal.
 Return a line or `undefined`, directly or in a promise. Selection, revision or mount changes expire it. On French AZERTY, `Ctrl+:` toggles line comments and `Ctrl+;` opens fixes.
@@ -322,6 +308,143 @@ new text, colors and carets are painted. `getDiagnostics()` times input handlers
 | Settled input window | 256 UTF-16 units per side and 2,048 selected units. Composition and noncancellable input can exceed it until commit. |
 | Language planner | Default budget 4,096 work units, minimum 256. |
 | Bracket scan | Defaults to 100,000 work units and 1,024 nesting levels. Both limits take positive safe integers. |
+
+### Default key bindings
+
+Each command below has the registry owner `editor`. A space between strokes denotes a chord. Features
+install their bindings when attached. Popup commands act while their control is active. Hosts can rebind them.
+
+<!-- default shortcuts -->
+
+| Category | Command | Keys | Platform |
+| --- | --- | --- | --- |
+| Code actions | `quickfix.apply` | `Enter` | All |
+| Code actions | `quickfix.dismiss` | `Escape` | All |
+| Code actions | `quickfix.next` | `ArrowDown` | All |
+| Code actions | `quickfix.previous` | `ArrowUp` | All |
+| Code actions | `quickfix.show` | `Mod+.` | All |
+| Comparison | `comparison.nextChange` | `F7` | All |
+| Comparison | `comparison.previousChange` | `Shift+F7` | All |
+| Completion | `completion.dismiss` | `Escape` | All |
+| Completion | `completion.insert` | `Tab` | All |
+| Completion | `completion.move-left` | `ArrowLeft` | All |
+| Completion | `completion.move-right` | `ArrowRight` | All |
+| Completion | `completion.next` | `ArrowDown` | All |
+| Completion | `completion.page-next` | `PageDown` | All |
+| Completion | `completion.page-previous` | `PageUp` | All |
+| Completion | `completion.previous` | `ArrowUp` | All |
+| Completion | `completion.replace` | `Enter`, `Alt+Enter` | All |
+| Completion | `completion.request` | `Mod+Code:Space` | All |
+| Completion | `snippet.choice-next` | `Alt+ArrowDown`, `Alt+Shift+ArrowDown` | All |
+| Completion | `snippet.choice-previous` | `Alt+ArrowUp`, `Alt+Shift+ArrowUp` | All |
+| Completion | `snippet.next` | `Tab` | All |
+| Completion | `snippet.previous` | `Shift+Tab` | All |
+| Editing | `add-caret-above` | `Mod+Alt+ArrowUp` | All |
+| Editing | `add-caret-below` | `Mod+Alt+ArrowDown` | All |
+| Editing | `add-line-comment` | `Mod+k Mod+c` | All |
+| Editing | `block-comment` | `Alt+Shift+a` | All |
+| Editing | `block-comment` | `Alt+Shift+Code:KeyA` | Apple |
+| Editing | `copy-line-down` | `Alt+Shift+ArrowDown` | All |
+| Editing | `copy-line-up` | `Alt+Shift+ArrowUp` | All |
+| Editing | `delete-backward` | `Backspace`, `Shift+Backspace` | All |
+| Editing | `delete-forward` | `Delete` | All |
+| Editing | `delete-lines` | `Mod+Shift+k` | All |
+| Editing | `delete-word-backward` | `Ctrl+Backspace`, `Ctrl+Shift+Backspace` | All |
+| Editing | `delete-word-backward` | `Alt+Backspace`, `Alt+Shift+Backspace` | Apple |
+| Editing | `delete-word-forward` | `Ctrl+Delete`, `Ctrl+Shift+Delete` | All |
+| Editing | `delete-word-forward` | `Alt+Delete`, `Alt+Shift+Delete` | Apple |
+| Editing | `go-to-line` | `Mod+g` | All |
+| Editing | `indent` | `Tab` | All |
+| Editing | `indent-lines` | `Mod+]` | All |
+| Editing | `insert-line-above` | `Mod+Shift+Enter` | All |
+| Editing | `insert-line-below` | `Mod+Enter` | All |
+| Editing | `jump-to-bracket` | `Mod+Shift+\` | All |
+| Editing | `line-comment` | `Mod+/` | All |
+| Editing | `move-down` | `ArrowDown` | All |
+| Editing | `move-left` | `ArrowLeft` | All |
+| Editing | `move-line-down` | `Alt+ArrowDown` | All |
+| Editing | `move-line-up` | `Alt+ArrowUp` | All |
+| Editing | `move-page-down` | `PageDown` | All |
+| Editing | `move-page-up` | `PageUp` | All |
+| Editing | `move-right` | `ArrowRight` | All |
+| Editing | `move-to-document-end` | `Mod+End` | All |
+| Editing | `move-to-document-end` | `Meta+ArrowDown` | Apple |
+| Editing | `move-to-document-start` | `Mod+Home` | All |
+| Editing | `move-to-document-start` | `Meta+ArrowUp` | Apple |
+| Editing | `move-to-line-end` | `End` | All |
+| Editing | `move-to-line-end` | `Meta+ArrowRight` | Apple |
+| Editing | `move-to-line-start` | `Home` | All |
+| Editing | `move-to-line-start` | `Meta+ArrowLeft` | Apple |
+| Editing | `move-up` | `ArrowUp` | All |
+| Editing | `move-word-backward` | `Ctrl+ArrowLeft` | All |
+| Editing | `move-word-backward` | `Alt+ArrowLeft` | Apple |
+| Editing | `move-word-forward` | `Ctrl+ArrowRight` | All |
+| Editing | `move-word-forward` | `Alt+ArrowRight` | Apple |
+| Editing | `newline` | `Enter`, `Shift+Enter` | All |
+| Editing | `outdent` | `Shift+Tab`, `Mod+[` | All |
+| Editing | `redo` | `Mod+Shift+z`, `Ctrl+y` | All |
+| Editing | `remove-line-comment` | `Mod+k Mod+u` | All |
+| Editing | `scroll-line-down` | `Ctrl+ArrowDown` | All |
+| Editing | `scroll-line-up` | `Ctrl+ArrowUp` | All |
+| Editing | `scroll-page-down` | `Alt+PageDown` | All |
+| Editing | `scroll-page-up` | `Alt+PageUp` | All |
+| Editing | `select-all` | `Mod+a` | All |
+| Editing | `select-all-occurrences` | `Mod+Shift+l` | All |
+| Editing | `select-down` | `Shift+ArrowDown` | All |
+| Editing | `select-left` | `Shift+ArrowLeft` | All |
+| Editing | `select-line` | `Mod+l` | All |
+| Editing | `select-next-occurrence` | `Mod+d` | All |
+| Editing | `select-page-down` | `Shift+PageDown` | All |
+| Editing | `select-page-up` | `Shift+PageUp` | All |
+| Editing | `select-right` | `Shift+ArrowRight` | All |
+| Editing | `select-to-document-end` | `Mod+Shift+End` | All |
+| Editing | `select-to-document-end` | `Meta+Shift+ArrowDown` | Apple |
+| Editing | `select-to-document-start` | `Mod+Shift+Home` | All |
+| Editing | `select-to-document-start` | `Meta+Shift+ArrowUp` | Apple |
+| Editing | `select-to-line-end` | `Shift+End` | All |
+| Editing | `select-to-line-end` | `Meta+Shift+ArrowRight` | Apple |
+| Editing | `select-to-line-start` | `Shift+Home` | All |
+| Editing | `select-to-line-start` | `Meta+Shift+ArrowLeft` | Apple |
+| Editing | `select-up` | `Shift+ArrowUp` | All |
+| Editing | `select-word-backward` | `Ctrl+Shift+ArrowLeft` | All |
+| Editing | `select-word-backward` | `Alt+Shift+ArrowLeft` | Apple |
+| Editing | `select-word-forward` | `Ctrl+Shift+ArrowRight` | All |
+| Editing | `select-word-forward` | `Alt+Shift+ArrowRight` | Apple |
+| Editing | `undo` | `Mod+z` | All |
+| Editing | `undo-caret` | `Mod+u` | All |
+| Find | `find.close` | `Escape` | All |
+| Find | `find.insertLineBreak` | `Mod+Enter` | All |
+| Find | `find.next` | `F3` | All |
+| Find | `find.open` | `Mod+f` | All |
+| Find | `find.previous` | `Shift+F3` | All |
+| Find | `find.query.next` | `Enter` | All |
+| Find | `find.query.previous` | `Shift+Enter` | All |
+| Find | `find.replace` | `Mod+h` | All |
+| Find | `find.replaceAll` | `Ctrl+Alt+Enter` | All |
+| Find | `find.replaceCurrent` | `Enter` | All |
+| Find | `find.toolbar.close` | `Escape` | All |
+| Folding | `fold.collapse` | `Mod+Shift+[` | All |
+| Folding | `fold.expand` | `Mod+Shift+]` | All |
+| General | `locations.definition` | `F12` | All |
+| General | `locations.dismiss` | `Escape` | All |
+| General | `locations.next` | `ArrowDown` | All |
+| General | `locations.open` | `Enter` | All |
+| General | `locations.pageDown` | `PageDown` | All |
+| General | `locations.pageUp` | `PageUp` | All |
+| General | `locations.previous` | `ArrowUp` | All |
+| General | `locations.references` | `Shift+F12` | All |
+| Hover | `hover.dismiss` | `Escape` | All |
+| Hover | `hover.inspect` | `Mod+k Mod+i` | All |
+| Rename | `rename.dismiss` | `Escape` | All |
+| Rename | `rename.preview` | `Mod+Enter` | All |
+| Rename | `rename.start` | `F2` | All |
+| Rename | `rename.submit` | `Enter` | All |
+| Signature help | `signature.dismiss` | `Escape` | All |
+| Signature help | `signature.next` | `ArrowDown` | All |
+| Signature help | `signature.previous` | `ArrowUp` | All |
+| Signature help | `signature.request` | `Mod+Shift+Space` | All |
+
+<!-- end default shortcuts -->
 
 ## Host responsibilities
 
