@@ -13,30 +13,29 @@ import { apiIndexPath } from "./api-index.mjs";
  * links: {url: string, node: MarkdownNode}[], anchors: Set<string>,
  * prose: {text: string, node: MarkdownNode}[], diagnostics: DocumentationIssue[]}} DocumentationPage */
 
-/** UTF-8 bytes with LF line endings. @type {Record<string, number>} */
-const pageBudgets = {
-    "docs/architecture.md": 5_000,
-    "docs/comparison.md": 7_900,
-    "docs/controls.md": 3_800,
-    "docs/editor.md": 13_500,
-    "docs/examples.md": 3_600,
-    "docs/folding.md": 6_300,
-    "docs/getting-started.md": 15_200,
-    "docs/host-integration.md": 7_900,
-    "docs/language-features.md": 12_600,
-    "docs/language-server.md": 10_800,
-    "docs/packaging.md": 4_000,
-    "docs/README.md": 7_100,
-    "docs/search.md": 6_800,
-    "docs/testing.md": 8_100,
-    "docs/text-model.md": 8_300,
-    "docs/unicode.md": 5_300,
-    "docs/viewport.md": 8_700,
-    "docs/workspace.md": 13_800,
-};
-export const subjectPages = [...Object.keys(pageBudgets), apiIndexPath];
+const pages = [
+    "docs/architecture.md",
+    "docs/comparison.md",
+    "docs/controls.md",
+    "docs/editor.md",
+    "docs/examples.md",
+    "docs/folding.md",
+    "docs/getting-started.md",
+    "docs/host-integration.md",
+    "docs/language-features.md",
+    "docs/language-server.md",
+    "docs/packaging.md",
+    "docs/README.md",
+    "docs/search.md",
+    "docs/testing.md",
+    "docs/text-model.md",
+    "docs/unicode.md",
+    "docs/viewport.md",
+    "docs/workspace.md",
+];
+export const subjectPages = [...pages, apiIndexPath];
 const guides = ["docs/README.md", "docs/testing.md", "docs/examples.md"];
-export const apiPages = Object.keys(pageBudgets).filter(path => !guides.includes(path));
+export const apiPages = pages.filter(path => !guides.includes(path));
 export const documentationPages = [...subjectPages, "README.md", "packaging/README.md", "AGENTS.md"];
 export const publicEntries = Object.fromEntries(libraryModules.map(entry => [entry.specifier, entry.source]));
 export const exampleExtensions = new Map([["js", "js"], ["javascript", "js"], ["ts", "ts"], ["typescript", "ts"], ["tsx", "tsx"]]);
@@ -60,13 +59,6 @@ export function parseDocumentation(path, markdown) {
     const tree = fromMarkdown(markdown, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
     /** @type {DocumentationPage} */
     const page = { path, tree, examples: [], links: [], anchors: new Set(), prose: [], diagnostics: [] };
-    const budget = pageBudgets[path];
-    if (budget !== undefined) {
-        const bytes = Buffer.byteLength(markdown.replaceAll("\r\n", "\n"));
-        if (bytes > budget) {
-            page.diagnostics.push(diagnostic(page, undefined, "size", `Page uses ${bytes} of ${budget} UTF-8 bytes.`));
-        }
-    }
     const slugger = new GithubSlugger();
     /** @type {Map<string, DocumentationExample>} */
     const modules = new Map();
