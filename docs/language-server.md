@@ -1,16 +1,13 @@
 # Language server
 
-Use `BrowserLspWorkspace` to share one language-server connection across editor views. The client handles
-document synchronization and validates replies. You choose the endpoint, authorize access and show the
-results. The WebSocket transport carries [JSON-RPC 2.0](https://www.jsonrpc.org/specification) text
-messages. The client supports the
-[LSP 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
-subset below with UTF-16 positions.
+`BrowserLspWorkspace` shares a language-server connection across editor views. It sends incremental
+edits and validates replies. The supported subset uses UTF-16 positions and ordered WebSocket text
+messages. [LSP 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) · [JSON-RPC 2.0](https://www.jsonrpc.org/specification)
 
 ## Use
 
-Create one provider per workspace and provider configuration. Set the URI and language ID on each participating
-[text resource](workspace.md#identities-and-snapshots). Obtain fresh settings and credentials for each connection attempt.
+Create one provider per workspace and server configuration. Give each participating document a URI
+and language ID. Fetch credentials on each connection attempt. [Text resources](workspace.md#identities-and-snapshots)
 
 ```ts
 import type { Workspace } from "sttropez";
@@ -37,7 +34,7 @@ export function createLanguageProvider(
 }
 ```
 
-Mount the controllers your host uses, then connect. This example advertises completion.
+Attach the features a pane uses. This example connects completion explicitly.
 
 ```ts
 import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
@@ -54,13 +51,12 @@ export function attachLanguage(
 }
 ```
 
-Subscribe with `language.completion.subscribe()` and read `language.completion.getSnapshot()` to update your UI. Wire Retry
-to `provider.connect()` or `provider.reconnect()` and handle a rejected promise. On detach, call
-`language.dispose()`. Dispose the editor separately. Release the clients before their provider.
+For a custom completion list, subscribe to `language.completion` and read its snapshot.
+Dispose the attachment and editor on unmount, and the provider after its last client.
 [Feature commands](language-features.md) · [Embedding an editor](getting-started.md)
 
-Custom handlers validate their own messages. This reader authorizes and captures the resource before
-loading it, then checks the capture before replying.
+A custom handler validates its input. Here `read` authorizes the resource before loading it.
+Both the resource and the request must remain current.
 
 ```ts
 import {
@@ -91,109 +87,70 @@ export function registerResourceContext(
 }
 ```
 
-Send custom messages through a provider scope. `scope.request(method, params)` returns a call with
-`result` and `cancel()`. Use `scope.notify()` for one-way messages and `onRequest` or `onNotification` to receive them.
-Registrations survive reconnects. Pending calls expire. Use the removal function or dispose the
-scope to unregister. Lifecycle, synchronization and reserved methods cannot be overridden.
+Send a custom request with `scope.request(method, params)`. Its handle exposes `result` and `cancel()`.
+Use `notify` for one-way messages and `onRequest` or `onNotification` to receive them. Registration
+survives reconnect. Use the returned removal function or dispose the scope to unregister. The client
+reserves lifecycle and synchronization methods.
 
 ## Contract
 
 ### Transport and session
 
-The session advertises all supported request methods and pushed diagnostics at initialization.
-Controllers created after connection can use any method the server has enabled. Set `features`
-to an explicit subset or `diagnostics: false` to omit pushed diagnostics. Each connection reports
-the advertised methods in `getSnapshot().clientFeatures`. Disposing a pane releases its requests
-and document bindings.
+`BrowserLspWorkspace` gives each connection factory a fresh `AbortSignal`. Pass it through credential
+lookup and `openWebSocketTransport`. Disconnect, disposal and the opening deadline abort the factory.
+The workspace closes a transport that arrives late. For a headless `LspWorkspace` supply a scheduler
+that defers even zero-delay callbacks and returns a cancellation function.
 
-The host controls workspace edits, incoming writes, command invocation, Markdown presentation and URI access.
+Send one JSON value per WebSocket text message without `Content-Length` framing. Binary input
+closes the socket with code 4003, overflow with 4009. Disposal rejects a pending open and closes
+the socket. Optional `preProtocolMessage` queues raw text once on open, under the same limits.
+An empty string sends an empty message. Handle authentication replies in the factory.
 
-`BrowserLspWorkspace` opens a connection on demand. Each opening gets a fresh `AbortSignal`.
-Pass it to credential lookup and transport startup. Disconnect, disposal and the opening deadline
-abort a pending factory. The workspace disposes a transport that arrives late. Browser timers
-schedule deferred work. A custom `schedule` must also defer zero-delay callbacks and return a
-cancellation function. The headless `LspWorkspace` takes an explicit scheduler and a protocol
-cancellation context.
+| Provider operation | Effect |
+| --- | --- |
+| `connect()` | Initializes the server, checks its position encoding, sends `initialized` and synchronizes eligible files. Concurrent openings share the attempt. |
+| `disconnect()` | Closes the connection. Pending calls expire. Local bindings and scopes survive. |
+| `reconnect()` | Opens a fresh connection with the current document text. A Retry control can call this or call `connect()` after disconnect. Handle a rejected attempt. |
+| `shutdown()` | Synchronizes workspace bindings and sends shutdown/exit on a ready connection. During shutdown new requests are refused. Failure closes that connection. Edits made while stopping join the next connection. |
+| `dispose()` | Closes the connection and releases the provider's scopes, pending work and bindings. |
 
-`openWebSocketTransport` opens a browser `RpcTransport` with cancellation and a deadline. Send one
-JSON value per ordered text message, without `Content-Length` headers. Binary messages close the
-socket with `4003`, message or buffer overflow with `4009`. Disposal removes listeners, rejects a
-pending open and requests closure. Even if the browser finishes the handshake, a disposed session
-cannot initialize. Importing the module opens no socket.
+For direct buffers, give `LspSession` in `sttropez/kernels` a transport factory and scheduler.
+Update each `bindDocument` handle by expected revision. Close it before reusing its URI.
 
-`preProtocolMessage` sends raw text once after open and before the transport promise resolves. Omit
-it to send nothing. An empty string sends an empty message. The adapter captures and validates it
-before opening the socket and applies the usual send limits. Success means the send was queued. Put
-any authentication reply or further handshake in the host connection factory.
+`JsonRpcConnection` owns its transport and handles requests in both directions, notifications and
+batches. It accepts string, safe-integer and null IDs, ignores late successes and reports unmatched
+errors to `onError`. Cancellation rejects the call and releases its deadline even if
+`notifyCancellation` suppresses the outgoing message. A throwing policy reports to `onError`.
 
-`JsonRpcConnection` from `sttropez/kernels` handles requests in both directions, notifications, bounded batches, cancellation
-and deadlines. Each call has an ID, a result promise and `cancel()`. The connection accepts string,
-null and safe-integer IDs. A notification gets no reply. A late success is ignored. An error with no
-matching call goes to `onError`.
-
-Raw `request`, `requestDocument` and `requestCommand` calls return immutable `JsonValue` snapshots,
-including on session and workspace scopes. Validate the result for the method you called. A feature
-client does this in its decoder. A generic type argument cannot supply that check.
-
-Remove a handler with its removal function. The connection owns its transport from construction and
-closes it even if validation or subscription fails. Disposing the connection also releases pending
-calls and deadlines. If `notifyCancellation` suppresses a cancellation message, the call rejects
-locally and releases its deadline. If the policy throws, `onError` receives the error and the
-connection skips the message.
-
-`RpcError` carries a numeric protocol `code`, message and optional JSON `data`. Remote error
-responses reject their calls with this error; request handlers can throw it to supply a
-structured error response. Cancellation, expiry and transport failures also reject pending
-work, so callers must handle rejected results and release their captured intent.
-
-`ProtocolDecodeError` means the provider sent malformed or unsupported data, including initialization
-capabilities or feature results. Completion counts it as an invalid reply. Errors in host callbacks,
-configuration and local edit planning keep their original types. `RpcError` carries the codes for
-cancellation and expired captures.
-
-If you don’t use a `Workspace`, create an `LspSession` from `sttropez/kernels` with a connection factory and scheduler. Pass
-immutable buffers to `bindDocument`. Keep the returned handles to submit expected-revision updates and
-to close bindings. Close a binding before reusing its URI. An old handle cannot update the new
-document.
-
-`connect()` sends `initialize`, checks the negotiated UTF-16 encoding, sends `initialized` and
-synchronizes eligible documents. To change connections but keep local bindings, call `disconnect()`.
-To release the session, call `dispose()`. `LspWorkspace.dispose()` closes its connection directly.
-
-For an orderly stop, call `LspSession.shutdown()` or `LspWorkspace.shutdown()` on a ready connection.
-The workspace first synchronizes its participating documents. During shutdown/exit the client
-refuses new requests and settles cancellations locally. Failure closes only the connection being
-stopped. Local bindings and scopes survive. On reconnect, the new connection picks up edits made
-during shutdown.
+Raw `request`, `requestDocument` and `requestCommand` results are immutable `JsonValue` snapshots.
+Validate custom results for their method. The feature clients supply their own decoders.
+`ProtocolDecodeError` identifies malformed or unsupported provider data. `RpcError` carries a protocol
+code, message and optional JSON `data`. Handlers can throw it to return a structured error.
+Handle cancellation, expiry and transport rejection. Host callback and local planning errors keep
+their original types.
 
 ### Feature capability queries
 
-`queryFeatureOptions(method, document)` returns immutable matching static and dynamic options. It
-uses the same selectors, URI mapping, connection and synchronization checks as a request.
-Disconnected, disposed, unmapped or failed bindings yield no options. Mapping errors propagate.
+By default `initialize` advertises the supported methods and pushed diagnostics. Use `features`
+to restrict methods or `diagnostics: false` to omit diagnostics. Read the advertised set in
+`getSnapshot().clientFeatures`. A pane can attach a controller after negotiation.
 
-Pass a current `DocumentSnapshot` to `LspWorkspace`, matching resource, revision and buffer. For
-`LspSession`, pass `{ uri, languageId }`. Querying options only reads metadata. Obtain a current
-synchronized capture before issuing a request.
+`canRequest` checks static capabilities and matching registrations. `queryFeatureOptions(method, document)` returns their immutable options. On a workspace pass the current `DocumentSnapshot`
+(resource, revision and buffer). On a session pass `{ uri, languageId }`. A disconnected, disposed,
+unmapped or failed binding yields no options. Mapping errors propagate. Querying reads metadata.
+Use `requestDocument` for a synchronized request. Prepare-rename requires a matching rename
+provider with `prepareProvider: true`.
 
 ### Workspace ownership and synchronization
 
-Create a scope with `LspWorkspace.createScope()`. Use `attachDocument(id)` for one document or
-`setDocuments(snapshots)` for a project. Multiple views of a file share one workspace lease, observer,
-protocol binding and stream of wire versions. Dispose the `LspDocument` to withdraw that participant.
-After the last participant leaves, the client closes the binding and releases the lease after
-notification delivery. Keep a project scope if closed panes should contribute files to rename or
-navigation.
+Use `createScope()` and `attachDocument(id)` for one document or `setDocuments(snapshots)` for a
+project. Views of the same file share its lease, observer, binding and wire versions. Disposing the
+last participant closes the binding and releases the lease after notification delivery. Keep a project
+scope open if closed panes should participate in rename or navigation.
 
-Feature preparation receives `LspScopeAccess` to flush its captured documents, read advertised
-command names or send a custom request. Cancelling that read cancels its pending custom requests.
-Use `scope.ensureConnected()` on a workspace scope to start or join the shared connection.
-`scope.cancel()` expires the scope’s requests and results but keeps bindings and handlers.
-`scope.dispose()` also releases the handlers and document participation and is safe to repeat. Use the
-owner to `disconnect()`, `reconnect()` or `shutdown()` the shared connection. Disposing the owner
-closes every scope.
-
-Keep the project scope open when restarting its provider.
+`scope.ensureConnected()` starts or joins a connection. `scope.cancel()` expires requests and results.
+`scope.dispose()` also releases handlers and documents. The provider owns disconnect and shutdown.
+This project keeps its binding across a restart.
 
 ```ts
 import type { DocumentId } from "sttropez";
@@ -212,186 +169,136 @@ export async function reconnectProject(provider: LspWorkspace, document: Documen
 }
 ```
 
-Use `scope.captureBinding(binding)` to track a synchronized document without adding another
-participant. The immutable `LspBindingCapture` exposes the captured binding as `document`.
-`getSnapshot()` reads the current local Core snapshot, even with edits waiting to be sent. Local
-revisions and scope request cancellation preserve the capture. After URI replacement, binding
-closure, a connection or registration change, or scope disposal, the getter returns `undefined`. Pass a
-method as the second argument to track only its registrations and document synchronization.
+The binding uses the exact URI and language ID in `DocumentSnapshot.language`. Files without that
+pair stay local. Changing either field expires the binding and its replies immediately. Attach again
+to open the new identity. Local revisions, document IDs, resource IDs and wire versions are separate.
+Wire versions increase across opens and changes on one connection, including URI reuse.
 
-A live binding alone cannot tell you whether completion offsets fit. To keep a completion across
-typing, also check the operation and map the edit. Ordinary request captures check the revision
-and the scope’s request.
+A document needs both open/close and incremental-change support through static or matching dynamic
+capabilities. Losing coverage closes the remote copy. Regaining it sends current full text. A local
+edit expires request captures immediately and queues that file for synchronization after transaction
+delivery. Connection or capability changes reconcile all participating files.
 
-The provider uses the exact URI and language ID in `DocumentSnapshot.language`. A document with
-no pair stays outside the provider. Changing either field expires existing bindings and replies
-immediately. Attach the document again to open its new identity. Local revision, resource and
-document IDs, and wire version are separate. Opens and changes get increasing wire versions across
-the connection, including when another document takes over the same URI. Local edits expire captures
-immediately. The provider synchronizes them after workspace transaction delivery. Ordinary edits queue only
-the changed document. Capability and connection changes reconcile the participating bindings.
+Workspace bindings consume `DocumentChange.edits`. Direct bindings accept previous-revision edits in
+`document.update(expectedRevision, revision, buffer, edits)`. Sparse edits use descending ranges.
+Dense changes or missing edit history can use one spanning range. If encoding exceeds a local limit,
+the client tries the other representation when available. A transport failure makes delivery
+uncertain and stops retries.
 
-The client opens a document only when static or matching dynamic capabilities cover both open/close
-and incremental change. Losing that coverage closes the remote copy. Regaining it sends the current
-full text. Workspace bindings use `DocumentChange.edits`. A direct session binding accepts the
-same previous-revision edits in `document.update(expectedRevision, revision, buffer, edits)`.
-Small, sparse batches use separate ranges in descending offset order. For large or dense batches,
-the client can send one range spanning the edits. It also uses one range when it lacks usable edits
-for the previous wire version. If local encoding exceeds a configured limit, the client tries the
-other representation when available. A transport failure leaves delivery uncertain and stops retries.
+| Operation | What it establishes |
+| --- | --- |
+| `flush(handles)` | Waits for those captured changes to reach the wire. A revision, binding or synchronization-capability change rejects the wait. Server analysis may finish later. |
+| `synchronized(handle)` | Returns the sent snapshot, index and version, or `undefined`. |
+| `captureProject()` | Collects synchronized captures by URI for the scope. |
+| `requestDocument` | Flushes the document, supplies its URI and captures its revision, binding, connection and relevant registrations. Unrelated registrations can change. `scope.isDocumentCurrent` observes local changes before synchronization. |
+| `scope.captureBinding(binding, method?)` | Tracks a synchronized binding without joining it. Its `getSnapshot()` reads local text across typing and scope cancellation. It returns `undefined` after closure, replacement, reconnect, relevant registration changes or scope disposal. |
+| `isBindingCurrent` | Checks binding identity across revisions. Reusing a text range after typing also requires checking the operation and mapping the range. |
 
-`LspLineIndex.create(buffer, cooperate)` builds an immutable UTF-16 position index. `at`
-rejects invalid offsets; `offsetAt` rejects malformed positions, clamps oversized characters to
-the line's content end and maps lines beyond the document to EOF. `change` returns a replacement
-index and incremental changes without mutating the original. The caller supplies cooperative
-scheduling for construction and change planning.
-
-The index preserves raw LF, CRLF and bare-CR text. CRLF interiors have no unambiguous protocol
-position and are refused; generated change boundaries expand across the pair. LF metadata is
-reused and changed regions are scanned. Dense bare-CR indexes can require linear copying.
-Synchronization planning yields after its time/checkpoint budget; encoding, allocation and server
-analysis have separate costs. The [measurement glossary](README.md#glossary) defines latency terms.
-
-`flush()` waits for changes to reach the wire. Server analysis can finish later. Pass document handles
-to wait for specific captures in a session or scope. A revision, binding or synchronization capability change rejects
-that wait. Feature clients use it to skip unrelated files. `synchronized(handle)` returns the sent
-snapshot, index and version, or `undefined`. `captureProject()` returns the scope’s synchronized URI
-captures.
-
-`requestDocument` waits for synchronization, supplies the bound URI and captures the binding,
-revision, connection epoch and registrations for that method and document synchronization. Other
-methods can be registered or withdrawn while a request is in flight or its result is displayed. Its immutable
-JSON result needs a feature decoder before presentation. `scope.isDocumentCurrent` also observes
-workspace edits before deferred binding synchronization. `isBindingCurrent` allows revision changes
-and does not establish range freshness. No capture or syntax cache grants edit authority.
-
-Sessions with rename enabled advertise `prepareSupport`. A captured `requestDocument("textDocument/prepareRename", …)`
-requires a matching rename provider with `prepareProvider: true`, including providers registered for a document selector.
+`LspLineIndex.create(buffer, cooperate)` preserves LF, CRLF and bare CR. `at` rejects invalid
+offsets, including the interior of CRLF. `offsetAt` rejects malformed positions, clamps columns to
+line end and maps lines beyond EOF to EOF. `change` produces a new index and edits with boundaries
+outside CRLF pairs. Indexing and change planning yield. Dense bare-CR indexes can require linear copying.
+[Measurement glossary](README.md#glossary)
 
 ### Capabilities and supported subset
 
-`canRequest` checks the enabled methods against static and matching dynamic capabilities. Registration
-and unregistration validate the entire batch, including unique IDs and exact methods.
+Dynamic registration and unregistration validate the whole batch, including unique IDs and exact
+methods. Selectors match language, URI scheme and path. Globs support `*`, `?`, `**`, `**/`,
+brace alternatives, ranges, negated classes and escaped literals. Matching is bounded and
+case-sensitive by default. It decodes paths, preserves invalid percent escapes and leaves the URI
+itself unchanged. Supply `pathForUri` to customize the path. Rebind or reconnect if its mapping changes.
 
-Selectors can match language, scheme and a path glob (`*`, `?`, `**`, `**/`, brace alternatives,
-ranges, negated classes or escaped literals). Matching uses bounded dynamic programming and rejects
-unsupported forms. By default it decodes the URI path, keeps invalid percent escapes literal and
-matches case sensitively. The URI itself stays unchanged. Supply `pathForUri` for another policy. If
-it changes, rebind the document or reconnect.
-
-| Area | Contract and detailed owner |
+| Area | Supported behavior |
 | --- | --- |
-| Lifecycle and synchronization | Initialize/initialized, UTF-16 negotiation, incremental open/change/close, cancellation, dynamic registration and explicit reconnect |
-| Diagnostics and completion | Versioned or explicitly uncertain [diagnostics](language-features.md#diagnostics), complete result validation, filtering, lazy resolution, supported snippets and captured [completion](language-features.md#completion) |
-| Hover and navigation | Format-preserving hover, definitions and references, captured target loading/reveal; [navigation](language-features.md#navigation-and-target-loading) and [documentation rendering](language-features.md#hover-and-documentation) |
-| Rename and workspace text edits | Whole-batch URI/range/version validation, previews and atomic shared history; [rename/edit forms](language-features.md#rename-and-workspace-edits) |
-| Code actions | Literals/commands, disabled/preferred choices, lazy edit resolution and authorized command phases; [actions](language-features.md#code-actions-and-commands) |
-| Workspace commands and server edits | Advertised commands or exact host grants, one captured command lane, explicit incoming-edit decisions; [server edits](language-features.md#code-actions-and-commands) |
-| Signature, links and colors | Captured signature context, link discovery/resolution, color discovery/presentations and host application; [language features](language-features.md) |
-| Folding and occurrences | Whole-line folding with kind groups; text/read/write occurrence ranges and visible-row queries; [folding](folding.md) and [occurrences](language-features.md#occurrences) |
-| Extensions | Host-defined URI mapping, removable custom handlers and host-supplied connection/preparation policies |
+| Lifecycle and synchronization | Initialization, UTF-16 negotiation, incremental open/change/close, cancellation, dynamic registration and explicit reconnect |
+| Diagnostics and completion | Versioned or uncertain diagnostics, completion filtering, lazy resolution and supported snippets. [Diagnostics](language-features.md#diagnostics) · [Completion](language-features.md#completion) |
+| Hover and navigation | Format-preserving hover, definitions, references and captured target loading. [Hover](language-features.md#hover-and-documentation) · [Navigation](language-features.md#navigation-and-target-loading) |
+| Rename and workspace text edits | URI, range and version validation for the whole edit, previews and atomic shared history. [Rename and edits](language-features.md#rename-and-workspace-edits) |
+| Code actions | Literals and commands, disabled and preferred choices, lazy edit resolution and authorized commands. [Code actions](language-features.md#code-actions-and-commands) |
+| Workspace commands and server edits | Advertised commands, exact host grants and review of incoming edits. [Command decisions](#commands-and-edit-decisions) |
+| Signature, links and colors | Signature context, link discovery and resolution, colors and color presentations. [Feature controls](language-features.md) |
+| Folding and occurrences | Whole-line folds grouped by kind, text/read/write occurrences and visible-row queries. [Folding](folding.md) · [Occurrences](language-features.md#occurrences) |
+| Extensions | Host-defined URIs, removable custom handlers, connection settings and request preparation |
 
-A new feature request expires the previous result even if the text is unchanged. Cancelling settles
-the request immediately, including a wait for host preparation. Host code may finish later. The client
-ignores its reply, releases loaded targets and keeps synchronization bindings. Participation ends when
-the next project omits the file, the client or host closes it, or a request fails. Releasing a
-completed wire call leaves later calls alone.
-
-Target lookup starts in the captured project. Supply `resolveTarget` to authorize a missing URI and return its document or read-only contents.
-The provider retains the resource and checks its identity after loading. See [target loading](language-features.md#navigation-and-target-loading).
+A new feature request expires its previous result. Preparation receives `LspScopeAccess` to flush
+documents, read command names and make custom requests. Cancelling also cancels those requests and
+releases loaded targets. Supply `resolveTarget` to authorize and load a URI outside the captured
+project. The provider rechecks its identity after loading. [Target loading](language-features.md#navigation-and-target-loading)
 
 ### Commands and edit decisions
 
-The client advertises `workspace/executeCommand` by default. `provider.commandNames()` returns
-static and dynamically registered commands when ready and an empty list otherwise. Clear a host
-command menu on disconnect or when the snapshot’s `registrationVersion("workspace/executeCommand")`
-changes. Ask the user to choose again from the new list.
+Build the menu from `provider.commandNames()` when `getSnapshot().commandAvailable` is true.
+Discard choices on disconnect, loss of availability or a change in
+`registrationVersion("workspace/executeCommand")`. Ask for a fresh choice from the new list.
 
-To accept incoming edits, set `applyEdit: true` and install a `workspace/applyEdit` handler
-before connecting. The workspace owner routes each edit to the command that reserved the connection.
-Use `createLspCommandRunner(scope)` with captured project snapshots, `isCurrent`, optional preparation
-and an explicit asynchronous review callback. Use `run` for advertised commands or `runAuthorized`
-with a host-approved exact invocation route. Advertisement alone does not authorize execution.
+Set `workspaceEdits: true` to advertise transactional text edits. To receive `workspace/applyEdit`
+during a command, set `applyEdit: true`, which also enables workspace edits. `BrowserLspWorkspace`
+and `LspWorkspace` install the request handler and route edits to the active command. Supply
+`reviewCommandEdit` on the editor feature that runs it. A bare `LspSession` requires its own
+`workspace/applyEdit` handler before `connect()`. [Reviewing command edits](language-features.md#code-actions-and-commands)
 
-Use `runner.sync(scope, prepare)` for a custom provider request that needs synchronized documents.
-The runner checks the project and its established connection before synchronization, before calling
-`prepare` and after it returns. A failed check reports LSP `ContentModified`.
+For headless review, use `createLspCommandRunner(scope)`. Supply project snapshots, `isCurrent`
+and an asynchronous `review` callback. Use `run` for advertised commands and `runAuthorized`
+for an exact host-approved route.
+Both copy the arguments and reserve the connection for one command before preparation. Only its
+incoming edits are eligible for review. Overlapping and unsolicited edits are refused. Local routes
+use their captured `applyEdit` callback. Check target identities, revisions and permissions before
+approval. Resolve targets outside the captured project even if another feature has them open.
+[Workspace edit previews](language-features.md#rename-and-workspace-edits)
 
-For `run` and `runAuthorized`, the runner copies the arguments and reserves the shared command
-lane. A competing command or a lane waiting for reconnect cannot apply a preparation edit. Only the
-active server command receives incoming edit requests. The runner refuses unsolicited or overlapping
-requests. Host command handlers use their captured `applyEdit` callback under the same checks. Before
-each approval, recheck the request, target identities and revisions, and host permissions.
-A headless review callback can commit the [approved workspace edit](language-features.md#rename-and-workspace-edits).
-An edit outside the command’s captured project requires host target resolution, even if another
-feature has the file open.
+Use `runner.sync(scope, prepare)` for a custom request that needs synchronized documents. It
+rechecks the project and established connection before synchronization and around `prepare`.
+A stale capture reports `ContentModified`. For raw commands, `scope.requestCommand` reserves the
+connection. To review edits, use `scope.reserveCommand(handler)`, send through its `requestCommand`
+and `release()` in `finally`. For an authorized status command whose server guarantees it sends no
+edits, `scope.request("workspace/executeCommand", { command, arguments: [] })` can poll independently.
+Validate its result. A timeout on this path leaves the edit reservation alone.
 
-`scope.requestCommand` also reserves this session-wide lane. To handle edits on a raw command,
-call `scope.reserveCommand(handler)`, send through its `requestCommand`, and `release()` it in
-a `finally` block. For a host-defined status command
-whose server contract guarantees it never sends `workspace/applyEdit`, a host can poll with
-`scope.request("workspace/executeCommand", { command, arguments: [] })`. The host validates the
-command and reply. If the poll times out, the edit lane keeps its current state.
-
-See [workspace-edit previews](language-features.md#rename-and-workspace-edits) and
-[applying a code action](language-features.md#code-actions-and-commands).
-
-If you cancel before the server command is sent, the next command can use the lane immediately. After
-sending, a cancellation, timeout or capability change can leave a late `workspace/applyEdit` with no
-command ID to identify it. The runner then holds the lane until reconnect. Read `commandAvailable` and
-`commandRequiresReconnect` to decide which control to show. Reading and typing work. A host-only
-command that never contacts the server can fail or cancel without holding the lane. Reconnect never
-replays a command or an edit. If the acknowledgement is lost after an edit, the edit stays in history.
+Cancellation before sending releases the reservation immediately. After sending, cancellation, expiry
+or a capability change may leave an unacknowledged command. A late edit carries no command ID.
+The workspace then sets `commandRequiresReconnect` even while its phase is `ready`. Keep reading and
+typing available, disable execution and offer `provider.reconnect()`. After reconnect, execute only
+a fresh choice. Committed edits stay in Undo history even if their acknowledgement is lost.
 
 ### Limits and failures
 
-Sizes below use UTF-16 code units unless marked as bytes. Configure compatible document, RPC,
-WebSocket and server limits: JSON escaping can exceed a wire budget even when raw text fits.
+Sizes count UTF-16 units except where marked. Allow for JSON escaping in wire budgets.
 
 | Boundary | Default or fixed limit |
 | --- | --- |
-| Session documents | 100; configurable `maxDocuments` |
-| Bound text | 3 Mi units/document, 16 Mi total; configurable `maxDocumentUnits`/`maxTotalUnits` |
-| Workspace feature scopes | 128; configurable `maxScopes` |
-| Dynamic registrations | 128, 64 Ki option units each, 1 Mi aggregate |
+| Session documents | 100 (`maxDocuments`) |
+| Bound text | 3 Mi units per document, 16 Mi total (`maxDocumentUnits` and `maxTotalUnits`) |
+| Workspace scopes | 128 (`maxScopes`) |
+| Dynamic registrations | 128 registrations, 64 Ki option units each, 1 Mi aggregate |
 | Synchronization waits | 128 |
-| RPC pending calls | 64 outgoing and 64 incoming; configurable `rpc.maxPending`; queued document calls share the outgoing bound |
-| RPC request / opening deadline | 15 seconds by default; command runner requests use 120 seconds |
-| RPC / WebSocket message | 4 Mi units; separately configurable `rpc.maxMessageUnits` / transport `maxMessageUnits` |
-| Complete wire JSON | 64 nesting levels; `rpc.maxJsonNodes` values, defaulting to `rpc.maxMessageUnits` |
+| Pending RPC calls | 64 outgoing and 64 incoming (`rpc.maxPending`). Queued document calls share the outgoing limit. |
+| RPC request / opening deadline | 15 seconds by default. Command runner requests use 120 seconds. |
+| RPC / WebSocket message | 4 Mi units each (`rpc.maxMessageUnits` and transport `maxMessageUnits`) |
+| Wire JSON | 64 nesting levels. `rpc.maxJsonNodes` defaults to `rpc.maxMessageUnits`. |
 | RPC batches | 128 elements |
-| Host JSON snapshots | 100,000 values; finite plain JSON without accessors |
-| WebSocket queued output | 16 MiB conservative UTF-8 estimate; configurable `maxBufferedBytes` |
-| Selectors | 32 filters, 256 units/pattern, 16 expanded alternatives/1,024 aggregate units, 4,096-unit path |
-| Commands | 128 names/static provider or registration, 256-unit names, 256-name combined union, 8,192 JSON units/argument array |
-| Document synchronization and unopened-target indexing | Yield after 4 ms or 32 checkpoints. The optional `now` clock defaults to `Date.now`. |
+| Host JSON snapshots | 100,000 finite plain JSON values, without accessors |
+| WebSocket queued output | 16 MiB estimated UTF-8 (`maxBufferedBytes`) |
+| Selectors | 32 filters, 256 units per pattern, 16 expanded alternatives totaling at most 1,024 units, 4,096-unit path |
+| Commands | 128 names per provider or registration, 256-unit names, 256 distinct names combined, 8,192 JSON units per argument array |
+| Synchronization and unopened-target indexing | Yield after 4 ms or 32 checkpoints. The optional `now` clock defaults to `Date.now`. |
 
-Synchronization shares this budget across queued files. The browser can process input between file
-opens, including when each file fits in a single scan chunk. Encoding and sending one message are synchronous.
+Synchronization shares its scheduling budget across queued files. Encoding and sending one message
+are synchronous. Transport or batch-count overflow closes the connection. An oversized response
+rejects the identified call. A rejected batch settles its identified calls together. Other calls
+continue. The codec copies and validates host JSON, including frozen objects, and normalizes
+negative zero.
 
-Transport or batch-count overflow closes the connection. An oversized response rejects the identified
-call and releases its deadline. A rejected batch rejects its identified calls together. Other calls
-continue. The client can reuse frozen JSON it validated itself. It checks and copies all host JSON,
-even frozen objects, and normalizes negative zero as JSON does. Decoding rechecks captures, versions,
-bounds and overlap.
-
-If encoding a document or matching its selector fails, the client closes that remote document and
-calls `onError`. Other files stay usable. Requests for the failed capture reject with that error. A
-corrected revision, synchronization capability change or reconnect lets the binding synchronize again. After a failed
-connection or disconnect, call `connect()` or `reconnect()` from your Retry control. Repeating a
-feature request won’t reconnect. Cleanup continues even if a deferred release or cancellation reports
-an error to `onError`.
+A document encoding or selector failure closes the remote copy and reports to `onError`. Requests
+for that capture reject. Other files remain usable. A corrected revision, a synchronization
+capability change or reconnect lets that binding synchronize again.
 
 ## Host responsibilities
 
-Choose the endpoint, TLS/proxy and authentication policy, and limits. Keep URI mappings
-stable, validate custom messages and authorize loads, navigation and commands. Show uncertain
-diagnostic freshness and command outcomes. Let the user retry explicitly.
-
-Capture the document, revision, view, selections and permissions before a request. Recheck them
-after awaits and before committing. Cancellation leaves earlier edits in history. Schedule mutations
-after workspace notifications. Release clients, scopes, target leases and handlers when their owner
-closes.
+Choose the endpoint, authentication, TLS/proxy settings and limits. Authorize URIs, custom messages,
+navigation and command invocations. Present uncertain diagnostics, edit decisions and retry controls.
+Capture the document, revision, view, selections and permissions an asynchronous action depends on.
+Recheck before committing and schedule mutations after workspace notification delivery. Release
+clients, scopes, target leases and handlers when their owners close.
 
 ## Not covered
 
