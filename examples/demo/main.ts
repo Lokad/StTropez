@@ -164,7 +164,7 @@ function renderProblems(): void {
         item.textContent = `${problem.name}:${line + 1}:${character + 1} · ${code}${problem.message}`;
         const open = (target: DemoSymbolTarget) => {
             if (!current() || !list.contains(row) || !confirmed || !editor) return false;
-            return openLocation(captured, target, captured.navigation.capture(editor), "center-if-outside");
+            return openLocation(captured, target, captured.navigation.capture(editor));
         };
         item.disabled = !confirmed;
         item.addEventListener("click", () => {
@@ -267,7 +267,9 @@ function paintMetadata(): void {
         ? `TypeScript 5.9.3 · ${panel === "javascript" && !element("workspace").classList.contains("collapsed") ? "syntax & emit" : "syntax"}` : "TypeScript · analyzing…";
     element("analysis-retry").hidden = presentation.status !== "failed" && referencePresentation?.status !== "failed";
     button("save").disabled = !project.canSave();
-    button("navigate-back").disabled = !activePane?.commands.get("demo.back", "menu")?.enabled;
+    const paths = project.navigation.getSnapshot();
+    button("navigate-back").disabled = !paths.back;
+    button("navigate-forward").disabled = !paths.forward;
     element("save-conflict").hidden = !project.hasConflict();
     button("conflict-save").disabled = button("conflict-take").disabled = !project.canSaveReviewed() || find.getSnapshot()?.status === "replacing";
     button("conflict-review").disabled = project.saving;
@@ -300,8 +302,7 @@ function detachView(keepProblems = false): void {
     if (!keepProblems) element("panel-content").replaceChildren();
     if (metadataFrame !== undefined) cancelAnimationFrame(metadataFrame); metadataFrame = undefined;
 }
-function openLocation(capturedProject: DemoProject, target: DemoSymbolTarget, origin: NavigationOrigin | undefined,
-    align: "nearest" | "center-if-outside" = "nearest"): boolean {
+function openLocation(capturedProject: DemoProject, target: DemoSymbolTarget, origin: NavigationOrigin | undefined): boolean {
     if (disposed || project !== capturedProject || !origin) return false;
     const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
     if (!destination || capturedProject.workspace.document(target.documentId).revision !== target.revision) return false;
@@ -310,7 +311,7 @@ function openLocation(capturedProject: DemoProject, target: DemoSymbolTarget, or
     origin.visit(() => {
         if (destination !== active) mountFile(destination);
         if (editor?.view !== destination.view) return false;
-        opened = !!editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true, align });
+        opened = !!editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true, align: "center-if-outside" });
         if (!opened || !sameView) return opened;
         // A second click still offers fixes. Add a Back stop only if the view moved.
         const before = origin.viewState;
@@ -432,10 +433,10 @@ function mountFile(file: DemoFile, focus?: "working" | "reference"): void {
     renderOutput();
     if (focus) (focus === "reference" && comparison && !collapsed ? comparison.panes.reference : editor).focus();
 }
-function goBack(): void {
+function navigateHistory(direction: "back" | "forward"): void {
     if (!project || !editor || editorBusy()) return;
     const current = project;
-    current.navigation.back(view => {
+    current.navigation[direction](editor, view => {
         const origin = current.files.find(file => file.view === view);
         if (!origin) return;
         if (origin !== active) mountFile(origin);
@@ -581,10 +582,15 @@ function observePane(target: TextEditor): void {
     target.element.addEventListener("focusin", () => setActivePane(target), { signal: target.signal });
 }
 function bindCommands(commands: EditorCommands): void {
-    // Option+Left moves by word on Apple keyboards. The menu can restore a location there.
-    commands.register({ id: "demo.back", label: "Back to previous location",
-        enabled: from => from !== "menu" || !!project?.navigation.getSnapshot(), run: goBack },
-        { keys: usesAppleShortcuts() ? [] : ["Alt+ArrowLeft"], repeat: false });
+    // Option+arrows move by word on Apple keyboards. Both locations are available in the menu.
+    for (const direction of ["back", "forward"] as const) {
+        const previous = direction === "back";
+        commands.register({
+            id: "demo." + direction, label: previous ? "Back to previous location" : "Forward to next location",
+            enabled: from => from !== "menu" || !!project?.navigation.getSnapshot()[direction],
+            run: () => navigateHistory(direction),
+        }, { keys: usesAppleShortcuts() ? [] : [previous ? "Alt+ArrowLeft" : "Alt+ArrowRight"], repeat: false });
+    }
 }
 
 function setActivePane(target: TextEditor): void {

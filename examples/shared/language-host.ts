@@ -39,23 +39,23 @@ export function createNavigationHost(host: LanguageHost) {
             isNext: () => visits.get().at(-1) === key,
             recorded: () => visits.get().includes(key),
             visit(open: () => boolean) {
-                const opened = point.visit(open), depth = history.getSnapshot();
+                const opened = point.visit(open), depth = history.getSnapshot().back;
                 if (opened && depth && host.workspace.ownsDocumentView(editor.view, editor.tab) && visits.get().at(-1) !== key)
                     visits.set([...visits.get(), key].slice(-depth));
                 return opened;
             },
         };
     }
-    function back(panes: Iterable<{ editor: TextEditor }>) {
+    function back(current: TextEditor | undefined, panes: Iterable<{ editor: TextEditor }>) {
         let origin: TextEditor | undefined;
-        const result = history.back(view => {
+        const result = history.back(current, view => {
             if (!host.canCapture(view.documentId)) return "busy";
             for (const { editor } of panes) if (editor.view === view && isMountedEditor(host.workspace, editor)) {
                 origin = editor; return editor;
             }
             return undefined;
         });
-        const depth = history.getSnapshot();
+        const depth = history.getSnapshot().back;
         if (visits.get().length !== depth) visits.set(visits.get().slice(0, depth));
         if (result === "restored" && origin) focusSource(origin);
         return result;
@@ -64,7 +64,7 @@ export function createNavigationHost(host: LanguageHost) {
         const request = ++latest; requested.add(kind); show(kind);
         return () => request === latest;
     }
-    return { ...host, history: { capture, getSnapshot: history.getSnapshot, subscribe: visits.observable.subscribe,
+    return { ...host, history: { capture, getSnapshot: () => history.getSnapshot().back, subscribe: visits.observable.subscribe,
         dispose() { history.dispose(); visits.set([]); } }, back, locationStatus: status.observable, report, claimNavigationFocus,
         switchLocations() { const other = status.get().alternate; if (other) claimNavigationFocus(other); } };
 }

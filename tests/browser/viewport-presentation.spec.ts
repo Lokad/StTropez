@@ -421,11 +421,11 @@ test("Back restores the origin selections across edits at a same-file destinatio
             save.finish();
             workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision });
             workspace.redo({ documentId, expectedRevision: workspace.document(documentId).revision });
-            const restored = history.back(() => editor);
+            const restored = history.back(editor, () => editor);
             viewport.flush();
             const { ranges, primary } = view.getSnapshot().selectionSet;
             return { restored, primary, ranges: ranges.map(({ anchor, head }) => [anchor - at, head - at]),
-                depth: history.getSnapshot(), top, restoredTop: viewport.getSnapshot().scrollTop,
+                depth: history.getSnapshot().back, top, restoredTop: viewport.getSnapshot().scrollTop,
                 visible: !!viewport.coordsAt(ranges[primary]!.head) };
         } finally { history.dispose(); editor.dispose(); host.remove(); }
     });

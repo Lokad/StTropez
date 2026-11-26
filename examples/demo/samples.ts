@@ -137,7 +137,7 @@ for (const quote of shippingQuotes(parcel, "local")) {
         files: { "details.ts": '// Demo diagnostic metadata fixture\nimport type { Product } from "./types";\n\nconst currentPrice = 12;\nconst legacyPrice = currentPrice;\nconst product: Product = { price: "twelve" };\nconsole.log(product, legacyPrice);\n',
             "types.ts": 'export interface Product {\n  price: number;\n}\n' } };
     if (id === "navigation") return { id, title: "Unopened files & navigation",
-        description: "Ctrl+click (Cmd+click on Mac) or press F12 on formatLabel to open labels.ts. Try RecordId to open its read-only declaration. Alt+Left returns to your previous selection.",
+        description: "Ctrl+click (Cmd+click on Mac) or press F12 on formatLabel to open labels.ts. Try RecordId to open its read-only declaration. Alt+Left goes back to your previous selection. Alt+Right goes forward.",
         initialFiles: ["main.ts"],
         files: { "main.ts": 'import { formatLabel } from "./labels";\nimport type { RecordId } from "./contracts";\n\nexport interface LabelOptions { prefix: string; }\nconst record: RecordId = "record-42";\nconst label = formatLabel(record);\nconsole.log(label);\n',
             "labels.ts": 'import type { LabelOptions } from "./main";\n\n/** Format a stable label for display. */\nexport function formatLabel(id: string, options: LabelOptions = { prefix: "Label" }): string {\n  return `${options.prefix}: ${id}`;\n}\n' },

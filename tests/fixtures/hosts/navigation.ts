@@ -243,7 +243,7 @@ export class HostNavigationTools {
         if (this.active && !this.host.canCapture(this.active.editor.view.documentId)) {
             this.publish({ message: "Finish pending input before returning." }); return;
         }
-        const result = this.host.back(this.sessions.keys());
+        const result = this.host.back(this.active?.editor, this.sessions.keys());
         this.publish({ message: result === "restored" ? "Returned to the captured origin and complete selection set."
             : result === "busy" ? "Finish pending input before returning." : "No navigation origin is still open." });
     };

@@ -135,7 +135,12 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await page.keyboard.up("Control"); await expect(link).toHaveCount(0);
     await page.keyboard.down("Control"); await expect(link).toBeVisible();
     await page.mouse.click(point.x, point.y); await page.keyboard.up("Control"); await expect(labels).toBeVisible();
-    await expect(page.locator("#editor")).toContainText("export function formatLabel");
+    const definition = page.locator("#editor .st-viewport-row").filter({ hasText: "export function formatLabel" });
+    await expect(definition).toBeVisible();
+    await expect.poll(() => definition.evaluate(row => {
+        const rect = row.getBoundingClientRect();
+        return (rect.top - row.closest(".st-editor")!.getBoundingClientRect().top) / rect.height;
+    })).toBeGreaterThan(1);
     await labels.press("Control+End"); await page.keyboard.insertText("// edit the loaded module\n");
     await expect(page.locator("#files")).toContainText("labels.ts ●");
     const submitted = await page.evaluate(() => {
@@ -1114,9 +1119,16 @@ export async function runDemoProjectResults(page: Page, url = "/") {
     expect(await options.count()).toBeLessThanOrEqual(16); await source.press("Enter");
     await expect(locations).toBeHidden(); await expect(page.locator("#cursor")).toContainText("Ln 1201,");
     await expect(page.locator("#editor")).toContainText("const use1199 = sharedValue;");
-    await source.press("Alt+ArrowLeft"); await expect(source).toBeFocused(); await expect(page.locator("#cursor")).toHaveText(originCursor);
-    await source.press("Shift+F12"); await expect(locations).toContainText("1 of 1201");
-    await source.press("ArrowUp"); await source.press("Enter"); await expect(page.locator("#cursor")).toContainText("Ln 1201,");
+    const resultTop = await viewport.evaluate(node => node.scrollTop);
+    expect(resultTop).toBeGreaterThan(0);
+    await source.press("Alt+ArrowLeft");
+    await expect(source).toBeFocused();
+    await expect(page.locator("#cursor")).toHaveText(originCursor);
+    await expect.poll(() => viewport.evaluate(node => node.scrollTop)).toBeLessThan(resultTop);
+    await source.press("Alt+ArrowRight");
+    await expect(source).toBeFocused();
+    await expect(page.locator("#cursor")).toContainText("Ln 1201,");
+    await expect.poll(() => viewport.evaluate(node => node.scrollTop)).toBeCloseTo(resultTop, 0);
     await source.press("F2");
     const rename = page.getByRole("dialog", { name: "Rename symbol", exact: true });
     const name = rename.getByRole("textbox", { name: "New name", exact: true });

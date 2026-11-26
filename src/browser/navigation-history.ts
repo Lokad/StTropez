@@ -7,18 +7,37 @@ import { mapViewAnchor } from "./view-state.ts";
 import { createSelectionSet } from "../core/selections.ts";
 
 export type NavigationOrigin = Readonly<{ viewState: ViewState; visit: (open: () => boolean) => boolean }>;
-export type NavigationHistory = Observable<number> & Readonly<{
+type Depths = Readonly<{ back: number; forward: number }>;
+type Travel = (
+    current: TextEditor | undefined,
+    present: (view: DocumentView) => TextEditor | "busy" | undefined,
+    options?: Readonly<{ focus?: boolean }>,
+) => "restored" | "busy" | "empty";
+export type NavigationHistory = Observable<Depths> & Readonly<{
     capture: (editor: TextEditor, pointedOffset?: number) => NavigationOrigin | undefined;
-    back: (present: (view: DocumentView) => TextEditor | "busy" | undefined, options?: Readonly<{ focus?: boolean }>) => "restored" | "busy" | "empty";
+    back: Travel;
+    forward: Travel;
     dispose: () => void;
 }>;
 type Entry = { view: DocumentView; tab: TabTarget | undefined; origin: ViewState; state: ViewState; revision: number; stop: () => void };
 
-/** The host presents destinations. Only successful visits enter this workspace's Return history. */
+/** Keep successful jumps and map the saved positions through document changes. */
 export function createNavigationHistory(workspace: Workspace): NavigationHistory {
-    const scope = workspace.createNotificationScope(), depth = new Store(0, scope);
-    const entries: Entry[] = [];
+    const scope = workspace.createNotificationScope();
+    const depths = new Store<Depths>(Object.freeze({ back: 0, forward: 0 }), scope);
+    const back: Entry[] = [];
+    const forward: Entry[] = [];
     let disposed = false, navigating = false;
+
+    function publish() {
+        const previous = depths.get();
+        if (previous.back !== back.length || previous.forward !== forward.length) {
+            scope.publish(depths, Object.freeze({ back: back.length, forward: forward.length }));
+        }
+    }
+    function clear(stack: Entry[]) {
+        for (const entry of stack.splice(0)) entry.stop();
+    }
     const owns = (entry: Entry) => workspace.ownsDocumentView(entry.view, entry.tab);
     function live(editor: TextEditor) {
         return !disposed && !editor.signal.aborted && editor.element.isConnected
@@ -28,7 +47,7 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
         const state = editor.activity();
         return state.input !== "idle";
     }
-    function track(view: DocumentView, tab: TabTarget | undefined, origin: ViewState, revision: number): Entry {
+    function track({ view, tab }: TextEditor, origin: ViewState, revision: number): Entry {
         const entry: Entry = { view, tab, origin, state: origin, revision, stop: workspace.onDocumentChange(view.documentId, change => {
             if (entry.revision !== change.previousRevision) return;
             const { state } = entry;
@@ -42,7 +61,7 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
         return entry;
     }
     function capture(editor: TextEditor, pointedOffset?: number): NavigationOrigin | undefined {
-        const { view, tab } = editor;
+        const { view } = editor;
         if (!live(editor) || busy(editor)) return;
         let state = editor.captureView();
         if (pointedOffset !== undefined) {
@@ -56,40 +75,66 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
             scope.assertWritable(); navigating = true;
             let entry: Entry | undefined;
             try {
-                if (entries.at(-1)?.origin !== state) entry = track(view, tab, state, revision);
+                if (back.at(-1)?.origin !== state) entry = track(editor, state, revision);
                 if (!open()) return false;
+                clear(forward);
                 if (entry && !disposed && owns(entry)) {
-                    entries.push(entry);
+                    back.push(entry);
                     entry = undefined;
-                    if (entries.length > 100) entries.shift()!.stop();
-                    scope.publish(depth, entries.length);
+                    if (back.length > 100) back.shift()!.stop();
                 }
+                publish();
                 return true;
             } finally { entry?.stop(); navigating = false; }
         } });
     }
-    return Object.freeze({ ...depth.observable, capture, back(present, { focus = false } = {}) {
-        if (typeof focus !== "boolean") throw new TypeError("Invalid navigation focus option.");
-        if (disposed) return "empty";
-        if (navigating) return "busy";
-        scope.assertWritable(); navigating = true;
-        try {
-            while (entries.length) {
-                const entry = entries[entries.length - 1]!;
-                const editor = owns(entry) ? present(entry.view) : undefined;
-                if (disposed) return "empty";
-                if (editor === "busy") return "busy";
-                if (editor?.view === entry.view && live(editor) && owns(entry)) {
-                    if (busy(editor)) return "busy";
-                    if (entry.revision === entry.view.getSnapshot().revision && editor.restoreView(entry.state)) {
-                        entries.pop()!.stop();
-                        if (focus) editor.focus();
-                        return "restored";
+    function travel(from: Entry[], to: Entry[]): Travel {
+        return (current, present, { focus = false } = {}) => {
+            if (typeof focus !== "boolean") throw new TypeError("Invalid navigation focus option.");
+            if (disposed) return "empty";
+            if (navigating || current && (!live(current) || busy(current))) return "busy";
+            scope.assertWritable();
+            navigating = true;
+            let departure: Entry | undefined;
+            try {
+                while (from.length) {
+                    const target = from.at(-1)!;
+                    if (!owns(target)) {
+                        from.pop()!.stop();
+                        continue;
                     }
+                    // Presenting another file may dispose the editor we are leaving.
+                    if (current) departure = track(current, current.captureView(), current.view.getSnapshot().revision);
+                    const editor = present(target.view);
+                    if (disposed) return "empty";
+                    if (!editor || editor === "busy" || editor.view !== target.view || !live(editor) || busy(editor)
+                        || !owns(target) || target.revision !== target.view.getSnapshot().revision
+                        || !editor.restoreView(target.state)) return "busy";
+                    if (disposed) return "empty";
+                    from.pop()!.stop();
+                    if (departure && owns(departure)) {
+                        to.push(departure);
+                        departure = undefined;
+                    }
+                    if (focus) editor.focus();
+                    return "restored";
                 }
-                entries.pop()!.stop();
+                return "empty";
+            } finally {
+                departure?.stop();
+                navigating = false;
+                publish();
             }
-            return "empty";
-        } finally { navigating = false; scope.publish(depth, entries.length); }
-    }, dispose() { scope.assertWritable(); disposed = true; for (const entry of entries.splice(0)) entry.stop(); scope.publish(depth, 0); } });
+        };
+    }
+    return Object.freeze({
+        ...depths.observable, capture, back: travel(back, forward), forward: travel(forward, back),
+        dispose() {
+            scope.assertWritable();
+            disposed = true;
+            clear(back);
+            clear(forward);
+            publish();
+        },
+    });
 }

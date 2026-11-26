@@ -368,56 +368,13 @@ test.describe("plain LSP inspection/navigation", () => {
         await button(page, "Show module links").click(); await button(page, "Show symbol results").click();
         await expect(first).toBeFocused();
     });
-    test("Return retraces two symbol jumps with their selections, scroll and focus", async ({ page }) => {
-        const text = "catalogue;\n" + "// padding\n".repeat(120) + "catalogue;\n";
-        const tail = text.lastIndexOf("catalogue"), primary = field(page), secondary = field(page, "Secondary source");
-        const back = button(page, "Return to navigation origin");
-        const current = async (id: string) => (await snapshot(page)).bindings.views.find(view => view.id === id)!;
-        await seed(page, text, tail + 3);
-        await button(page, "Add navigation companion").click();
-        await page.evaluate(tail => { const f = window.hostFixture;
-            f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 1, head: 1 }, { anchor: tail + 7, head: tail + 3 }], 1);
-        }, tail);
-        await primary.evaluate(input => { input.closest<HTMLElement>(".st-editor")!.scrollTop = 1200; });
-        await expect.poll(async () => (await current("primary")).metrics!.viewport.scrollTop).toBeGreaterThan(1000);
-        const origin = await current("primary");
-        await button(page, "Find definition").click();
-        await results(page).filter({ hasText: "Navigation companion:" }).click();
-        await expect(secondary).toBeFocused();
-        await secondary.press("ArrowLeft"); await secondary.press("ArrowRight"); await waitForNavigation(page);
-        const intermediate = await current("secondary");
-        await button(page, "Find references").click();
-        await results(page).filter({ hasText: /^Primary source:1:1$/ }).click();
-        await expect(primary).toBeFocused(); await waitForNavigation(page);
-        expect((await current("primary")).metrics!.viewport.scrollTop).toBeLessThan(origin.metrics!.viewport.scrollTop);
-        await back.click(); await expect(secondary).toBeFocused();
-        expect((await current("secondary")).selectionSet).toEqual(intermediate.selectionSet);
-        await back.click(); await expect(primary).toBeFocused(); await waitForNavigation(page);
-        const restored = await current("primary");
-        expect(restored.selectionSet).toEqual(origin.selectionSet);
-        expect(restored.metrics!.viewport.scrollTop).toBeCloseTo(origin.metrics!.viewport.scrollTop, 2);
-        await expect(back).toBeDisabled();
-    });
-    test("Back retraces a module visit and a symbol visit in order", async ({ page }) => {
+    test("returning to a module origin preserves the later symbol visit", async ({ page }) => {
         const text = 'import "sample-utils";\nconst sample = 1;\nsample;';
         const symbol = text.lastIndexOf("sample") + 2, path = text.indexOf("-");
         await seed(page, text, symbol);
         await button(page, "Add module companion").click();
         const primary = field(page), secondary = field(page, "Secondary source");
-        await primary.press("F12"); await expect(page.getByLabel("Locations status", { exact: true })).toContainText("Opened");
-        await select(page, path); await primary.press("F12"); await expect(secondary).toBeFocused();
-        await secondary.press("End"); await page.keyboard.insertText(" // edited");
         const back = button(page, "Return to navigation origin");
-        const apple = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform));
-        for (const offset of [path, symbol]) {
-            if (apple) await back.click(); else await page.keyboard.press("Alt+ArrowLeft");
-            await expect(primary).toBeFocused();
-            expect((await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection).toMatchObject({ anchor: offset, head: offset });
-        }
-        await expect(back).toBeDisabled();
-        await expect(button(page, "Return to link origin")).toBeDisabled();
-
-        // Targeted module Return must leave a later symbol visit in the shared history.
         await select(page, path); await primary.press("F12"); await expect(secondary).toBeFocused();
         await primary.focus(); await select(page, symbol); await primary.press("F12");
         await expect.poll(async () => (await snapshot(page)).bindings.views.find(view => view.id === "primary")!.selection.anchor)

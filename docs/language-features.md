@@ -134,10 +134,14 @@ matching workspace file, `{ text, languageId }` for a read-only string or `TextB
 decline. Edits require matching version and permission. Supply `release()` for retained targets. Navigation
 shares duplicate loads, runs four concurrently and validates the batch before display.
 
-For Back, create `createNavigationHistory(workspace)` and call `history.capture(editor)` before lookup. Pass
-the clicked offset for a pointer jump. Wrap successful reveal in `origin.visit`. `history.back(present)`
-needs the original view’s editor. Return `"busy"` to defer or `undefined` to skip. Back restores mapped
-selection and scroll. `focus: true` resumes typing.
+Create `createNavigationHistory(workspace)` and call `history.capture(editor)` before lookup. Pass the clicked
+offset for a pointer jump. Wrap the reveal in `origin.visit` and return whether it succeeded. A successful new
+jump clears Forward. Read the available counts from `history.getSnapshot().back` and `.forward`.
+
+Call `history.back(current, present)` or `history.forward(current, present)` with the editor being left.
+Both restore the saved selection and scroll, mapped through edits. Pass `{ focus: true }` to resume typing.
+Return the requested view's editor from `present`. A busy or unavailable presentation can be retried.
+Disposed views are skipped. Pass `undefined` for `current` if no editor is open to record a return position.
 
 ### Rename and workspace edits
 

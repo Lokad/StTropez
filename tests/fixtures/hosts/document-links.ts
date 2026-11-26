@@ -328,7 +328,7 @@ export class HostDocumentLinks {
         this.host.claimNavigationFocus("modules");
         if (!this.host.canCapture(visit.destination.view.documentId)) { this.publish({ message: unavailablePaneMessage }); return; }
         if (visit.returnPoint?.isNext()) {
-            const result = this.host.back(this.sessions.keys());
+            const result = this.host.back(visit.destination, this.sessions.keys());
             if (result !== "restored") { this.publish({ message: result === "busy" ? unavailablePaneMessage : "No navigation origin is still open." }); return; }
         } else {
             if (!this.place(visit, visit.source, visit.origin, visit.viewState)) return;
