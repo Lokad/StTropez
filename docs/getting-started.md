@@ -310,7 +310,7 @@ showDirty();
 Save checks for pending edits in every checklist pane. The sample uses the stored text as its version.
 If another view saved first, **Compare saved** lets the user inspect that copy alongside the draft.
 A remote service must check `expectedServerVersion` when it accepts the write.
-[Conflict review and retry](workspace.md#save-and-conflicts)
+[Conflict review and retry](workspace.md#retry-after-review)
 
 ```js file=app.js
 import { TextBuffer } from "sttropez";

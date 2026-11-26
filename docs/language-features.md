@@ -299,7 +299,7 @@ up to 100 origins and publishes their count.
 `undefined` to skip an entry or `"busy"` to keep it for later. Back skips closed views and replaced
 tabs, maps saved selections and scroll anchors through subsequent edits, and reports `"restored"`,
 `"empty"` or `"busy"`. Pass `{ focus: true }` to focus the restored editor. Dispose history with
-the host. [Canonical saves](workspace.md#transactions-and-history) · [View restoration](viewport.md#scrolling-and-saved-views)
+the host. [Selection mapping](workspace.md#selections-across-replacements) · [View restoration](viewport.md#scrolling-and-saved-views)
 
 ### Rename and workspace edits
 
