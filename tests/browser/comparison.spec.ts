@@ -418,14 +418,14 @@ test("acceptance captures a revision while later keyboard input, focus and histo
 
 test("out-of-order refresh rejects old results and never replaces the mounted working editor", async ({ page }) => {
     await page.getByRole("textbox", { name: "Comparison working source", exact: true }).evaluate(input => { input.dataset.retained = "yes"; });
-    const before = await page.evaluate(() => { const s = window.comparisonFixture.snapshot(); window.comparisonFixture.begin("refresh"); window.comparisonFixture.begin("refresh"); window.comparisonFixture.moveTab(); return s; });
+    const before = await page.evaluate(() => { const s = window.comparisonFixture.snapshot(); window.comparisonFixture.begin("refresh"); window.comparisonFixture.begin("refresh"); return s; });
     expect(await page.evaluate(() => window.comparisonFixture.finish("refresh", true))).toBe(true); await ready(page);
     const fresh = await page.evaluate(() => window.comparisonFixture.snapshot());
     expect(await page.evaluate(() => window.comparisonFixture.finish("refresh"))).toBe(false); await ready(page);
     const after = await page.evaluate(() => window.comparisonFixture.snapshot());
     expect(after.baseline).toEqual(fresh.baseline); expect(after.working).toEqual(before.working); expect(after.viewId).toBe(before.viewId);
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveAttribute("data-retained", "yes");
-    expect(after.diagnostics).toMatchObject({ resources: 2, documents: 2, tabs: 1, views: 2, leases: 3 });
+    expect(after.diagnostics).toMatchObject({ resources: 2, documents: 2, views: 2, leases: 3 });
 });
 
 test("a stale selected hunk cannot retarget after typing, and permissions gate revert", async ({ page }) => {
@@ -505,20 +505,29 @@ test("custom host controls observe captured selection, alignment, authority and 
             navigate: state.canNavigate, revert: state.canRevert, rejected: f.review.hunkAt(0) === undefined, diagnostics: f.snapshot().diagnostics };
     });
     expect(terminal).toMatchObject({ notified: true, disposed: true, status: "disposed", selected: null, navigate: false, revert: false, rejected: true,
-        diagnostics: { resources: 1, tabs: 1, views: 0, leases: 0, subscriptions: 0 } });
+        diagnostics: { resources: 1, views: 0, leases: 0, subscriptions: 0 } });
     await expect(controls).toHaveCount(0);
 });
 
-test("tab replacement expires pending work and teardown leaves only host resources", async ({ page }) => {
-    await page.evaluate(() => { window.comparisonFixture.begin("refresh"); window.comparisonFixture.begin("accept"); window.comparisonFixture.replaceTab(); });
-    await expect.poll(() => page.evaluate(() => window.comparisonFixture.snapshot().status)).toBe("expired");
-    expect(await page.evaluate(() => window.comparisonFixture.finish("refresh"))).toBe(false);
-    await page.evaluate(() => window.comparisonFixture.dispose());
+test("a remounted comparison rejects both baseline replies captured by its predecessor", async ({ page }) => {
+    const result = await page.evaluate(() => {
+        const fixture = window.comparisonFixture;
+        const previous = fixture.review.controller;
+        const refresh = previous.beginRefresh();
+        const accept = previous.beginAcceptance();
+        fixture.dispose();
+        const replacement = fixture.mount();
+        try {
+            const late = { buffer: refresh.capture.working.buffer, version: "obsolete" };
+            return { refresh: refresh.complete(late), acceptance: accept.complete(late),
+                baseline: replacement.controller.getSnapshot().baseline?.version };
+        } finally { replacement.dispose(); }
+    });
+    expect(result).toEqual({ refresh: false, acceptance: false, baseline: "reference-1" });
     const state = await page.evaluate(() => window.comparisonFixture.snapshot());
-    expect(state.status).toBe("disposed"); expect(state.baseline).toBeNull(); expect(state.reference).toMatchObject({ disposed: true, revision: null, rows: 0 });
-    expect(state.pending).toEqual({ refreshes: 0, acceptances: 0 });
-    await expect(page.getByRole("button", { name: "Request baseline refresh", exact: true })).toBeDisabled();
-    expect(state.diagnostics).toMatchObject({ resources: 2, tabs: 1, views: 0, leases: 0, subscriptions: 0 });
+    expect(state.status).toBe("disposed");
+    expect(state.reference).toMatchObject({ disposed: true, revision: null, rows: 0 });
+    expect(state.diagnostics).toMatchObject({ resources: 1, views: 0, leases: 0, subscriptions: 0 });
     await expect(page.locator(".st-comparison")).toHaveCount(0);
 });
 

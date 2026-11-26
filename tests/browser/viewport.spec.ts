@@ -150,12 +150,11 @@ test("resize, font metrics and tall rows keep scaled vertical scrolling reachabl
     expect((await page.evaluate(() => window.viewportFixture.snapshot())).primary.lastLine).toBe(10_001); await checkRows(page);
 });
 
-test("Unicode/CRLF rows preserve bounded content and stale tab generations disable only their own view", async ({ page }) => {
+test("closing one viewport leaves the other rendering Unicode and CRLF edits", async ({ page }) => {
     await page.evaluate(() => window.viewportFixture.load("unicode")); await ready(page); await checkRows(page);
     expect(await page.locator("#primary .st-viewport-row").first().textContent()).toContain("👩‍💻");
-    await page.evaluate(() => window.viewportFixture.replacePrimary());
-    await expect(page.locator("#primary .st-viewport")).toHaveAttribute("aria-disabled", "true");
-    expect(await page.locator("#primary .st-viewport-row").count()).toBe(0);
+    await page.evaluate(() => window.viewportFixture.closePrimary());
+    await expect(page.locator("#primary .st-viewport")).toHaveCount(0);
     await page.evaluate(() => window.viewportFixture.edit(window.viewportFixture.snapshot().document!.revision, [{ from: 0, to: 0, insert: "later " }]));
     await expect.poll(() => page.evaluate(() => window.viewportFixture.snapshot().secondary.revision)).toBe(2);
     expect((await page.evaluate(() => window.viewportFixture.snapshot())).primary.revision).toBeNull();

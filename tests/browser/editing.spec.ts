@@ -454,7 +454,7 @@ test("pasting at mixed line endings respects each caret and the host's literal o
     }
 });
 
-test("synthetic composition commits once and rejects stale, readonly and expired captured targets", async ({ page }) => {
+test("synthetic composition commits once and preserves pending text after an edit or permission change", async ({ page }) => {
     const events = await recordTypedText(page);
     await page.evaluate(() => { window.editingFixture.setText("alpha omega"); window.editingFixture.select("primary", { anchor: 6, head: 11 }); window.editingFixture.focus("primary"); }); await ready(page);
     const input = page.getByRole("textbox", { name: "Primary source" });
@@ -472,12 +472,11 @@ test("synthetic composition commits once and rejects stale, readonly and expired
     await end(""); await ready(page);
     expect(await page.evaluate(() => window.editingFixture.range(0, 7))).toBe("alpha ê");
     expect((await state(page)).document!.revision).toBe(before + 1);
-    for (const reason of ["stale-revision", "read-only", "expired-view"]) {
+    for (const reason of ["stale-revision", "read-only"]) {
         await start();
         await page.evaluate(reason => {
             if (reason === "stale-revision") window.editingFixture.edit([{ from: 0, to: 0, insert: "host " }]);
             if (reason === "read-only") window.editingFixture.readOnly(true);
-            if (reason === "expired-view") window.editingFixture.replacePrimary();
         }, reason);
         const revision = (await state(page)).document!.revision;
         await end();

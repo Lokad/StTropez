@@ -421,7 +421,7 @@ test("automatic discovery preserves newer view choices, cancels changed targets 
     await page.evaluate(() => window.editingFixture.refreshFolds()); await expect.poll(count).toBe(4);
     await page.evaluate(() => window.editingFixture.setText("new\n  body\nlast"));
     expect(await page.evaluate(() => (window as unknown as { pendingFolds: { signal: AbortSignal }[] }).pendingFolds[3]!.signal.aborted)).toBe(true);
-    await expect.poll(count).toBe(5); await page.evaluate(() => window.editingFixture.replacePrimary()); await resolve();
+    await expect.poll(count).toBe(5); await page.evaluate(() => window.editingFixture.closePrimary()); await resolve();
     expect(await page.evaluate(() => (window as unknown as { pendingFolds: { signal: AbortSignal }[] }).pendingFolds[4]!.signal.aborted)).toBe(true);
     await page.evaluate(() => window.editingFixture.dispose());
     expect((await page.evaluate(() => window.editingFixture.snapshot())).diagnostics).toMatchObject({ views: 0, leases: 0, subscriptions: 0 });

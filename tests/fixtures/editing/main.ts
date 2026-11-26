@@ -11,13 +11,12 @@ import type { CorpusId } from "../workloads.ts";
 import "./style.css";
 
 const workspace = new Workspace(), source = workspace.createTextResource({ scope: "editing", resource: "source", variant: "working" }, "Source", { value: corpus("lines-10000") });
-const primaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), secondaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "right");
 const pane = (id: string) => document.getElementById(id)!;
 const presentation = { primary: new EditingPresentation(), secondary: new EditingPresentation() };
 let failDecoration = false;
 const params = new URLSearchParams(location.search);
-const editors = { primary: mountTextEditor(pane("primary"), workspace, primaryTab, { ariaLabel: "Primary source", readOnly: params.has("readonly"), settings: { pasteLineEndings: params.get("pasteLineEndings") === "preserve" ? "preserve" : "local" } }),
-    secondary: mountTextEditor(pane("secondary"), workspace, secondaryTab, { ariaLabel: "Secondary source" }) };
+const editors = { primary: mountTextEditor(pane("primary"), workspace, source.documentId, { ariaLabel: "Primary source", readOnly: params.has("readonly"), settings: { pasteLineEndings: params.get("pasteLineEndings") === "preserve" ? "preserve" : "local" } }),
+    secondary: mountTextEditor(pane("secondary"), workspace, source.documentId, { ariaLabel: "Secondary source" }) };
 const primarySyntax = editors.primary.decorations.addProvider({ order: 0, provide: slice => {
     if (failDecoration) { failDecoration = false; throw new Error("Fixture decoration failure"); }
     return presentation.primary.decorate(slice);
@@ -70,7 +69,7 @@ const fixture = { ready: true, graphemeBoundaries, setText, edit, select, histor
     coords: (offset: number, affinity: "before" | "after" = "after") => editors.primary.viewport.coordsAt(offset, affinity),
     hit: (x: number, y: number) => editors.primary.viewport.hitTest(x, y),
     readOnly: (value: boolean) => workspace.setCapabilities(source.id, { edit: value ? ["host"] : ["human", "host", "agent"], save: true }),
-    replacePrimary: () => workspace.tabs.replace(primaryTab, { kind: "text", documentId: source.documentId }),
+    closePrimary: editors.primary.dispose,
     snapshot: () => {
         const current = workspace.getSnapshot().documents.find(document => document.id === source.documentId);
         return { document: current ? { revision: current.revision, length: current.buffer.length } : null,
@@ -85,7 +84,7 @@ const fixture = { ready: true, graphemeBoundaries, setText, edit, select, histor
     dispose: () => {
         if (disposed) return; disposed = true; foldingController?.dispose(); listeners.abort(); unsubscribe(); findUI.dispose();
         Object.values(editors).forEach(editor => editor.dispose()); Object.values(presentation).forEach(value => value.clear());
-        for (const tab of workspace.tabs.getSnapshot()) workspace.tabs.close(tab.id); workspace.releaseResource(source.id, true);
+        workspace.releaseResource(source.id, true);
     } };
 window.editingFixture = fixture;
 window.addEventListener("pagehide", event => { if (!event.persisted) fixture.dispose(); }, { signal: listeners.signal });
