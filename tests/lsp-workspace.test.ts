@@ -579,6 +579,7 @@ test("pending diagnostics map consecutive edits and undo without renewing provid
     };
     const check = (from: number, to: number) => {
         const pending = state.getSnapshot(); assert.equal(pending.status, "pending"); assert.equal(pending.isCurrent(), false); assert.equal(pending.isPlacementCurrent(), true);
+        assert.equal(pending.lastReport, initial);
         assert.equal(pending.result!.snapshotRevision, f.workspace.document(f.source.documentId).revision);
         assert.equal(pending.result!.version, initial.version); assert.equal(pending.result!.revision, initial.revision);
         assert.deepEqual(pending.result!.items.map(item => [item.from, item.to]), [[from, to], [from + 2, from + 2], [null, null]]);
@@ -595,6 +596,7 @@ test("pending diagnostics map consecutive edits and undo without renewing provid
     await send([]);
     assert.equal(state.getSnapshot(), beforeStale);
     edit(5, 11, "replacement"); assert.deepEqual(state.getSnapshot().result!.items.map(item => item.message), ["unplaced"]);
+    assert.equal(state.getSnapshot().lastReport, initial, "Deleting a range clears its underline but keeps the provider message.");
     undo(); assert.deepEqual(state.getSnapshot().result!.items.map(item => item.message), ["unplaced"], "Undo cannot resurrect invalidated provider ranges.");
     const beforeReconnect = state.getSnapshot(); await f.provider.reconnect();
     assert.equal(beforeReconnect.isPlacementCurrent(), false); assert.equal(state.getSnapshot().status, "expired");
@@ -603,6 +605,7 @@ test("pending diagnostics map consecutive edits and undo without renewing provid
     const beforeLoad = state.getSnapshot(), load = f.workspace.operations.beginLoad(f.source);
     assert.equal(load.accept({ value: "replacement source" }), true); await scope.flush();
     assert.equal(beforeLoad.isPlacementCurrent(), false); assert.equal(state.getSnapshot().status, "expired"); assert.equal(state.getSnapshot().result, null);
+    assert.equal(state.getSnapshot().lastReport, null);
 });
 
 test("feature requests require explicit reconnect after transport loss", async t => {

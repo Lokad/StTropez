@@ -41,13 +41,12 @@ lines, positions or reversed ranges fail validation.
 ### Diagnostics
 
 `diagnostics: {}` paints pushes. `item.select()` reveals, `cancel()` pauses paint and `request()` resumes.
-For custom presentation use `scope.observeDiagnostics(binding)` or `decodeLspDiagnostics` with
-`diagnosticDecoration`.
+For problems, read `scope.observeDiagnostics(binding)`. During edits, `lastReport` retains provider messages,
+`status` is `pending` and `result` maps surviving ranges. Disconnect or source replacement clears both results.
 
-Versioned pushes must match the synchronized version. Unversioned pushes have null provider version and
-revision. `snapshotRevision` locates the marks. Edits map surviving marks as pending. `isPlacementCurrent()`
-checks placement, `isCurrent()` analysis. Only fresh versioned marks overlapping the selection enter code
-actions. Stale or malformed pushes preserve marks. Out-of-bounds items retain their message.
+Versioned pushes must match the synchronized version. Unversioned pushes have null version and revision.
+`isPlacementCurrent()` checks offsets and `isCurrent()` checks analysis. Only fresh versioned marks enter
+code actions. Malformed or stale pushes leave the report intact. Unplaced items retain their messages.
 
 ### Completion
 

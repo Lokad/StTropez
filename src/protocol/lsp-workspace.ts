@@ -53,13 +53,15 @@ export type LspBindingCapture = Readonly<{ document: LspDocumentSnapshot;
     /** Current local snapshot, including edits awaiting synchronization; undefined after binding authority expires. */
     getSnapshot: () => DocumentSnapshot | undefined }>;
 export type LspDiagnosticState = Readonly<{ status: "empty" | "current" | "pending" | "expired"; result: LspDiagnostics | null;
+    /** Original provider report for a problems list while display ranges are mapped across local edits. */
+    lastReport: LspDiagnostics | null;
     /** Provider result still belongs to the synchronized source; always false for mapped pending results. */
     isCurrent: () => boolean;
     /** Display/navigation offsets still belong to the local source, including mapped pending results. */
     isPlacementCurrent: () => boolean }>;
 export type LspWorkspaceSnapshot = LspSessionSnapshot & Readonly<{ commandAvailable: boolean; commandRequiresReconnect: boolean }>;
 const emptyDiagnostics: LspDiagnosticState = Object.freeze({
-    status: "empty", result: null, isCurrent: () => false, isPlacementCurrent: () => false
+    status: "empty", result: null, lastReport: null, isCurrent: () => false, isPlacementCurrent: () => false
 });
 const expiredDiagnostics: LspDiagnosticState = Object.freeze({ ...emptyDiagnostics, status: "expired" });
 export type LspWorkspaceOptions = LspSessionOptions & Readonly<{
@@ -200,7 +202,7 @@ export class LspWorkspace {
                 if (!(error instanceof ProtocolDecodeError) && !(error instanceof RpcError && error.code === rpcCodes.contentModified)) throw error;
                 return;
             }
-            entry.diagnostics.set(Object.freeze({ status: "current", result, isCurrent, isPlacementCurrent: isCurrent }), this.#changed);
+            entry.diagnostics.set(Object.freeze({ status: "current", result, lastReport: result, isCurrent, isPlacementCurrent: isCurrent }), this.#changed);
             this.#queueDelivery();
         }) : undefined;
         this.#stopApply = options.applyEdit ? this.#session.onRequest(applyEditMethod, (value, context) => {
@@ -257,7 +259,7 @@ export class LspWorkspace {
                 && now?.language === entry.language && now.revision === next.revision && now.buffer === next.buffer;
         };
         // Preserve provider version, original wire ranges and metadata as provenance, not fresh edit authority.
-        entry.diagnostics.set(Object.freeze({ status: "pending", result: Object.freeze({ ...result, snapshotRevision: next.revision, items: Object.freeze(items) }),
+        entry.diagnostics.set(Object.freeze({ status: "pending", lastReport: before.lastReport, result: Object.freeze({ ...result, snapshotRevision: next.revision, items: Object.freeze(items) }),
             isCurrent: () => false, isPlacementCurrent }), this.#changed); this.#queueDelivery();
     }
     /** Read the current host mapping/capabilities without acquiring document participation. */
