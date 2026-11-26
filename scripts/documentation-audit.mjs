@@ -30,7 +30,7 @@ const pageBudgets = {
     "docs/testing.md": 20_000,
     "docs/text-model.md": 16_000,
     "docs/unicode.md": 9_000,
-    "docs/viewport.md": 18_000,
+    "docs/viewport.md": 10_400,
     "docs/workspace.md": 21_500,
 };
 export const subjectPages = [...Object.keys(pageBudgets), apiIndexPath];
