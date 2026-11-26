@@ -51,6 +51,7 @@ host-lsp-sync.spec.ts
 lsp-interop.spec.ts
 
 # One end-to-end case per workflow
+demo-recovery.spec.ts > reloading each tab selects its own recovery draft when both edited the same sample
 demo-interface.spec.ts > file tabs keep the active review pane and its selection for the same saved version
 demo-actions.spec.ts > after a provider restart, holding Enter applies the fresh fix once
 demo-language.spec.ts > the type error sample offers a spelling fix from Problems and shows the correction in Changes

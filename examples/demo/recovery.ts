@@ -50,6 +50,12 @@ function matches(capture: Capture, draft: Draft): boolean {
     return capture.every(item => matchesFile(item, draft));
 }
 
+function sameDraft(a: Draft, b: Draft): boolean {
+    if (a.id !== undefined || b.id !== undefined) return a.id === b.id;
+    // Older drafts have no ID. Both file lists were validated against this sample's inventory.
+    return a.baseVersion === b.baseVersion && Object.keys(a.files).every(name => a.files[name] === b.files[name]);
+}
+
 function sameFiles(current: Capture, previous: Capture | undefined): boolean {
     return previous !== undefined && current.length === previous.length && current.every((item, index) => {
         const prior = previous[index]!;
@@ -133,7 +139,11 @@ export class DemoRecovery {
         if (currentCopy) return "Your current edits have a recovery copy. You can also restore or download an earlier version.";
         if (this.offer && this.dirty()) return "Your files changed. Updating their recovery copy…";
         if (!this.offer || !this.showOffer) return "A recovery draft is available.";
-        if (this.offer.drafts.length > 1) return "Choose a recovery version to restore or download.";
+        if (this.offer.drafts.length > 1) {
+            return this.offer.drafts[this.offer.selected]?.id === this.lastCheckpoint
+                ? "This tab's last draft is selected. You can restore it or choose another version."
+                : "Choose a recovery version to restore or download.";
+        }
         const draft = this.offer.drafts[0]!;
         const changed = this.offer.capture.filter(item => !matchesFile(item, draft)).map(item => item.file.name);
         return changed.length ? `This browser has an unsaved draft for ${changed.join(", ")}.` : "A recovery draft is available.";
@@ -193,6 +203,7 @@ export class DemoRecovery {
                 this.publish(this.token ? "protected" : "idle", this.token ? "Recovery draft captured in this browser." : "Recovery is ready.");
                 return;
             }
+            const previous = this.offer?.drafts[this.offer.selected];
             this.offer = undefined;
             this.checkpointed = undefined;
             if (envelope) {
@@ -224,8 +235,13 @@ export class DemoRecovery {
                     }
                     return;
                 }
-                this.offer = { drafts: alternatives, selected: 0, capture, ...(working && { working }) }; this.token = envelope.token;
-                this.showOffer = alternatives.some(draft => draft.id === undefined || draft.id === this.lastCheckpoint);
+                const retained = previous ? alternatives.findIndex(draft => sameDraft(draft, previous)) : -1;
+                const local = alternatives.findIndex(draft => draft.id === this.lastCheckpoint);
+                const suggested = local >= 0 ? local : alternatives.findIndex(draft => draft.id === undefined);
+                const selected = retained >= 0 ? retained : Math.max(0, suggested);
+                this.offer = { drafts: alternatives, selected, capture, ...(working && { working }) };
+                this.token = envelope.token;
+                if (retained < 0) this.showOffer = suggested >= 0;
                 if (working) this.checkpointed = capture;
                 this.publish("offer", this.offerMessage());
             } else { this.token = null; this.publish("idle", "Recovery is ready."); }

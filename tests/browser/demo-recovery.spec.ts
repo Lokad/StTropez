@@ -1,5 +1,30 @@
 import { test, expect } from "./fixtures.ts";
 
+test("reloading each tab selects its own recovery draft when both edited the same sample", async ({ page, context }) => {
+    await page.goto("./?provider=browser");
+    const source = page.getByRole("textbox", { name: "main.ts", exact: true });
+    await source.press("Control+Home");
+    await page.keyboard.insertText("// First tab\n");
+    await expect(page.locator("#recovery-status")).toHaveText("Recovery draft captured in this browser.");
+
+    const peer = await context.newPage();
+    await peer.goto("./?provider=browser");
+    await peer.getByRole("button", { name: "Review draft", exact: true }).click();
+    await peer.getByRole("textbox", { name: "main.ts", exact: true }).press("Control+Home");
+    await peer.keyboard.insertText("// Second tab\n");
+    await expect(peer.locator("#recovery-message")).toContainText("Your current edits have a recovery copy.");
+
+    for (const [tab, prefix] of [[page, "// First tab"], [peer, "// Second tab"]] as const) {
+        tab.on("dialog", dialog => dialog.accept());
+        await tab.reload();
+        const versions = tab.getByRole("combobox", { name: "Recovery version" });
+        await expect(versions.locator("option")).toHaveCount(2);
+        await expect(tab.locator("#recovery-message")).toContainText("This tab's last draft is selected.");
+        await tab.getByRole("button", { name: "Restore draft", exact: true }).click();
+        await expect(tab.locator("#editor .st-viewport-row").first()).toHaveText(prefix);
+    }
+});
+
 test("editing with an unanswered draft keeps both versions available after reload", async ({ page }) => {
     page.on("dialog", dialog => dialog.accept()); await page.goto("/");
     const source = page.getByRole("textbox", { name: "main.ts", exact: true }), status = page.locator("#recovery-status");

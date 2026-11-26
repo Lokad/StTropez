@@ -172,6 +172,17 @@ test("two pages editing beside an offer retain each version without rewriting ea
         reopened.recovery.selectVersion(index);
         assert.ok(Object.values(JSON.parse(reopened.recovery.download()!).files).includes(expected));
     }
+    for (const [index, visible] of [[1, true], [2, false]] as const) {
+        reopened.recovery.selectVersion(index);
+        reopened.recovery.setOfferVisible(visible);
+        const selected = reopened.recovery.download();
+        second.edit();
+        t.mock.timers.tick(300);
+        await setImmediate();
+        await reopened.recovery.refresh();
+        assert.equal(reopened.recovery.download(), selected);
+        assert.equal(reopened.recovery.state.getSnapshot().present, visible);
+    }
 });
 
 test("stale restore and discard cannot replace or delete another page's newer draft", async t => {
