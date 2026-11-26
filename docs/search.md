@@ -145,8 +145,8 @@ in context.
 
 ## Host responsibilities
 
-Supply the worker, label partial counts and dispose controllers and subscriptions on detach. Bind controls
-to the pane and its edit permissions.
+Supply the worker, label partial counts and bind controls to the pane and its edit permissions. Dispose
+controllers and subscriptions on detach. A disposed controller exposes its last snapshot and rejects new subscriptions.
 
 ## Not covered
 

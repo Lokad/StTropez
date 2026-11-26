@@ -43,9 +43,8 @@ test("controller and workspace notifications reject cross-owner writes through n
         assert.deepEqual(errors, []);
         find.dispose();
         assert.equal(scope.subscriptionCount(), 0);
-        const stopLate = find.subscribe(() => assert.fail("Disposed Find published again"));
+        assert.throws(() => find.subscribe(() => {}), /Find controller is disposed/);
         assert.equal(scope.subscriptionCount(), 0);
-        stopLate();
     } finally {
         stops.forEach(stop => stop()); find.dispose(); comparison.dispose(); view.dispose();
         assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0);
@@ -104,12 +103,14 @@ for (const lifetime of ["destroyed", "view-disposed"] as const) for (const compo
             find.setQuery("sample");
             for (let turns = 0; find.getSnapshot().status !== "ready"; turns++) { assert.ok(turns < 100); await new Promise(resolve => setTimeout(resolve, 1)); }
             find.next(); assert.notEqual(find.getSnapshot().current, null); inactive = true;
+            let notifications = 0;
+            stop = find.subscribe(() => { notifications++; });
             if (lifetime === "destroyed") find.dispose();
             else view.dispose();
             const before = find.getSnapshot(), document = workspace.document(documentId), selected = view.getSnapshot(), history = workspace.observeHistory(documentId).getSnapshot();
             if (lifetime !== "view-disposed") assert.equal(before.current, null);
             assert.equal(before.reason, null);
-            let notifications = 0; stop = find.subscribe(() => { notifications++; });
+            notifications = 0;
             const returned = find.replaceCurrent("changed"), after = find.getSnapshot();
             t.diagnostic(JSON.stringify({ lifetime, composing, returned, notifications, before, after }));
             assert.deepEqual(returned, { status: "stale" }); assert.strictEqual(after, before); assert.equal(notifications, 0);

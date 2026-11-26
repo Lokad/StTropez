@@ -11,7 +11,8 @@ import { FindIndex } from "../core/find-index.ts";
 import { LiteralFindRepair } from "./find-index.ts";
 import { createFindReplacementPlan } from "../core/find.ts";
 import type { FindBackend, FindQueryCapture, FindSearchCursor, FindPlanCursor, FindPlanStep } from "../core/find.ts";
-import type { Observable, ObservableListener } from "../core/observable.ts";
+import type { Observable } from "../core/observable.ts";
+import { controllerObservable } from "./controller-observable.ts";
 import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { Store } from "../core/observable.ts";
@@ -650,8 +651,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
         store.clearSnapshotListeners();
     };
     onAbort(editor.signal, dispose);
-    return Object.freeze({ getSnapshot: store.observable.getSnapshot,
-        subscribe: (listener: ObservableListener) => disposed ? () => {} : store.observable.subscribe(listener),
+    return Object.freeze({ ...controllerObservable(store, "Find", () => disposed),
         getDiagnostics: () => Object.freeze({ maxScanStepMs: scanMaximum, replaceTransactionMs }), matchesIn,
         setQuery: (query, queryOptions) => {
             scope.assertWritable(); if (disposed) return;
