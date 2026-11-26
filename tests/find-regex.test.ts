@@ -97,19 +97,36 @@ function fixture(text: string, supplied = true) {
 }
 
 test("async regex find advances empty matches, accepts manual overlaps and preserves shared complete-set undo", async () => {
-    const f = fixture("😀x");
+    const original = "😀x\r\nlast";
+    const f = fixture(original);
     try {
-        f.find.setFlags({ regularExpression: true }); f.find.setQuery("(?:)"); await f.drain(); assert.equal(f.find.getSnapshot().count, 3);
+        f.find.setFlags({ regularExpression: true });
+        f.find.setQuery("(?:)");
+        await f.drain();
+        assert.equal(f.find.getSnapshot().count, 9);
         assert.deepEqual(f.find.matchesIn(1, 3), [{ from: 2, to: 2 }]);
-        assert.deepEqual(f.find.matchesIn(3, 3), [{ from: 3, to: 3 }]);
-        for (const expected of [0, 2, 3, 0]) { assert.equal(f.find.next(), true); assert.equal(f.view.getSnapshot().selection.head, expected); }
+        assert.deepEqual(f.find.matchesIn(9, 9), [{ from: 9, to: 9 }]);
+        for (const head of [0, 2, 3, 4, 5, 6, 7, 8, 9, 0]) {
+            assert.equal(f.find.next(), true);
+            const selection = f.view.getSnapshot().selection;
+            assert.deepEqual([selection.anchor, selection.head], [head, head]);
+        }
         f.view.setSelections(0, [{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]); const selected = f.view.getSnapshot().selectionSet;
-        assert.equal(f.find.replaceCurrent("<>"), true); await f.drain(); assert.equal(f.text(), "<>😀x"); assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 1);
+        assert.equal(f.find.replaceCurrent("<>"), true);
+        await f.drain();
+        assert.equal(f.text(), "<>" + original);
+        assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 1);
         assert.equal(f.view.getSnapshot().selection.head, 4);
-        f.workspace.undo({ documentId: f.source.documentId, expectedRevision: f.workspace.document(f.source.documentId).revision }); await f.drain(); assert.equal(f.text(), "😀x"); assert.deepEqual(f.view.getSnapshot().selectionSet, selected);
+        f.workspace.undo({ documentId: f.source.documentId, expectedRevision: f.workspace.document(f.source.documentId).revision });
+        await f.drain();
+        assert.equal(f.text(), original);
+        assert.deepEqual(f.view.getSnapshot().selectionSet, selected);
         const before = f.workspace.observeHistory(f.source.documentId).getSnapshot(); f.find.replaceCurrent("$&"); await f.drain(); assert.deepEqual(f.workspace.observeHistory(f.source.documentId).getSnapshot(), before);
         assert.equal(f.view.getSnapshot().selection.head, 2);
-        f.find.replaceCurrent("$&"); await f.drain(); assert.equal(f.view.getSnapshot().selection.head, 3); assert.equal(f.text(), "😀x");
+        f.find.replaceCurrent("$&");
+        await f.drain();
+        assert.equal(f.view.getSnapshot().selection.head, 3);
+        assert.equal(f.text(), original);
     } finally { f.finish(); }
     const overlap = fixture("aaa");
     try {
