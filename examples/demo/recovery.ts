@@ -1,4 +1,4 @@
-import type { DocumentSnapshot, Observable, ResourceMetadata, ResourceTarget, TabTarget } from "../../src/index.ts";
+import type { DocumentSnapshot, Observable, ResourceMetadata, ResourceTarget, TabTarget, TextBuffer } from "../../src/index.ts";
 import type { Workspace } from "../../src/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import { createBrowserDraftStore } from "../shared/draft-store.ts";
@@ -36,8 +36,7 @@ function encode(drafts: readonly Draft[]) {
     return drafts.length === 1 ? drafts[0]! : { version: 2, drafts };
 }
 
-function matchesFile(item: Capture[number], draft: Draft): boolean {
-    const buffer = item.document.buffer, text = draft.files[item.file.name]!;
+export function matchesText(buffer: TextBuffer, text: string): boolean {
     if (buffer.length !== text.length) return false;
     let offset = 0;
     for (const chunk of buffer.chunks()) {
@@ -45,6 +44,9 @@ function matchesFile(item: Capture[number], draft: Draft): boolean {
         offset += chunk.length;
     }
     return true;
+}
+function matchesFile(item: Capture[number], draft: Draft): boolean {
+    return matchesText(item.document.buffer, draft.files[item.file.name]!);
 }
 function matches(capture: Capture, draft: Draft): boolean {
     return capture.every(item => matchesFile(item, draft));

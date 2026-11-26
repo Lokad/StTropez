@@ -62,6 +62,64 @@ class MemoryStore implements DraftStore {
 
 const unusedProvider = async () => { throw new Error("This project fixture never starts a language provider."); };
 
+test("equivalent peer saves preserve the draft and distinct unopened files require review", async () => {
+    const store = new MemoryStore(), drafts = new MemoryStore();
+    let notify = () => {};
+    store.watch = changed => { notify = changed; return () => {}; };
+    let seen = latch<void>();
+    const project = await DemoProject.open("navigation", () => true, unusedProvider, {
+        createStore: name => name === "sttropez-demo-projects-v1" ? store : drafts,
+        peerChanged: () => seen.resolve(),
+    });
+    try {
+        const originals = project.sample.files, file = project.files[0]!;
+        const id = file.resource.documentId, workspace = project.workspace;
+        const emit = async (files: Record<string, string>, token: string) => {
+            store.row = { token, value: { version: 1, files } };
+            seen = latch<void>();
+            notify();
+            await seen.promise;
+        };
+        const local = "// draft\n" + originals[file.name];
+        workspace.replaceText(id, local, { origin: "human", history: "record" });
+        const view = file.view.getSnapshot();
+        await emit(originals, "same-baseline");
+        assert.equal(project.hasConflict(), false);
+        assert.equal(file.view.getSnapshot(), view);
+        assert.equal(project.dirty(), true);
+        // A second equivalent save arrives before its notification. Save must still compare the stored files.
+        store.row = { ...store.row!, token: "unannounced" };
+        await project.save(() => {});
+        assert.equal(project.dirty(), false);
+        assert.equal((store.row!.value as { files: Record<string, string> }).files[file.name], local);
+        const saved = store.row;
+        await project.save(() => {});
+        assert.equal(store.row, saved);
+        workspace.replaceText(id, "matching draft", { origin: "human", history: "record" });
+        const revision = workspace.document(id).revision;
+        await emit({ ...originals, [file.name]: "matching draft" }, "matches-working");
+        assert.equal(project.hasConflict(), false);
+        assert.equal(project.dirty(), false);
+        assert.equal(file.resource.metadata.getSnapshot().serverVersion, "matches-working");
+        assert.equal(workspace.document(id).revision, revision);
+        assert.ok(workspace.undo({ documentId: id, expectedRevision: revision }).applied);
+        assert.equal(workspace.document(id).text(), local);
+        const unopened = Object.keys(originals).find(name => !project.files.some(item => item.name === name))!;
+        assert.ok(unopened);
+        const changed = { ...originals, [file.name]: local, [unopened]: "// only the peer has this edit" };
+        store.row = { token: "different", value: { version: 1, files: changed } };
+        await project.save(() => {});
+        assert.equal(project.hasConflict(), true);
+        assert.equal(store.row.token, "different");
+        assert.equal(project.files.length, 1);
+        assert.ok(project.reviewConflict());
+        assert.equal(project.baseline(project.files.find(item => item.name === unopened)!).buffer.text(), changed[unopened]);
+        await project.save(() => {});
+        assert.equal(store.row.token, "different");
+        assert.ok(project.canSaveReviewed());
+    } finally { project.dispose(); await project.language.dispose(); }
+});
+
 test("a save supersedes an in-flight peer read and disposal retires its replacement", async () => {
     const store = new MemoryStore(), recovery = new MemoryStore();
     let notify: (() => void) | undefined;
@@ -182,9 +240,11 @@ test("taking a reviewed copy preserves edits and replacement views during the st
 });
 
 test("demo startup falls back only for unreadable storage and preserves the stored copy", async t => {
-    for (const failure of ["read", "decode"] as const) await t.test(failure, async () => {
+    for (const failure of ["read", "decode", "missing token"] as const) await t.test(failure, async () => {
         const store = new MemoryStore(), recovery = new MemoryStore();
-        const original = { token: "saved", value: { version: 99 } };
+        const original = failure === "missing token"
+            ? { token: "invalid", value: { version: 1, files: demoSample("pricing").files } }
+            : { token: "saved", value: { version: 99 } };
         store.row = original;
         if (failure === "read") store.read = async () => { throw new Error("Storage is unavailable"); };
         const project = await DemoProject.open("pricing", () => true, unusedProvider,

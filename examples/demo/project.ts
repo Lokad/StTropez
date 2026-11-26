@@ -5,7 +5,7 @@ import { createBrowserDraftStore } from "../shared/draft-store.ts";
 import type { DraftStore, StoredDraft } from "../shared/draft-store.ts";
 import { demoSample } from "./samples.ts";
 import type { DemoSample, SampleId } from "./samples.ts";
-import { DemoRecovery } from "./recovery.ts";
+import { DemoRecovery, matchesText } from "./recovery.ts";
 import { DemoLanguage } from "./language.ts";
 import type { DemoProviderFactory } from "./provider-contract.ts";
 import { HostSourceNotes } from "../shared/source-notes.ts";
@@ -20,9 +20,10 @@ type ProjectStorage = Readonly<{
     peerChanged?: (project: DemoProject) => void;
 }>;
 
-function readProject(value: unknown, names: readonly string[]): StoredProject {
-    const candidate = value as Partial<StoredProject> | null;
-    if (!candidate || candidate.version !== 1 || !candidate.files || Object.keys(candidate.files).length !== names.length
+function readProject(stored: StoredDraft, names: readonly string[]): StoredProject {
+    const candidate = stored.value as Partial<StoredProject> | null;
+    if (stored.token === "invalid" || !candidate || candidate.version !== 1
+        || !candidate.files || Object.keys(candidate.files).length !== names.length
         || names.some(name => typeof candidate.files![name] !== "string" || candidate.files![name]!.length > 8_000_000)) {
         throw new Error("The saved project cannot be read. Its stored copy has been left untouched.");
     }
@@ -64,7 +65,9 @@ export class DemoProject {
     get message(): string {
         if (this.notice.editRefusal !== undefined) return this.notice.editRefusal;
         if (this.notice.text !== undefined) return this.notice.text;
-        if (this.review && !this.saving && !this.canSaveReviewed()) return "The files changed after review. Review the saved copy again.";
+        if (this.review && !this.saving) return this.canSaveReviewed()
+            ? "Review each file, then keep your version or take the other page's saved files."
+            : "The files changed after review. Review the saved copy again.";
         return this.dirty() ? "Unsaved changes." : this.token ? "Saved in this browser." : "Files match the original sample.";
     }
     set message(text: string) { this.notice = { text }; }
@@ -137,7 +140,7 @@ export class DemoProject {
             let saved: StoredProject | null = null, token: string | null = null, message: string | undefined;
             try {
                 const stored = await store.read();
-                if (stored) { saved = readProject(stored.value, Object.keys(demoSample(id).files)); token = stored.token; }
+                if (stored) { saved = readProject(stored, Object.keys(demoSample(id).files)); token = stored.token; }
             } catch (error) {
                 // Only unavailable/unreadable storage selects the editable sample fallback.
                 // Retain a null token so saving cannot overwrite an unreadable stored copy.
@@ -183,7 +186,7 @@ export class DemoProject {
         this.prepareEditable();
         this.review = { copy: this.conflict, revisions: new Map(this.editable.map(file =>
             [file, this.workspace.document(file.resource.documentId).revision])) };
-        this.message = "Review each file, then keep your version or take the other page's saved files.";
+        this.notice = {};
         return true;
     }
     canSaveReviewed(): boolean {
@@ -191,18 +194,54 @@ export class DemoProject {
         return !this.disposed && !this.saving && !!review && review.copy === this.conflict
             && this.editable.every(file => this.workspace.document(file.resource.documentId).revision === review.revisions.get(file));
     }
-    private readConflict(stored: StoredDraft): Conflict {
-        const saved = readProject(stored.value, Object.keys(this.sample.files));
-        return { token: stored.token, baselines: new Map(Object.entries(saved.files).map(([name, text]) =>
-            [name, { buffer: TextBuffer.from(text), version: stored.token }])) };
+    private matchesFiles(files: StoredProject["files"], side: "working" | "saved"): boolean {
+        return Object.entries(this.unloaded).every(([name, text]) => text === files[name])
+            && this.editable.every(file => {
+                const buffer = side === "working" ? this.workspace.document(file.resource.documentId).buffer
+                    : this.baselines.get(file.name)!.buffer;
+                return matchesText(buffer, files[file.name]!);
+            });
+    }
+    private peerFiles(stored: StoredDraft): StoredProject["files"] {
+        // A newer unreadable row must also retire permission to use a previously reviewed copy.
+        if (this.conflict?.token !== stored.token) this.conflict = undefined;
+        return readProject(stored, Object.keys(this.sample.files)).files;
     }
     private showPeerCopy(stored: StoredDraft | null): void {
-        this.conflict = stored ? this.readConflict(stored) : undefined;
-        if (!stored) this.token = null;
+        if (stored) {
+            const files = this.peerFiles(stored);
+            if (this.matchesFiles(files, "saved") || this.adoptMatchingWorkingCopy(files, stored.token)) {
+                // Only the project storage token changed, or our exact working files were saved elsewhere.
+                this.token = stored.token;
+                this.conflict = undefined;
+                this.review = undefined;
+                this.notice = {};
+                return;
+            }
+            this.conflict ??= { token: stored.token, baselines: new Map(Object.entries(files).map(([name, text]) =>
+                [name, { buffer: TextBuffer.from(text), version: stored.token }])) };
+            if (this.review?.copy === this.conflict) {
+                this.notice = {};
+                return;
+            }
+        } else {
+            this.token = null;
+            this.conflict = undefined;
+        }
         const text = !stored ? "The saved copy was removed. Save locally to keep your current files."
             : this.review ? "The other page saved again. Review the new saved copy."
             : "Another page saved this sample. Review the saved copy when you're ready.";
         this.notice = { text, keepOnEdit: true };
+    }
+    private adoptMatchingWorkingCopy(files: StoredProject["files"], token: string): boolean {
+        if (!this.matchesFiles(files, "working")) return false;
+        const versions = this.editable.map(file => ({
+            resourceId: file.resource.id, text: this.workspace.document(file.resource.documentId).buffer,
+            serverVersion: token, name: file.name,
+        }));
+        if (!this.workspace.adoptSavedDocuments(versions, { history: "record" }).applied) return false;
+        for (const { name, text } of versions) this.baselines.set(name, { buffer: text, version: token });
+        return true;
     }
     private queuePeerRead(): void {
         if (this.disposed) return;
@@ -219,7 +258,7 @@ export class DemoProject {
                     const stored = await this.store.read();
                     if (this.disposed || this.pendingPeerRead) continue;
                     if (!stored && this.token === null && !this.conflict) continue;
-                    if (stored && (stored.token === this.token || stored.token === this.conflict?.token)) continue;
+                    if (stored && stored.token === (this.conflict?.token ?? this.token)) continue;
                     this.showPeerCopy(stored);
                 } catch (error) {
                     if (this.disposed || this.pendingPeerRead) continue;
@@ -267,6 +306,32 @@ export class DemoProject {
     download(): string {
         return JSON.stringify({ version: 1, files: { ...this.unloaded, ...Object.fromEntries(this.editable.map(file => [file.name, this.workspace.document(file.resource.documentId).text()])) } }, null, 2);
     }
+    /** On a missed peer notification, retry once against an identical baseline. Every write checks its token. */
+    private async writeFiles(files: StoredProject["files"], expected: string | null, reviewed: boolean):
+        Promise<string | StoredDraft | null> {
+        const names = Object.keys(files);
+        const sameSubmission = (saved: StoredProject["files"]) => names.every(name => files[name] === saved[name]);
+        if (!reviewed && expected !== null && this.matchesFiles(files, "saved")) {
+            const peer = await this.store.read();
+            // Saving an unchanged project must leave a review in another tab usable.
+            return peer && sameSubmission(this.peerFiles(peer)) ? peer.token : peer;
+        }
+        const entry = { token: crypto.randomUUID(), value: { version: 1, files } };
+        for (let attempt = 0; ; attempt++) {
+            try {
+                await this.store.write(entry, expected);
+                return entry.token;
+            } catch (error) {
+                const peer = await this.store.read().catch(() => undefined);
+                if (peer === undefined || (peer?.token ?? null) === expected) throw error;
+                if (!peer || reviewed || this.disposed) return peer;
+                const saved = this.peerFiles(peer);
+                if (sameSubmission(saved)) return peer.token;
+                if (attempt || !this.matchesFiles(saved, "saved")) return peer;
+                expected = peer.token;
+            }
+        }
+    }
     async save(changed: () => void, reviewed = false): Promise<void> {
         if (this.disposed || this.saving) return;
         if (!this.inputIdle()) {
@@ -277,7 +342,6 @@ export class DemoProject {
         if (reviewed && !this.canSaveReviewed()) return;
         const expected = reviewed ? this.conflict!.token : this.token;
         const tickets: { file: DemoFile; ticket: SaveTicket<string>; buffer: TextBuffer }[] = [];
-        let writing = false;
         this.beginStorage();
         try {
             const capture = (file: DemoFile) => {
@@ -289,46 +353,36 @@ export class DemoProject {
                 return ticket;
             };
             for (const file of this.editable) capture(file);
-            const token = crypto.randomUUID();
             const files = { ...this.unloaded };
             for (const { file, ticket } of tickets) files[file.name] = ticket.start().value;
             // If navigation opens a submitted file before storage replies, acknowledge its original
             // buffer with the other tickets. Typing in the newly opened tab stays dirty.
             this.includeOpenedFileInSave = file => { capture(file).start(); };
+            let result: string | StoredDraft | null;
             try {
                 this.notice = { text: "Saving locally…", keepOnEdit: true }; changed();
-                writing = true;
-                await this.store.write({ token, value: { version: 1, files } }, expected);
+                result = await this.writeFiles(files, expected, reviewed);
             } finally { this.includeOpenedFileInSave = undefined; }
             if (this.disposed) return;
-            this.token = token;
+            if (typeof result !== "string") {
+                for (const { ticket } of tickets) ticket.conflict();
+                this.showPeerCopy(result);
+                return;
+            }
+            this.token = result;
             this.conflict = undefined; this.review = undefined;
             for (const { file, ticket, buffer } of tickets) {
-                ticket.accept({ serverVersion: token }); this.baselines.set(file.name, { buffer, version: token });
+                ticket.accept({ serverVersion: result });
+                this.baselines.set(file.name, { buffer, version: result });
             }
             await this.recovery.settleSavedDraft();
             if (this.disposed) return;
             this.notice = this.dirty() ? { text: "Saved in this browser. Later edits remain unsaved." } : {};
         } catch (error) {
-            // The store checks the captured token in one read/write transaction across every file.
-            const remote = writing ? await this.store.read().catch(() => undefined) : undefined;
-            const versionChanged = remote !== undefined && (remote?.token ?? null) !== expected;
-            for (const { ticket } of tickets) {
-                if (versionChanged) ticket.conflict();
-                else ticket.fail();
-            }
-            if (versionChanged) {
-                try {
-                    this.showPeerCopy(remote);
-                } catch {
-                    this.conflict = undefined;
-                    this.notice = { text: "The saved copy cannot be read. Your edits are intact.", keepOnEdit: true };
-                }
-            } else {
-                this.review = undefined;
-                const text = error instanceof Error ? `Could not save: ${error.message}` : "Could not save. Your edits are intact.";
-                this.notice = { text, keepOnEdit: true };
-            }
+            for (const { ticket } of tickets) ticket.fail();
+            this.review = undefined;
+            const text = error instanceof Error ? `Could not save: ${error.message}` : "Could not save. Your edits are intact.";
+            this.notice = { text, keepOnEdit: true };
         } finally {
             tickets.forEach(({ ticket }) => ticket.finish()); this.finishStorage(changed);
         }

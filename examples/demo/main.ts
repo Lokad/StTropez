@@ -465,7 +465,10 @@ function loadProject(id: SampleId, openProvider: DemoProviderFactory): Promise<D
     const load = DemoProject.open(id, () => {
         return project?.sample.id !== id || !projectBusy();
     }, openProvider, { peerChanged: changed => {
-        if (changed === project && !disposed) scheduleMetadata();
+        if (changed === project && !disposed) {
+            refreshReviewBaseline();
+            scheduleMetadata();
+        }
     } }).then(next => {
         if (disposed) next.dispose();
         else projects.set(id, next);
