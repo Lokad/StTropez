@@ -24,7 +24,7 @@ export type { BracketMatchOptions, BracketMatchResult } from "./core/bracket-mat
 export { characterWarningLabel } from "./core/character-warnings.ts";
 export type { CharacterWarningKind, CharacterWarningOptions, CharacterWarningConfiguration, CharacterWarning, CharacterWarningLimits, CharacterWarningBatch } from "./core/character-warnings.ts";
 export type { Snippet, SnippetStop, SnippetOccurrence, SnippetParseResult, SnippetEditPlan } from "./core/snippets.ts";
-export { Workspace } from "./core/workspace.ts";
+export { Workspace, type SaveResponse } from "./core/workspace.ts";
 export type { TextTransaction } from "./core/text-transaction.ts";
 export type {
     BatchEditResult, Capabilities, ChangeResult, DocumentChange, DocumentEditRequest, DocumentId, DocumentLanguage, DocumentSnapshot, DocumentView,

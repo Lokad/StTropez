@@ -11,8 +11,9 @@
         <header>
             <h1>quote.ts</h1>
             <output id="saved"></output>
-            <button id="save" type="button">Save for this tab</button>
+            <button id="save" type="button">Save</button>
             <button id="save-reviewed" type="button" hidden>Save reviewed working copy</button>
+            <button id="adopt" type="button" hidden>Use saved copy</button>
         </header>
         <nav aria-label="Document view">
             <button id="source" aria-pressed="true">Source</button>
@@ -21,6 +22,21 @@
         </nav>
         <div id="search"></div>
         <div id="pane"></div>
+        <details>
+            <summary>Storage simulation</summary>
+            <div class="bar">
+                <label><input id="compare-versions" type="checkbox" checked> Compare versions on write</label>
+                <label><input id="delay" type="checkbox"> Delay writes</label>
+                <label><input id="canonical" type="checkbox"> Trim trailing whitespace on save</label>
+                <label>Next write
+                    <select id="fault">
+                        <option value="none">Normal</option>
+                        <option value="fail">Fail before commit</option>
+                        <option value="lose-reply">Lose reply after commit</option>
+                    </select>
+                </label>
+            </div>
+        </details>
         <section aria-label="Language tools">
             <div class="bar">
                 <button id="connect">Connect language server</button>

@@ -1,6 +1,6 @@
 import { HostCell } from "../../../examples/shared/observable.ts";
-import type { Immutable, Observable, ObservableListener, ResourceHandle, ResourceSnapshot, ResourceTarget, SaveReview, SaveSubmission, SnapshotValue, Workspace } from "../../../src/index.ts";
-import type { SaveResponse, HostSaveQueue } from "../save-queue.ts";
+import type { Immutable, Observable, ObservableListener, ResourceHandle, ResourceSnapshot, ResourceTarget, SaveReview, SaveResponse, SaveSubmission, SnapshotValue, Workspace } from "../../../src/index.ts";
+import type { HostSaveQueue } from "../save-queue.ts";
 
 type State<T> = Readonly<{ pending: boolean; message: string; conflict: Readonly<{ version: string; value: Immutable<T> | null }> | null; preview: string | null }>;
 type Pending<T> = Readonly<{ submission: SaveSubmission<T>; resolve: (response: SaveResponse<T>) => void; reject: (error: Error) => void }>;

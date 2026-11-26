@@ -224,29 +224,16 @@ Share one saver per resource. Capture text on each press. Start the write after 
 it uses the latest acknowledged version. Storage must compare versions inside the write.
 
 ```ts
-import type { SaveReview, SaveSubmission, TextResourceHandle, Workspace } from "sttropez";
+import type { SaveResponse, SaveReview, SaveSubmission, TextResourceHandle, Workspace } from "sttropez";
 
 export function createFileSaver(
     workspace: Workspace, source: TextResourceHandle,
-    write: (submission: SaveSubmission<string>) => Promise<
-        { kind: "saved"; serverVersion: string; canonical?: string } | { kind: "conflict"; serverVersion: string }>
+    write: (submission: SaveSubmission<string>) => Promise<SaveResponse<string>>
 ) {
     let previous: Promise<unknown> = Promise.resolve();
     return async function save(review?: SaveReview) {
         const ticket = workspace.captureSave(source, review);
-        const result = previous.then(async () => {
-            try {
-                const response = await write(ticket.start());
-                if (response.kind === "saved") return ticket.accept(response);
-                ticket.conflict();
-                return response;
-            } catch (error) {
-                ticket.fail();
-                throw error;
-            } finally {
-                ticket.finish();
-            }
-        });
+        const result = previous.then(() => ticket.run(write));
         previous = result.catch(() => {});
         return result;
     };
@@ -254,7 +241,7 @@ export function createFileSaver(
 ```
 
 Capture and submission require save permission. Each press gets its own result.
-Failure or conflict leaves both draft and baseline intact. `finish()` releases the reservation.
+Failure or conflict leaves both draft and baseline intact. `ticket.run` releases the ticket on every outcome and rethrows storage errors.
 
 #### Retry after review
 
@@ -263,8 +250,8 @@ remote version. A stale capture or outstanding save blocks retry. Another storag
 review.
 
 Success advances the baseline. The receipt records submission, saved value, version and canonical-text
-adoption. Canonical text applies as one Undo step only at the captured revision, with host edit permission
-and no lock. Pass `{ applyCanonical: false }` to preserve working text. Later edits stay dirty until they
+adoption. Canonical text applies as one Undo step at the captured revision when the host can edit.
+Pass `{ applyCanonical: false }` to `ticket.accept` to preserve working text. Later edits stay dirty until they
 match the saved value.
 
 #### Install an existing saved version

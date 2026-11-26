@@ -1,10 +1,11 @@
-import { discoverIndentationFolds, TextBuffer, Workspace, type SaveReview } from "sttropez";
+import { discoverIndentationFolds, TextBuffer, Workspace, type SaveReview, type SaveTicket } from "sttropez";
 import type { ReferenceViewState, TextComparison } from "sttropez/browser";
 import {
     BrowserLspWorkspace, mountFindBar, createFoldingController,
     mountTextComparison, mountTextEditor, openWebSocketTransport,
 } from "sttropez/browser";
 import { bindLanguage } from "./language.js";
+import { referenceStorage, type SavedCopy, type StorageMode } from "./storage.js";
 
 const name = "quote.ts";
 const initial = `export const accent = "#5fae99";
@@ -17,7 +18,7 @@ export function quote(price: number, quantity: number) {
 
 export const total = quote(24, 3);
 `;
-const key = "sttropez.reference.quote";
+const storage = referenceStorage(initial);
 const pane = document.querySelector<HTMLElement>("#pane")!;
 const workingTools = document.querySelector<HTMLFieldSetElement>("#working-tools")!;
 const find = mountFindBar(document.querySelector<HTMLElement>("#search")!, {
@@ -26,25 +27,32 @@ const find = mountFindBar(document.querySelector<HTMLElement>("#search")!, {
 document.querySelector("#find")!.addEventListener("click", () => find.open());
 const saved = document.querySelector<HTMLOutputElement>("#saved")!;
 const saveReviewed = document.querySelector<HTMLButtonElement>("#save-reviewed")!;
-let competingText: string | undefined;
-const readSaved = () => sessionStorage.getItem(key) ?? initial;
-let opened = initial;
+const adopt = document.querySelector<HTMLButtonElement>("#adopt")!;
+const compareVersions = document.querySelector<HTMLInputElement>("#compare-versions")!;
+const delay = document.querySelector<HTMLInputElement>("#delay")!;
+const canonical = document.querySelector<HTMLInputElement>("#canonical")!;
+const fault = document.querySelector<HTMLSelectElement>("#fault")!;
+let competing: SavedCopy | undefined;
+let pending = 0;
+let closed = false;
+let previous = Promise.resolve();
+let opened: SavedCopy = { text: initial, version: "initial" };
 try {
-    opened = readSaved();
+    opened = storage.read();
 } catch {
-    saved.value = "Tab storage unavailable";
+    saved.value = "Saved storage is unavailable";
 }
 
 const workspace = new Workspace();
 const file = workspace.createTextResource({ scope: "quote", resource: name, variant: "working" }, name,
     {
-        value: opened,
-        serverVersion: opened,
+        value: opened.text,
+        serverVersion: opened.version,
         language: { uri: "file:///reference/quote.ts", languageId: "typescript" },
     });
 const view = workspace.createDocumentView(file.id);
 const settings = { minimap: true, bracketMatching: true, language: { tabSize: 4, lineComment: "//" } };
-let baseline = { buffer: workspace.document(file.id).buffer, version: "opened" };
+let baseline = { buffer: workspace.document(file.id).buffer, version: opened.version };
 const provider = new BrowserLspWorkspace(workspace, {
     workspaceEdits: true,
     connect(signal) {
@@ -67,11 +75,11 @@ function mount(review: boolean) {
     }
     const editor = comparison?.panes.working
         ?? mountTextEditor(pane, workspace, file.id, { ariaLabel: name, view, settings });
-    (comparison ?? editor).commands.register({ id: "source.save", label: "Save for this tab", run() { save(); } },
+    (comparison ?? editor).commands.register({ id: "source.save", label: "Save", run() { save(); } },
         { keys: ["Mod+s"], repeat: false });
     function showReviewSave() {
-        saveReviewed.hidden = !comparison || competingText === undefined;
-        saveReviewed.disabled = comparison?.controller.getSnapshot().status !== "ready";
+        saveReviewed.hidden = adopt.hidden = !comparison || !competing;
+        saveReviewed.disabled = adopt.disabled = pending > 0 || comparison?.controller.getSnapshot().status !== "ready";
     }
     const stopReview = comparison?.controller.subscribe(showReviewSave);
     showReviewSave();
@@ -85,7 +93,7 @@ function mount(review: boolean) {
         stopLanguage ??= bindLanguage(editor, provider);
     }
     if (languageEnabled) enableLanguage();
-    return { editor, comparison, enableLanguage, dispose() {
+    return { editor, comparison, enableLanguage, showReviewSave, dispose() {
         stopReview?.();
         stopLanguage?.();
         referenceFolds?.dispose();
@@ -126,7 +134,7 @@ connect.onclick = () => {
 };
 const pendingNotice = "An edit is pending. Try again when it finishes.";
 function showSaveState() {
-    saved.value = competingText !== undefined ? "The saved copy changed. Review it in Changes."
+    saved.value = competing ? "The saved copy changed. Review it in Changes."
         : file.metadata.getSnapshot().dirty ? "Unsaved changes" : "No unsaved changes";
 }
 function editPending() {
@@ -166,66 +174,139 @@ function refreshBaseline() {
     current.comparison?.controller.replaceBaseline(baseline);
 }
 const stopDirty = workspace.onDocumentChange(file.id, showSaveState);
+function presentPeer(copy: SavedCopy) {
+    if (competing?.version !== copy.version) {
+        competing = copy;
+        baseline = { buffer: TextBuffer.from(copy.text), version: copy.version };
+        refreshBaseline();
+    }
+    current.showReviewSave();
+    showSaveState();
+}
+function poll() {
+    if (closed || compareVersions.checked || pending) return;
+    try {
+        const copy = storage.read();
+        if (copy.version !== file.metadata.getSnapshot().serverVersion) presentPeer(copy);
+    } catch (error) {
+        saved.value = error instanceof Error ? error.message : "Cannot read saved copy";
+    }
+}
 function save(review?: SaveReview): boolean {
     if (!readyForHostAction()) return false;
-    const ticket = workspace.captureSave(file, review);
+    if (!compareVersions.checked && !review) {
+        poll();
+        if (competing) {
+            switchView(true);
+            return false;
+        }
+    }
     const buffer = workspace.document(file.id).buffer;
-    let conflict: string | undefined;
+    let ticket: SaveTicket<string>;
     try {
-        const submission = ticket.start();
-        const stored = readSaved();
-        if (stored !== submission.expectedServerVersion && stored !== submission.value) {
-            ticket.conflict();
-            conflict = stored;
-        } else {
-            sessionStorage.setItem(key, submission.value);
-            ticket.accept({ serverVersion: submission.value });
-        }
+        ticket = workspace.captureSave(file, review);
     } catch (error) {
-        ticket.fail();
-        saved.value = error instanceof Error ? error.message : "Save failed";
+        saved.value = error instanceof Error ? error.message : "Save unavailable";
         return false;
-    } finally {
-        ticket.finish();
     }
-    if (conflict !== undefined) {
-        if (conflict !== competingText) {
-            competingText = conflict;
-            baseline = { buffer: TextBuffer.from(conflict), version: "saved in this tab" };
-            refreshBaseline();
+    const mode: StorageMode = {
+        compareVersions: compareVersions.checked,
+        delay: delay.checked,
+        canonical: canonical.checked,
+        fault: fault.value === "lose-reply" || fault.value === "fail" ? fault.value : "none",
+    };
+    fault.value = "none";
+    const issuer = current.editor;
+    pending++;
+    current.showReviewSave();
+    saved.value = "Saving…";
+    previous = previous.then(async () => {
+        try {
+            const result = await ticket.run(submission => {
+                if (closed) throw new Error("Host closed");
+                if (!mode.compareVersions && competing && competing.version !== review?.expectedServerVersion) {
+                    return { kind: "conflict", serverVersion: competing.version };
+                }
+                return storage.write(submission, mode);
+            });
+            if (closed) return;
+            if (result.kind === "conflict") {
+                presentPeer(storage.read());
+                if (issuer === current.editor && !current.comparison && !editPending()) switchView(true);
+            } else {
+                const { savedValue, serverVersion } = result.receipt;
+                const savedBuffer = savedValue === ticket.value ? buffer : TextBuffer.from(savedValue);
+                competing = undefined;
+                if (!baseline.buffer.equals(savedBuffer)) {
+                    baseline = { buffer: savedBuffer, version: serverVersion };
+                    refreshBaseline();
+                }
+                saved.value = file.metadata.getSnapshot().dirty ? "Saved. Later edits are unsaved." : "Saved";
+            }
+        } catch (error) {
+            if (!closed) saved.value = error instanceof Error ? error.message : "Save failed";
+        } finally {
+            pending--;
+            if (!closed) current.showReviewSave();
         }
-        if (!current.comparison) switchView(true);
-        showSaveState();
-    } else {
-        competingText = undefined;
-        saveReviewed.hidden = true;
-        if (!baseline.buffer.equals(buffer)) {
-            baseline = { buffer, version: String(ticket.revision) };
-            refreshBaseline();
-        }
-        saved.value = "Saved";
-    }
-    if (review) current.editor.focus();
-    return conflict === undefined;
+    });
+    return true;
 }
 document.querySelector("#source")!.addEventListener("click", () => switchView(false));
 document.querySelector("#changes")!.addEventListener("click", () => switchView(true));
 document.querySelector("#save")!.addEventListener("click", () => {
     if (save()) focusActivePane();
 });
-saveReviewed.addEventListener("click", () => {
+function reviewed() {
     const state = current.comparison?.controller.getSnapshot();
-    if (competingText !== undefined && state?.status === "ready" && state.working && state.baseline?.buffer === baseline.buffer) {
-        save({ target: workspace.captureResource(file.id), expectedRevision: state.working.revision,
-            expectedServerVersion: competingText });
+    if (pending || !competing || state?.status !== "ready" || !state.working
+        || state.baseline?.buffer !== baseline.buffer || !readyForHostAction()) return;
+    try {
+        const latest = storage.read();
+        if (latest.version === competing.version) return { copy: competing, revision: state.working.revision };
+        presentPeer(latest);
+    } catch (error) {
+        saved.value = error instanceof Error ? error.message : "Cannot read saved copy";
+    }
+    current.editor.focus();
+}
+saveReviewed.addEventListener("click", () => {
+    const review = reviewed();
+    if (review && save({ target: workspace.captureResource(file.id), expectedRevision: review.revision,
+        expectedServerVersion: review.copy.version })) current.editor.focus();
+});
+adopt.addEventListener("click", () => {
+    const review = reviewed();
+    if (!review) return;
+    const result = workspace.adoptSaved(file.id, { text: baseline.buffer, serverVersion: review.copy.version,
+        expectedRevision: review.revision, history: "record" });
+    if (result.applied) {
+        competing = undefined;
+        saved.value = "Using saved copy";
+        current.showReviewSave();
+        current.editor.focus();
     }
 });
+let polling: number | undefined;
+function configurePolling() {
+    clearInterval(polling);
+    if (!compareVersions.checked) {
+        poll();
+        polling = window.setInterval(poll, 1000);
+    }
+}
+configurePolling();
+compareVersions.addEventListener("change", configurePolling);
+window.addEventListener("focus", poll);
 function beforeUnload(event: BeforeUnloadEvent) {
-    if (file.metadata.getSnapshot().dirty || editPending()) event.preventDefault();
+    if (pending || file.metadata.getSnapshot().dirty || editPending()) event.preventDefault();
 }
 window.addEventListener("beforeunload", beforeUnload);
 window.addEventListener("pagehide", event => {
     if (event.persisted) return;
+    closed = true;
+    clearInterval(polling);
+    window.removeEventListener("focus", poll);
     window.removeEventListener("beforeunload", beforeUnload);
     stopConnection();
     stopDirty();

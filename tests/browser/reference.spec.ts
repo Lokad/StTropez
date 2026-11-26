@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { test, expect, warnsBeforeUnload } from "./fixtures.ts";
 import { paintedCharacter } from "../helpers/painted-character.ts";
 
@@ -329,29 +330,32 @@ test("reconnecting the reference host requires a fresh server command choice", a
     expect(executions).toEqual([2, 2, 2]);
 });
 
-test("two reference hosts review a competing save before replacing it", async ({ page }) => {
-    await page.goto("/reference/");
-    await page.evaluate(() => {
-        const other = document.createElement("iframe");
-        other.title = "Second host";
-        other.src = "/reference/";
-        document.body.append(other);
+function readSavedQuote(page: Page): Promise<string | null> {
+    return page.evaluate(() => {
+        const raw = localStorage.getItem("sttropez.reference.quote.v1");
+        return raw === null ? null : JSON.parse(raw).text;
     });
-    const other = page.frameLocator('iframe[title="Second host"]');
+}
+
+test("two reference tabs review a competing save before replacing it", async ({ page, context }) => {
+    await page.goto("/reference/");
+    const other = await context.newPage();
+    await other.goto("/reference/");
     const firstSource = page.getByRole("textbox", { name: "quote.ts" });
     const secondSource = other.getByRole("textbox", { name: "quote.ts" });
-    const secondSave = other.getByRole("button", { name: "Save for this tab" });
-    const stored = () => page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"));
+    const secondSave = other.getByRole("button", { name: "Save", exact: true });
+    const stored = () => readSavedQuote(page);
     await firstSource.press("Control+Home");
     await page.keyboard.insertText("// My draft\n");
     const draft = await firstSource.inputValue();
     const caret = await firstSource.evaluate(node => (node as HTMLTextAreaElement).selectionStart);
     await secondSource.press("Control+Home");
-    await page.keyboard.insertText("// Saved elsewhere\n");
+    await other.keyboard.insertText("// Saved elsewhere\n");
     await secondSave.click();
+    await expect(other.locator("#saved")).toHaveText("Saved");
     const competing = await stored();
     expect(competing).toMatch(/^\/\/ Saved elsewhere/);
-    await page.keyboard.type("x");
+    await other.keyboard.type("x");
     await expect(secondSource).toHaveValue(/^\/\/ Saved elsewhere\nx/);
 
     await firstSource.press("ControlOrMeta+s");
@@ -369,8 +373,9 @@ test("two reference hosts review a competing save before replacing it", async ({
     const secondBaseline = other.getByRole("textbox", { name: "Comparison baseline source" });
     await secondBaseline.focus();
     await secondSave.press("Enter");
+    await expect(other.locator("#saved")).toHaveText("Saved");
     await expect(secondBaseline).toBeFocused();
-    await page.keyboard.type("x");
+    await other.keyboard.type("x");
     await expect(other.getByRole("textbox", { name: "Comparison working source" })).toHaveValue("");
     await overwrite.click();
     await expect(baseline).toHaveValue("");
@@ -390,37 +395,62 @@ test("two reference hosts review a competing save before replacing it", async ({
     await expect(firstSource).toHaveValue(draft);
 });
 
+test("a tab without compare-and-swap refuses an observed change until the user adopts it", async ({ page, context }) => {
+    await page.goto("/reference/");
+    const source = page.getByRole("textbox", { name: "quote.ts" });
+    await page.getByText("Storage simulation", { exact: true }).click();
+    await page.getByLabel("Compare versions on write").uncheck();
+    await source.fill("my draft");
+
+    const peer = await context.newPage();
+    await peer.goto("/reference/");
+    await peer.getByRole("textbox", { name: "quote.ts" }).fill("saved elsewhere");
+    await peer.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.locator("#saved")).toHaveText(/saved copy changed/);
+    await source.press("ControlOrMeta+s");
+    const working = page.getByRole("textbox", { name: "Comparison working source" });
+    await expect(working).toHaveValue("my draft");
+    expect(await readSavedQuote(page)).toBe("saved elsewhere");
+    await page.getByRole("button", { name: "Use saved copy" }).click();
+    await expect(working).toHaveValue("saved elsewhere");
+    expect(await warnsBeforeUnload(page)).toBe(false);
+    await working.press("Control+z");
+    await expect(working).toHaveValue("my draft");
+    expect(await warnsBeforeUnload(page)).toBe(true);
+});
+
 test("Save captures the completed edit and Changes can undo it in the reference host", async ({ page }) => {
     await page.goto("/reference/");
     const source = page.getByRole("textbox", { name: "quote.ts" });
-    const save = page.getByRole("button", { name: "Save for this tab" });
+    const save = page.getByRole("button", { name: "Save", exact: true });
     const changes = page.getByRole("button", { name: "Changes", exact: true });
     const lines = 40_000;
     const text = "0\n".repeat(lines);
     await source.press("Control+a");
     await page.keyboard.insertText(text);
     await save.click();
-    expect(await warnsBeforeUnload(page)).toBe(false);
+    await expect.poll(() => warnsBeforeUnload(page)).toBe(false);
     await source.press("Control+a");
     await page.keyboard.press("Control+/");
     expect(await warnsBeforeUnload(page)).toBe(true);
     await page.keyboard.press("ControlOrMeta+s");
-    expect(await warnsBeforeUnload(page)).toBe(false);
+    await expect.poll(() => warnsBeforeUnload(page)).toBe(false);
     const commented = "// 0\n".repeat(lines);
-    expect(await page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"))).toBe(commented);
+    expect(await readSavedQuote(page)).toBe(commented);
     await changes.click();
     const working = page.getByRole("textbox", { name: "Comparison working source" });
     await expect(working).toBeFocused();
     await working.press("Control+z");
     await page.getByRole("textbox", { name: "Comparison baseline source" }).press("ControlOrMeta+s");
-    expect(await page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"))).toBe(text);
+    await expect(page.locator("#saved")).toHaveText("Saved");
+    expect(await readSavedQuote(page) === text).toBe(true);
 });
 
 test("returning to Changes restores the saved view and layout across working edits", async ({ page }) => {
     await page.goto("/reference/");
     const changes = page.getByRole("button", { name: "Changes", exact: true });
     const source = page.getByRole("button", { name: "Source", exact: true });
-    const save = page.getByRole("button", { name: "Save for this tab" });
+    const save = page.getByRole("button", { name: "Save", exact: true });
     await save.click();
     await changes.click();
     const panes = page.locator(".st-comparison-panes > section");

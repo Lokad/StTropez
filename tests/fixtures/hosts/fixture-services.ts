@@ -1,6 +1,5 @@
 import { TextBuffer } from "../../../src/index.ts";
-import type { SaveSubmission, SnapshotValue } from "../../../src/index.ts";
-import type { SaveResponse } from "../save-queue.ts";
+import type { SaveResponse, SaveSubmission, SnapshotValue } from "../../../src/index.ts";
 import type { RunSubmission } from "./run-command.ts";
 
 export type Connection = Readonly<{ path: string; format: "csv"; [key: string]: SnapshotValue }>;

@@ -1,6 +1,5 @@
-import type { ResourceId, SaveReceipt, SaveSubmission, SaveTicket, SnapshotValue, Workspace } from "../../src/index.ts";
+import type { ResourceId, SaveReceipt, SaveResponse, SaveSubmission, SaveTicket, SnapshotValue, Workspace } from "../../src/index.ts";
 
-export type SaveResponse<T> = Readonly<{ kind: "saved"; serverVersion: string; canonical?: T } | { kind: "conflict"; serverVersion: string }>;
 export type SavePort<T, S extends SaveSubmission<T> = SaveSubmission<T>> = Readonly<{ save: (submission: S) => Promise<SaveResponse<T>> }>;
 export type SaveOutcome<T, R extends SaveReceipt<T> = SaveReceipt<T>> = Readonly<{ kind: "saved"; receipt: R } | { kind: "conflict"; serverVersion: string } | { kind: "failed" }>;
 
@@ -18,16 +17,11 @@ export class HostSaveQueue {
         const previous = this.saves.get(ticket.target.id) ?? Promise.resolve();
         const result = previous.then(async (): Promise<SaveOutcome<T, R>> => {
             try {
-                const response = await port.save(ticket.start());
-                if (response.kind === "conflict") {
-                    ticket.conflict(); return { kind: "conflict", serverVersion: response.serverVersion };
-                }
-                return { kind: "saved", receipt: ticket.accept(response) };
+                return await ticket.run(submission => port.save(submission));
             } catch (error) {
-                ticket.fail();
                 try { this.onError(error); } catch { /* Reporting does not lose ownership or the committed baseline. */ }
                 return { kind: "failed" };
-            } finally { ticket.finish(); }
+            }
         });
         const tail = result.then(() => {});
         this.saves.set(ticket.target.id, tail);

@@ -77,7 +77,13 @@ export type SaveReceipt<T> = Readonly<{ submission: SaveSubmission<T>; savedValu
     canonicalApplied: boolean }>;
 export type SaveTicket<T, S extends SaveSubmission<T> = SaveSubmission<T>, R extends SaveReceipt<T> = SaveReceipt<T>> = Readonly<{ target: ResourceTarget; revision: number; value: Immutable<T>;
     start: () => S; accept: (response: Readonly<{ serverVersion: string; canonical?: T }>, options?: Readonly<{ applyCanonical?: boolean }>) => R;
-    conflict: () => void; fail: () => void; finish: () => void }>;
+    conflict: () => void; fail: () => void; finish: () => void;
+    /** Submit this captured write once. Storage errors propagate after releasing the reservation. */
+    run: (write: (submission: S) => SaveResponse<T> | Promise<SaveResponse<T>>) =>
+        Promise<Readonly<{ kind: "saved"; receipt: R } | { kind: "conflict"; serverVersion: string }>>;
+}>;
+export type SaveResponse<T> = Readonly<{ kind: "saved"; serverVersion: string; canonical?: T }
+    | { kind: "conflict"; serverVersion: string }>;
 export type EditRequest = Readonly<{
     documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; source?: string;
     history?: Readonly<{ kind: EditKind; group?: string; reset?: boolean }>; view?: DocumentView; selection?: Selection; selectionSet?: SelectionSet;
@@ -230,17 +236,18 @@ export class Workspace {
     #create(key: ResourceKey, title: string, kind: "text" | "panel", loaded: LoadedResource<SnapshotValue | TextBuffer> | undefined,
         permissions: Capabilities, options: ResourceOptions & { language?: DocumentLanguage | null }): ResourceHandle<SnapshotValue> {
         this.#scope.assertWritable();
-        const visibility = options.visibility === undefined ? "workspace" : options.visibility;
+        const { visibility = "workspace" } = options;
         key = Object.freeze({ ...key });
         const identity = resourceKeyIdentity(key);
         if (this.#resourceKeys.has(identity)) throw new Error("Resource already exists in this workspace.");
         const input = loaded?.value;
-        const buffer = kind === "text" && input instanceof TextBuffer ? input
-            : kind === "text" && typeof input === "string" ? TextBuffer.from(input) : null;
-        if (kind === "text" && loaded && !buffer) throw new TypeError("Text resource requires a string or buffer.");
+        const isText = kind === "text";
+        const buffer = !isText ? null : input instanceof TextBuffer ? input
+            : typeof input === "string" ? TextBuffer.from(input) : null;
+        if (isText && loaded && !buffer) throw new TypeError("Text resource requires a string or buffer.");
         const value = loaded && !buffer ? snapshotValue(loaded.value as SnapshotValue) : undefined;
         const id = `resource-${++this.#nextId}` as ResourceId;
-        const documentId = kind === "text" ? id as DocumentId : null;
+        const documentId = isText ? id as DocumentId : null;
         const metadata = Object.freeze({ id, key, title, kind, visibility,
             state: loaded === undefined ? "loading" as const : "ready" as const, dirty: false,
             serverVersion: loaded?.serverVersion ?? null, capabilities: capabilities(permissions), saveStatus: "idle" as const, failure: null });
@@ -265,9 +272,13 @@ export class Workspace {
     resource(id: ResourceId): ResourceHandle<SnapshotValue> { return this.#requireResource(id).handle; }
     diagnostics(): Readonly<{ resources: number; documents: number; views: number; leases: number; subscriptions: number;
         history: Readonly<{ groups: number; changes: number; changedUnits: number }> }> {
-        return Object.freeze({ resources: this.#records.size, documents: this.#documents.size,
-            views: [...this.#documents.values()].reduce((total, record) => total + record.views.size, 0), history: this.#history.diagnostics(),
-            leases: [...this.#records.values()].reduce((total, record) => total + record.leases.size + record.views.size, 0), subscriptions: this.#scope.subscriptionCount() });
+        let views = 0, leases = 0;
+        for (const record of this.#records.values()) {
+            views += record.views.size;
+            leases += record.leases.size;
+        }
+        return Object.freeze({ resources: this.#records.size, documents: this.#documents.size, views, leases: leases + views,
+            history: this.#history.diagnostics(), subscriptions: this.#scope.subscriptionCount() });
     }
     #requireDocument(id: DocumentId): ResourceRecord {
         const record = this.#documents.get(id);
@@ -737,7 +748,7 @@ export class Workspace {
             const current = record.state.get();
             this.#commitRecord(record, withMetadata(current, { ...current.metadata, saveStatus }));
         };
-        return Object.freeze({ target, revision, value, start: () => {
+        const ticket: SaveTicket<T> = { target, revision, value, start: () => {
             this.#scope.assertWritable();
             const current = record.state.get();
             if (finished || settled || record.saving !== null) throw new Error("Save ticket is closed or a write is in progress.");
@@ -753,7 +764,7 @@ export class Workspace {
             if (record.documentId !== null && typeof savedValue !== "string") throw new TypeError("Canonical text must be a string.");
             const current = record.state.get();
             if (current.state !== "ready") throw new Error("Saved resource is no longer ready.");
-            const savedBuffer = capturedBuffer ? response.canonical === undefined || savedValue === value ? capturedBuffer : TextBuffer.from(savedValue as string) : null;
+            const savedBuffer = capturedBuffer ? savedValue === value ? capturedBuffer : TextBuffer.from(savedValue as string) : null;
             const canonicalApplied = current.revision === revision && current.metadata.capabilities.edit.includes("host")
                 && options.applyCanonical !== false
                 && (savedBuffer ? !record.buffer!.equals(savedBuffer) : !equalValue(current.value(), savedValue));
@@ -790,7 +801,21 @@ export class Workspace {
             if (record.saving === id) record.saving = null;
             lease.release();
             if (!record.saveReservations && record.metadata.get().saveStatus === "saving") status("idle");
-        } });
+        }, run: async write => {
+            if (submission) throw new Error("Save already started.");
+            try {
+                const reply = await write(ticket.start());
+                if (reply.kind === "saved") return { kind: "saved", receipt: ticket.accept(reply) };
+                ticket.conflict();
+                return reply;
+            } catch (error) {
+                ticket.fail();
+                throw error;
+            } finally {
+                ticket.finish();
+            }
+        } };
+        return Object.freeze(ticket);
     }
 
     /** Release now, or after the last view or lease is released. Unsaved changes cancel a non-discarding release. */

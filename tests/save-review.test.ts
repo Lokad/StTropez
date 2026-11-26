@@ -2,8 +2,23 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, Workspace } from "../src/index.ts";
 import { HostSaveQueue } from "./fixtures/save-queue.ts";
-import type { SaveSubmission, TextTransaction } from "../src/index.ts";
-import type { SaveResponse } from "./fixtures/save-queue.ts";
+import type { SaveResponse, SaveSubmission, TextTransaction } from "../src/index.ts";
+
+test("a failed write in a multi-file save leaves only the unacknowledged file dirty", async () => {
+    const workspace = new Workspace();
+    const files = ["first", "second"].map(name => workspace.createTextResource(
+        { scope: "project", resource: name, variant: "working" }, name, { value: "", serverVersion: "v0" }));
+    for (const file of files) workspace.replaceText(file.id, "edit", { origin: "human", history: "record" });
+    const results = await Promise.allSettled(files.map((file, index) => workspace.captureSave(file).run(() => {
+        if (index === 1) throw new Error("write failed");
+        return { kind: "saved", serverVersion: "v1" };
+    })));
+    assert.deepEqual(results.map(result => result.status), ["fulfilled", "rejected"]);
+    assert.deepEqual(files.map(file => {
+        const { serverVersion, dirty } = file.metadata.getSnapshot();
+        return [serverVersion, dirty, workspace.ownership(file.id).leases];
+    }), [["v1", false, 0], ["v0", true, 0]]);
+});
 
 function fixture() {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "review", resource: "source", variant: "working" }, "Source", { value: "base", serverVersion: "v0" });

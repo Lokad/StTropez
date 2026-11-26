@@ -45,6 +45,12 @@ separate server.
 
 ## Host workflows
 
+Open `/reference/` in two tabs and edit both copies of `quote.ts`. Save one, then the other. **Changes**
+shows the competing copy beside your draft. Choose **Use saved copy** to adopt it or **Save reviewed
+working copy** to keep your edits. **Storage simulation** can delay or fail a write, lose its reply, or
+trim trailing whitespace. With **Compare versions on write** off, the host polls for newer copies.
+A write in that mode can race another tab between the last read and the write.
+
 In either host fixture, edit **Primary source**, undo from **Secondary source** and use **Toggle views**
 twice to remount. Each pane keeps its selection.
 

@@ -6,7 +6,7 @@ pane.
 ## Use
 
 Try the [reference host](http://127.0.0.1:4173/reference/) with `npm run demo`. Edit `quote.ts`, open
-**Changes**, choose **Save for this tab** and reload. **Connect language server** enables completion and
+**Changes**, choose **Save** and reload. **Connect language server** enables completion and
 fixes in the working pane.
 
 ### Open the first editor
@@ -270,29 +270,29 @@ let baseline = { buffer: workspace.document(file.id).buffer, version: "opened" }
 function showSaved(next) {
     if (baseline.buffer.equals(next.buffer)) return;
     baseline = next;
-    review?.controller.beginRefresh().complete(next);
+    review?.controller.replaceBaseline(next);
 }
-button("Save", () => {
+button("Save", async () => {
     if (!checklistReady()) return;
-    const ticket = workspace.captureSave(file);
+    const buffer = workspace.document(file.id).buffer;
     try {
-        const submission = ticket.start();
-        const stored = readSaved();
-        if (stored !== submission.expectedServerVersion && stored !== submission.value) {
-            ticket.conflict();
-            showSaved({ buffer: TextBuffer.from(stored), version: "saved in this tab" });
+        const result = await workspace.captureSave(file).run(submission => {
+            const stored = readSaved();
+            if (stored !== submission.expectedServerVersion && stored !== submission.value) {
+                return { kind: "conflict", serverVersion: stored };
+            }
+            sessionStorage.setItem(name, submission.value);
+            return { kind: "saved", serverVersion: submission.value };
+        });
+        if (result.kind === "conflict") {
+            showSaved({ buffer: TextBuffer.from(result.serverVersion), version: "saved in this tab" });
             output.textContent = "Another view saved first. See Compare saved.";
-            return;
+        } else {
+            showSaved({ buffer, version: String(result.receipt.submission.revision) });
+            output.textContent = "Saved";
         }
-        sessionStorage.setItem(name, submission.value);
-        ticket.accept({ serverVersion: submission.value });
-        showSaved({ buffer: workspace.document(file.id).buffer, version: String(ticket.revision) });
-        output.textContent = "Saved";
     } catch (error) {
-        ticket.fail();
         output.textContent = String(error);
-    } finally {
-        ticket.finish();
     }
 });
 ```

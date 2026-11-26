@@ -3,8 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, Workspace } from "../src/index.ts";
 import { HostSaveQueue } from "./fixtures/save-queue.ts";
-import type { SaveSubmission } from "../src/index.ts";
-import type { SaveResponse } from "./fixtures/save-queue.ts";
+import type { SaveResponse, SaveSubmission } from "../src/index.ts";
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
@@ -393,6 +392,34 @@ test("two queued saves capture exact contents; canonical replies preserve later 
     assert.equal(workspace.document(source.id).text(), "human correction");
     assert.equal(source.metadata.getSnapshot().dirty, true); assert.equal(source.metadata.getSnapshot().serverVersion, "v2");
     edit("second"); assert.equal(source.metadata.getSnapshot().dirty, false);
+    assert.equal(workspace.ownership(source.id).leases, 0);
+});
+
+test("a lost receipt preserves the queued draft and a second runner cannot release the active ticket", async () => {
+    const { workspace, source, edit } = fixture();
+    edit("first");
+    const first = workspace.captureSave(source);
+    const reply = deferred<SaveResponse<string>>();
+    let stored = "abc";
+    const writing = first.run(submission => {
+        stored = submission.value;
+        return reply.promise;
+    });
+    await assert.rejects(first.run(() => assert.fail("second write ran")));
+    assert.equal(source.metadata.getSnapshot().saveStatus, "saving");
+    edit("second");
+    const second = workspace.captureSave(source);
+    reply.reject(new Error("lost receipt"));
+    await assert.rejects(writing, /lost receipt/);
+    assert.equal(stored, "first");
+    assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
+    const result = await second.run(submission => {
+        assert.equal(submission.value, "second");
+        assert.equal(submission.expectedServerVersion, "v0");
+        return { kind: "conflict", serverVersion: "v1" };
+    });
+    assert.deepEqual(result, { kind: "conflict", serverVersion: "v1" });
+    assert.equal(workspace.document(source.id).text(), "second");
     assert.equal(workspace.ownership(source.id).leases, 0);
 });
 
