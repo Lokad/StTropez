@@ -21,7 +21,7 @@ const pageBudgets = {
     "docs/examples.md": 5_000,
     "docs/folding.md": 13_000,
     "docs/getting-started.md": 21_000,
-    "docs/host-integration.md": 18_000,
+    "docs/host-integration.md": 14_000,
     "docs/language-features.md": 31_000,
     "docs/language-server.md": 19_000,
     "docs/packaging.md": 9_000,
