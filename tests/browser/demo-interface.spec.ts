@@ -795,6 +795,43 @@ test("switching views during a source edit preserves the command and its Undo", 
     await expect(working.locator(".st-viewport-row").first()).toHaveText("0");
 });
 
+test("file tabs keep the active review pane and its selection for the same saved version", async ({ page, baseURL }) => {
+    await page.goto(browserDemo(baseURL!));
+    await page.locator("#compare").click();
+    const baseline = page.getByRole("textbox", { name: "Comparison baseline source" });
+    const working = page.getByRole("textbox", { name: "Comparison working source" });
+    const main = page.locator('#files [data-file="main.ts"]');
+    const pricing = page.locator('#files [data-file="pricing.ts"]');
+    const draft = await working.inputValue();
+    const firstLine = draft.split("\n")[0]!;
+    await baseline.press("Control+Home");
+    await baseline.press("End");
+    await baseline.press("Shift+Home");
+    await main.press("Enter");
+    await page.keyboard.type("X");
+    await expect(working).toHaveValue(draft);
+    await expect(baseline).toBeFocused();
+
+    await pricing.click();
+    await expect(baseline).toBeFocused();
+    await expect(baseline).toHaveJSProperty("selectionEnd", 0);
+    await main.click();
+    await expect(baseline).toBeFocused();
+    await expect(baseline).toHaveJSProperty("selectionStart", 0);
+    await expect(baseline).toHaveJSProperty("selectionEnd", firstLine.length);
+    await expect(baseline).toHaveJSProperty("selectionDirection", "backward");
+
+    // Saving a sibling publishes a new version even when main.ts still has the same bytes.
+    await pricing.click();
+    await working.press("Control+Home");
+    await page.keyboard.type("// price\n");
+    await page.locator("#save").click();
+    await expect(page.locator("#status")).toHaveText("Saved in this browser.");
+    await main.click();
+    await expect(working).toBeFocused();
+    await expect(baseline).toHaveJSProperty("selectionEnd", 0);
+});
+
 test("refocusing the current file and switching result panels preserve source caret history", async ({ page, baseURL }) => {
     await page.goto(browserDemo(baseURL!));
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });

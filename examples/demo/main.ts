@@ -7,6 +7,7 @@ import type {
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
+import { restoreReferenceView, type SavedReferenceView } from "../shared/reference-view.ts";
 import type { DemoProviderFactory } from "./provider-contract.ts";
 import type { DemoFile } from "./project.ts";
 import { DemoPresentation } from "./presentation.ts";
@@ -350,19 +351,28 @@ function refusePendingEdit(pending = editorBusy()): boolean {
     scheduleMetadata();
     return true;
 }
-function mountFile(file: DemoFile, focus = false): void {
+const savedViews = new WeakMap<DemoFile, ReturnType<TextEditor["captureView"]>>();
+const savedReferences = new WeakMap<DemoFile, SavedReferenceView>();
+
+function rememberView(): void {
+    if (!active || !editor) return;
+    savedViews.set(active, editor.captureView());
+    const baseline = comparison?.controller.getSnapshot().baseline;
+    if (comparison && baseline) savedReferences.set(active, { baseline, state: comparison.panes.reference.captureView() });
+}
+
+function mountFile(file: DemoFile, focus?: "working" | "reference"): void {
     if (!project || disposed || refusePendingEdit()) return;
-    const viewState = editor?.captureView();
-    const previous = active;
-    if (previous && previous !== file) replaceResult.hidden = true;
-    if (previous && viewState) savedViews.set(previous.view, viewState);
+    if (active && active !== file) replaceResult.hidden = true;
+    rememberView();
     detachView(panel === "problems"); active = file; activeFiles.set(project.sample.id, file.name);
     initializeDemoFolds(project, file);
     element("workspace").classList.toggle("reviewing", panel === "changes");
     const settings = { ...presentationSettings(), language: editingConfiguration(), bracketMatching: true, characterWarnings: field("character-warnings").checked };
     const surface = demoSurface(element(panel === "changes" ? "panel-content" : "editor"), project.sample.id === "host");
     if (panel === "changes") {
-        comparison = mountTextComparison(surface, project.workspace, file.tab, project.baseline(file),
+        const baseline = project.baseline(file);
+        comparison = mountTextComparison(surface, project.workspace, file.tab, baseline,
             { settings, view: file.view, requestLine: linePrompt(document), scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
@@ -374,6 +384,7 @@ function mountFile(file: DemoFile, focus = false): void {
         setReviewCollapsed = reviewLayout(surface, comparison);
         editor = comparison.panes.working;
         const reference = comparison.panes.reference, plain = hostLanguage();
+        if (!restoreReferenceView(reference, baseline, savedReferences.get(file))) savedReferences.delete(file);
         let tokens: DecorationProvider | undefined;
         const syntax: DemoPresentation | undefined = plain ? undefined : new DemoPresentation(() => {
             tokens?.invalidate(); if (syntax?.status === "ready") refreshBrackets(reference); renderMetadata();
@@ -397,7 +408,7 @@ function mountFile(file: DemoFile, focus = false): void {
     syntaxLayer = editor.decorations.addProvider({ order: 0, provide: project.sample.id === "host" ? hostDecorations : presentation.decorate });
     diagnosticsLayer = editor.decorations.add({ order: 40 });
     element("character-warning-details").replaceChildren();
-    const saved = savedViews.get(file.view);
+    const saved = savedViews.get(file);
     if (saved) editor.restoreView(saved, { selection: "current" });
     folding = mountDemoFolding(project, editor, () => editingConfiguration().tabSize!);
     stopFolding = foldMenu.bind(editor, folding, comparison ? "Your changes" : "Source");
@@ -414,11 +425,13 @@ function mountFile(file: DemoFile, focus = false): void {
             mode: element("host-paste-mode") as HTMLSelectElement, insert: button("host-insert-table"), annotate: button("host-annotate"), status: element("host-status") },
             target => openLocation(capturedProject, target, capturedProject.navigation.capture(capturedEditor)));
     }
-    if (element("workspace").classList.contains("collapsed")) setReviewCollapsed?.(true);
-    renderMetadata(); renderLanguage(); renderOutput(); if (focus) editor.focus();
+    const collapsed = element("workspace").classList.contains("collapsed");
+    if (collapsed) setReviewCollapsed?.(true);
+    renderMetadata();
+    renderLanguage();
+    renderOutput();
+    if (focus) (focus === "reference" && comparison && !collapsed ? comparison.panes.reference : editor).focus();
 }
-// View IDs are local to a Workspace; each sample owns a separate workspace.
-const savedViews = new Map<DemoFile["view"], ReturnType<TextEditor["captureView"]>>();
 function goBack(): void {
     if (!project || !editor || editorBusy()) return;
     const current = project;
@@ -492,7 +505,7 @@ async function openSample(id: SampleId, openProvider: DemoProviderFactory): Prom
     stopWorkspace?.(); stopWorkspace = undefined;
     stopRecovery?.(); stopRecovery = undefined;
     stopLanguage?.(); stopLanguage = undefined;
-    if (active && editor) savedViews.set(active.view, editor.captureView());
+    rememberView();
     replaceResult.hidden = true;
     if (project !== next) problemPage = 0;
     detachView(); project?.language.suspend(); active = undefined; project = next;
@@ -545,7 +558,7 @@ function setPanel(next: DemoPanel): void {
         activePane?.focus();
         return;
     }
-    mountFile(active, true);
+    mountFile(active, "working");
 }
 function observePane(target: TextEditor): void {
     find.attach(target);
@@ -763,8 +776,9 @@ element("files").addEventListener("click", event => {
     const name = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-file]")?.dataset.file;
     const file = project?.files.find(file => file.name === name);
     if (!file) return;
-    if (file === active) editor?.focus();
-    else mountFile(file, true);
+    const pane = comparison?.activePane() ?? editor;
+    if (file === active) pane?.focus();
+    else mountFile(file, comparison && pane === comparison.panes.reference ? "reference" : "working");
 }, { signal: listeners.signal });
 window.addEventListener("keydown", event => {
     if (event.target === document.body) activePane?.keymap.handle(event);
@@ -778,7 +792,8 @@ window.addEventListener("beforeunload", event => {
 window.addEventListener("pagehide", event => {
     if (event.persisted) return;
     disposed = true; opening++; listeners.abort(); stopWorkspace?.(); stopRecovery?.(); stopLanguage?.(); detachView(); find.dispose(); foldMenu.dispose(); presentation.dispose();
-    for (const project of projects.values()) project.dispose(); projects.clear(); savedViews.clear();
+    for (const project of projects.values()) project.dispose();
+    projects.clear();
 }, { signal: listeners.signal });
 export function startPlayground(openProvider: DemoProviderFactory): Promise<void> {
     sample.addEventListener("change", () => { void openSample(sample.value as SampleId, openProvider); }, { signal: listeners.signal });

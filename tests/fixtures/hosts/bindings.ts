@@ -1,8 +1,9 @@
 import { registerCommandPalette } from "./command-palette.ts";
 import { focusSource, onSourceFocus } from "../../../examples/shared/source-focus.ts";
+import { restoreReferenceView, type SavedReferenceView } from "../../../examples/shared/reference-view.ts";
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../../src/browser/index.ts";
 import type { EditRefusedDetail, TextEditor, TextComparison, ViewState } from "../../../src/browser/index.ts";
-import type { ComparisonBaseline, ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget } from "../../../src/index.ts";
+import type { ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabId, TabTarget } from "../../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../language/presentation.ts";
 import { comparisonSettled, editorSettled } from "../readiness.ts";
@@ -59,7 +60,7 @@ export class ViewBindings {
     readonly colors: HostDocumentColors;
     private readonly tools: readonly ViewTool[];
     private reviewScope: CleanupScope | undefined;
-    private referenceState: Readonly<{ baseline: ComparisonBaseline; state: ViewState }> | undefined;
+    private referenceState: SavedReferenceView | undefined;
     private reviewStatus: HTMLOutputElement | undefined;
     private readonly reviewTickets: ComparisonTicket[] = [];
     private readonly discardTickets: { ticket: ComparisonReversion; variantGeneration: number }[] = [];
@@ -112,16 +113,7 @@ export class ViewBindings {
             scope.defer(this.language.attachReferenceFind("reference", reference, referencePresentation, () => review.controller.getSnapshot().baseline, saveTarget));
             const state = this.states.get("comparison")?.get(view.documentId);
             if (state) review.panes.working.restoreView(state, { selection: "current" });
-            if (this.referenceState?.baseline.buffer === baseline.buffer && this.referenceState.baseline.version === baseline.version) {
-                // The new private document holds the same immutable bytes. Translate only anchors
-                // captured at the saved revision, including an anchor inside aligned-row padding.
-                const { folding: saved, verticalAnchor, horizontalAnchor, ...state } = this.referenceState.state;
-                const revision = reference.view.getSnapshot().revision;
-                reference.restoreView({ ...state,
-                    ...(saved && { folding: { ...saved, documentId: reference.view.documentId, revision } }),
-                    ...(verticalAnchor && verticalAnchor.revision === saved?.revision && { verticalAnchor: { ...verticalAnchor, revision } }),
-                    ...(horizontalAnchor && horizontalAnchor.revision === saved?.revision && { horizontalAnchor: { ...horizontalAnchor, revision } }) });
-            } else this.referenceState = undefined;
+            if (!restoreReferenceView(reference, baseline, this.referenceState)) this.referenceState = undefined;
             const documentId = review.panes.working.view.documentId;
             review.panes.working.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
             this.registerPaneCommands(review.panes.working, saveTarget, scope);
