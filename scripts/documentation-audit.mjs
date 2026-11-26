@@ -17,7 +17,7 @@ import { apiIndexPath } from "./api-index.mjs";
 const pageBudgets = {
     "docs/architecture.md": 12_000,
     "docs/comparison.md": 20_000,
-    "docs/editor.md": 40_000,
+    "docs/editor.md": 34_000,
     "docs/examples.md": 5_000,
     "docs/folding.md": 13_000,
     "docs/getting-started.md": 21_000,

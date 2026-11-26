@@ -43,68 +43,47 @@ a supplied view when its owner closes.
 
 ### Mounting and presentation
 
-Pass a `DocumentId` or `TabId` from the workspace to `mountTextEditor`. A document mount works without an open tab.
-A tab mount also captures the tab generation, so replacing or closing that tab expires pending input.
-Supply a view to keep its selections and folds across mounts. Otherwise the editor owns its view.
-`editor.workspace` and `editor.view.documentId` identify the document. `editor.tab` holds the optional
-tab capture. `editor.signal` aborts when the mount is disposed.
+Mount by `DocumentId` or `TabId`. A tab mount expires pending input if the tab closes or is replaced.
+Supply a `view` to retain its selections and folds across mounts. Otherwise the editor creates and owns the view.
 
-`editor.getSnapshot()` reports whether the text input has focus, including inside a shadow root
-(`focused`), or is composing (`composing`). `readOnlyReason` is `null` when human edits are permitted,
-`"read-only"` for a read-only view or resource, and `"edit-locked"` during an edit lease. A
-`disabled` editor cannot receive input. `editor.subscribe(listener)` observes changes to these
-fields. The frozen snapshot keeps its identity between changes. Disposal disables the editor,
-clears focus and composition, and releases its listeners.
-
-| Option | Behavior |
+| Mount option | Use |
 | --- | --- |
-| `view` | Retained host view, or a new independent view when omitted |
-| `ariaLabel` | Input label; defaults to the document title |
-| `readOnly` | `false` by default; captured for this mount |
-| `settings` | Initial editor settings. Change individual fields with `editor.configure(changes)`. Read the resolved, immutable values with `editor.settings()`. |
+| `ariaLabel` | Label the input. Defaults to the document title. |
+| `readOnly` | Defaults to `false`. A read-only pane allows navigation, selection, copy, Find and dragging a copy. Remount with the same view to change this setting. |
+| `settings` | Pass initial settings, change fields with `configure(changes)` and read resolved values with `settings()`. |
 
-| Setting | Behavior |
+| Setting | Use |
 | --- | --- |
-| `language` | Host indentation, comment, pair and Enter rules; see [language configuration](#language-configuration) |
+| `language` | [Indentation, comments, pairs and Enter](#language-configuration) |
 | `gutter`, `columnRulers`, `highlightCurrentLine`, `fontLigatures`, `scrollBeyondLastLine`, `minimap` | [Viewport settings](viewport.md#viewport-settings) |
-| `pasteLineEndings` | `"local"` by default. `"preserve"` inserts clipboard line endings verbatim. |
-| `bracketMatching` | Off by default; `true` or explicit matching limits enable it |
-| `characterWarnings` | Off by default; `true` or a [character-warning policy](unicode.md#character-warnings) enables it |
+| `pasteLineEndings` | `"local"` by default. Use `"preserve"` for verbatim text. |
+| `bracketMatching`, `characterWarnings` | Off by default. Pass `true` or a [bracket limit](#bracket-matching) or [warning policy](unicode.md#character-warnings). |
 
-`element` is the editor root. Read focus, composition and edit permissions from `getSnapshot()`.
-Call `onEditIntent()` to observe native editing gestures and `focus()` to return typing to the pane
-without scrolling. When a dialog returns focus to the pane, typing and commands resume at its
-current selection. To replace document text, use a revision-checked workspace transaction.
-`view` exposes selections and folds. `viewport` controls rendering and geometry.
-Attach syntax, diagnostics and annotations through [editor decoration layers](viewport.md#decoration-layers).
+`getSnapshot()` reports `focused` (including in a shadow root), `composing`, `disabled` and `readOnlyReason`.
+An editable pane reports `null`, a read-only view or resource reports `"read-only"`, and an edit lease
+reports `"edit-locked"`. The root's `data-read-only` carries that reason. Subscribe to state with
+`subscribe(listener)` or handle the [edit refusal event](host-integration.md#input-conflict-recovery).
+The frozen snapshot keeps its identity between changes. A disabled pane cannot receive input.
+Disposal clears focus and composition, disables the pane, releases listeners and aborts `editor.signal`.
 
-A `readOnly` mount supports navigation, selection, copy, Find and dragging a copy. It refuses edits,
-cut, paste, drop, undo, redo and replacement. Other views keep their own edit permissions, subject
-to resource capabilities and locks. Remount with the same view to change this option.
-
-The root's `data-read-only` attribute carries the reason while editing is unavailable.
-Use the [edit refusal event](host-integration.md#input-conflict-recovery) to explain it after a blocked gesture.
+Use `editor.workspace`, `editor.view.documentId` and the optional `editor.tab` to identify the target.
+`view` owns selections and folds. `viewport` exposes geometry and [decoration layers](viewport.md#decoration-layers).
+`element` is the root. `onEditIntent()` observes native editing gestures. `focus()` returns typing to the
+current selection without scrolling the page. To replace text, use a revision-checked workspace transaction.
 
 ### Reveal a destination
 
-Call `editor.reveal(target, options)` to open folds covering a destination and scroll it into view
-inside the editor. If a host panel opens a destination elsewhere on the page, call
-`editor.element.scrollIntoView({ block: "nearest", inline: "nearest" })` to show the pane.
-Pass a zero-based `{ line, column }`, a pair of positions `{ start, end }`, or half-open UTF-16
-offsets `{ from, to }`. Use safe integers. Lines clamp to the document and columns to the line.
-Position pairs select the span between their endpoints in either order. Offset ranges require
-`from <= to` and clamp to the document.
+`editor.reveal(target, options)` opens enclosing folds and scrolls to a destination on the next paint.
+Pass zero-based `{ line, column }`, a pair of positions `{ start, end }` in either order, or half-open
+UTF-16 offsets `{ from, to }` with `from <= to`. Use safe integers. Positions clamp to the document and line.
 
-`align` controls vertical placement. The default, `"nearest"`, scrolls just enough to show the range.
-`"center-if-outside"` centers an off-screen range and keeps a visible range in place.
-Use `"start"` to put the first row at the top or `"center"` to center the range. For a range taller
-than the viewport, the first row is the target. Scrolling takes effect on the next viewport paint.
+`align` accepts `"nearest"` (default), `"center-if-outside"`, `"start"` or `"center"`. A range taller
+than the viewport aligns by its first row. To reveal the pane on the surrounding page, call
+`editor.element.scrollIntoView({ block: "nearest", inline: "nearest" })`.
 
-`select: true` replaces the selection set with the resolved range. `focus: true` focuses the editor
-and preserves the surrounding page’s scroll position.
-Both default to false and work in read-only views. The call returns the resolved offsets or `null`
-when the captured editor is unavailable, input or a command is pending, composition is active, or
-`expectedRevision` has expired. Keep the destination’s document identity when choosing a mounted editor.
+Pass `select: true` to replace the selection set or `focus: true` to focus the pane. Both default to
+false and work in read-only views. The result is the resolved offsets, or `null` for an unavailable
+editor, pending input or command, active composition or expired `expectedRevision`.
 
 ```ts
 import type { TextEditor } from "sttropez/browser";
@@ -120,67 +99,51 @@ For delayed host work, retain the original document, revision and selections wit
 
 ### What happens when you type during a command
 
-Move one word to the right in a long line and start typing immediately. The text lands at the new
-caret, even when the keystroke arrived before the move finished. A plain-text paste follows any
-queued typing. Undo removes the paste first. Queued keys keep their original modifiers and typing
-groups. A command can finish before the editor paints.
+Type while a long word move is running and the text lands at the new caret. Paste follows queued typing
+as a separate undo step. Queued keys retain their modifiers and typing groups.
 
-Escape, composition, copy, cut or a clipboard event cancelled by the host can interrupt a command.
-An edit, selection change, permission change or remount can also invalidate queued input. Listen
-for `inputConflictEvent` on the original editor to recover text it could not apply. A command error
-includes the reason `command-failed` and its cause. [Input recovery](host-integration.md#input-conflict-recovery)
+Escape, composition, copy, cut and a host-cancelled clipboard event can interrupt a command. A change of
+text, selection, permission or mount can invalidate queued input. Listen for `inputConflictEvent` on the
+original editor to recover unapplied text. A failed command supplies `command-failed` and its cause.
+[Input recovery](host-integration.md#input-conflict-recovery)
 
-Typing replaces the full selection, even when the native textarea represents it with a single
-placeholder. Typing identical text can collapse the selection without changing the revision.
-Enter uses the surrounding line ending and leaves other line endings intact. A dead key previews
-the character at the selection start. Committing it takes one undo step. Cancelling preserves the
-selected text. [Keyboard and device support](README.md#support-matrix)
+Typing replaces the full selection, including when the textarea holds a placeholder. Identical text can
+collapse the selection without changing the revision. A dead key previews at the selection start.
+Commit takes one undo step and cancellation preserves the selected text. [Device support](README.md#support-matrix)
 
 ### Selections and history
 
-Type, paste, delete or move with several carets and the command acts on the whole selection set. The
-textarea tracks the primary range. A focused editor draws a caret at the active end of each visible
-range. Idle insertion carets blink together. They stay steady during selection and when reduced
-motion is enabled. A one-column highlight at the end of a row marks a selected line break, including CRLF and
-breaks on empty lines. Forced-colors mode uses the system selection and text colors. Use the
-[view’s selection setters](workspace.md#document-views) to keep a set across remounts. See
-[selection sets](text-model.md#selection-sets) for normalization and endpoint affinities.
+Typing replaces each range. Deletion merges overlapping targets, including carets inside one grapheme.
+Movement preserves extension anchors and affinities and reveals the primary destination. Vertical motion
+retains each range’s measured column across short lines until another selection, edit or layout change.
+[Selection sets](text-model.md#selection-sets) · [Retain a view](workspace.md#document-views)
 
-Plain typing replaces every range with the same text. Deletion plans all targets before mutation
-and merges overlapping deletions, including carets inside one grapheme. Movement preserves
-extension anchors and endpoint affinities, then normalizes and publishes the result once. Only the
-primary destination is revealed. Vertical commands retain each range's measured horizontal
-column across short lines until another selection, edit or layout breaks the sequence.
+The textarea tracks the primary range. The focused pane draws each visible caret. Idle carets blink
+together and stay steady during selection or with reduced motion. Selected line breaks, including
+CRLF and empty lines, occupy one highlight column. Forced-colors mode uses system colors.
 
-Undo groups adjacent typing in the same view by word. A single space belongs to the following word.
-A run of two or more spaces forms its own step. Pausing mid-word keeps the group open.
-Consecutive deletes in the same direction can share a step. A command, newline, composition, paste,
-replacement, focus loss, caret movement or an edit from another origin starts a new step. Undo
-from either editable view. [Shared history and save boundaries](workspace.md#transactions-and-history)
-
-Undo and Redo leave a visible caret row in place and center the restored caret if it was off screen.
+Undo from either editable view. Adjacent typing groups by word. One space belongs to the next word,
+two or more make a separate step, and a pause mid-word keeps the group open. Consecutive deletes in
+one direction can group. A command, newline, composition, paste, replacement, blur, caret move or edit
+from another origin starts a step. Undo and Redo center an off-screen caret and preserve a visible
+caret row. [Shared history and save boundaries](workspace.md#transactions-and-history)
 
 ### Selecting lines in the gutter
 
-Click or double-click a line number to select the line and its line break. On a folded header,
-the selection includes the hidden lines. Drag across numbers to select several lines.
-Shift+click extends from the original caret to the clicked line's far edge. Returning to the
-starting line restores the caret. If you started by selecting a whole line, it stays selected.
-The editor keeps keyboard focus. The
-gutter scrolls with the wheel and stays in place horizontally. Both comparison panes use their
-own source line numbers. Alignment gaps have no number.
+Click or double-click a number to select the line and its break, including a folded body. Drag to select
+several lines. Shift+click extends to the far edge of the clicked line. Returning to the start restores
+the original caret or whole-line selection. Keyboard focus stays in the editor. The gutter scrolls
+vertically with the wheel. Comparison panes number their own source rows and leave alignment gaps blank.
 
 ### Pointer dwell
 
-`observePointerDwell(editor, listener, options?)` reports the document ID, revision, UTF-16 offset and
-caret affinity under a resting mouse or pen. It leaves focus and selection with their current owner.
-The default delay is 300 ms. Set `delayMs` to change it or `enabled` to suspend observation while
-another control is open. `onMiss` can dismiss a hint when the pointer moves off text, onto a
-comparison gap, or with a pressed button or Ctrl/Cmd.
+`observePointerDwell(editor, listener, options?)` reports document ID, revision, UTF-16 offset and caret
+affinity under a resting mouse or pen. Set `delayMs` (default 300) or suspend observation with `enabled`.
+Use `onMiss` to dismiss a hint off text, in a comparison gap, with a button pressed or with Ctrl/Cmd held.
 
-The observer checks the painted position again when the delay ends. A changed revision, fold projection
-or aligned comparison expires the pending visit. Use `isPending()` for pending work, `cancel()` to
-forget the current visit and `dispose()` to detach. Disposing the editor also detaches it.
+The observer rechecks the painted position after the delay. A changed revision, fold or comparison
+alignment expires the visit. `isPending()` reports pending work, `cancel()` forgets it, and `dispose()`
+detaches. Disposing the editor also detaches the observer. Focus and selection stay in place.
 
 ### Shortcuts
 
@@ -241,89 +204,63 @@ export function defaultKeys(command: TextEditorCommand, platform: keyof typeof d
 | Triple-click / triple-click and drag | Select a line including its ending / extend by whole lines |
 | Four clicks | Select the entire document |
 
-After Escape removes extra carets, Tab indents at the primary range. Press Escape a second time
-to arm focus traversal. The focused editor's solid outline becomes dashed and the root gains
-the `data-st-tab-escape` attribute. A pointer press, selection change, or intervening key
-cancels the exit. Holding Shift for the next Tab moves focus backward.
+After Escape removes extra carets, a second Escape arms Tab to leave the editor. Its outline turns dashed
+and the root gains `data-st-tab-escape`. Shift+Tab leaves backward. A pointer press, selection change or
+intervening key cancels the exit.
 
-Set `requestLine` to a `LinePrompt` to enable `go-to-line`. It receives the one-based current line,
-line count and an abort signal. Return a line number or a promise for it. Return `undefined` to
-cancel. A new prompt, composition, a changed revision or selection, or disposal expires the request.
-Only a valid reply from the same view moves the caret and returns focus.
+`requestLine` receives the one-based current line, line count and abort signal. Return a line number
+or a promise, or return `undefined` to cancel. A new prompt, composition, edit, selection change or
+disposal expires it. A valid reply moves the caret and returns focus. Host tools get first chance at
+shortcuts. Cancelled events and composition (including keyCode 229) bypass editor bindings.
 
-Host tools get first chance at shortcuts. Cancelled events and composition events (including keyCode
-229) bypass editor commands. [Example bindings](examples.md)
+**Word and page movement.** Double-click selects a grapheme-aligned run within its line. Shift+click
+extends from that word, keeping it selected in either direction. A single separator next to an identifier
+is skipped toward the identifier. With multiple carets just after the dots in `a.name` and `b.name`,
+selecting one word backward selects both dots. Inside an operator such as `?.`, movement stops at its
+edge. Beyond the last word, the first move stops at the line boundary. Word Backspace at column one joins
+the lines. Word Delete at line end also removes the next line’s indentation. PageUp/Down moves
+`max(1, floor(viewportHeight / lineHeight) - 1)` visible rows through folds and comparison alignment.
+[Word rules](unicode.md#graphemes-and-word-movement)
 
-Double-click selects a run up to a grapheme boundary and excludes the line ending. Shift+click
-extends from a double-clicked word and keeps that entire word selected in either direction.
-Keyboard word movement follows the [code-word rules](unicode.md#graphemes-and-word-movement).
-A single separator next to an identifier is skipped when moving toward that identifier. With
-multiple carets, backward word movement stops at the separator. Put carets just after the
-dots in `a.name` and `b.name`, then select one word backward to select both dots. Starting
-inside an operator such as `?.` stops at its edge in either direction.
-Beyond the last word, movement stops at the line boundary. Press again to enter the adjacent
-line. Word Backspace at column one deletes the line break. Word Delete at the end of a line
-also removes the next line’s indentation.
-PageUp and PageDown
-move `max(1, floor(viewportHeight / lineHeight) - 1)` visible rows, accounting for folds and
-[aligned comparison rows](comparison.md).
+**Pointer selection.** Clicks resolve against the current text and folds, including edits awaiting paint.
+Right- or middle-click preserves a selection under the pointer or places the caret there. Scrollbar
+gestures preserve the selection. Typing reveals the edited row even during a track-click animation.
 
-Clicking uses the current document and folds, including edits awaiting paint.
-It selects source text even where the transparent input overlaps it. Right- or middle-click
-places the caret at the pointer, or keeps the selections when you click inside one. Dragging a
-scrollbar or clicking its track keeps the selection. Typing brings the edited line back into view,
-even during a track-click animation.
+Column selection includes rows reaching its nearer horizontal edge. If every row falls short, each gets
+an end-of-line caret. A vertical drag creates carets. Fold bodies and comparison gaps add no ranges.
+The last participating row in the drag direction is primary. Typing replaces the ranges in one undo
+step. The same gesture works in read-only panes.
 
-A column drag selects lines that reach its nearer horizontal edge. If every line falls short,
-it places a caret at the end of each one.
-Dragging straight down creates carets. Folded bodies and comparison padding contribute no ranges.
-If you release in padding, the rectangle ends on the last source line crossed. The last participating line in the drag direction has the primary range. Typing replaces all ranges
-in one undo step. Read-only panes allow the same selection gesture.
-
-`--st-selection` paints above token and occurrence backgrounds. A selection drag ends
-on pointer release, lost capture, cancellation or a source/view change. Hold a drag outside an edge to
-scroll, up to three viewport lengths per second per axis. Each callback advances at most 32 ms of
-movement. During composition the native input handles the pointer.
+`--st-selection` paints above token and occurrence backgrounds. Dragging outside an edge scrolls up to
+three viewport lengths per second per axis in steps capped at 32 ms. Release, lost capture, cancellation
+or a source/view change ends the drag. The native input handles the pointer during composition.
 
 ### Clipboard and text drag
 
-The browser handles clipboard shortcuts, including Shift+Delete for Cut and Shift+Insert for Paste
-on Windows. Copy joins nonempty selections in source order with LF. With only carets, it copies each distinct
-visible line with its line ending, including a terminator for the last line. A collapsed header
-copies its hidden body as well. Cut removes the same text in
-one undo step. Pasting an editor-marked line at a caret inserts it above the current line and
-preserves the caret’s column. Plain text from other applications inserts at the selection.
+Copy joins nonempty selections in source order with LF. With carets only, it copies each distinct
+visible line with its ending, including a terminator for the final line and the hidden body of a fold.
+Cut removes the same text in one step. Paste an editor-marked line at a caret to insert it above the
+line and retain the column. External plain text replaces the selection. The browser handles clipboard
+shortcuts, including Shift+Delete and Shift+Insert on Windows.
 
-When the clipboard has one line per selection, each receives its corresponding line. A final line
-break may terminate the last line or represent an empty line for one more selection. If neither count matches,
-each selection receives the full text. Paste converts CR, LF and CRLF to the line ending at each destination
-and preserves indentation.
-Set `settings.pasteLineEndings` to `"preserve"` to insert clipboard text verbatim.
-An empty or nontext payload leaves selections and pending commands
-alone.
+If the clipboard holds one line per selection, Paste distributes the lines. A trailing break can
+terminate the last line or supply one more empty line. When neither count matches, each range gets
+the full text. Paste retains indentation and converts line endings at each destination unless
+`pasteLineEndings` is `"preserve"`. An empty or nontext payload preserves selections and queued commands.
+To convert structured text, read the clipboard during dispatch in `registerPasteHandler()`.
+[Captured insertion](host-integration.md#captured-insertion-and-structured-paste)
 
-For custom paste, use `editor.registerPasteHandler()`. Read the clipboard during dispatch, then
-apply the converted text at the [captured selections](host-integration.md#captured-insertion-and-structured-paste).
+Dragging a selection moves text between editable documents in the same workspace. Control (Option
+on Apple) requests a copy. Read-only sources and other workspaces copy. Drop uses a transfer token,
+the captured source fragments, revision and view, and the last accepted target offset and revision.
+Stripping the token or remounting or closing the source cancels the transfer.
 
-Dragging painted selected text captures source fragments, the whole selection set, revision
-and tab/view identity. Editable sources in the same workspace move by default; Control
-(Option on Apple platforms) requests a copy. Read-only sources and other workspaces copy.
-Drop validates an opaque token and the last accepted target revision/model offset independently
-of focus. If the browser strips the token, the drop leaves the text unchanged. Closing or
-remounting the source pane cancels the transfer, even if the browser delivers the drop afterward.
-
-The destination selects the dropped text, including all fragments of a multiline drop.
-Same-document moves use one original-coordinate plan; cross-document moves use shared atomic
-history. Undo restores the initiating sets. Dragend does not delete text. External plain text
-inserts literally at the accepted offset; HTML is not interpreted and unsupported file drops
-do not navigate. The drag preview takes up to 160 UTF-16 units and keeps surrogate pairs and CRLF
-together at the cutoff. The drop uses the full selection. Cancellation/disposal removes the
-drop caret, preview and edge-scrolling work.
-
-A selection starts scrolling when the pointer leaves the viewport. For a text drop, the pointer enters
-a zone inside the edge, including when the destination is mounted in a shadow root. Both use the
-same bounded frame step. Each callback checks that the gesture is current, so an old frame cannot
-move or cancel a new target.
+The destination selects the dropped fragments. Same-document moves use original coordinates.
+Cross-document moves share an atomic undo step that restores the initiating selections. Dragend
+does no deletion. External plain text inserts literally, HTML stays inert and file drops do not navigate.
+The preview keeps up to 160 UTF-16 units without splitting a surrogate pair or CRLF. Drop inserts the
+full selection. Near a target edge, holding a text drag scrolls the target, including in a shadow root.
+Cancellation and disposal clear the preview, drop caret and pending scroll.
 
 ### Language configuration
 
@@ -360,116 +297,95 @@ export function undoMenuItem(editor: TextEditor) {
 }
 ```
 
-Set `settings.commandLabel(id, fallback)` to translate editor-owned command labels in
-`commands.get()` and `commands.list()`. Return `undefined` to use the supplied label.
-`editor.configure({ commandLabel: null })` restores the original labels. Bind menus and
-shortcuts by command ID.
+`commands.list()` returns immutable entries with ID, label, owner, category and enabled state.
+Built-ins belong to `"editor"`. Host commands default to `"host"` and `"General"`. Menus should bind by
+ID. To translate labels in `get()` and `list()`, set `settings.commandLabel(id, fallback)`. Returning
+`undefined` keeps the fallback. Passing `commandLabel: null` to `configure()` restores the defaults.
 
-Navigation, selection and scrolling work in read-only panes. Undo and Redo need an editable
-pane and an entry in the document’s shared history. Editing commands return `false` during
-composition, after disposal or when the required comment rule is missing. A long edit can
-yield while it plans, then commits once if its target is current. [Default shortcuts](#shortcuts)
+For a command with an argument, pass it to both `get` and `run`. The callbacks receive the argument
+and the target editor. Shortcuts and `list()` pass `undefined`. An unknown ID returns `undefined` from `get`.
+Navigation, selection and scrolling work in read-only panes. Undo and Redo require an editable pane
+and history. Editing returns `false` during composition, after disposal or for a missing comment rule.
+A long command can yield while planning, then commit once at its captured target.
 
-Unbinding Tab restores focus traversal. Unbinding Enter suppresses that keystroke. Native line
-break and deletion events work independently of those bindings. For a non-cancellable deletion, the unit,
-direction, revision and selections must match the captured input or the editor reports a conflict.
+**Register a command.** `commands.register({ id, label, run, enabled }, { keys: ["Escape"], priority: 10 })`
+installs a command and its bindings together. A duplicate ID or conflicting binding throws without
+changing the registry. Dispose the registration to remove both. Editor disposal retires the registry.
 
-Add line comment adds one marker to each selected line of code, including existing comments.
-Remove peels off one marker and its optional space. Markers align at the indentation of the
-least-indented selected line. If a tab spans that column, markers move left to the nearest
-column available on every line. Blank lines in a block keep their whitespace. Separate selections act independently
-unless they touch the same line.
+**Bind a shortcut.** `keymap.bind("Mod+k Mod+i", id)` binds a chord. Use a single stroke for an ordinary
+shortcut. `Mod` means Meta on Apple and Ctrl elsewhere. Use `Ctrl`, `Meta`, `Shift` and `Alt` with
+`KeyboardEvent.key`, and `Space` or `Plus` for those keys. To bind by position, use a code such as
+`Ctrl+Shift+Code:BracketLeft`. A matching logical key takes precedence. Symbols and digits can use
+Shift to produce the bound character.
 
-Toggle block comment wraps selected text with one space inside each delimiter. With an empty
-selection, the caret lands between the two spaces. A caret or selection inside a complete comment removes its
-delimiters and up to one padding space at each end. Carets in the same comment remove it once.
-The editor matches the configured delimiters as text. A host can reject an inferred opener in a
-string or other context through `allowPair`. Explicitly selected wrappers toggle directly.
-All affected selections share one undo step.
+On French AZERTY, Ctrl+: toggles line comments and Ctrl+; requests a quick fix. Bracket shortcuts use
+`)` and `^`, bracket jump uses `*`, and Shift distinguishes folding from indentation. AltGr stays
+available for text entry. On Apple, Option+Shift on the physical US A key toggles block comments
+even if it produces an accented letter. [Keyboard qualification](README.md#support-matrix)
 
-`editor.commands.list()` returns immutable entries with an ID, label, owner, category and
-enabled state. Built-ins use owner `"editor"`. Host commands default to owner `"host"` and
-category `"General"`. For a command that takes an argument, pass it to both `get` and `run`.
-The registered callbacks receive the argument and the receiving editor. Shortcuts and `list()`
-use `undefined` for the argument. An unknown ID returns `undefined` from `get`.
+- A chord requires both strokes in the same control, including in a shadow root. It expires after
+  1.5 seconds or a focus, selection or revision change. A bound second stroke consumes the key even
+  if every command declines.
+- Higher `priority` runs first (default 0). If a command is disabled or returns `false`, the next binding runs.
+  Equal priorities on a sequence, or a single stroke that conflicts with a chord prefix, throw.
+  Shortcuts repeat by default. With `repeat: false`, a handled key consumes repeats until release,
+  including when the command closes its control.
+- `keymap.unbind(keys)` removes every binding for a sequence. Disposing one registration removes just that
+  binding. For a menu hint, read `keymap.getShortcuts(id)` when opening the menu. It returns a frozen
+  array of distinct configured spellings, empty for unknown or unbound commands.
+- A `shared: true` binding also works from controls inside the editor, including the gutter. Forward
+  bubbling keydowns from an external toolbar to the owning pane’s `keymap.handle(event)`. A handled
+  shortcut prevents the default action. Ordinary field input and composition stay with the field.
+  [Host command example](host-integration.md)
 
-`commands.register({ id, label, run, enabled }, { keys: ["Escape"], priority: 10 })` installs
-a command and its shortcuts together. A duplicate ID or conflicting binding throws and leaves
-the registry unchanged. Disposing the registration removes its bindings. Disposing the editor
-retires the registry.
+**Tab and indentation.** Tab inserts whitespace to the next stop, replacing a partial single-line
+selection. On a whitespace-only line with one caret, it first fills indentation from the preceding
+Enter rule. Whole-line indent and outdent move to the adjacent stop. At four-column stops, six spaces
+become eight or four. A multiline selection skips blank lines, preserves its starting boundary at
+column one and excludes a final line touched only at its start. Indent, outdent, Tab and line comments
+include the body of a collapsed row.
 
-`editor.keymap.bind("Mod+k Mod+i", id)` binds a two-stroke chord. A single stroke uses the
-same API. `Mod` means Meta on Apple platforms and Ctrl elsewhere. `Ctrl`, `Meta`, `Shift`
-and `Alt` name modifiers on `KeyboardEvent.key`. Use `Space` or `Plus` for those keys.
-On French AZERTY, Ctrl+: toggles line comments and Ctrl+; requests a quick fix. The bracket
-shortcuts use the `)` and `^` keys, and bracket jump uses `*`. Shift distinguishes folding from indentation.
-Use a physical binding such as `Ctrl+Shift+Code:BracketLeft` when the position matters.
-A matching logical shortcut takes precedence. Other symbols and digits can use Shift to produce
-the character in a binding.
-AltGr stays available for text entry. On Apple keyboards, Option+Shift on the physical US A key
-can toggle a block comment even when the key produces an accented letter.
-Both strokes must come from the same control, including inside a shadow root. A chord expires
-after 1.5 seconds or a change of focus, selection or document revision.
-Bindings for the same sequence run in descending `priority` (default 0). A disabled command or one
-that returns `false` lets the next binding try. A handled command consumes the keystroke.
-After a chord prefix, a bound second stroke is consumed even if every eligible command declines.
-Bindings repeat by default. With `repeat: false`, a handled shortcut consumes repeats
-in that editor until key release, even if the command closes its own control.
-Equal priorities for the same sequence and single strokes that conflict with chord prefixes throw.
-`keymap.unbind(keys)` removes all bindings for a sequence. Disposing a binding removes only that registration.
-`keymap.getShortcuts(id)` returns a frozen array of the sequences currently bound to that command
-on this editor. Each sequence appears once, even if the command has two priorities for it.
-The strings retain the configured spelling, including `Mod` and physical key codes. An unbound or
-unknown command returns an empty array. Read it when opening a menu so the hint reflects host rebindings.
+**Comments.** Add Line Comment adds a marker even to a commented line. Remove strips one marker and
+an optional following space. Toggle removes markers when all selected nonblank lines are commented.
+Markers align at the least indentation, moving left to a common column if a tab spans it. Blank lines
+in a mixed block keep their whitespace. Separate selections act independently unless they share a line.
 
-Editor input dispatches registered shortcuts. A binding marked `{ shared: true }` also works
-from controls inside the editor, including the fold gutter. For an external toolbar or form,
-forward its bubbling keydown to the owning pane's `keymap.handle(event)`.
-It prevents the default action for a handled shortcut. Ordinary field input and composition
-stay with the field. [Host command example](host-integration.md)
+Block comments wrap a selection with one padding space at each end, or place a caret between the spaces.
+Inside a complete comment, Toggle removes the delimiters and up to one space at each end. Carets in
+the same comment remove it once. `allowPair` can veto an inferred opener, for example inside a string.
+Explicitly selected wrappers toggle directly. The command takes one undo step.
 
-Tab advances to the next configured tab stop. A partial single-line selection is replaced by that
-whitespace. On a whitespace-only line with one caret, Tab first fills missing indentation from the
-preceding line’s Enter rule. For whole lines, indent and outdent move the end of the existing
-indentation to the next or previous tab stop. With four-column stops, six spaces become eight
-on indent or four on outdent. A multiline selection leaves blank and whitespace-only lines
-alone. A selection starting at column one keeps that boundary. A selection ending at the start
-of the next line excludes that line. On a collapsed row, Tab, indent, outdent and line comments
-apply to the header and its folded lines.
+**Pairs and Enter.** An eligible opener inserts its closer or surrounds the selection. Typing the tracked closer
+steps over it once. Backspace or word Backspace between untouched delimiters deletes the pair. The
+view tracks pairs through edits and Undo until disposal or a delimiter change. A closer typed after
+only spaces or tabs takes the matching opener’s indentation. A mismatch, ambiguity, veto or search
+limit leaves indentation intact.
 
-Line comments toggle nonblank lines. Block comments wrap or unwrap selections. Typing an opener
-can insert its closer or surround a selection. Typing the closer steps over it once if this view
-inserted it. Backspace or word Backspace between the two untouched delimiters deletes both.
-The view tracks its pairs across edits and undo/redo until disposal or a change of delimiters.
-A closing bracket typed after only spaces or tabs takes its matching opener’s indentation.
-An unmatched or ambiguous closer, a lexical veto or the bracket search limit leaves the indentation in place.
+Enter uses the row’s LF or CRLF, the preceding ending at EOF, or LF when neither exists. Its callback
+can remove, keep or add one indentation unit and split closing text onto a new line. After leaving a
+blank line whose whitespace Enter supplied, the next edit in the view removes that whitespace in the
+same undo step. Pairing, comments and cancellable line breaks use edit transforms. Composition and
+noncancellable input use literal capture.
 
-Enter chooses the current row's LF/CRLF terminator, falling back to the preceding terminator
-at EOF and LF when absent. Callback indentation removes/keeps/adds one unit and can split the
-closing text onto another line. When Enter supplies all the whitespace on a blank line, the next
-edit in the view removes it if the selection has left that line. Undo restores it with the edit.
-Pairing, comments and cancellable non-composing line-break input
-use the same transaction/transform path. Composition and noncancellable input use literal capture.
+Unbinding Tab restores focus traversal. Unbinding Enter suppresses the keystroke. Native line-break
+and deletion events have separate handling. A noncancellable deletion must match the captured unit,
+direction, revision and selections or the editor reports an input conflict.
 
-`planLanguageEdit` takes a buffer, selections, a command and a resolved language configuration.
-Line commands work on source lines. Pass the view's fold index as the fifth argument to treat each
-collapsed block as one line. Character commands insert a typed closer unless `canOvertype(offset)`
-identifies one to skip.
+**Plan a headless edit.** `planLanguageEdit` takes the buffer, selections, command and resolved
+language configuration. Pass a fold index as the fifth argument to treat collapsed blocks as lines.
+Character commands insert a typed closer unless `canOvertype(offset)` marks it for skipping.
 
-The first `next()` captures the selections. It reuses editor-owned ranges and checks raw ranges
-for bounds, overlap and order. You can then reuse your input array. Keep the configuration
-immutable until planning finishes. `snapshot()` reports the status, phase, counters, result
-and failure. When the status is `ready`, apply the full batch at the captured revision. Keep any
-`lineMove` markers when copying edits. An error records its message and rethrows. `dispose()`
-releases the cursor and leaves a completed plan usable. Calling `next()` or `dispose()` during
-an advance throws.
+The first `next()` captures the selections and validates raw ranges for bounds, overlap and order.
+The caller can then reuse the range array. Keep the configuration immutable until completion.
+`snapshot()` exposes status, phase, counts, result and failure. At `ready`, apply the entire batch at
+its captured revision, retaining any `lineMove` markers. Errors record their message and rethrow.
+`dispose()` releases the cursor and preserves a completed plan. Reentrant `next()` or `dispose()` throws.
 
-Schedule each advance with `next(workBudget?)`. The budget is a safe integer of at least 256,
-default 4,096. The planner checks it roughly every 256 work units. A whitespace read can span
-4,096 UTF-16 units. Delimiter reads, bulk operations and host callbacks can exceed a slice.
-`readUnits` counts the planner's reads, including rereads. `workUnits` includes scans, visits to
-ranges and edits, pair checks and `bulkWorkUnits`. Bulk charges estimate the input sizes for
-normalization, mapping, pair lookup, array freezing, large reads and newline construction.
+`next(workBudget?)` accepts a safe integer of at least 256 (default 4,096). It checks about every
+256 work units. Whitespace reads span up to 4,096 UTF-16 units. Delimiter reads, bulk work and host
+callbacks can exceed a slice. `readUnits` includes rereads. `workUnits` counts scans, range and edit
+visits, pair checks and `bulkWorkUnits`. Bulk charges estimate normalization, mapping, pair lookup,
+freezing, large reads and newline construction.
 
 ```ts
 import { planLanguageEdit, resolveLanguageConfiguration } from "sttropez";
