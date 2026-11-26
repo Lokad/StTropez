@@ -176,6 +176,14 @@ test("two view selections map independently and survive tab close/reopen and his
     assert.deepEqual([secondary.getSnapshot().selection.anchor, secondary.getSnapshot().selection.head], [7, 4]);
     workspace.redo({ documentId: source.documentId, expectedRevision: document().revision });
     assert.equal(primary.getSnapshot().selection.head, 5); assert.equal(secondary.getSnapshot().selection.anchor, 9);
+    secondary.setSelections(document().revision, [{ anchor: 1, head: 0 }, { anchor: 10, head: 10 }], 1);
+    const moved = secondary.getSnapshot().selectionSet;
+    workspace.undo({ documentId: source.documentId, expectedRevision: document().revision });
+    const undone = secondary.getSnapshot().selectionSet;
+    assert.equal(undone.primary, 1);
+    assert.deepEqual(undone.ranges.map(({ anchor, head }) => [anchor, head]), [[1, 0], [8, 8]]);
+    workspace.redo({ documentId: source.documentId, expectedRevision: document().revision });
+    assert.deepEqual(secondary.getSnapshot().selectionSet, moved);
     assert.equal(primary.setSelection(0, { anchor: 0, head: 0 }), false);
     assert.throws(() => primary.setSelection(document().revision, { anchor: -1, head: 0 }));
     const releasedRevision = document().revision;

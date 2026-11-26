@@ -539,11 +539,20 @@ export class Workspace {
         }
         const prepared = entry.changes.map(change => {
             const participant = this.#documents.get(change.documentId as DocumentId)!, forward = change.mapping;
-            const selections = new Map(change.selections.map(view => [view.viewId, direction === "undo" ? view.before : view.after]));
-            const mapping = direction === "undo" ? forward.invert() : forward;
-            return this.#prepareText(participant, direction === "undo" ? change.before : change.after, mapping,
-                { selectionFor: view => selections.get(view.handle.id), undo: direction === "undo" ? forward : undefined,
-                    parts: change.parts, wholeText: change.wholeText });
+            const selections = new Map(change.selections.map(view => [view.viewId, view]));
+            const undo = direction === "undo";
+            return this.#prepareText(participant, undo ? change.before : change.after, undo ? forward.invert() : forward, {
+                selectionFor(view) {
+                    const saved = selections.get(view.handle.id);
+                    if (saved && (view.handle.id === change.initiatingView
+                        || sameSelectionSet(view.state.get().selectionSet, undo ? saved.after : saved.before))) {
+                        return undo ? saved.before : saved.after;
+                    }
+                    // A sibling pane that moved after the edit keeps its live selections, mapped through the change.
+                    return undefined;
+                },
+                undo: undo ? forward : undefined, parts: change.parts, wholeText: change.wholeText
+            });
         });
         this.#history.move(entry, direction);
         const changed = new Set<Store<unknown>>(), transactionId = ++this.#nextTransaction, revisions = [];
