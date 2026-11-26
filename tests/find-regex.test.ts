@@ -96,6 +96,26 @@ function fixture(text: string, supplied = true) {
             assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0); } };
 }
 
+test("regex navigation waits for its search and drops the command if the selection changes", async () => {
+    const f = fixture("cat dog cat");
+    try {
+        f.find.setFlags({ regularExpression: true });
+        f.find.setQuery("c.t");
+        const initial = f.view.getSnapshot().selectionSet;
+        f.find.next(1, { whenReady: true });
+        f.find.next(-1, { whenReady: true });
+        assert.equal(f.view.getSnapshot().selectionSet, initial);
+        await f.drain();
+        assert.partialDeepStrictEqual(f.view.getSnapshot().selection, { anchor: 8, head: 11 });
+
+        f.find.setQuery("d.g");
+        f.find.next(1, { whenReady: true });
+        f.view.setSelection(0, { anchor: 2, head: 2 });
+        await f.drain();
+        assert.partialDeepStrictEqual(f.view.getSnapshot().selection, { anchor: 2, head: 2 });
+    } finally { f.finish(); }
+});
+
 test("async regex find advances empty matches, accepts manual overlaps and preserves shared complete-set undo", async () => {
     const original = "😀x\r\nlast";
     const f = fixture(original);

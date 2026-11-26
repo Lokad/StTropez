@@ -110,6 +110,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     let replacedZero: Readonly<{ revision: number; head: number; selectionSet: SelectionSet }> | undefined;
     let advanceAfterReplace: SelectionSet | undefined;
     let focusOrigin: Element | null | undefined;
+    let finishLiteral: (() => void) | undefined;
     let pendingNext: { direction: 1 | -1; selection: SelectionSet; origin: Element | null | undefined } | undefined;
     let pendingPreview: { selection: SelectionSet; followSelected: boolean; scrollUnchanged: () => boolean; listeners: AbortController } | undefined;
     let previewed: { index: number; selection: SelectionSet } | undefined;
@@ -136,6 +137,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     };
     const stop = () => { generation++; runner.cancel();
         pendingRepair = undefined;
+        finishLiteral = undefined;
         const active = cursor, plan = planCursor, authority = stopPlanAuthority; cursor = undefined; planCursor = undefined; stopPlanAuthority = undefined;
         navigatedMatch = undefined; replacedZero = undefined; advanceAfterReplace = undefined;
         cancelPreview(); previewed = undefined; pendingNext = undefined;
@@ -269,22 +271,27 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             if (token !== generation) { created.dispose(); return; } cursor = created;
         } catch (error) { failed(error, token, false, regularExpression && !backend ? "backend-unavailable" : "search-failed"); return; }
         let advanced = false;
-        const step = (beforePaint = false) => {
+        const step = (beforePaint = false, immediate = false) => {
             if (token !== generation || !valid()) { if (token === generation) restart(query); return; }
             advanced = true;
             const started = win.performance.now(); let scanned = store.get().scanned;
             let current: number | null | undefined;
             // Start the next literal timer's wait during this bounded slice, rather than after it.
-            if (!regularExpression && !beforePaint) later(step);
+            if (!regularExpression && !beforePaint && !immediate) later(step);
             const accept = (result: SearchStep, began: number, dispatchMs: number): boolean => {
                 if (token !== generation) return false;
                 if (!valid() || readDocument().revision !== document.revision) { restart(query); return false; }
                 if (result.matches.length > 8192
                     || !isOffsetRange(scanned, result.scanned, document.buffer.length)) throw new Error("Invalid search result.");
+                let previous = count ? matches.at(count - 1) : undefined;
                 for (const match of repair ? [] : result.matches) {
                     if (!isOffsetRange(match.from, match.to, document.buffer.length)
-                        || count > 0 && (match.from < endAt(count - 1) || match.from === offsetAt(count - 1) && match.to === endAt(count - 1))) throw new Error("Invalid search range.");
-                    matches.append(match); count++;
+                        || previous && (match.from < previous.to || match.from === previous.from && match.to === previous.to)) {
+                        throw new Error("Invalid search range.");
+                    }
+                    matches.append(match);
+                    count++;
+                    previous = match;
                 }
                 if (repair) {
                     const index = repair.index, ordinal = store.get().current;
@@ -297,7 +304,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 if (result.done) {
                     const moved = initialSelection !== currentSelection();
                     if (!pendingPreview && (!retain || moved)) current = selectionIndex();
-                    if (!regularExpression) runner.cancel();
+                    if (!regularExpression) { runner.cancel(); finishLiteral = undefined; }
                     const finished = cursor; cursor = undefined; finished?.dispose();
                     if (!regularExpression) { literal = { document, index: matches, query, wholeWord, matchCase }; edges = undefined; pendingRepair = undefined; }
                 }
@@ -316,8 +323,16 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             try {
                 if (nextLiteral) {
                     const advance = nextLiteral;
-                    const result = runner.slice(() => { const began = win.performance.now(), value = advance(beforePaint ? 512 : undefined); return accept(value, began, 0) ? value : undefined; },
-                        value => !!value && !value.done && token === generation && valid(), beforePaint ? 1 : literalBudget.calls);
+                    const batch = () => {
+                        const began = win.performance.now();
+                        const value = advance(beforePaint ? 512 : undefined);
+                        return accept(value, began, 0) ? value : undefined;
+                    };
+                    let result = immediate ? batch() : runner.slice(batch, value => !!value && !value.done,
+                        beforePaint ? 1 : literalBudget.calls);
+                    if (immediate) {
+                        while (result && !result.done) result = batch();
+                    }
                     if (result && token === generation && valid()) present(result);
                 } else {
                     const result = cursor!.next(), dispatchMs = win.performance.now() - started;
@@ -327,6 +342,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 }
             } catch (error) { failed(error, token); }
         };
+        if (!regularExpression) finishLiteral = () => step(false, true);
         // Coalesce pattern typing before a host worker starts; later steps still yield normally.
         if (token === generation) later(step, regularExpression ? regexDelay : 0);
         // Settle nearby matches before the browser paints. The timer owns all further work.
@@ -455,6 +471,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const match = nextMatch(direction);
         if (!match && options?.whenReady && store.get().status === "searching") {
             pendingNext = { direction, selection: currentSelection(), origin: captureFocus() };
+            finishLiteral?.();
             return true;
         }
         cancelPreview();

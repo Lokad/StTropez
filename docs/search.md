@@ -48,7 +48,8 @@ The bar starts case-insensitive, the controller case-sensitive. Both start in li
 
 `setQuery(query)` starts a search. Empty text clears it. `{ preview: true }` reveals without changing
 selection or focus. `acceptPreview()` selects a completed preview. `next(1)` or `next(-1)` unfolds and
-selects, wrapping after completion. `{ whenReady: true }` queues the latest direction.
+selects, wrapping once the index is complete. With `{ whenReady: true }`, a literal command finishes the search
+and selects immediately. A pending regex search remembers the latest direction.
 `setHighlightMatches(false)` hides marks but keeps the index. `cancel()` clears it.
 
 Read `getSnapshot()` and `subscribe()` for progress, `count`, zero-based `current` and `wrappedTo`. During
