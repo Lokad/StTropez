@@ -35,6 +35,8 @@ export async function startServer(port, { watch = true, serverProvider = false }
             ...demoBundle.entryPoints,
             index: "examples/demo/index.html",
             "reference/index": "examples/reference/index.html",
+            "controls/index": "tests/fixtures/controls/index.html",
+            "controls/app": "tests/fixtures/controls/main.ts",
             "viewport/index": "tests/fixtures/viewport/index.html",
             "editing/index": "tests/fixtures/editing/index.html",
             "comparison/index": "tests/fixtures/comparison/index.html",

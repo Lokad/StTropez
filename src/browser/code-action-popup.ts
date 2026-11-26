@@ -163,9 +163,6 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
         const state = actions.getSnapshot();
         if (state.preview) {
             if (!apply.disabled) void state.preview.apply();
-        } else if (state.status !== "resolving" && !move(1)) {
-            actions.cancel();
-            return false;
-        }
+        } else if (state.status !== "resolving") move(1);
     });
 }

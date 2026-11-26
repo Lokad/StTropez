@@ -58,6 +58,7 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
     panel.setAttribute("role", "dialog");
     const label = node("label");
     const name = node("input");
+    panel.onfocus = () => name.focus({ preventScroll: true });
     name.maxLength = nameLimit;
     label.append(text("New name"), name);
     status.setAttribute("aria-label", text("Rename status"));

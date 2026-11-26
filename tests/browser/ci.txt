@@ -1,6 +1,7 @@
 # Editing and navigation
 editing.spec.ts
 editor-pointer-focus.spec.ts
+editor-controls.spec.ts
 navigation.spec.ts
 text-geometry.spec.ts
 caret-placement.spec.ts

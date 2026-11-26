@@ -124,12 +124,6 @@ test("the reference shortcut and toolbar review a captured code action at the so
     await source.press("ArrowDown");
     await expect(panel).toBeHidden();
     await source.press("ControlOrMeta+Home");
-    await source.press("ControlOrMeta+.");
-    await expect(unavailable).toBeDisabled();
-    await source.press("Enter");
-    await expect(panel).toBeHidden();
-    await expect(page.locator("#pane .st-viewport-row").first()).toHaveText("");
-    await source.press("ControlOrMeta+z");
     disabledOnly = false;
     await page.getByRole("button", { name: "Code actions", exact: true }).click();
     const edit = panel.getByRole("button", { name: 'Insert module "sample-utils"' });

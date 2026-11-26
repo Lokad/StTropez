@@ -16,6 +16,8 @@ export function reviewPanel(editor: TextEditor, signal: AbortSignal, className: 
     const doc = editor.element.ownerDocument;
     const node = <K extends keyof HTMLElementTagNameMap>(tag: K) => doc.createElement(tag);
     const panel = node("section");
+    // Clicks on review text and disabled controls must not focus the editor behind the panel.
+    panel.tabIndex = -1;
     // Appending the panel can throw after insertion, before an overlay returns its disposer.
     onAbort(signal, () => panel.remove());
     panel.className = className;
