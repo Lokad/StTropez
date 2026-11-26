@@ -39,6 +39,8 @@ To try a save conflict, make different edits to the same sample in two tabs and 
 choose **Review saved copy** to keep your version or take the saved files. Saving identical files keeps
 the other tab’s edits and Undo history available.
 If the saved copy was removed, **Save locally** recreates it from your open project.
+When a write is pending, you can edit and save again. Each Save keeps the text you chose.
+Edits after the last Save stay in the working copy.
 On reload, recovery selects this tab’s last checkpoint if it is available. Use **Recovery version** to choose another draft for the same sample.
 
 <a id="provider-ownership-and-adaptations"></a>

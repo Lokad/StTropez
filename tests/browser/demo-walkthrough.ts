@@ -118,6 +118,9 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await expect.poll(() => page.evaluate(() => !!(window as unknown as { heldNavigationSave: HeldSave }).heldNavigationSave.acknowledge)).toBe(true);
     await expect(page.locator("#save")).toBeDisabled();
     await expect(page.locator("#files button")).toHaveText(["main.ts"]); await expect(main).toBeFocused();
+    await main.press("Control+End");
+    await page.keyboard.insertText("// Save before opening the definition.\n");
+    await page.locator("#save").click();
     await main.press("Control+Home");
     const cursor = "Ln 1, Col 1"; await expect(page.locator("#cursor")).toHaveText(cursor);
     const call = page.locator("#editor .st-viewport-row").filter({ hasText: "const label = formatLabel(record);" });
@@ -125,7 +128,7 @@ export async function runDemoUnopenedNavigation(page: Page, url = "/") {
     await page.mouse.move(point.x, point.y); await page.keyboard.down("Control");
     const link = call.locator(".st-definition-link"); await expect(link).toHaveText("formatLabel");
     await expect(link).toHaveCSS("cursor", "pointer"); await expect(main).toBeFocused();
-    await expect(page.locator("#cursor")).toHaveText(cursor); await expect(page.locator("#files button")).toHaveText(["main.ts"]);
+    await expect(page.locator("#cursor")).toHaveText(cursor); await expect(page.locator("#files button")).toHaveText(["main.ts ●"]);
     await page.keyboard.up("Control"); await expect(link).toHaveCount(0);
     await page.keyboard.down("Control"); await expect(link).toBeVisible();
     await page.mouse.click(point.x, point.y); await page.keyboard.up("Control"); await expect(labels).toBeVisible();

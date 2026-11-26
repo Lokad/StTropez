@@ -62,6 +62,90 @@ class MemoryStore implements DraftStore {
 
 const unusedProvider = async () => { throw new Error("This project fixture never starts a language provider."); };
 
+test("overlapping Saves use the captured files and the last acknowledged storage version", async t => {
+    const outcomes = ["saved", "conflict", "equivalent", "removed", "failed", "failed reviewed write", "closed"] as const;
+    for (const outcome of outcomes) await t.test(outcome, async () => {
+        const store = new MemoryStore(), drafts = new MemoryStore();
+        store.row = { token: "base", value: { version: 1, files: demoSample("pricing").files } };
+        const project = await DemoProject.open("pricing", () => true, unusedProvider, {
+            createStore: name => name === "sttropez-demo-projects-v1" ? store : drafts,
+        });
+        const started = latch<void>(), release = latch<void>();
+        const submissions: StoredDraft[] = [];
+        const write = store.write;
+        const holdFirstWrite: DraftStore["write"] = async (row, expected) => {
+            submissions.push(row);
+            if (submissions.length === 1) {
+                started.resolve();
+                await release.promise;
+                if (outcome === "failed" || outcome === "failed reviewed write") throw new Error("Write failed");
+            }
+            await write(row, expected);
+        };
+        try {
+            const [main, helper] = project.files;
+            assert.ok(main && helper);
+            const edit = (id: typeof main.resource.documentId, text: string) =>
+                project.workspace.replaceText(id, text, { origin: "human", history: "record" });
+            const save = () => project.save(() => {});
+            edit(main.resource.documentId, "first");
+            const reviewed = outcome === "failed reviewed write";
+            if (reviewed) {
+                store.row = { token: "peer", value: { version: 1, files: { ...project.sample.files, [main.name]: "peer" } } };
+                await save();
+                assert.ok(project.reviewConflict());
+            }
+            store.write = holdFirstWrite;
+            const first = project.save(() => {}, reviewed);
+            await started.promise;
+            edit(main.resource.documentId, "second");
+            edit(helper.resource.documentId, "helper");
+            const second = save();
+            const same = save();
+            edit(helper.resource.documentId, "later");
+            assert.equal(submissions.length, 1);
+            assert.deepEqual(submissions[0]!.value, {
+                version: 1, files: { ...project.sample.files, [main.name]: "first" },
+            });
+            const requested = { version: 1, files: { [main.name]: "second", [helper.name]: "helper" } };
+            if (outcome === "conflict" || outcome === "equivalent") {
+                const value = outcome === "equivalent" ? requested
+                    : { version: 1, files: { ...project.sample.files, [main.name]: "peer" } };
+                store.row = { token: "peer", value };
+            }
+            if (outcome === "removed") store.row = null;
+            if (outcome === "closed") project.dispose();
+            release.resolve();
+            await Promise.all([first, second, same]);
+            if (outcome === "closed") {
+                await project.language.dispose();
+                assert.equal(submissions.length, 1);
+                assert.equal(project.workspace.diagnostics().leases, 0);
+            } else if (outcome === "conflict" || reviewed) {
+                assert.equal(store.writes, 0);
+                assert.equal(store.row?.token, "peer");
+                assert.ok(project.reviewConflict());
+            } else if (outcome === "removed") {
+                assert.equal(store.row, null);
+                assert.match(project.message, /saved copy was removed/i);
+            } else {
+                assert.equal(submissions.length, 2);
+                if (outcome === "equivalent") assert.equal(store.row?.token, "peer");
+                assert.deepEqual(store.row?.value, requested);
+                assert.equal(project.hasConflict(), false);
+                assert.equal(main.resource.metadata.getSnapshot().dirty, false);
+                assert.equal(helper.resource.metadata.getSnapshot().dirty, true);
+                assert.equal(project.workspace.document(helper.resource.documentId).text(), "later");
+                assert.equal(project.workspace.ownership(helper.resource.id).saves, 0);
+            }
+        } finally {
+            release.resolve();
+            project.dispose();
+            await project.language.dispose();
+        }
+    });
+});
+
 test("equivalent peer saves preserve the draft and distinct unopened files require review", async () => {
     const store = new MemoryStore(), drafts = new MemoryStore();
     let notify = () => {};

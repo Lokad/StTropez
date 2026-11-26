@@ -15,6 +15,8 @@ export type DemoFile = Readonly<{ name: string; resource: TextResourceHandle; ta
 type StoredProject = Readonly<{ version: 1; files: Readonly<Record<string, string>> }>;
 type Conflict = Readonly<{ token: string; baselines: ReadonlyMap<string, ComparisonBaseline> }>;
 type Review = Readonly<{ copy: Conflict; revisions: ReadonlyMap<DemoFile, number> }>;
+type CapturedFile = Readonly<{ ticket: SaveTicket<string>; buffer: TextBuffer }>;
+type PendingSave = Readonly<{ captured: ReadonlyMap<DemoFile, CapturedFile>; done: Promise<string | null> }>;
 type ProjectStorage = Readonly<{
     createStore?: (name: string) => DraftStore;
     peerChanged?: (project: DemoProject) => void;
@@ -53,7 +55,8 @@ export class DemoProject {
     private review: Review | undefined;
     private pendingPeerRead = false;
     private readingPeer = false;
-    private includeOpenedFileInSave: ((file: DemoFile) => void) | undefined;
+    private readonly captureOpenedFile = new Set<(file: DemoFile) => void>();
+    private lastSave: PendingSave | undefined;
     saving = false;
     private notice: { text?: string; keepOnEdit?: true; editRefusal?: string } = {
         text: "Changes are kept in this page until you save locally."
@@ -123,7 +126,7 @@ export class DemoProject {
             this.loaded = Object.freeze([...this.loaded, file]); if (!readOnly) delete this.unloaded[name];
             this.fileOwners.defer(owners.dispose);
         } catch (error) { return owners.rollback(error); }
-        if (!readOnly) this.includeOpenedFileInSave?.(file);
+        if (!readOnly) for (const capture of this.captureOpenedFile) capture(file);
         this.services?.recovery.filesChanged(); this.services?.language.filesChanged(); return file;
     }
     private prepareEditable(): void { for (const name of Object.keys(this.unloaded)) this.load(name); }
@@ -332,60 +335,113 @@ export class DemoProject {
             }
         }
     }
+    canSave(): boolean {
+        if (this.disposed) return false;
+        if (!this.saving) return true;
+        const last = this.lastSave;
+        return !!last && this.editable.some(file => this.workspace.document(file.resource.documentId).revision
+            !== (last.captured.get(file)?.ticket.revision ?? 0));
+    }
     async save(changed: () => void, reviewed = false): Promise<void> {
-        if (this.disposed || this.saving) return;
+        if (this.disposed || (this.saving && !this.lastSave)) return;
         if (!this.inputIdle()) {
             this.message = "Save skipped while an edit was pending. Save again to keep your changes.";
             changed();
             return;
         }
         if (reviewed && !this.canSaveReviewed()) return;
-        const expected = reviewed ? this.conflict!.token : this.token;
-        const tickets: { file: DemoFile; ticket: SaveTicket<string>; buffer: TextBuffer }[] = [];
-        this.beginStorage();
-        try {
-            const capture = (file: DemoFile) => {
-                const document = this.workspace.document(file.resource.documentId);
-                const ticket = this.workspace.captureSave(file.resource, reviewed
-                    ? { target: this.workspace.captureResource(file.resource.id), expectedRevision: document.revision,
-                        expectedServerVersion: expected! } satisfies SaveReview : undefined);
-                tickets.push({ file, ticket, buffer: document.buffer });
-                return ticket;
-            };
-            for (const file of this.editable) capture(file);
-            const files = { ...this.unloaded };
-            for (const { file, ticket } of tickets) files[file.name] = ticket.start().value;
-            // If navigation opens a submitted file before storage replies, acknowledge its original
-            // buffer with the other tickets. Typing in the newly opened tab stays dirty.
-            this.includeOpenedFileInSave = file => { capture(file).start(); };
-            let result: string | StoredDraft | null;
-            try {
-                this.notice = { text: "Saving locally…", keepOnEdit: true }; changed();
-                result = await this.writeFiles(files, expected, reviewed);
-            } finally { this.includeOpenedFileInSave = undefined; }
-            if (this.disposed) return;
-            if (typeof result !== "string") {
-                for (const { ticket } of tickets) ticket.conflict();
-                this.showPeerCopy(result);
-                return;
-            }
-            this.token = result;
-            this.conflict = undefined; this.review = undefined;
-            for (const { file, ticket, buffer } of tickets) {
-                ticket.accept({ serverVersion: result });
-                this.baselines.set(file.name, { buffer, version: result });
-            }
-            await this.recovery.settleSavedDraft();
-            if (this.disposed) return;
-            this.notice = this.dirty() ? { text: "Saved in this browser. Later edits remain unsaved." } : {};
-        } catch (error) {
-            for (const { ticket } of tickets) ticket.fail();
-            this.review = undefined;
-            const text = error instanceof Error ? `Could not save: ${error.message}` : "Could not save. Your edits are intact.";
-            this.notice = { text, keepOnEdit: true };
-        } finally {
-            tickets.forEach(({ ticket }) => ticket.finish()); this.finishStorage(changed);
+        const previous = this.lastSave;
+        if (previous && !this.canSave()) {
+            await previous.done;
+            return;
         }
+        const reviewedToken = reviewed ? this.conflict!.token : undefined;
+        const captured = new Map<DemoFile, CapturedFile>();
+        const files = { ...this.unloaded };
+        let started = false;
+        const capture = (file: DemoFile) => {
+            const document = this.workspace.document(file.resource.documentId);
+            const ticket = this.workspace.captureSave(file.resource, reviewedToken === undefined ? undefined
+                : { target: this.workspace.captureResource(file.resource.id), expectedRevision: document.revision,
+                    expectedServerVersion: reviewedToken } satisfies SaveReview);
+            captured.set(file, { ticket, buffer: document.buffer });
+            if (started) ticket.start();
+            return ticket;
+        };
+        try {
+            for (const file of this.editable) files[file.name] = capture(file).value;
+        } catch (error) {
+            for (const { ticket } of captured.values()) ticket.finish();
+            this.showSaveFailure(error);
+            changed();
+            return;
+        }
+        // Opening a submitted file must acknowledge its original buffer. Later typing stays dirty.
+        this.captureOpenedFile.add(capture);
+        this.beginStorage();
+        const write = async (expected: string | null) => {
+            try {
+                if (this.disposed) return;
+                for (const { ticket } of captured.values()) ticket.start();
+                started = true;
+                this.notice = { text: "Saving locally…", keepOnEdit: true };
+                changed();
+                const result = await this.writeFiles(files, expected, reviewed);
+                if (this.disposed) return;
+                if (typeof result !== "string") {
+                    for (const { ticket } of captured.values()) ticket.conflict();
+                } else {
+                    this.token = result;
+                    this.conflict = undefined;
+                    this.review = undefined;
+                    for (const [file, { ticket, buffer }] of captured) {
+                        ticket.accept({ serverVersion: result });
+                        this.baselines.set(file.name, { buffer, version: result });
+                    }
+                }
+                return result;
+            } catch (error) {
+                for (const { ticket } of captured.values()) ticket.fail();
+                throw error;
+            } finally {
+                this.captureOpenedFile.delete(capture);
+                for (const { ticket } of captured.values()) ticket.finish();
+            }
+        };
+        const submit = async (acknowledged: string | null) => {
+            try {
+                const result = await write(reviewedToken ?? acknowledged);
+                if (result === undefined || this.disposed) return acknowledged;
+                if (typeof result !== "string") {
+                    if (this.lastSave?.captured === captured) this.showPeerCopy(result);
+                    // A queued press cannot inherit permission to replace a conflicting or deleted copy.
+                    return acknowledged;
+                }
+                await this.recovery.settleSavedDraft();
+                if (!this.disposed && this.lastSave?.captured === captured) {
+                    this.notice = this.dirty() ? { text: "Saved in this browser. Later edits remain unsaved." } : {};
+                }
+                return result;
+            } catch (error) {
+                this.showSaveFailure(error);
+                return acknowledged;
+            } finally {
+                if (this.lastSave?.captured === captured) {
+                    this.lastSave = undefined;
+                    this.finishStorage(changed);
+                }
+            }
+        };
+        // All files in one sample share a single conditional storage write.
+        const done = (previous?.done ?? Promise.resolve(this.token)).then(submit);
+        this.lastSave = { captured, done };
+        if (previous) changed();
+        await done;
+    }
+    private showSaveFailure(error: unknown): void {
+        this.review = undefined;
+        const text = error instanceof Error ? `Could not save: ${error.message}` : "Could not save. Your edits are intact.";
+        this.notice = { text, keepOnEdit: true };
     }
     private finishStorage(changed: () => void): void {
         this.saving = false;

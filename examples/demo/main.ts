@@ -266,7 +266,7 @@ function paintMetadata(): void {
     element("analysis-status").textContent = hostLanguage() ? "Host colors & editing rules" : referencePresentation?.status === "failed" ? "Saved-copy analysis unavailable" : presentation.status === "failed" ? "Analysis unavailable" : presentation.status === "ready"
         ? `TypeScript 5.9.3 · ${panel === "javascript" && !element("workspace").classList.contains("collapsed") ? "syntax & emit" : "syntax"}` : "TypeScript · analyzing…";
     element("analysis-retry").hidden = presentation.status !== "failed" && referencePresentation?.status !== "failed";
-    button("save").disabled = project.saving;
+    button("save").disabled = !project.canSave();
     button("navigate-back").disabled = !activePane?.commands.get("demo.back", "menu")?.enabled;
     element("save-conflict").hidden = !project.hasConflict();
     button("conflict-save").disabled = button("conflict-take").disabled = !project.canSaveReviewed() || find.getSnapshot()?.status === "replacing";
@@ -790,7 +790,7 @@ window.addEventListener("keydown", event => {
     if (!event.repeat) void save();
 }, { signal: listeners.signal });
 window.addEventListener("beforeunload", event => {
-    if (projectBusy() || [...projects.values()].some(project => project.dirty())) event.preventDefault();
+    if (projectBusy() || [...projects.values()].some(project => project.saving || project.dirty())) event.preventDefault();
 }, { signal: listeners.signal });
 window.addEventListener("pagehide", event => {
     if (event.persisted) return;
