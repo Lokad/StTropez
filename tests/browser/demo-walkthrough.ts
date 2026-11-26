@@ -976,7 +976,9 @@ export async function runDemoConflict(page: Page, url = "/") {
         const saveBox = (await save.boundingBox())!;
         await peer.mouse.move(saveBox.x + saveBox.width / 2, saveBox.y + saveBox.height / 2);
         await peer.mouse.down();
-        await expect(peer.locator("#recovery-status")).toContainText("Recovery draft captured");
+        // Both pages are dirty. The footer can acknowledge this page's checkpoint or offer the other page's draft.
+        const recovery = peer.locator("#recovery-status");
+        await expect(recovery).toHaveText(/^(Recovery draft captured in this browser\.|A recovery draft is available\.)$/);
         await peer.mouse.up();
         await expect(peer.locator("#status")).toContainText("Saved in this browser"); await expect(peer.locator("#files")).not.toContainText("●");
         const original = await main.inputValue();
