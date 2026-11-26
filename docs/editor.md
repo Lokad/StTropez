@@ -145,7 +145,8 @@ Return a line or `undefined`, directly or in a promise. Selection, revision or m
 
 Shift+click extends the primary selection. Alt+click toggles a caret and Alt+drag adds a range.
 Double-click selects a word, triple-click a line, four clicks the document. Shift+Alt+click
-selects a column from the caret. Shift+Alt+drag or middle-drag starts at the press. Visible
+selects a column from the caret. Further Shift+Alt+clicks move the opposite corner.
+Shift+Alt+drag or middle-drag starts at the press. Visible
 rows reaching the nearer edge participate. If all fall short, each gets an end-of-line caret.
 
 ### Clipboard and text drag

@@ -190,11 +190,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     type VisualColumns = Readonly<{ head: number | undefined; anchor?: number | undefined }>;
     let preferred: Readonly<{ selections: SelectionSet; revision: number; layout: string; columns: readonly (VisualColumns | undefined)[] }> | undefined;
     let group: Readonly<{ type: string; revision: number; selectionSet: SelectionSet; tail: ReturnType<typeof typingRun> | "spaces" | undefined; key: string }> | undefined;
-    type ColumnDrag = { kind: "column"; middle: boolean; originRow: number; anchorColumn: number;
+    type ColumnDrag = { kind: "column"; middle: boolean; originRow: number; anchorColumn: number; anchorOffset: number; anchorAffinity: Affinity;
         projection?: { layout: string; column: number; direction: -1 | 1; count: number; ranges: (Selection & { reaches: boolean })[] } };
     type DragUnit = ColumnDrag | (({ kind: "line"; range: Selection; lineStart: number }
         | { kind: "word"; origin: number; range?: Selection }) & { lastHit?: number });
     let drag: Readonly<{ pointer: number; anchor: number; anchorAffinity: Affinity; revision: number; x: number; y: number; selectionSet: SelectionSet; baseRanges: readonly Selection[]; padding: boolean; unit?: DragUnit }> | undefined;
+    let columnAnchor: { selections: SelectionSet; revision: number; offset: number; affinity: Affinity;
+        column: number; layout: string } | undefined;
     let dragCaretRecorded = false;
     let pointerOrigin: Selection | undefined;
     const commandRunner = createCooperativeRunner(win);
@@ -1347,7 +1349,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (columns) {
             const line = currentDocument().buffer.lineAt(point.offset);
             unit = { kind: "column", middle: event.button === 1, originRow: currentFolds().rowAt(line),
-                anchorColumn: dragColumn(event.clientX, dragBounds()) };
+                anchorColumn: dragColumn(event.clientX, dragBounds()), anchorOffset: point.offset, anchorAffinity: point.affinity };
         } else if (clicks >= 4) {
             view.setSelection(revision, { anchor: 0, head: currentDocument().buffer.length }); refresh(); return;
         } else if (gutter || clicks === 3) {
@@ -1387,18 +1389,23 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         if (inputQueue.pending) return;
         const capture = commandCapture(false), folds = currentFolds();
         const targetRow = () => folds.rowAt(navigation.columnDragLine(localY, folds.lineAt(unit.originRow)));
+        const layout = navigationLayout();
         let row = targetRow();
         if (!unit.projection && row === unit.originRow && Math.abs(unit.anchorColumn - column) < 2) {
             if (!released || unit.middle) return;
-            const { head, headAffinity } = capture.selection;
-            const anchorColumn = navigation.columnAt(head, headAffinity);
+            const prior = columnAnchor?.selections === capture.selectionSet && columnAnchor.revision === capture.revision
+                ? columnAnchor : undefined;
+            unit.anchorOffset = prior?.offset ?? capture.selection.head;
+            unit.anchorAffinity = prior?.affinity ?? capture.selection.headAffinity ?? "after";
+            const anchorColumn = prior?.layout === layout ? prior.column
+                : navigation.columnAt(unit.anchorOffset, unit.anchorAffinity);
             if (anchorColumn === undefined) return;
-            unit.originRow = folds.rowAt(capture.buffer.lineAt(head));
+            unit.originRow = folds.rowAt(capture.buffer.lineAt(unit.anchorOffset));
             unit.anchorColumn = anchorColumn;
             row = targetRow();
         }
         const direction = row < unit.originRow ? -1 : 1;
-        const count = Math.abs(row - unit.originRow) + 1, layout = navigationLayout();
+        const count = Math.abs(row - unit.originRow) + 1;
         let projection = unit.projection;
         if (!projection || projection.layout !== layout || projection.direction !== direction || projection.column !== column) {
             projection = { layout, direction, column, ranges: [], count: 0 }; unit.projection = projection;
@@ -1429,6 +1436,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                 const selected = reached.length ? reached : crossed;
                 try { view.setSelections(capture.revision, selected, selected.length - 1); }
                 finally { skipCaretHistory = false; }
+                columnAnchor = { selections: currentSelections(), revision: capture.revision, offset: unit.anchorOffset,
+                    affinity: unit.anchorAffinity, column: unit.anchorColumn, layout };
                 if (drag?.unit === unit) drag = { ...drag, selectionSet: currentSelections() };
                 refresh(); return true;
             });
@@ -1551,6 +1560,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     let lastCaret = currentView(), skipCaretHistory = false;
     const observeCaret = () => {
         const next = currentView();
+        if (columnAnchor?.selections !== next.selectionSet) columnAnchor = undefined;
         pointerOrigin = undefined;
         if (next.revision !== lastCaret.revision) caretHistory.length = 0;
         else if (!skipCaretHistory && (!drag || !dragCaretRecorded) && next.selectionSet !== lastCaret.selectionSet) {
@@ -1668,6 +1678,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             cancelLineRequest();
             registry.dispose(); brackets!.dispose(); paired.clear(); automaticIndent.clear();
             caretHistory.length = 0;
+            columnAnchor = undefined;
             pointerOrigin = undefined; mousePress = undefined;
             warnings!.dispose();
             hostInsertion?.cancel();

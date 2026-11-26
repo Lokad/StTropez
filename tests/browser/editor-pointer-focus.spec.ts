@@ -315,16 +315,24 @@ test("column drags edit visible rows together and keep the active corner", async
         const f = window.comparisonFixture;
         return f.range(0, f.snapshot().working.length);
     });
-    const [top, bottom] = await page.evaluate(last => [2, last + 5].map(at => {
+    const [top, bottom, firstRow] = await page.evaluate(last => ([2, last + 5, 4] as const).map(at => {
         const p = window.comparisonFixture.review.panes.working.viewport.coordsAt(at)!;
         return { x: p.left + 1, y: p.top + p.height / 2 };
-    }) as [{ x: number; y: number }, { x: number; y: number }], last);
+    }) as [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }], last);
     await page.mouse.click(top.x, top.y);
     await page.keyboard.down("Shift");
     await page.keyboard.down("Alt");
     await page.mouse.click(bottom.x, bottom.y);
     await page.keyboard.up("Alt");
     await page.keyboard.up("Shift");
+    expect(await state()).toEqual({ ranges: [[2, 5], [last + 2, last + 5]], primary: 1 });
+    await page.keyboard.down("Shift");
+    await page.keyboard.down("Alt");
+    await page.mouse.click(firstRow.x, firstRow.y);
+    await page.keyboard.up("Alt");
+    await page.keyboard.up("Shift");
+    expect(await state()).toEqual({ ranges: [[2, 4]], primary: 0 });
+    await page.keyboard.press("Control+u");
     expect(await state()).toEqual({ ranges: [[2, 5], [last + 2, last + 5]], primary: 1 });
     await page.keyboard.press("Control+u");
     expect(await state()).toEqual({ ranges: [[2, 2]], primary: 0 });
