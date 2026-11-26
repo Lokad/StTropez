@@ -17,7 +17,7 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 | Command | Coverage |
 | --- | --- |
 | `npm run typecheck`, `npm run check:docs` | Strict projects, compiled handbook examples, links, prose and public index |
-| `npm test` | Models, host policy and integration. Select `test:models` or `test:integration` for one group. |
+| `npm test` | Models, host policy and integration. Pass the owning test file to `node --test` for a focused run. |
 | `npm run test:browser`, `test:browsers` | Full source suite in Chromium (CI) or all three engines |
 | `npm run check` | Types, docs, models, integration, build and source Chromium |
 | `npm run inspect` | Screenshots of the demo and reference host in `artifacts/inspect/` |
@@ -110,10 +110,10 @@ tabs, graphemes and line endings. Vary open views and background updates for wor
 Verify `<name>.txt` and `license.txt` against the [pinned inputs](../scripts/unicode-inputs.json).
 
 ```sh
-node scripts/generate-grapheme-data.mjs /path/to/reviewed/grapheme --check
+node scripts/generate-unicode-fixtures.mjs /path/to/reviewed/grapheme --check
 ```
 
-Omit `--check` to regenerate the ignorable ranges, compressed fixtures and notice. Builds use the checked-in
+Omit `--check` to regenerate the character-warning ranges and compressed test fixtures. Builds use the checked-in
 output.
 
 ### Measurement policy
@@ -122,6 +122,7 @@ Choose a model, editing, viewport or comparison [suite](../scripts/benchmark-sui
 
 ```sh
 npm run bench:all -- --list
+node scripts/run-benchmarks.mjs --suite=viewport --list
 npm run bench:comparison
 ```
 

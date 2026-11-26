@@ -9,7 +9,7 @@ StTropez is a standalone TypeScript editor and workspace foundation.
 - `src/kernels` re-exports headless algorithms from core and protocol.
 - Add a public value when a host, sample or demo calls it. Put standalone algorithms used by providers in `sttropez/kernels`. Test internal helpers through their owning module.
 - `src/browser` owns its DOM subtree. A host owns surrounding application UI and services.
-- React examples use controllers with stable observable handles for shared state and pure function components. Effects register/clean up listeners; never use effects, layout effects or memo callbacks to synchronize or manage application/editor state. Mount views through stable refs or explicit host lifecycle APIs. Keep reactive libraries and design-system components in the host.
+- React hosts use controllers with stable observable handles for shared state and pure function components. Effects register/clean up listeners; never use effects, layout effects or memo callbacks to synchronize or manage application/editor state. Mount views through stable refs or explicit host lifecycle APIs. Keep reactive libraries and design-system components in the host.
 - Keep resource identity, document revision, tab identity and view state separate. Never address delayed work by a tab's array position or by whichever editor is focused later.
 - Preserve strict TypeScript and explicit lifecycle/disposal. Use immutable public snapshots and versioned transactions.
 - `external/` is ignored reference material. Do not import or copy its implementation into production. Any future upstream code reuse requires explicit licensing and attribution review.
@@ -18,8 +18,9 @@ StTropez is a standalone TypeScript editor and workspace foundation.
 - Before adding logic, search this project and relevant public references for an existing solution. Explain a deliberate new implementation where reuse conflicts with the zero-dependency requirement.
 - Support documents up to 512,000 UTF-8 bytes. Keep demo samples, test documents and benchmarks inside this bound.
 - Target French AZERTY, US QWERTY and US International keyboards. Support dead-key composition. Non-Latin input methods and right-to-left editing are outside scope.
-- Keep the built JavaScript at or below its checked size budget. Lower the budget after a cut. Raising it requires owner approval.
-- Cover a defect once, at the layer that owns the behavior. Use focused regressions during implementation. Run `npm run check` at milestones and select affected browser, package, demo and measurement checks from `docs/testing.md`.
+- Keep the built JavaScript at or below its checked size budget. Lower the budget after a structural cut of at least 1,000 bytes. Raising it requires owner approval.
+- Cover a defect once, at the layer that owns the behavior. Identify the owning test and any limits when reporting a fix. Use focused regressions during implementation. Run `npm run check` at milestones and select affected browser, package, demo and measurement checks from `docs/testing.md`.
+- Run the focused owner test locally. CI runs full Chromium and the restored consumer. Keep independent work moving while device or owner decisions are pending, and record them in the local roadmap.
 - Keep one documentation page per contract. Explain what hosts must do and why. Change prose for a fix only if it changes the host's obligations. Use headings suited to the subject and compile TypeScript examples against public entries.
 - Keep support limits and clock definitions in `docs/README.md`. Link there for shared details. Describe current behavior in present tense. Keep investigation notes in ignored research and use Git for change history.
 - Use one statement per line and aim for 120 columns in new or edited code. Measure footprint on built assets.
