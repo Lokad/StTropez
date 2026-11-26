@@ -36,7 +36,11 @@ export function mountLocationChooser(editor: TextEditor, navigation: NavigationC
     function cancel() { hide(); navigation.cancel(); }
     function choose(search: Search, index: number) {
         const choice = search.result?.locationAt(index);
-        return active === search && !!choice?.open(target => { cancel(); search.open(target); });
+        return active === search && !!choice?.open(target => {
+            hide();
+            try { search.open(target); }
+            finally { if (!active) navigation.cancel(); }
+        });
     }
     function render(search: Search) {
         const result = search.result!;
