@@ -26,7 +26,7 @@ const pageBudgets = {
     "docs/language-server.md": 19_000,
     "docs/packaging.md": 9_000,
     "docs/README.md": 11_000,
-    "docs/search.md": 17_500,
+    "docs/search.md": 7_600,
     "docs/testing.md": 20_000,
     "docs/text-model.md": 16_000,
     "docs/unicode.md": 9_000,
