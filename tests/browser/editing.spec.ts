@@ -158,7 +158,9 @@ test("failed command turns release input and report the cause before later typin
             } else if (failure.startsWith("committed-")) {
                 const release = f.registerEditTransform(edit => ({ ...edit, complete: () => { release(); throw new Error("Fixture completion failure"); } }));
             } else f.failNextDecoration();
-            input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+            // Horizontal movement over 33 ranges exercises the deferred command and queued-input path.
+            const key = failure === "inline-decoration" ? "ArrowDown" : "ArrowRight";
+            input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
             if (failure !== "inline-decoration" && input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "queued", bubbles: true, cancelable: true }))) throw new Error("Expected queued input");
             if (failure === "committed-tail") {
                 input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
