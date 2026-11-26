@@ -18,10 +18,9 @@ export function mountLocationChooser(editor: TextEditor, navigation: NavigationC
     const doc = editor.element.ownerDocument;
     const panel = editorElement(doc, "section", "locations");
     panel.setAttribute("aria-label", "Symbol locations");
-    const status = doc.createElement("div");
-    status.className = "st-completion-count";
+    const status = editorElement(doc, "div", "locations-count");
     panel.append(status);
-    const rows = choiceRows(panel, 50);
+    const rows = choiceRows(panel, 50, "locations-choices");
     const overlay = mountAnchoredOverlay(editor, panel, {
         transient: true, dismissOn: ["focus-leave", "outside-pointerdown"],
         onHide(reason, focused) {

@@ -22,7 +22,7 @@ export function mountCompletionList(editor: TextEditor, source: Observable<Compl
     popup.setAttribute("role", "listbox");
     popup.setAttribute("aria-label", strings.label ?? "Completions");
     popup.append(count);
-    const rows = choiceRows(popup, 30);
+    const rows = choiceRows(popup, 30, "completion-choices");
     popup.append(detail);
     const overlay = mountAnchoredOverlay(editor, popup, { priority: 1 });
     let current: CompletionSnapshot | undefined;

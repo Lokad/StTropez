@@ -1,9 +1,9 @@
 import { editorElement } from "./editor-element.ts";
 
 /** A scroll track for every option, with at most sixteen buttons mounted at once. */
-export function choiceRows(parent: HTMLElement, rowHeight: number) {
+export function choiceRows(parent: HTMLElement, rowHeight: number, part: string) {
     const doc = parent.ownerDocument;
-    const list = editorElement(doc, "div", "completion-choices");
+    const list = editorElement(doc, "div", part);
     parent.append(list);
     list.style.setProperty("--st-completion-row", rowHeight + "px");
     let count = 0, selected = 0, first = -1, followSelection = true;
