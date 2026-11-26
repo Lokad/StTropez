@@ -14,11 +14,14 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const events = new AbortController();
     let intent = 0;
     let offeredCommandVersion: number | undefined;
+    let stopLinkList: (() => void) | undefined;
     let definitionFocus = 0;
     const leaveSource = () => { definitionFocus = 0; };
     editor.element.addEventListener("focusout", leaveSource, { signal: events.signal });
     window.addEventListener("blur", leaveSource, { signal: events.signal });
     function clear() {
+        stopLinkList?.();
+        stopLinkList = undefined;
         offeredCommandVersion = undefined;
         choices.replaceChildren();
         result.value = "";
@@ -99,12 +102,27 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     command("actions", () => { editor.commands.run("quickfix.show"); });
     command("links", async request => {
         display(request, await language.links.request(), links => {
-            if (!links.length) result.value = "No document links.";
-            for (const link of links) {
-                choices.append(button(link.tooltip || link.target || "Resolve link", async () => {
-                    display(request, await link.open(() => {}), uri => { result.value = uri; });
-                }));
+            if (!links.length) {
+                result.value = "No document links.";
+                return;
             }
+            const rows = links.map((_, index) => button("", async () => {
+                const link = language.links.getSnapshot().links[index];
+                if (link) display(request, await link.open(() => {}), uri => { result.value = uri; });
+            }));
+            function renderLinks() {
+                const current = language.links.getSnapshot().links;
+                if (!current.length) {
+                    clear();
+                    return;
+                }
+                current.forEach((link, index) => {
+                    rows[index]!.textContent = link.tooltip || link.target || "Resolve link";
+                });
+            }
+            choices.append(...rows);
+            stopLinkList = language.links.subscribe(renderLinks);
+            renderLinks();
         });
     });
     const runCommand = document.getElementById("command")!;

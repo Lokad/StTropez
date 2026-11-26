@@ -399,15 +399,14 @@ policy change. [Command permissions, approval and reconnect](language-server.md#
 
 ### Document links
 
-`links.request()` returns the captured choices in `getSnapshot().links`. Each carries its
-range, tooltip, optional target and `open(visit)` action. Supply `documents()` when URI mapping
-depends on other files. An outdated project snapshot expires the request before sending.
+`links.request()` returns choices with a range, tooltip, optional target and `open(visit)`.
+Read the list from `getSnapshot().links`. Supply `documents()` for cross-file URI mapping.
+A stale project snapshot expires the request before dispatch.
 
-`links: { paint: true }` underlines links. Panes share a scan and refresh after reconnect.
-`setPaint(false)` hides the marks and `setPaint(true)` resumes. `linkAt(offset)` checks the
-explicit result before painted ranges, with exclusive range ends. A lazy link resolves on the
-clicked pane even if a sibling closes. Tie navigation to the click that requested it. Here the
-host aborts `intent` on focus loss, another action or pane closure.
+`links: { paint: true }` underlines links. Panes share a scan that refreshes on reconnect.
+`setPaint` toggles the marks. `linkAt(offset)` checks the explicit result before painted ranges.
+Range ends are exclusive. A lazy link resolves on the clicked pane even if a sibling closes.
+Abort `intent` on focus loss, another action or pane closure.
 
 ```ts
 import type { DocumentLinkChoice } from "sttropez/browser";
@@ -421,8 +420,9 @@ export function openLink(link: DocumentLinkChoice, intent: AbortSignal, visit: (
 
 `open(visit)` can resolve a missing target and returns the URI after `visit` succeeds.
 Refusal reasons include `no-target`, `resolving` and `unavailable-view`. Check URI permissions
-in the host. A resolved link can change its target and tooltip while retaining its range and
-identity. Use the updated snapshot for a fresh click.
+before navigation. Resolution replaces the choice at the same range and list position. For a
+persistent list, keep keyboard focus on the row, refresh its label and open its current choice
+on the next click. [Reference host](../examples/reference/language.ts)
 
 Caret movement cancels an explicit lookup or pending navigation. The automatic scan and
 completed list survive it. Edits or authority changes in a captured file, another request,

@@ -238,6 +238,42 @@ test("a rename reports success after changing the reference document and Undo cl
     await expect(page.locator("#result")).toBeEmpty();
 });
 
+test("a resolved reference link stays usable from its focused row", async ({ page }) => {
+    let resolves = 0;
+    const target = "file:///reference/prices.ts", other = "file:///reference/tax.ts";
+    await page.routeWebSocket("**/lsp-fixture", client => {
+        const server = client.connectToServer();
+        server.onMessage(packet => client.send(packet));
+        client.onMessage(packet => {
+            const message = JSON.parse(packet.toString());
+            if (message.method === "documentLink/resolve") resolves++;
+            if (message.method !== "initialize") return server.send(packet);
+            message.params.initializationOptions = {
+                ...message.params.initializationOptions,
+                fixtureModuleUris: [{ module: "prices", uri: target }, { module: "tax", uri: other }],
+            };
+            server.send(JSON.stringify(message));
+        });
+    });
+    await page.goto("/reference/");
+    const source = page.getByRole("textbox", { name: "quote.ts" });
+    await source.press("Control+Home");
+    await page.keyboard.insertText('import "prices";\nimport "tax";\n');
+    await page.getByRole("button", { name: "Connect language server" }).click();
+    await page.getByRole("button", { name: "Document links" }).click();
+    await page.getByRole("button", { name: "Resolve prices", exact: true }).press("Enter");
+    const result = page.locator("#result");
+    await expect(result).toHaveText(target);
+    await expect(page.getByRole("button", { name: "Resolved prices", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Enter");
+    await expect(result).toHaveText(other);
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Enter");
+    await expect(result).toHaveText(target);
+    expect(resolves).toBe(2);
+});
+
 test("reconnecting the reference host requires a fresh server command choice", async ({ page }) => {
     let session = 0;
     let disconnect: () => void;
