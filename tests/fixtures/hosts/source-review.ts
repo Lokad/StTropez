@@ -1,5 +1,6 @@
+import type { HostPane } from "./layout.ts";
 import { TextBuffer } from "../../../src/index.ts";
-import type { ComparisonBaseline, Observable, ObservableListener, SaveReview, SaveSubmission, TabTarget, TextResourceHandle, Workspace } from "../../../src/index.ts";
+import type { ComparisonBaseline, Observable, ObservableListener, SaveReview, SaveSubmission, TextResourceHandle, Workspace } from "../../../src/index.ts";
 import type { SavePort, HostSaveQueue } from "../save-queue.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 import { ReviewVariants } from "./variants.ts";
@@ -8,7 +9,7 @@ export type SaveConflict = Readonly<{ id: number; submittedRevision: number; exp
     review: "unloaded" | "loading" | "ready" | "expired"; reviewVersion: string | null; message: string }>;
 export type SaveConflictPresentation = Readonly<{ conflict: SaveConflict | null; canSaveReviewed: boolean; disposed: boolean }>;
 type Reference = Readonly<{ generation: number; baseline: ComparisonBaseline }>;
-type ReviewPorts = Readonly<{ inputReady: () => boolean; presentation: () => TabTarget; present: () => void;
+type ReviewPorts = Readonly<{ inputReady: () => boolean; presentation: Observable<HostPane>; present: () => void;
     server: () => Readonly<{ buffer: TextBuffer; version: string }>; save: SavePort<string>["save"];
     track: (task: Promise<unknown>) => void; saved: (revision: number) => void; reportError: (error: unknown) => void }>;
 
@@ -27,9 +28,9 @@ export class HostSourceReview {
     private cachedPresentation: SaveConflictPresentation | undefined;
     private conflictSerial = 0;
     private conflictReference: ComparisonBaseline | undefined;
-    private conflictPresentation: TabTarget | undefined;
+    private conflictPresentation: HostPane | undefined;
     private referenceRequest = 0;
-    private readonly conflictReads: { presentation: TabTarget; conflictId: number; buffer: TextBuffer; version: string;
+    private readonly conflictReads: { presentation: HostPane; conflictId: number; buffer: TextBuffer; version: string;
         reference: Reference; currentRequest: () => boolean }[] = [];
     readonly variants: ReviewVariants;
     private disposed = false;
@@ -39,7 +40,7 @@ export class HostSourceReview {
         this.referenceCell = new HostCell<Reference>({ generation: 0, baseline: this.savedReference }); this.comparisonReference = this.referenceCell.observable;
         this.saveConflictPresentation = Object.freeze({ getSnapshot: () => this.presentationSnapshot(), subscribe: (listener: ObservableListener) => {
             const stops: (() => void)[] = [];
-            try { for (const store of [this.saveConflict, this.comparisonReference, this.source.metadata, this.workspace.tabs]) stops.push(store.subscribe(listener)); }
+            try { for (const store of [this.saveConflict, this.comparisonReference, this.source.metadata, ports.presentation]) stops.push(store.subscribe(listener)); }
             catch (error) { stops.reverse().forEach(stop => stop()); throw error; }
             return () => { stops.forEach(stop => stop()); };
         } });
@@ -97,9 +98,8 @@ export class HostSourceReview {
     readonly reviewSaveConflict = (expected: SaveConflict | null = this.conflictCell.get()): void => {
         if (this.disposed || expected !== this.conflictCell.get()) return;
         const conflict = this.conflictCell.get(); if (!conflict) return;
-        const presentation = this.ports.presentation();
-        const tab = this.workspace.tabs.resolve(presentation);
-        if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.source.documentId) return;
+        const presentation = this.ports.presentation.getSnapshot();
+        if (presentation.documentId !== this.source.documentId) return;
         this.conflictReads.push({ presentation, conflictId: conflict.id, ...this.ports.server(),
             reference: this.referenceCell.get(), currentRequest: this.beginReferenceRequest() });
         this.conflictReference = undefined; this.conflictPresentation = undefined;
@@ -111,7 +111,7 @@ export class HostSourceReview {
         try {
             const conflict = this.conflictCell.get();
             if (this.disposed || !conflict || conflict.id !== read.conflictId) return false;
-            if (!read.currentRequest() || this.referenceCell.get() !== read.reference || !this.workspace.tabs.resolve(read.presentation)) {
+            if (!read.currentRequest() || this.referenceCell.get() !== read.reference || read.presentation !== this.ports.presentation.getSnapshot()) {
                 if (this.conflictReads.length === 0) this.conflictCell.set({ ...conflict, review: "expired", message: "The captured source tab or review choice changed. Review the remote source again." });
                 return false;
             }
@@ -126,7 +126,7 @@ export class HostSourceReview {
         const conflict = this.conflictCell.get(), reference = this.referenceCell.get().baseline, metadata = this.source.metadata.getSnapshot();
         const canSaveReviewed = !this.disposed && conflict?.review === "ready" && conflict.reviewVersion !== null && this.conflictReference?.buffer === reference.buffer
             && this.conflictReference.version === reference.version && this.conflictPresentation !== undefined
-            && this.workspace.tabs.resolve(this.conflictPresentation) !== undefined && metadata.state === "ready" && metadata.capabilities.save
+            && this.conflictPresentation === this.ports.presentation.getSnapshot() && metadata.state === "ready" && metadata.capabilities.save
             && metadata.saveStatus !== "saving";
         const cached = this.cachedPresentation;
         if (cached && cached.conflict === conflict && cached.canSaveReviewed === canSaveReviewed && cached.disposed === this.disposed) return cached;

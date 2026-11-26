@@ -1,9 +1,10 @@
+import type { HostPane } from "./layout.ts";
 import { registerCommandPalette } from "./command-palette.ts";
 import { focusSource, onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { restoreReferenceView, type SavedReferenceView } from "../../../examples/shared/reference-view.ts";
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../../src/browser/index.ts";
 import type { TextEditor, TextComparison, ViewState } from "../../../src/browser/index.ts";
-import type { ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, TabTarget } from "../../../src/index.ts";
+import type { ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, Observable } from "../../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../language/presentation.ts";
 import { comparisonSettled, editorSettled } from "../readiness.ts";
@@ -36,7 +37,7 @@ export class ViewBindings {
     private readonly instructionMemory: InstructionViewState = { generation: 0, fields: {}, focus: undefined };
     private readonly stopInputCapture: () => void;
     private readonly stopDocumentCleanup: () => void;
-    private readonly mounted = new Map<string, { editor: TextEditor; documentId: DocumentId; target: TabTarget; dispose: () => void }>();
+    private readonly mounted = new Map<string, { editor: TextEditor; documentId: DocumentId; target: HostPane; dispose: () => void }>();
     private readonly lspOwner: LspWorkspace | undefined;
     readonly projectScope: LspWorkspaceScope;
     private readonly states = new Map<string, Map<DocumentId, ViewState>>();
@@ -101,11 +102,9 @@ export class ViewBindings {
             host.addEventListener(editRefusedEvent, event => {
                 status.textContent = event.target === review.panes.reference.element ? "The comparison reference is read-only." : "This source is read-only.";
             }, { signal: listeners.signal });
-            const saveTarget = this.controller.workspace.tabs.capture(this.controller.viewTab("primary"));
-            scope.defer(this.controller.workspace.tabs.subscribe(after => {
-                if (!this.controller.workspace.tabs.resolve(saveTarget)) after(() => {
-                    if (this.review === review) this.comparison(null);
-                });
+            const pane = this.controller.panes.primary, target = pane.getSnapshot();
+            scope.defer(pane.subscribe(() => {
+                if (pane.getSnapshot() !== target && this.review === review) this.comparison(null);
             }));
             this.attachTools(scope, "comparison", review.panes.working, presentation);
             scope.defer(() => referencePresentation.clear());
@@ -117,24 +116,21 @@ export class ViewBindings {
             if (!restoreReferenceView(reference, baseline, this.referenceState)) this.referenceState = undefined;
             const documentId = review.panes.working.view.documentId;
             review.panes.working.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
-            this.registerPaneCommands(review.panes.working, saveTarget, scope);
-            this.registerPaneCommands(reference, saveTarget, scope);
+            this.registerPaneCommands(review.panes.working, pane, scope);
+            this.registerPaneCommands(reference, pane, scope);
             scope.defer(this.controller.comparisonReference.subscribe(() => this.updateReference()));
             this.reviewScope = scope;
         } catch (error) { scope.rollback(error); }
     };
-    private ownsSaveTarget(target: TabTarget): boolean {
-        const tab = this.controller.workspace.tabs.resolve(target);
-        return tab?.surface.kind === "text" && tab.surface.documentId === this.controller.source.documentId;
-    }
     readonly openCommands = (): void => { (this.commandSource ?? this.mounted.get("primary")?.editor)?.commands.run("host.commands"); };
-    private registerPaneCommands(editor: TextEditor, target: TabTarget, scope: CleanupScope): void {
+    private registerPaneCommands(editor: TextEditor, pane: Observable<HostPane>, scope: CleanupScope): void {
+        const target = pane.getSnapshot();
         const events = new AbortController();
         onSourceFocus(editor, events.signal, () => { this.commandSource = editor; });
         scope.defer(() => { events.abort(); if (this.commandSource === editor) this.commandSource = undefined; });
         scope.defer(registerCommandPalette(editor));
         scope.defer(editor.commands.register({ id: "source.save", label: "Save source",
-            enabled: () => this.ownsSaveTarget(target), run: () => this.controller.save() },
+            enabled: () => pane.getSnapshot() === target && target.documentId === this.controller.source.documentId, run: () => this.controller.save() },
             { keys: ["Mod+s"], shared: true, repeat: false }).dispose);
     }
     private beginReference(kind: "refresh" | "accept"): void {
@@ -276,21 +272,21 @@ export class ViewBindings {
         if (!host?.isConnected || activity.disposed || activity.input !== "idle"
             || this.tablePaste.hasPendingInput(editor.view.documentId)) return;
         const { workspace } = editor;
-        if (!workspace.ownsDocumentView(editor.view, target) || !workspace.observeDocument(documentId).getSnapshot()) return;
+        if (this.controller.panes.secondary.getSnapshot() !== target || !workspace.ownsDocumentView(editor.view) || !workspace.observeDocument(documentId).getSnapshot()) return;
         if (editor.view.documentId === documentId) return editor;
         // Explicit host lifecycle: replace this captured pane synchronously; React owns only its stable ref.
-        this.detach("secondary"); workspace.tabs.replace(target.id, { kind: "text", documentId }); this.secondary(host);
+        this.detach("secondary");
+        this.controller.setSecondary(documentId);
+        this.secondary(host);
         return this.mounted.get("secondary")?.editor;
     }
     private ref(id: "primary" | "secondary", ariaLabel: string): (host: HTMLDivElement | null) => void {
         return host => {
             this.detach(id);
             if (host === null) return;
-            const workspace = this.controller.workspace, tabId = this.controller.viewTab(id);
-            const target = workspace.tabs.capture(tabId);
-            const tab = workspace.tabs.resolve(target);
-            if (tab?.surface.kind !== "text") throw new Error("Text view requires a text tab.");
-            const documentId = tab.surface.documentId;
+            const workspace = this.controller.workspace, pane = this.controller.panes[id];
+            const target = pane.getSnapshot(), documentId = target.documentId;
+            if (!documentId) throw new Error("Text view requires a document.");
             const view = this.retainedView(id, documentId);
             const scope = new CleanupScope();
             try {
@@ -302,7 +298,7 @@ export class ViewBindings {
                 scope.defer(editor.dispose);
                 const lane = surface !== host ? host.ownerDocument.createElement("div") : undefined;
                 if (lane) { lane.className = "host-instruction-lane"; lane.hidden = true; host.append(lane); scope.defer(() => lane.remove()); }
-                const instruction = lane ? mountInstructionWidget(host, lane, editor, this.controller, tabId, this.instructionMemory) : undefined;
+                const instruction = lane ? mountInstructionWidget(host, lane, editor, this.controller, this.instructionMemory) : undefined;
                 if (instruction) {
                     this.instructionMount = instruction;
                     scope.defer(() => { if (this.instructionMount === instruction) this.instructionMount = undefined; instruction.dispose(); });
@@ -330,11 +326,9 @@ export class ViewBindings {
                 }, { signal: listeners.signal });
                 editor.element.addEventListener("focusout", () => { feedback.textContent = ""; }, { signal: listeners.signal });
                 editor.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
-                this.registerPaneCommands(editor, target, scope);
-                scope.defer(workspace.tabs.subscribe(after => {
-                    if (!workspace.tabs.resolve(target)) after(() => {
-                        if (this.mounted.get(id)?.editor === editor) this.detach(id);
-                    });
+                this.registerPaneCommands(editor, pane, scope);
+                scope.defer(pane.subscribe(() => {
+                    if (pane.getSnapshot() !== target && this.mounted.get(id)?.editor === editor) this.detach(id);
                 }));
                 const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(state, { selection: "current" });
                 this.mounted.set(id, { editor, documentId, target, dispose: scope.dispose }); this.mounts++;

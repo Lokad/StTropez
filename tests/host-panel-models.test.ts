@@ -24,7 +24,7 @@ const noop = () => {};
 test("scene identity ignores modal/review traffic while readiness and captured tab generations govern mounting", async () => {
     const host = new HostController();
     try {
-        const layout = host.layout.getSnapshot(), tab = host.workspace.tabs.resolve(host.workspace.tabs.capture(host.viewTab("primary")))!;
+        const layout = host.layout.getSnapshot(), tab = host.panes.primary.getSnapshot();
         const derive = (next = layout, target = tab, ready = true) => hostSceneModel(next, target, ready, host.source.documentId);
         const initial = derive(), reviewLayout = { ...layout, navigation: { kind: "review" as const } }, review = derive(reviewLayout);
         assert.equal(review.key, initial.key); assert.equal(review.primaryKey, initial.primaryKey); assert.ok(review.reviewKey);
@@ -40,7 +40,7 @@ test("scene identity ignores modal/review traffic while readiness and captured t
             assert.equal(unavailable.primaryKey, undefined); assert.equal(unavailable.reviewKey, undefined);
         }
         const hidden = derive({ ...reviewLayout, visible: false }); assert.equal(hidden.placeholder, undefined); assert.equal(hidden.secondary, false);
-        const other = derive(reviewLayout, { ...tab, surface: { kind: "text", documentId: "another-source" as DocumentId } });
+        const other = derive(reviewLayout, { ...tab, documentId: "another-source" as DocumentId });
         assert.ok(other.primaryKey); assert.equal(other.reviewKey, undefined, "other text resources never inherit source review");
     } finally { await host.dispose(); }
 });

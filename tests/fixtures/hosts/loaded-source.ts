@@ -37,7 +37,7 @@ export class HostLoadedSource {
             this.discardLoaded = undefined;
             if (state.metadata.dirty) this.layout.error("Loaded source changed after the discard request. Reopen it or discard again.");
         }
-        if (state.metadata.dirty && !discard || this.workspace.ownership(loaded.id).tabs) return;
+        if (state.metadata.dirty && !discard || this.layout.primaryContains(loaded.documentId) || this.layout.panes.secondary.getSnapshot().documentId === loaded.documentId) return;
         this.collecting = true;
         try {
             for (const cleanup of this.detachedCleanup) cleanup(loaded.documentId);
@@ -73,7 +73,7 @@ export class HostLoadedSource {
         this.layout.surface("loading");
         this.pendingLoad = () => {
             operation.accept({ value: "loaded resource", serverVersion: "loaded-v1" });
-            if (this.workspace.tabs.resolve(target)) this.layout.surface("text");
+            if (this.layout.panes.primary.getSnapshot() === target) this.layout.surface("text");
             this.collect();
         };
         this.setLoaded(loaded);

@@ -3,7 +3,7 @@ import type { Connection, HostController } from "./controller.ts";
 import type { HostDraftRecovery } from "./draft-recovery.ts";
 import type { ViewBindings } from "./bindings.ts";
 import type { HostLifecycle } from "./lifecycle.ts";
-import type { DocumentId, HistorySnapshot, ResourceId, Selection, TabTarget, TextEdit, TextResourceHandle } from "../../../src/index.ts";
+import type { DocumentId, HistorySnapshot, ResourceId, Selection, TextEdit, TextResourceHandle } from "../../../src/index.ts";
 import type { JsonValue } from "../../../src/protocol/index.ts";
 
 type TransferTargetSnapshot = Readonly<{ documentId: DocumentId; revision: number; text: string; history: HistorySnapshot }>;
@@ -56,14 +56,15 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
             if (lifecycle.disposed || transferTarget) throw new Error("Transfer target cannot be mounted.");
             lifecycle.unmount();
             const resource = createWorkingSource(controller.workspace, "transfer-text", "Transfer target", { value: text });
-            transferTarget = resource; let target: TabTarget | undefined;
+            transferTarget = resource;
+            controller.setSecondary(resource.documentId);
+            const target = controller.panes.secondary.getSnapshot();
             lifecycle.onDispose(async () => {
-                if (target && controller.workspace.tabs.resolve(target)) controller.workspace.tabs.close(target.id);
+                if (controller.panes.secondary.getSnapshot() === target) controller.setSecondary(null);
                 await Promise.resolve();
                 controller.workspace.releaseResource(resource.id, true); transferTarget = undefined;
             });
-            controller.workspace.tabs.replace(controller.viewTab("secondary"), { kind: "text", documentId: resource.documentId });
-            target = controller.workspace.tabs.capture(controller.viewTab("secondary")); lifecycle.mount();
+            lifecycle.mount();
         },
         transferSnapshot,
         editTransferTarget: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: transferSnapshot().documentId, expectedRevision, edits, origin: "host" }),

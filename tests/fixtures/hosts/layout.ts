@@ -1,62 +1,59 @@
-import type { DocumentId, ResourceId, TabId, TabTarget, TextResourceHandle, Workspace } from "../../../src/index.ts";
+import type { DocumentId, ResourceId, TextResourceHandle, Workspace } from "../../../src/index.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 
+export type HostPane = Readonly<{ documentId: DocumentId | null; generation: number }>;
 export type Layout = Readonly<{ position: "left" | "right"; visible: boolean; formFault: boolean; primarySurface: "text" | "panel" | "loading" | "closed";
     navigation: Readonly<{ kind: "workspace" } | { kind: "review" }>;
-    modal: Readonly<{ kind: "none" } | { kind: "error"; message: string; source?: "source-save" } | { kind: "close"; tabId: TabId }> }>;
+    modal: Readonly<{ kind: "none" } | { kind: "error"; message: string; source?: "source-save" } | { kind: "close" }> }>;
 
 /** Owns host tab placement/presentation and modal state; resource lifetime stays with its owner. */
 export class HostLayout {
     private readonly workspace: Workspace;
     private readonly source: TextResourceHandle;
     private readonly configuration: ResourceId;
-    private primaryTab: TabId;
-    private readonly secondaryTab: TabId;
-    readonly formTab: TabId;
+    private readonly primary: HostCell<HostPane>;
+    private readonly secondary: HostCell<HostPane>;
+    readonly panes;
     private readonly cell = new HostCell<Layout>({ position: "left", visible: true, formFault: false, primarySurface: "text", navigation: { kind: "workspace" }, modal: { kind: "none" } });
     readonly state = this.cell.observable;
     private closeIfCurrent: (() => boolean) | undefined;
     constructor(workspace: Workspace, source: TextResourceHandle, configuration: ResourceId) {
         this.workspace = workspace; this.source = source; this.configuration = configuration;
-        this.primaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId });
-        this.secondaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId });
-        this.formTab = workspace.tabs.open({ kind: "panel", resourceId: configuration, panelType: "configuration" });
+        this.primary = new HostCell<HostPane>({ documentId: source.documentId, generation: 0 });
+        this.secondary = new HostCell<HostPane>({ documentId: source.documentId, generation: 0 });
+        this.panes = { primary: this.primary.observable, secondary: this.secondary.observable };
     }
-    viewTab(id: "primary" | "secondary"): TabId { return id === "primary" ? this.primaryTab : this.secondaryTab; }
-    presentation(): TabTarget { return this.workspace.tabs.capture(this.primaryTab); }
+    setSecondary(documentId: DocumentId | null): void {
+        this.secondary.set({ documentId, generation: this.secondary.get().generation + 1 });
+    }
     navigate(kind: "workspace" | "review"): void { this.cell.set({ ...this.cell.get(), navigation: { kind } }); }
     error(message: string, source?: "source-save"): void {
         this.cell.set({ ...this.cell.get(), modal: { kind: "error", message, ...(source && { source }) } });
     }
     surface(primarySurface: "text" | "loading"): void { this.cell.set({ ...this.cell.get(), primarySurface }); }
-    /** Select the captured tab before a caller begins its load; publish its surface afterwards. */
-    targetText(documentId: DocumentId): TabTarget {
-        if (this.cell.get().primarySurface === "closed") this.primaryTab = this.workspace.tabs.open({ kind: "text", documentId });
-        else this.workspace.tabs.replace(this.primaryTab, { kind: "text", documentId });
-        return this.presentation();
+    targetText(documentId: DocumentId | null): HostPane {
+        const next = { documentId, generation: this.primary.get().generation + 1 };
+        this.primary.set(next);
+        return next;
     }
-    primaryContains(documentId: DocumentId): boolean {
-        if (this.cell.get().primarySurface === "closed") return false;
-        const tab = this.workspace.tabs.resolve(this.presentation());
-        return tab?.surface.kind === "text" && tab.surface.documentId === documentId;
-    }
+    primaryContains(documentId: DocumentId): boolean { return this.primary.get().documentId === documentId; }
     readonly move = (): void => {
         const position = this.cell.get().position === "left" ? "right" : "left";
         this.cell.set({ ...this.cell.get(), position });
     };
     readonly toggleViews = (): void => { this.cell.set({ ...this.cell.get(), visible: !this.cell.get().visible }); };
     readonly openClosePrompt = (): void => {
-        const target = this.presentation();
-        const tab = this.workspace.tabs.resolve(target)!;
-        const resource = tab.surface.kind === "text" ? this.workspace.resourceForDocument(tab.surface.documentId)
-            : this.workspace.resource(tab.surface.resourceId);
+        const target = this.primary.get();
+        if (this.cell.get().primarySurface === "closed") return;
+        const resource = target.documentId ? this.workspace.resourceForDocument(target.documentId)
+            : this.workspace.resource(this.configuration);
         const revision = resource.getSnapshot().revision;
         this.closeIfCurrent = () => {
-            if (!this.workspace.tabs.resolve(target) || resource.getSnapshot().revision !== revision) return false;
-            this.workspace.tabs.close(target.id);
+            if (this.primary.get() !== target || resource.getSnapshot().revision !== revision) return false;
+            this.targetText(null);
             return true;
         };
-        this.cell.set({ ...this.cell.get(), modal: { kind: "close", tabId: this.primaryTab } });
+        this.cell.set({ ...this.cell.get(), modal: { kind: "close" } });
     };
     readonly confirmClose = (): boolean => {
         const close = this.closeIfCurrent;
@@ -66,7 +63,7 @@ export class HostLayout {
         return closed === true;
     };
     readonly replacePrimary = (): void => {
-        this.workspace.tabs.replace(this.primaryTab, { kind: "panel", resourceId: this.configuration, panelType: "configuration" });
+        this.targetText(null);
         this.cell.set({ ...this.cell.get(), primarySurface: "panel" });
     };
     readonly reopenPrimary = (): void => { this.targetText(this.source.documentId); this.surface("text"); };
@@ -74,6 +71,6 @@ export class HostLayout {
     readonly clearError = (): void => { this.cell.set({ ...this.cell.get(), modal: { kind: "none" } }); };
     readonly injectFormError = (): void => { this.cell.set({ ...this.cell.get(), formFault: true }); };
     readonly recover = (): void => { this.cell.set({ ...this.cell.get(), formFault: false, modal: { kind: "none" } }); };
-    subscriptions(): number { return this.cell.count(); }
+    subscriptions(): number { return this.cell.count() + this.primary.count() + this.secondary.count(); }
     dispose(): void { this.closeIfCurrent = undefined; }
 }

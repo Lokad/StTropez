@@ -97,7 +97,7 @@ test("language shortcuts follow their panel and editor through attachment failur
         const { ViewBindings } = await import(path + "bindings.js") as typeof import("../fixtures/hosts/bindings.ts");
         const { mountTextEditor } = await import(path + "editor.js") as typeof import("../../src/browser/index.ts");
         const controller = new HostController(), bindings = new ViewBindings(controller);
-        const host = document.querySelector<HTMLDivElement>("#host")!, tab = controller.viewTab("primary");
+        const host = document.querySelector<HTMLDivElement>("#host")!, documentId = controller.source.documentId;
         const results = [];
         try {
             for (const [feature, discover, shortcut] of [
@@ -107,7 +107,7 @@ test("language shortcuts follow their panel and editor through attachment failur
                 ["signature", "signature.request", "Mod+Shift+Space"],
             ] as const) {
                 const panel = feature === "hover" ? bindings.signature : bindings[feature];
-                const first = mountTextEditor(host, controller.workspace, tab);
+                const first = mountTextEditor(host, controller.workspace, documentId);
                 const conflict = first.commands.register({ id: "host.escape", label: "Host Escape chord", run() {} }, { keys: ["Escape F8"] });
                 const owned = (editor: typeof first) => editor.commands.list().filter(c => c.id.startsWith(feature + ".") || feature === "navigation" && c.id.startsWith("locations.")).map(c => c.id);
                 const sessions = () => { const active = panel.debug().sessions; return typeof active === "number" ? active : active.length; };
@@ -126,7 +126,7 @@ test("language shortcuts follow their panel and editor through attachment failur
                 const detach = panel.attach("primary", first);
                 first.dispose();
                 const afterEditor = sessions();
-                const next = mountTextEditor(host, controller.workspace, tab);
+                const next = mountTextEditor(host, controller.workspace, documentId);
                 try {
                     const detachNext = panel.attach("primary", next); detach();
                     const remounted = next.keymap.getShortcuts(discover);

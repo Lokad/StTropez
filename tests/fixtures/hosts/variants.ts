@@ -1,11 +1,12 @@
-import type { ComparisonBaseline, Observable, TabTarget, TextResourceHandle, Workspace } from "../../../src/index.ts";
+import type { HostPane } from "./layout.ts";
+import type { ComparisonBaseline, Observable, TextResourceHandle, Workspace } from "../../../src/index.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 
 export type ReviewVariant = Readonly<{ id: string; kind: "saved" | "server" | "draft" | "history"; label: string; version: string }>;
 export type VariantReviewSnapshot = Readonly<{ generation: number; choices: readonly ReviewVariant[]; selected: ReviewVariant | null; requested: ReviewVariant | null;
     status: "idle" | "loading" | "ready" | "expired" | "failed" | "disposed"; pending: number; message: string }>;
 type ReferencePublication = Readonly<{ generation: number; baseline: ComparisonBaseline }>;
-type VariantPorts = Readonly<{ presentation: () => TabTarget; reference: Observable<ReferencePublication>; publish: (baseline: ComparisonBaseline) => void;
+type VariantPorts = Readonly<{ presentation: Observable<HostPane>; reference: Observable<ReferencePublication>; publish: (baseline: ComparisonBaseline) => void;
     present: () => void; beginReferenceRequest: () => () => boolean; saved: () => ComparisonBaseline; server: () => ComparisonBaseline }>;
 const captureBaseline = (value: ComparisonBaseline): ComparisonBaseline => Object.freeze({ buffer: value.buffer, version: value.version });
 
@@ -16,7 +17,7 @@ export class ReviewVariants {
     private readonly ports: VariantPorts;
     private readonly cell: HostCell<VariantReviewSnapshot>;
     private readonly history = new Map<string, ComparisonBaseline>();
-    private readonly loads: { presentation: TabTarget; reference: ReferencePublication; currentRequest: () => boolean; baseline: ComparisonBaseline; choice: ReviewVariant }[] = [];
+    private readonly loads: { presentation: HostPane; reference: ReferencePublication; currentRequest: () => boolean; baseline: ComparisonBaseline; choice: ReviewVariant }[] = [];
     private draft: ComparisonBaseline | undefined;
     private serial = 0;
     private disposed = false;
@@ -58,8 +59,8 @@ export class ReviewVariants {
         if (this.disposed || this.source.getSnapshot().state !== "ready") return false;
         const choice = this.choices().find(item => item.id === id), baseline = id === "saved" ? this.ports.saved() : id === "server" ? this.ports.server() : id === "draft" ? this.draft : this.history.get(id);
         if (!choice || !baseline) { this.cell.set({ ...this.cell.get(), generation: this.cell.get().generation + 1, status: "expired", message: "That version is no longer available." }); return false; }
-        const presentation = this.ports.presentation(), tab = this.workspace.tabs.resolve(presentation);
-        if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.source.documentId) return false;
+        const presentation = this.ports.presentation.getSnapshot();
+        if (presentation.documentId !== this.source.documentId) return false;
         this.ports.present();
         this.loads.push({ presentation, baseline: captureBaseline(baseline), choice, reference: this.ports.reference.getSnapshot(),
             currentRequest: this.ports.beginReferenceRequest() });
@@ -67,7 +68,7 @@ export class ReviewVariants {
             message: "Loading the captured version. Working text stays editable." }); return true;
     }
     private current(load: (typeof this.loads)[number]): boolean {
-        return !this.disposed && load.currentRequest() && this.workspace.tabs.resolve(load.presentation) !== undefined && this.ports.reference.getSnapshot() === load.reference;
+        return !this.disposed && load.currentRequest() && load.presentation === this.ports.presentation.getSnapshot() && this.ports.reference.getSnapshot() === load.reference;
     }
     readonly finishNext = (): boolean => {
         const load = this.loads.shift(); if (!load) return false;

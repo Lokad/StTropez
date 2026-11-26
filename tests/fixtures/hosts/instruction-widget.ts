@@ -1,6 +1,5 @@
 import { isPrimaryShortcut, isUnmodifiedShortcut } from "../../../examples/shared/host-shortcuts.ts";
 import { exportText, textDifference } from "../../../src/index.ts";
-import type { TabId } from "../../../src/index.ts";
 import type { TextEditor } from "../../../src/browser/index.ts";
 import type { HostController } from "./controller.ts";
 import type { InstructionCapture } from "./instruction.ts";
@@ -11,13 +10,13 @@ export type InstructionViewState = { generation: number; fields: Partial<Record<
 type InputCapture = Readonly<{ model: InstructionCapture; raw: string; projection: ReturnType<typeof exportText> }>;
 type Field = { key: InstructionField; node: HTMLTextAreaElement; capture: InputCapture | undefined; composing: boolean; ignored: boolean };
 
-export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, editor: TextEditor, controller: HostController, tabId: TabId, memory: InstructionViewState) {
-    const owner = host.ownerDocument, win = owner.defaultView!, model = controller.instruction, target = controller.workspace.tabs.capture(tabId), listeners = new AbortController();
+export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, editor: TextEditor, controller: HostController, memory: InstructionViewState) {
+    const owner = host.ownerDocument, win = owner.defaultView!, model = controller.instruction, target = controller.panes.primary.getSnapshot(), listeners = new AbortController();
     let frame: number | undefined, panel: HTMLDivElement | undefined, fieldListeners: AbortController | undefined, fields: Field[] = [], status: HTMLOutputElement | undefined;
     let copy: HTMLButtonElement | undefined, finish: HTMLButtonElement | undefined, cancel: HTMLButtonElement | undefined;
     let disposed = false, visible = false, renders = 0, lastLayoutMs = 0, maxLayoutMs = 0, top = 0, anchorTop = 0, groupSerial = 0, groupField: InstructionField | undefined, groupAt = 0, groupRevision = -1;
     let layouts = 0, layoutWorkMs = 0, formInputs = 0, lastFormInputMs = 0;
-    const current = () => { const tab = controller.workspace.tabs.resolve(target); return tab?.surface.kind === "text" && tab.surface.documentId === controller.source.documentId; };
+    const current = () => controller.panes.primary.getSnapshot() === target && target.documentId === controller.source.documentId;
     const capture = (field: Field): InputCapture | undefined => { const value = model.capture(field.key); return value ? { model: value, raw: model.state.getSnapshot().values[field.key], projection: exportText(model.state.getSnapshot().values[field.key], "lf") } : undefined; };
     const value = (field: Field, captured: InputCapture): string => {
         const diff = textDifference(captured.projection.text, field.node.value); if (!diff) return captured.raw;

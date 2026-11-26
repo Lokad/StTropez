@@ -2,7 +2,7 @@ import { createWorkingSource } from "./working-source.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 import { TextBuffer, Workspace } from "../../../src/index.ts";
 import { HostSaveQueue } from "../save-queue.ts";
-import type { ComparisonBaseline, DocumentId, DocumentView, ResourceId, TabId, TextEdit, TextResourceHandle } from "../../../src/index.ts";
+import type { ComparisonBaseline, DocumentId, DocumentView, ResourceId, TextEdit, TextResourceHandle } from "../../../src/index.ts";
 import { HostSourceReview, type SaveConflict } from "./source-review.ts";
 import { HostLayout } from "./layout.ts";
 import { HostLoadedSource } from "./loaded-source.ts";
@@ -35,7 +35,7 @@ export class HostController {
     readonly runResources = new RunResources(this.workspace, this.source, this.connection, this.transfer.resource);
     readonly instruction = new TransferInstruction(this);
     private readonly presentation = new HostLayout(this.workspace, this.source, this.connection.id);
-    readonly formTab = this.presentation.formTab;
+    readonly panes = this.presentation.panes;
     private readonly activityCell = new HostCell<Activity>({ writes: 0, pendingRuns: 0, completedRuns: 0, background: 0, errors: 0, lastSavedRevision: null, lastRun: null, ordering: Object.freeze([]) });
     private readonly settingsCell = new HostCell<RunSettings>({ mode: "preview" });
     readonly layout = this.presentation.state;
@@ -45,7 +45,7 @@ export class HostController {
     private readonly recoveryCell = new HostCell<Readonly<{ visible: boolean; items: readonly RecoveredInput[] }>>({ visible: false, items: [] });
     readonly recovery = this.recoveryCell.observable;
     private readonly sourceReview = new HostSourceReview(this.workspace, this.saves, this.source, {
-        inputReady: () => this.sourceInputReady(), presentation: () => this.presentation.presentation(), present: () => this.openReview(),
+        inputReady: () => this.sourceInputReady(), presentation: this.panes.primary, present: () => this.openReview(),
         server: () => this.services.server,
         save: submission => {
             const modal = this.layout.getSnapshot().modal;
@@ -93,7 +93,7 @@ export class HostController {
     hasPendingRecoveryWork(includeLoaded = true): boolean { return this.loadedSlot.hasPendingRecoveryWork(includeLoaded) || this.operations.size > 0 || this.instruction.debug().pendingCopy; }
     /** Recovery targets the host's temporary-source slot, never a surviving tab index. */
     restoreLoadedDraft(text: string, generation: number, view?: DocumentView): TextResourceHandle | undefined { return this.loadedSlot.restoreDraft(text, generation, view); }
-    viewTab(id: "primary" | "secondary"): TabId { return this.presentation.viewTab(id); }
+    setSecondary(documentId: DocumentId | null): void { this.presentation.setSecondary(documentId); }
     readonly openReview = (): void => this.safe(() => { this.presentation.navigate("review"); });
     readonly closeReview = (): void => this.safe(() => { this.proposal = undefined; this.sourceReview.dismiss(); this.presentation.navigate("workspace"); });
     savedComparisonReference(): ComparisonBaseline { return this.sourceReview.savedComparisonReference(); }

@@ -21,11 +21,9 @@ test(`plain repeated loads release clean documents and preserve reachable drafts
     const field = p.getByRole("textbox", { name: "Instruction destination", exact: true });
     await primary(p).press("Control+Home"); await primary(p).press("ArrowDown"); await command(p, "Anchor instruction at caret"); await expect(field).toBeVisible(); await field.evaluate(node => (node as HTMLTextAreaElement).setSelectionRange(1, 4, "backward"));
     await waitForLoad(p); const before = await snap(p), owned = ({ subscriptions: _subscriptions, ...rest }: typeof before.diagnostics) => rest;
-    let steadySubscriptions: number | undefined;
     const restored = async () => {
         await expect.poll(async () => owned((await snap(p)).diagnostics)).toEqual(owned(before.diagnostics));
-        const count = (await snap(p)).diagnostics.subscriptions; expect(count).toBeLessThanOrEqual(before.diagnostics.subscriptions);
-        steadySubscriptions ??= count; expect(count).toBe(steadySubscriptions);
+        await expect.poll(async () => (await snap(p)).diagnostics.subscriptions).toBeLessThanOrEqual(before.diagnostics.subscriptions);
     };
     for (let i = 0; i < 6; i++) {
         await command(p, "Begin delayed load"); await expect(primary(p)).toHaveCount(0);
@@ -51,4 +49,5 @@ test(`plain repeated loads release clean documents and preserve reachable drafts
     await command(p, "Prompt close"); await command(p, "Confirm close"); await command(p, "Reopen primary source"); await waitForLoad(p); await exact(p, text);
     expect(owned((await snap(p)).diagnostics)).toEqual(owned(completed));
     await p.evaluate(() => window.hostFixture.dispose());
+    expect((await snap(p)).diagnostics.subscriptions).toBe(0);
 });

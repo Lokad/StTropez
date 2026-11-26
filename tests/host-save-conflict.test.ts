@@ -18,8 +18,8 @@ test("conflict presentation observes authority and keeps old controls out of new
     const model = () => saveConflictPanelModel(host, store.getSnapshot());
     try {
         assert.equal(store.getSnapshot(), notified); assert.ok(Object.isFrozen(notified));
-        assert.equal(host.debug().diagnostics.subscriptions, before.diagnostics.subscriptions + 2);
-        assert.equal(host.debug().hostSubscriptions, before.hostSubscriptions + 2);
+        assert.equal(host.debug().diagnostics.subscriptions, before.diagnostics.subscriptions + 1);
+        assert.equal(host.debug().hostSubscriptions, before.hostSubscriptions + 3);
         const empty = model(); await conflict(host); empty.actions[0].invoke(); assert.equal(host.debug().pendingConflictReads, 0);
         model().actions[0].invoke(); const loading = model(); loading.actions[1].invoke(); const first = model();
         assert.equal(notified.canSaveReviewed, true); assert.equal(notified.conflict?.reviewVersion, "v1");
@@ -30,9 +30,8 @@ test("conflict presentation observes authority and keeps old controls out of new
         const capabilities = host.source.metadata.getSnapshot().capabilities;
         host.workspace.setCapabilities(host.source.id, { ...capabilities, save: false }); assert.equal(notified.canSaveReviewed, false);
         host.workspace.setCapabilities(host.source.id, capabilities); assert.equal(notified.canSaveReviewed, true);
-        const layout = host.layout.getSnapshot();
-        host.workspace.tabs.replace(host.viewTab("primary"), { kind: "panel", resourceId: host.connection.id, panelType: "configuration" });
-        assert.equal(host.layout.getSnapshot(), layout); assert.equal(notified.canSaveReviewed, false);
+        host.replacePrimary();
+        assert.equal(notified.canSaveReviewed, false);
         host.reopenPrimary(); model().actions[0].invoke(); model().actions[1].invoke(); const latest = model();
         second.actions[2].invoke(); await settled(); assert.equal(host.debug().pendingSaves.length, 0);
         const release = host.registerInputCaptureGuard(() => false);
