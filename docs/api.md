@@ -28,8 +28,7 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [core/snippets.ts](../src/core/snippets.ts) | `Snippet`, `SnippetEditPlan`, `SnippetOccurrence`, `SnippetParseResult`, `SnippetStop` |
 | [core/text-buffer.ts](../src/core/text-buffer.ts) | `BufferChange`, `BufferLine`, `BufferPosition`, `BufferRetention`, `TextBuffer` |
 | [core/text-transaction.ts](../src/core/text-transaction.ts) | `TextTransaction` |
-| [core/values.ts](../src/core/values.ts) | `Immutable`, `SnapshotValue` |
-| [core/workspace.ts](../src/core/workspace.ts) | `BatchEditResult`, `Capabilities`, `ChangeResult`, `DocumentChange`, `DocumentEditRequest`, `DocumentId`, `DocumentLanguage`, `DocumentSnapshot`, `DocumentView`, `DocumentViewSnapshot`, `EditOrigin`, `EditRequest`, `EditResult`, `HistoryRequest`, `LoadedResource`, `ResourceHandle`, `ResourceId`, `ResourceKey`, `ResourceLease`, `ResourceLoad`, `ResourceMetadata`, `ResourceOptions`, `ResourceSnapshot`, `ResourceTarget`, `ResourceVisibility`, `SaveReceipt`, `SaveResponse`, `SaveReview`, `SaveSubmission`, `SaveTicket`, `TextResourceHandle`, `TextResourceOptions`, `TextTransactionOptions`, `TextWriteResult`, `ViewId`, `Workspace`, `WorkspaceOptions`, `WorkspaceSnapshot` |
+| [core/workspace.ts](../src/core/workspace.ts) | `BatchEditResult`, `Capabilities`, `DocumentChange`, `DocumentEditRequest`, `DocumentId`, `DocumentLanguage`, `DocumentSnapshot`, `DocumentView`, `DocumentViewSnapshot`, `EditOrigin`, `EditRequest`, `EditResult`, `HistoryRequest`, `LoadedResource`, `ResourceKey`, `ResourceLease`, `ResourceLoad`, `ResourceMetadata`, `ResourceSnapshot`, `ResourceTarget`, `ResourceVisibility`, `SaveReceipt`, `SaveResponse`, `SaveReview`, `SaveSubmission`, `SaveTicket`, `TextResourceHandle`, `TextResourceOptions`, `TextTransactionOptions`, `TextWriteResult`, `ViewId`, `Workspace`, `WorkspaceOptions`, `WorkspaceSnapshot` |
 
 ## `sttropez/browser`
 

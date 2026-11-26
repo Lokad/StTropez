@@ -1,21 +1,21 @@
-import type { ResourceId, SaveReceipt, SaveResponse, SaveSubmission, SaveTicket, SnapshotValue, Workspace } from "../../src/index.ts";
+import type { DocumentId, SaveReceipt, SaveResponse, SaveSubmission, SaveTicket, Workspace } from "../../src/index.ts";
 
-export type SavePort<T, S extends SaveSubmission<T> = SaveSubmission<T>> = Readonly<{ save: (submission: S) => Promise<SaveResponse<T>> }>;
-export type SaveOutcome<T, R extends SaveReceipt<T> = SaveReceipt<T>> = Readonly<{ kind: "saved"; receipt: R } | { kind: "conflict"; serverVersion: string } | { kind: "failed" }>;
+export type SavePort = Readonly<{ save: (submission: SaveSubmission) => Promise<SaveResponse> }>;
+export type SaveOutcome = Readonly<{ kind: "saved"; receipt: SaveReceipt } | { kind: "conflict"; serverVersion: string } | { kind: "failed" }>;
 
 /** The host serializes writes per resource while the workspace owns each captured ticket. */
 export class HostSaveQueue {
     private readonly workspace: Workspace;
     private readonly onError: (error: unknown) => void;
-    private readonly saves = new Map<ResourceId, Promise<void>>();
+    private readonly saves = new Map<DocumentId, Promise<void>>();
     constructor(workspace: Workspace, onError: (error: unknown) => void = () => {}) {
         this.workspace = workspace; this.onError = onError;
     }
     /** Execute an explicitly captured ticket; server preconditions are captured at serialized submission. */
-    save<T extends SnapshotValue, S extends SaveSubmission<T>, R extends SaveReceipt<T>>(ticket: SaveTicket<T, S, R>, port: SavePort<T, S>): Promise<SaveOutcome<T, R>> {
+    save(ticket: SaveTicket, port: SavePort): Promise<SaveOutcome> {
         if (!this.workspace.resolveResource(ticket.target)) throw new Error("Save ticket belongs to another workspace or a released resource.");
         const previous = this.saves.get(ticket.target.id) ?? Promise.resolve();
-        const result = previous.then(async (): Promise<SaveOutcome<T, R>> => {
+        const result = previous.then(async (): Promise<SaveOutcome> => {
             try {
                 return await ticket.run(submission => port.save(submission));
             } catch (error) {

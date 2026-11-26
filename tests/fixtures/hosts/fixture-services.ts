@@ -1,5 +1,6 @@
 import { TextBuffer } from "../../../src/index.ts";
-import type { SaveResponse, SaveSubmission, SnapshotValue } from "../../../src/index.ts";
+import type { SaveResponse, SaveSubmission } from "../../../src/index.ts";
+import type { SnapshotValue } from "./values.ts";
 import type { RunSubmission } from "./run-command.ts";
 
 export type Connection = Readonly<{ path: string; format: "csv"; [key: string]: SnapshotValue }>;
@@ -9,7 +10,7 @@ export type SubmittedRun = RunSubmission;
 
 /** Deferred services for the host example. Captures, review and application remain in their owners. */
 export class HostFixtureServices {
-    private readonly saves: { submission: SaveSubmission<string>; resolve: (response: SaveResponse<string>) => void; reject: (error: unknown) => void }[] = [];
+    private readonly saves: { submission: SaveSubmission; resolve: (response: SaveResponse) => void; reject: (error: unknown) => void }[] = [];
     private readonly runs: { submission: SubmittedRun; resolve: () => void; reject: (error: unknown) => void }[] = [];
     private version = "v0";
     private serial = 0;
@@ -22,7 +23,7 @@ export class HostFixtureServices {
     private count(key: keyof ServiceActivity): void {
         this.activity = { ...this.activity, [key]: this.activity[key] + 1 }; this.changed(this.activity);
     }
-    readonly save = (submission: SaveSubmission<string>): Promise<SaveResponse<string>> => this.disposed
+    readonly save = (submission: SaveSubmission): Promise<SaveResponse> => this.disposed
         ? Promise.resolve({ kind: "conflict", serverVersion: this.version })
         : new Promise((resolve, reject) => this.saves.push({ submission, resolve, reject }));
     readonly finishSave = (): void => {

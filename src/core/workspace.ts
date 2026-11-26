@@ -16,39 +16,34 @@ import { collapseFoldRegions, createFoldRegions, foldingSnapshot, projectFolds,
     revealIndexRange, revealIndexSelection, snapshotFromIndex } from "./folding.ts";
 import { lineContentEnd } from "./newlines.ts";
 import type { DocumentFolding, FoldIndex, FoldRegion, FoldingSnapshot, FoldVersion } from "./folding.ts";
-import { equalValue, snapshotValue } from "./values.ts";
-import type { Immutable, SnapshotValue } from "./values.ts";
-
-export type ResourceId = string & { readonly resourceId: unique symbol };
-export type DocumentId = ResourceId & { readonly documentId: unique symbol };
+export type DocumentId = string & { readonly documentId: unique symbol };
 export type ViewId = string & { readonly viewId: unique symbol };
 
 export type ResourceKey = Readonly<{ scope: string; resource: string; variant: string }>;
 export type EditOrigin = "human" | "agent" | "host";
 export type Capabilities = Readonly<{ edit: readonly EditOrigin[]; save: boolean }>;
 export type ResourceVisibility = "workspace" | "internal";
-export type ResourceOptions = Readonly<{ visibility?: ResourceVisibility }>;
 export type DocumentLanguage = Readonly<{ uri: string; languageId: string }>;
 /** Omit value to open a loading document. Passing a TextBuffer retains its immutable contents directly. */
-export type TextResourceOptions = ResourceOptions & Readonly<{
+export type TextResourceOptions = Readonly<{
+    visibility?: ResourceVisibility;
     capabilities?: Capabilities | undefined;
     language?: DocumentLanguage | null;
-}> & (LoadedResource<string | TextBuffer> | Readonly<{ value?: never; serverVersion?: never }>);
+}> & (Readonly<{ value: string | TextBuffer; serverVersion?: string | null }> | Readonly<{ value?: never; serverVersion?: never }>);
 export type ResourceMetadata = Readonly<{
-    id: ResourceId; key: ResourceKey; title: string; kind: "text" | "panel";
+    id: DocumentId; key: ResourceKey; title: string;
     visibility: ResourceVisibility;
     state: "loading" | "ready" | "failed" | "released";
     dirty: boolean; serverVersion: string | null; capabilities: Capabilities;
     saveStatus: "idle" | "saving" | "failed" | "conflict"; failure: string | null;
 }>;
-export type ResourceSnapshot<T> = Readonly<{ revision: number; metadata: ResourceMetadata }> & Readonly<
-    { state: "ready"; value: () => Immutable<T> } | { state: "loading" | "failed" | "released" }
+export type ResourceSnapshot = Readonly<{ revision: number; metadata: ResourceMetadata }> & Readonly<
+    { state: "ready"; value: () => string } | { state: "loading" | "failed" | "released" }
 >;
-export type ResourceHandle<T extends SnapshotValue> = Observable<ResourceSnapshot<T>> & Readonly<{
-    id: ResourceId; metadata: Observable<ResourceMetadata>;
+export type TextResourceHandle = Observable<ResourceSnapshot> & Readonly<{
+    id: DocumentId; metadata: Observable<ResourceMetadata>;
 }>;
-export type TextResourceHandle = ResourceHandle<string> & Readonly<{ id: DocumentId }>;
-export type LoadedResource<T> = Readonly<{ value: T; serverVersion?: string | null }>;
+export type LoadedResource = Readonly<{ value: string; serverVersion?: string | null }>;
 export type DocumentSnapshot = Readonly<{
     id: DocumentId; key: ResourceKey; title: string; buffer: TextBuffer; text: () => string; revision: number;
     language: DocumentLanguage | null; change: DocumentChange | null;
@@ -64,25 +59,25 @@ export type WorkspaceSnapshot = Readonly<{
     revision: number; resources: readonly ResourceMetadata[];
     documents: readonly DocumentSnapshot[];
 }>;
-export type ResourceTarget = Readonly<{ workspace: symbol; id: ResourceId }>;
-export type ResourceLease = Readonly<{ resourceId: ResourceId; active: () => boolean; release: () => void }>;
-export type ResourceLoad<T> = Readonly<{
-    accept: (loaded: LoadedResource<T>) => boolean; fail: (message: string) => boolean; dispose: () => void;
+export type ResourceTarget = Readonly<{ workspace: symbol; id: DocumentId }>;
+export type ResourceLease = Readonly<{ resourceId: DocumentId; active: () => boolean; release: () => void }>;
+export type ResourceLoad = Readonly<{
+    accept: (loaded: LoadedResource) => boolean; fail: (message: string) => boolean; dispose: () => void;
 }>;
-export type SaveSubmission<T> = Readonly<{ id: string; target: ResourceTarget; key: ResourceKey;
-    revision: number; value: Immutable<T>; expectedServerVersion: string | null }>;
+export type SaveSubmission = Readonly<{ id: string; target: ResourceTarget; key: ResourceKey;
+    revision: number; value: string; expectedServerVersion: string | null }>;
 /** Host-confirmed remote version for saving the explicitly reviewed local revision. No baseline adoption. */
 export type SaveReview = Readonly<{ target: ResourceTarget; expectedRevision: number; expectedServerVersion: string }>;
-export type SaveReceipt<T> = Readonly<{ submission: SaveSubmission<T>; savedValue: Immutable<T>; serverVersion: string;
+export type SaveReceipt = Readonly<{ submission: SaveSubmission; savedValue: string; serverVersion: string;
     canonicalApplied: boolean }>;
-export type SaveTicket<T, S extends SaveSubmission<T> = SaveSubmission<T>, R extends SaveReceipt<T> = SaveReceipt<T>> = Readonly<{ target: ResourceTarget; revision: number; value: Immutable<T>;
-    start: () => S; accept: (response: Readonly<{ serverVersion: string; canonical?: T }>, options?: Readonly<{ applyCanonical?: boolean }>) => R;
+export type SaveTicket = Readonly<{ target: ResourceTarget; revision: number; value: string;
+    start: () => SaveSubmission; accept: (response: Readonly<{ serverVersion: string; canonical?: string }>, options?: Readonly<{ applyCanonical?: boolean }>) => SaveReceipt;
     conflict: () => void; fail: () => void; finish: () => void;
     /** Submit this captured write once. Storage errors propagate after releasing the reservation. */
-    run: (write: (submission: S) => SaveResponse<T> | Promise<SaveResponse<T>>) =>
-        Promise<Readonly<{ kind: "saved"; receipt: R } | { kind: "conflict"; serverVersion: string }>>;
+    run: (write: (submission: SaveSubmission) => SaveResponse | Promise<SaveResponse>) =>
+        Promise<Readonly<{ kind: "saved"; receipt: SaveReceipt } | { kind: "conflict"; serverVersion: string }>>;
 }>;
-export type SaveResponse<T> = Readonly<{ kind: "saved"; serverVersion: string; canonical?: T }
+export type SaveResponse = Readonly<{ kind: "saved"; serverVersion: string; canonical?: string }
     | { kind: "conflict"; serverVersion: string }>;
 export type EditRequest = Readonly<{
     documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; source?: string;
@@ -94,10 +89,9 @@ export type TextTransactionOptions = Readonly<{
     history: "record" | "reset"; kind?: EditKind;
 }>;
 type EditRefusal = Readonly<{ applied: false;
-    reason: "missing-resource" | "missing-document" | "stale-revision" | "not-ready" | "read-only" | "history-empty" | "history-blocked" }>;
+    reason: "missing-document" | "stale-revision" | "not-ready" | "read-only" | "history-empty" | "history-blocked" }>;
 export type TextWriteResult = Readonly<{ applied: true; changed: boolean; revision: number }> | EditRefusal;
-export type ChangeResult = Readonly<{ applied: true; revision: number }> | EditRefusal;
-export type EditResult = ChangeResult;
+export type EditResult = Readonly<{ applied: true; revision: number }> | EditRefusal;
 export type BatchEditResult = Readonly<{ applied: true; revisions: readonly Readonly<{ documentId: DocumentId; revision: number }>[] }> | EditRefusal;
 export type HistoryRequest = Readonly<{ documentId: DocumentId; expectedRevision: number; origin?: EditOrigin; source?: string }>;
 export type WorkspaceOptions = Readonly<{ onListenerError?: (error: unknown) => void; history?: HistoryOptions }>;
@@ -125,19 +119,19 @@ type ViewRecord = { handle: DocumentView; state: Store<DocumentViewSnapshot>; fo
     deleted?: WeakMap<PositionMapping, readonly FoldRegion[]> };
 type PreparedView = Readonly<{ view: ViewRecord; state: DocumentViewSnapshot; folds: FoldingSnapshot }>;
 type PreparedText = Readonly<{ record: ResourceRecord; buffer: TextBuffer; mapping: PositionMapping; parts?: HistoryChange["parts"];
-    wholeText?: boolean | undefined; state: ResourceSnapshot<SnapshotValue>; views: readonly PreparedView[]; viewMapping: DocumentViewMapping }>;
+    wholeText?: boolean | undefined; state: ResourceSnapshot; views: readonly PreparedView[]; viewMapping: DocumentViewMapping }>;
 function historyChange(text: PreparedText, units: number, initiatingView: string | null = null): HistoryChange {
     const selections = Object.freeze(text.views.map(({ view, state }) => Object.freeze({ viewId: view.handle.id,
         before: view.state.get().selectionSet, after: state.selectionSet })));
-    return Object.freeze({ documentId: text.record.documentId!, before: text.record.buffer!, after: text.buffer,
+    return Object.freeze({ documentId: text.record.handle.id, before: text.record.buffer!, after: text.buffer,
         mapping: text.mapping, parts: text.parts, wholeText: text.wholeText, units, initiatingView, selections });
 }
 type ResourceRecord = {
-    handle: ResourceHandle<SnapshotValue>; documentId: DocumentId | null; language: DocumentLanguage | null;
-    state: Store<ResourceSnapshot<SnapshotValue>>; metadata: Store<ResourceMetadata>;
-    document: Store<DocumentSnapshot | undefined>; saved: SnapshotValue | undefined;
+    handle: TextResourceHandle; language: DocumentLanguage | null;
+    state: Store<ResourceSnapshot>; metadata: Store<ResourceMetadata>;
+    document: Store<DocumentSnapshot | undefined>;
     buffer: TextBuffer | null; savedBuffer: TextBuffer | null; change: DocumentChange | null; history: Store<HistorySnapshot>;
-    views: Map<ViewId, ViewRecord>; loading?: ResourceLease; beforeLoad?: ResourceSnapshot<SnapshotValue>;
+    views: Map<ViewId, ViewRecord>; loading?: ResourceLease; beforeLoad?: ResourceSnapshot;
     leases: Set<symbol>;
     saveReservations: number; reloadReservations: number; saving: string | null;
 };
@@ -156,13 +150,12 @@ function documentLanguage(value: DocumentLanguage | null | undefined): DocumentL
 }
 /** Tuple encoding preserves exact string components, including delimiters and empty values. */
 function resourceKeyIdentity(key: ResourceKey): string { return JSON.stringify([key.scope, key.resource, key.variant]); }
-function readySnapshot(metadata: ResourceMetadata, revision: number, value: SnapshotValue | TextBuffer): ResourceSnapshot<SnapshotValue> {
+function readySnapshot(metadata: ResourceMetadata, revision: number, buffer: TextBuffer): ResourceSnapshot {
     let exported: string | undefined;
-    const read = value instanceof TextBuffer ? () => exported ??= value.text() : () => value;
-    return Object.freeze({ state: "ready", revision, metadata, value: read });
+    return Object.freeze({ state: "ready", revision, metadata, value: () => exported ??= buffer.text() });
 }
 /** Metadata changes retain the captured value reader and its optional cached export. */
-function withMetadata(state: ResourceSnapshot<SnapshotValue>, metadata: ResourceMetadata): ResourceSnapshot<SnapshotValue> {
+function withMetadata(state: ResourceSnapshot, metadata: ResourceMetadata): ResourceSnapshot {
     return Object.freeze(state.metadata === metadata ? state : { ...state, metadata });
 }
 function viewSnapshot(documentId: DocumentId, revision: number, selectionSet: SelectionSet): DocumentViewSnapshot {
@@ -177,12 +170,11 @@ export class Workspace {
     #nextTransaction = 0;
     readonly #history: TextHistory;
     readonly #scope: NotificationScope;
-    readonly #records = new Map<ResourceId, ResourceRecord>();
+    readonly #records = new Map<DocumentId, ResourceRecord>();
     readonly #resourceKeys = new Set<string>();
     readonly #handles = new WeakMap<object, ResourceRecord>();
-    readonly #deferredReleases = new Map<ResourceId, boolean>();
-    readonly #queuedReleases = new Set<ResourceId>();
-    readonly #documents = new Map<DocumentId, ResourceRecord>();
+    readonly #deferredReleases = new Map<DocumentId, boolean>();
+    readonly #queuedReleases = new Set<DocumentId>();
     readonly #state: Store<number>;
     #snapshot: WorkspaceSnapshot | undefined;
     readonly getSnapshot: () => WorkspaceSnapshot;
@@ -223,71 +215,58 @@ export class Workspace {
         return Object.freeze({ scope, resource, variant });
     }
 
-    createResource<T extends SnapshotValue>(key: ResourceKey, title: string, loaded?: LoadedResource<T>, permissions = defaultCapabilities, options: ResourceOptions = {}): ResourceHandle<T> {
-        return this.#create(key, title, "panel", loaded, permissions, options) as ResourceHandle<T>;
-    }
     createTextResource(key: ResourceKey, title: string, options: TextResourceOptions = {}): TextResourceHandle {
-        const loaded = options.value === undefined ? undefined : options;
-        return this.#create(key, title, "text", loaded, options.capabilities ?? defaultCapabilities, options) as TextResourceHandle;
+        this.#scope.assertWritable();
+        key = Object.freeze({ ...key });
+        const identity = resourceKeyIdentity(key);
+        if (this.#resourceKeys.has(identity)) throw new Error("Resource already exists in this workspace.");
+        const { value, visibility = "workspace" } = options;
+        if (value !== undefined && typeof value !== "string" && !(value instanceof TextBuffer)) {
+            throw new TypeError("Text resource requires a string or buffer.");
+        }
+        const buffer = typeof value === "string" ? TextBuffer.from(value) : value ?? null;
+        const id = `resource-${++this.#nextId}` as DocumentId;
+        const metadata = Object.freeze({ id, key, title, visibility, dirty: false, failure: null,
+            state: buffer ? "ready" as const : "loading" as const, serverVersion: options.serverVersion ?? null,
+            capabilities: capabilities(options.capabilities ?? defaultCapabilities), saveStatus: "idle" as const });
+        const state = new Store<ResourceSnapshot>(buffer ? readySnapshot(metadata, 0, buffer)
+            : Object.freeze({ metadata, state: "loading", revision: 0 }), this.#scope);
+        const meta = new Store(metadata, this.#scope);
+        const handle = Object.freeze({ ...state.observable, id, metadata: meta.observable });
+        const record: ResourceRecord = { handle, state, metadata: meta, language: documentLanguage(options.language),
+            document: new Store<DocumentSnapshot | undefined>(undefined, this.#scope),
+            buffer, savedBuffer: buffer, change: null, history: new Store<HistorySnapshot>(this.#history.snapshot(id), this.#scope),
+            views: new Map(), leases: new Set(), saveReservations: 0, reloadReservations: 0, saving: null };
+        this.#records.set(id, record);
+        this.#resourceKeys.add(identity);
+        this.#handles.set(handle, record);
+        const changed = new Set<Store<unknown>>();
+        this.#projectDocument(record, changed);
+        this.#publish(changed);
+        return handle;
     }
     createDocument(key: ResourceKey, title: string, text: string): DocumentId {
         return this.createTextResource(key, title, { value: text }).id;
     }
-    #create(key: ResourceKey, title: string, kind: "text" | "panel", loaded: LoadedResource<SnapshotValue | TextBuffer> | undefined,
-        permissions: Capabilities, options: ResourceOptions & { language?: DocumentLanguage | null }): ResourceHandle<SnapshotValue> {
-        this.#scope.assertWritable();
-        const { visibility = "workspace" } = options;
-        key = Object.freeze({ ...key });
-        const identity = resourceKeyIdentity(key);
-        if (this.#resourceKeys.has(identity)) throw new Error("Resource already exists in this workspace.");
-        const input = loaded?.value;
-        const isText = kind === "text";
-        const buffer = !isText ? null : input instanceof TextBuffer ? input
-            : typeof input === "string" ? TextBuffer.from(input) : null;
-        if (isText && loaded && !buffer) throw new TypeError("Text resource requires a string or buffer.");
-        const value = loaded && !buffer ? snapshotValue(loaded.value as SnapshotValue) : undefined;
-        const id = `resource-${++this.#nextId}` as ResourceId;
-        const documentId = isText ? id as DocumentId : null;
-        const metadata = Object.freeze({ id, key, title, kind, visibility,
-            state: loaded === undefined ? "loading" as const : "ready" as const, dirty: false,
-            serverVersion: loaded?.serverVersion ?? null, capabilities: capabilities(permissions), saveStatus: "idle" as const, failure: null });
-        const state = new Store<ResourceSnapshot<SnapshotValue>>(loaded === undefined
-            ? Object.freeze({ metadata, state: "loading", revision: 0 }) : readySnapshot(metadata, 0, buffer ?? value!), this.#scope);
-        const meta = new Store(metadata, this.#scope);
-        const handle = Object.freeze({ ...state.observable, id, metadata: meta.observable });
-        const record: ResourceRecord = { handle, documentId, state, metadata: meta, language: documentLanguage(options.language),
-            document: new Store<DocumentSnapshot | undefined>(undefined, this.#scope), saved: buffer ? undefined : value,
-            buffer, savedBuffer: buffer, change: null, history: new Store<HistorySnapshot>(this.#history.snapshot(documentId ?? ""), this.#scope), views: new Map(),
-            leases: new Set(),
-            saveReservations: 0, reloadReservations: 0, saving: null };
-        this.#records.set(id, record); this.#resourceKeys.add(identity); this.#handles.set(handle, record);
-        if (documentId !== null) this.#documents.set(documentId, record);
-        const changed = new Set<Store<unknown>>();
-        this.#projectDocument(record, changed); this.#publish(changed);
-        return handle;
-    }
-
-    resource(id: DocumentId): TextResourceHandle;
-    resource(id: ResourceId): ResourceHandle<SnapshotValue>;
-    resource(id: ResourceId): ResourceHandle<SnapshotValue> { return this.#requireResource(id).handle; }
-    diagnostics(): Readonly<{ resources: number; documents: number; views: number; leases: number; subscriptions: number;
+    resource(id: DocumentId): TextResourceHandle { return this.#requireDocument(id).handle; }
+    diagnostics(): Readonly<{ documents: number; views: number; leases: number; subscriptions: number;
         history: Readonly<{ groups: number; changes: number; changedUnits: number }> }> {
         let views = 0, leases = 0;
         for (const record of this.#records.values()) {
             views += record.views.size;
             leases += record.leases.size;
         }
-        return Object.freeze({ resources: this.#records.size, documents: this.#documents.size, views, leases: leases + views,
+        return Object.freeze({ documents: this.#records.size, views, leases: leases + views,
             history: this.#history.diagnostics(), subscriptions: this.#scope.subscriptionCount() });
     }
     #requireDocument(id: DocumentId): ResourceRecord {
-        const record = this.#documents.get(id);
+        const record = this.#records.get(id);
         if (!record) throw new Error("Unknown document.");
         return record;
     }
     documentForUri(uri: string): DocumentSnapshot | undefined {
         let found: DocumentSnapshot | undefined;
-        for (const record of this.#documents.values()) {
+        for (const record of this.#records.values()) {
             const document = record.document.get();
             if (!document?.language || document.language.uri !== uri || record.metadata.get().visibility !== "workspace") continue;
             if (found) return undefined;
@@ -296,7 +275,7 @@ export class Workspace {
         return found;
     }
     document(id: DocumentId): DocumentSnapshot {
-        const document = this.#documents.get(id)?.document.get();
+        const document = this.#records.get(id)?.document.get();
         if (!document) throw new Error("Document is not ready or has been released.");
         return document;
     }
@@ -323,11 +302,11 @@ export class Workspace {
     }
     observeHistory(id: DocumentId): Observable<HistorySnapshot> { return this.#requireDocument(id).history.observable; }
     ownsDocumentView(view: DocumentView): boolean {
-        return this.#documents.get(view.documentId)?.views.get(view.id)?.handle === view;
+        return this.#records.get(view.documentId)?.views.get(view.id)?.handle === view;
     }
     createDocumentView(id: DocumentId, initial: Selection | SelectionSet = { anchor: 0, head: 0 }): DocumentView {
         // View registration, like subscribing, may occur during host view attachment in a delivery.
-        const document = this.document(id), record = this.#documents.get(id)!;
+        const document = this.document(id), record = this.#records.get(id)!;
         const selections = "ranges" in initial ? createSelectionSet(document.buffer.length, initial.ranges, initial.primary) : createSelectionSet(document.buffer.length, [initial]);
         const state = new Store<DocumentViewSnapshot>(viewSnapshot(id, document.revision, selections), this.#scope);
         const folds = new Store<FoldingSnapshot>(foldingSnapshot(document.buffer, document.revision, 0), this.#scope);
@@ -394,27 +373,18 @@ export class Workspace {
         record.views.set(viewId, { handle, state, folds });
         return handle;
     }
-    captureResource(id: ResourceId): ResourceTarget {
-        this.#requireResource(id); return Object.freeze({ workspace: this.#lifetime, id });
+    captureResource(id: DocumentId): ResourceTarget {
+        this.#requireDocument(id); return Object.freeze({ workspace: this.#lifetime, id });
     }
-    resolveResource(target: ResourceTarget): ResourceHandle<SnapshotValue> | undefined {
+    resolveResource(target: ResourceTarget): TextResourceHandle | undefined {
         return target.workspace === this.#lifetime ? this.#records.get(target.id)?.handle : undefined;
     }
 
-    updateResource<T extends SnapshotValue>(handle: ResourceHandle<T>, request: Readonly<{ expectedRevision: number; value: T; origin: EditOrigin }>): ChangeResult {
-        this.#scope.assertWritable();
-        const record = this.#handles.get(handle);
-        if (!record || record.state.get().state === "released") return refuseEdit("missing-resource");
-        if (record.documentId !== null) throw new Error("Text resources require range transactions.");
-        const refusal = this.#validateEdit(record, request.expectedRevision, request.origin);
-        if (refusal) return refusal;
-        return this.#changeValue(record, snapshotValue(request.value));
-    }
     edit(request: EditRequest): EditResult {
         return singleRevision(this.editDocuments([request]));
     }
     replaceText(id: DocumentId, text: string | TextBuffer, options: TextTransactionOptions & Readonly<{ expectedRevision?: number }>): TextWriteResult {
-        const expectedRevision = options.expectedRevision ?? this.#documents.get(id)?.state.get().revision;
+        const expectedRevision = options.expectedRevision ?? this.#records.get(id)?.state.get().revision;
         if (expectedRevision === undefined) return refuseEdit("missing-document");
         const result = this.editDocuments([{ ...textWriteRequest(id, expectedRevision, options), text }]);
         if (!result.applied) return result;
@@ -445,7 +415,7 @@ export class Workspace {
             const policy = request.history;
             if (request.origin !== first.origin || (policy?.kind ?? "replace") !== kind || policy?.group !== group
                 || (policy?.reset ?? false) !== reset) throw new Error("A text transaction has one origin and history policy.");
-            const record = this.#documents.get(request.documentId);
+            const record = this.#records.get(request.documentId);
             if (!record) return refuseEdit("missing-document");
             const refusal = this.#validateEdit(record, request.expectedRevision, request.origin); if (refusal) return refusal;
             const view = request.view === undefined ? undefined : record.views.get(request.view.id);
@@ -490,19 +460,19 @@ export class Workspace {
     #moveHistory(request: HistoryRequest, direction: "undo" | "redo"): BatchEditResult {
         this.#scope.assertWritable();
         if (request.source !== undefined && typeof request.source !== "string") throw new TypeError("Edit source must be a string.");
-        const record = this.#documents.get(request.documentId), origin = request.origin ?? "human";
+        const record = this.#records.get(request.documentId), origin = request.origin ?? "human";
         if (!record) return refuseEdit("missing-document");
         const refusal = this.#validateEdit(record, request.expectedRevision, origin); if (refusal) return refusal;
         const entry = this.#history.peek(request.documentId, direction);
         if (!entry) return refuseEdit("history-empty");
         if (!this.#history.available(entry, direction)) return refuseEdit("history-blocked");
         for (const change of entry.changes) {
-            const participant = this.#documents.get(change.documentId as DocumentId);
+            const participant = this.#records.get(change.documentId as DocumentId);
             if (!participant || participant.buffer !== (direction === "undo" ? change.after : change.before)) return refuseEdit("history-blocked");
             const denied = this.#validateEdit(participant, participant.state.get().revision, origin); if (denied) return denied;
         }
         const prepared = entry.changes.map(change => {
-            const participant = this.#documents.get(change.documentId as DocumentId)!, forward = change.mapping;
+            const participant = this.#records.get(change.documentId as DocumentId)!, forward = change.mapping;
             const selections = new Map(change.selections.map(view => [view.viewId, view]));
             const undo = direction === "undo";
             return this.#prepareText(participant, undo ? change.before : change.after, undo ? forward.invert() : forward, {
@@ -522,7 +492,7 @@ export class Workspace {
         const changed = new Set<Store<unknown>>(), transactionId = ++this.#nextTransaction, revisions = [];
         for (const text of prepared) {
             this.#commitText(text, origin, direction, transactionId, changed, request.source);
-            revisions.push(Object.freeze({ documentId: text.record.documentId!, revision: text.state.revision }));
+            revisions.push(Object.freeze({ documentId: text.record.handle.id, revision: text.state.revision }));
         }
         this.#syncHistory(changed); this.#publish(changed); return Object.freeze({ applied: true, revisions: Object.freeze(revisions) });
     }
@@ -538,7 +508,7 @@ export class Workspace {
             const previous = view.state.get().selectionSet;
             const selections = options.selectionFor?.(view) ?? viewMapping.mapSelections(previous);
             const prior = view.folds.get().index;
-            views.push(this.#prepareView(view, record.documentId!, revision, buffer, selections, project(view, prior)));
+            views.push(this.#prepareView(view, record.handle.id, revision, buffer, selections, project(view, prior)));
         }
         return { record, buffer, mapping, parts: options.parts, wholeText: options.wholeText, state, views, viewMapping };
     }
@@ -562,7 +532,7 @@ export class Workspace {
     }
     #syncHistory(changed: Set<Store<unknown>>): void {
         for (const id of this.#history.takeChangedDocuments()) {
-            const record = this.#documents.get(id as DocumentId); if (!record) continue;
+            const record = this.#records.get(id as DocumentId); if (!record) continue;
             const previous = record.history.get(), next = this.#history.snapshot(id);
             if (previous.undoDepth !== next.undoDepth || previous.redoDepth !== next.redoDepth) record.history.set(next, changed);
         }
@@ -574,13 +544,6 @@ export class Workspace {
         if (state.revision !== revision) return refuseEdit("stale-revision");
         return undefined;
     }
-    #changeValue(record: ResourceRecord, value: SnapshotValue): ChangeResult {
-        const current = record.state.get();
-        if (current.state !== "ready") return refuseEdit("not-ready");
-        if (equalValue(current.value(), value)) return { applied: true, revision: current.revision };
-        this.#commitRecord(record, readySnapshot({ ...current.metadata, dirty: record.saved === undefined || !equalValue(record.saved, value) }, current.revision + 1, value));
-        return { applied: true, revision: current.revision + 1 };
-    }
     setDocumentLanguage(id: DocumentId, language: DocumentLanguage | null): void {
         this.#scope.assertWritable();
         const record = this.#requireDocument(id);
@@ -590,9 +553,9 @@ export class Workspace {
         const changed = new Set<Store<unknown>>();
         this.#projectDocument(record, changed); this.#publish(changed);
     }
-    setCapabilities(id: ResourceId, permissions: Capabilities): void {
+    setCapabilities(id: DocumentId, permissions: Capabilities): void {
         this.#scope.assertWritable();
-        const record = this.#requireResource(id), state = record.state.get();
+        const record = this.#requireDocument(id), state = record.state.get();
         const next = capabilities(permissions), current = state.metadata.capabilities;
         if (next.save === current.save && next.edit.length === current.edit.length
             && next.edit.every(origin => current.edit.includes(origin))) return;
@@ -600,9 +563,9 @@ export class Workspace {
     }
 
     /** Retain ownership; preventReload also protects captured work from replacement by a load. */
-    acquire(id: ResourceId, options: Readonly<{ preventReload?: boolean }> = {}): ResourceLease {
+    acquire(id: DocumentId, options: Readonly<{ preventReload?: boolean }> = {}): ResourceLease {
         this.#scope.assertWritable();
-        const record = this.#requireResource(id), lease = Symbol("resource-lease");
+        const record = this.#requireDocument(id), lease = Symbol("resource-lease");
         const preventReload = options.preventReload ?? false;
         record.leases.add(lease); if (preventReload) record.reloadReservations++;
         return Object.freeze({ resourceId: id, active: () => record.leases.has(lease), release: () => {
@@ -611,11 +574,11 @@ export class Workspace {
             this.#scheduleRelease(id);
         } });
     }
-    ownership(id: ResourceId): Readonly<{ leases: number; saves: number }> {
-        const record = this.#requireResource(id);
+    ownership(id: DocumentId): Readonly<{ leases: number; saves: number }> {
+        const record = this.#requireDocument(id);
         return Object.freeze({ leases: record.leases.size + record.views.size, saves: record.saveReservations });
     }
-    beginLoad<T extends SnapshotValue>(handle: ResourceHandle<T>): ResourceLoad<T> {
+    beginLoad(handle: TextResourceHandle): ResourceLoad {
         this.#scope.assertWritable();
         const record = this.#handles.get(handle);
         if (!record || record.state.get().state === "released") throw new Error("Unknown resource.");
@@ -640,25 +603,25 @@ export class Workspace {
             this.#commitRecord(record, { ...restored, metadata: { ...current.metadata, state: restored.state, failure } });
         };
         this.#commitRecord(record, { state: "loading", revision: state.revision, metadata: { ...state.metadata, state: "loading", failure: null } });
-        return Object.freeze({ dispose, accept: (loaded: LoadedResource<T>) => {
+        return Object.freeze({ dispose, accept: (loaded: LoadedResource) => {
             try {
                 this.#scope.assertWritable();
                 if (record.loading !== lease) return false;
-                const value = snapshotValue(loaded.value);
+                const value = loaded.value;
                 const serverVersion = loaded.serverVersion ?? null;
                 if (record.loading !== lease) return false;
-                if (record.documentId !== null && typeof value !== "string") throw new TypeError("Text resource requires a string.");
+                if (typeof value !== "string") throw new TypeError("Text resource requires a string.");
                 const current = record.state.get();
-                record.saved = record.documentId === null ? value : undefined;
-                if (record.documentId !== null) {
-                    record.buffer = TextBuffer.from(value as string); record.savedBuffer = record.buffer; record.change = null; this.#history.forget(record.documentId);
-                }
+                record.buffer = TextBuffer.from(value);
+                record.savedBuffer = record.buffer;
+                record.change = null;
+                this.#history.forget(record.handle.id);
                 const changed = new Set<Store<unknown>>(), revision = current.revision + 1;
-                this.#setRecord(record, readySnapshot({ ...current.metadata, state: "ready", dirty: false, serverVersion, failure: null, saveStatus: "idle" },
-                    revision, record.buffer ?? value), changed);
+                this.#setRecord(record, readySnapshot({ ...current.metadata, state: "ready", dirty: false,
+                    serverVersion, failure: null, saveStatus: "idle" }, revision, record.buffer), changed);
                 for (const view of record.views.values()) {
                     view.folds.set(foldingSnapshot(record.buffer!, revision, view.folds.get().generation + 1), changed);
-                    view.state.set(viewSnapshot(record.documentId!, revision, createSelectionSet(record.buffer!.length, [{ anchor: 0, head: 0 }])), changed);
+                    view.state.set(viewSnapshot(record.handle.id, revision, createSelectionSet(record.buffer!.length, [{ anchor: 0, head: 0 }])), changed);
                 }
                 this.#syncHistory(changed); this.#publish(changed);
                 return true;
@@ -690,10 +653,10 @@ export class Workspace {
         const documents = new Set<DocumentId>(), history: HistoryChange[] = [];
         const prepared: (PreparedText | Pick<PreparedText, "record" | "buffer" | "state">)[] = [];
         for (const version of versions) {
-            const record = this.#documents.get(version.documentId);
-            if (!record?.documentId) return refuseEdit("missing-document");
-            if (documents.has(record.documentId)) throw new Error("A saved document may appear only once.");
-            documents.add(record.documentId);
+            const record = this.#records.get(version.documentId);
+            if (!record) return refuseEdit("missing-document");
+            if (documents.has(record.handle.id)) throw new Error("A saved document may appear only once.");
+            documents.add(record.handle.id);
             const state = record.state.get();
             if (!record.buffer || state.state !== "ready" || record.saveReservations || record.reloadReservations) return refuseEdit("not-ready");
             if (version.expectedRevision !== undefined && version.expectedRevision !== state.revision) return refuseEdit("stale-revision");
@@ -716,14 +679,14 @@ export class Workspace {
             text.record.savedBuffer = text.buffer;
             if ("mapping" in text) this.#commitText(text, "host", "canonical", transaction ??= ++this.#nextTransaction, changed, options.source);
             else if (text.record.state.get() !== text.state) this.#setRecord(text.record, text.state, changed);
-            return Object.freeze({ documentId: text.record.documentId!, revision: text.state.revision });
+            return Object.freeze({ documentId: text.record.handle.id, revision: text.state.revision });
         });
         this.#syncHistory(changed); if (changed.size) this.#publish(changed);
         return Object.freeze({ applied: true, revisions: Object.freeze(revisions) });
     }
 
     /** Captures content now, retains ownership while queued, and enforces one writer per resource. */
-    captureSave<T extends SnapshotValue>(handle: ResourceHandle<T>, review?: SaveReview): SaveTicket<T> {
+    captureSave(handle: TextResourceHandle, review?: SaveReview): SaveTicket {
         this.#scope.assertWritable();
         const record = this.#handles.get(handle), initial = record?.state.get();
         if (!record || initial?.state !== "ready" || !initial.metadata.capabilities.save) throw new Error("Resource is not ready or cannot be saved.");
@@ -734,10 +697,10 @@ export class Workspace {
             if (initial.revision !== review.expectedRevision || record.saveReservations !== 0) throw new Error("Reviewed save has changed or another save is pending.");
         }
         const lease = this.acquire(handle.id), target = this.captureResource(handle.id);
-        if (record.documentId !== null) this.#history.seal(record.documentId);
-        const value = initial.value() as Immutable<T>, revision = initial.revision, id = `save-${++this.#nextId}`;
-        const capturedBuffer = record.buffer;
-        let finished = false, settled = false, submission: SaveSubmission<T> | undefined;
+        this.#history.seal(record.handle.id);
+        const value = initial.value(), revision = initial.revision, id = `save-${++this.#nextId}`;
+        const capturedBuffer = record.buffer!;
+        let finished = false, settled = false, submission: SaveSubmission | undefined;
         record.saveReservations++;
         const requireStarted = () => {
             this.#scope.assertWritable();
@@ -748,7 +711,7 @@ export class Workspace {
             const current = record.state.get();
             this.#commitRecord(record, withMetadata(current, { ...current.metadata, saveStatus }));
         };
-        const ticket: SaveTicket<T> = { target, revision, value, start: () => {
+        const ticket: SaveTicket = { target, revision, value, start: () => {
             this.#scope.assertWritable();
             const current = record.state.get();
             if (finished || settled || record.saving !== null) throw new Error("Save ticket is closed or a write is in progress.");
@@ -758,33 +721,29 @@ export class Workspace {
             submission = Object.freeze({ id, target, key: initial.metadata.key, revision, value,
                 expectedServerVersion: reviewedVersion ?? current.metadata.serverVersion });
             status("saving"); return submission;
-        }, accept: (response: Readonly<{ serverVersion: string; canonical?: T }>, options: Readonly<{ applyCanonical?: boolean }> = {}) => {
+        }, accept: (response: Readonly<{ serverVersion: string; canonical?: string }>, options: Readonly<{ applyCanonical?: boolean }> = {}) => {
             const submitted = requireStarted();
-            const savedValue = response.canonical === undefined ? value : snapshotValue(response.canonical);
-            if (record.documentId !== null && typeof savedValue !== "string") throw new TypeError("Canonical text must be a string.");
+            const savedValue = response.canonical === undefined ? value : response.canonical;
+            if (typeof savedValue !== "string") throw new TypeError("Canonical text must be a string.");
             const current = record.state.get();
             if (current.state !== "ready") throw new Error("Saved resource is no longer ready.");
-            const savedBuffer = capturedBuffer ? savedValue === value ? capturedBuffer : TextBuffer.from(savedValue as string) : null;
+            const savedBuffer = savedValue === value ? capturedBuffer : TextBuffer.from(savedValue);
             const canonicalApplied = current.revision === revision && current.metadata.capabilities.edit.includes("host")
                 && options.applyCanonical !== false
-                && (savedBuffer ? !record.buffer!.equals(savedBuffer) : !equalValue(current.value(), savedValue));
-            const canonical = savedBuffer && canonicalApplied ? record.buffer!.apply([textDifference(current.value() as string, savedValue as string)!]) : undefined;
+                && !record.buffer!.equals(savedBuffer);
+            const canonical = canonicalApplied ? record.buffer!.apply([textDifference(current.value(), savedValue)!]) : undefined;
             const text = canonical ? this.#prepareText(record, canonical.buffer, canonical.mapping, { wholeText: true }) : undefined;
             if (canonical && text) this.#history.record([historyChange(text, canonical.changedUnits)], "host", "canonical");
-            record.saved = savedBuffer ? undefined : savedValue; record.savedBuffer = savedBuffer; settled = true;
+            record.savedBuffer = savedBuffer;
+            settled = true;
             const receipt = Object.freeze({ submission: submitted, savedValue, serverVersion: response.serverVersion, canonicalApplied });
             const changed = new Set<Store<unknown>>();
             const saved = { serverVersion: response.serverVersion, saveStatus: record.saveReservations > 1 ? "saving" : "idle" } as const;
-            if (savedBuffer) {
-                if (text) this.#commitText(text, "host", "canonical", ++this.#nextTransaction, changed);
-                const next = record.state.get();
-                this.#setRecord(record, withMetadata(next, { ...next.metadata, ...saved, dirty: !record.buffer!.equals(savedBuffer) }), changed);
-            } else {
-                const nextValue = canonicalApplied ? savedValue : current.value();
-                this.#setRecord(record, readySnapshot({ ...current.metadata, ...saved, dirty: !equalValue(nextValue, savedValue) },
-                    current.revision + (canonicalApplied ? 1 : 0), nextValue), changed);
-            }
-            if (record.documentId !== null) this.#history.seal(record.documentId); this.#syncHistory(changed);
+            if (text) this.#commitText(text, "host", "canonical", ++this.#nextTransaction, changed);
+            const next = record.state.get();
+            this.#setRecord(record, withMetadata(next, { ...next.metadata, ...saved, dirty: !record.buffer!.equals(savedBuffer) }), changed);
+            this.#history.seal(record.handle.id);
+            this.#syncHistory(changed);
             this.#publish(changed); return receipt;
         }, conflict: () => { requireStarted(); settled = true; status("conflict"); },
         fail: () => {
@@ -819,13 +778,13 @@ export class Workspace {
     }
 
     /** Release now, or after the last view or lease is released. Unsaved changes cancel a non-discarding release. */
-    releaseResourceWhenUnowned(id: ResourceId, discard = false): void {
-        this.#scope.assertWritable(); const record = this.#requireResource(id), owners = this.ownership(id);
+    releaseResourceWhenUnowned(id: DocumentId, discard = false): void {
+        this.#scope.assertWritable(); const record = this.#requireDocument(id), owners = this.ownership(id);
         if (record.metadata.get().dirty && !discard) throw new Error("Explicit discard is required to release unsaved work.");
         if (!owners.leases) { this.releaseResource(id, discard); return; }
         this.#deferredReleases.set(id, discard);
     }
-    #scheduleRelease(id: ResourceId): void {
+    #scheduleRelease(id: DocumentId): void {
         if (!this.#deferredReleases.has(id) || this.#queuedReleases.has(id)) return;
         this.#queuedReleases.add(id);
         // View disposal can occur during notification. Release after the complete delivery,
@@ -838,43 +797,38 @@ export class Workspace {
             const owners = this.ownership(id); if (!owners.leases) this.releaseResource(id, discard);
         });
     }
-    releaseResource(id: ResourceId, discard = false): void {
+    releaseResource(id: DocumentId, discard = false): void {
         this.#scope.assertWritable();
-        const record = this.#requireResource(id), owners = this.ownership(id), state = record.state.get();
+        const record = this.#requireDocument(id), owners = this.ownership(id), state = record.state.get();
         if (owners.leases) throw new Error("Resource still has views or leases.");
         if (state.metadata.dirty && !discard) throw new Error("Explicit discard is required to release unsaved work.");
-        record.saved = undefined; record.buffer = null; record.savedBuffer = null; record.change = null;
-        if (record.documentId !== null) this.#history.forget(record.documentId);
+        record.buffer = null; record.savedBuffer = null; record.change = null;
+        this.#history.forget(record.handle.id);
         this.#records.delete(id); this.#resourceKeys.delete(resourceKeyIdentity(state.metadata.key)); this.#deferredReleases.delete(id);
         const changed = new Set<Store<unknown>>();
         this.#setRecord(record, { state: "released", revision: state.revision,
             metadata: { ...state.metadata, state: "released", dirty: false, failure: null } }, changed);
-        if (record.documentId !== null) this.#documents.delete(record.documentId);
         record.history.set(Object.freeze({ undoDepth: 0, redoDepth: 0 }), changed); this.#syncHistory(changed);
         this.#publish(changed);
     }
-    #requireResource(id: ResourceId): ResourceRecord {
-        const record = this.#records.get(id);
-        if (!record) throw new Error("Unknown resource."); return record;
-    }
     #projectDocument(record: ResourceRecord, changed: Set<Store<unknown>>): void {
         const state = record.state.get(), previous = record.document.get();
-        if (record.documentId === null || state.state !== "ready") { record.document.set(undefined, changed); return; }
+        if (state.state !== "ready") { record.document.set(undefined, changed); return; }
         const language = record.language;
         if (previous?.revision === state.revision && previous.language === language) return;
         const buffer = record.buffer!;
-        record.document.set(Object.freeze({ id: record.documentId, key: state.metadata.key,
-            title: state.metadata.title, buffer, text: state.value as () => string, revision: state.revision, language,
+        record.document.set(Object.freeze({ id: record.handle.id, key: state.metadata.key,
+            title: state.metadata.title, buffer, text: state.value, revision: state.revision, language,
             change: record.change }), changed);
     }
-    #setRecord(record: ResourceRecord, next: ResourceSnapshot<SnapshotValue>, changed: Set<Store<unknown>>): void {
+    #setRecord(record: ResourceRecord, next: ResourceSnapshot, changed: Set<Store<unknown>>): void {
         const previous = record.metadata.get();
         const metadata = sameMetadata(previous, next.metadata) ? previous : Object.freeze(next.metadata);
         record.metadata.set(metadata, changed);
         record.state.set(withMetadata(next, metadata), changed);
         this.#projectDocument(record, changed);
     }
-    #commitRecord(record: ResourceRecord, next: ResourceSnapshot<SnapshotValue>): void {
+    #commitRecord(record: ResourceRecord, next: ResourceSnapshot): void {
         const changed = new Set<Store<unknown>>(); this.#setRecord(record, next, changed); this.#publish(changed);
     }
     #publish(changed: Set<Store<unknown>>): void {

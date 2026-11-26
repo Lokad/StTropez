@@ -2,10 +2,10 @@ import { test, expect } from "./fixtures.ts";
 import { editorModules } from "../helpers/fixture-modules.ts";
 import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
-import type { Workspace, ResourceId } from "../../src/index.ts";
+import type { Workspace, DocumentId } from "../../src/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
 
-type Fixture = { workspace: Workspace; editor: TextEditor; resource: ResourceId; host: HTMLElement; calls: number; allowed: boolean;
+type Fixture = { workspace: Workspace; editor: TextEditor; resource: DocumentId; host: HTMLElement; calls: number; allowed: boolean;
     set: (text: string, caret: number) => void; select: (caret: number) => void; states: string[]; stop?: () => void };
 declare global { interface Window { bracketFixture: Fixture } }
 let css: string;

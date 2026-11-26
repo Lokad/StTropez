@@ -1,5 +1,5 @@
 import { HostCell } from "../../../examples/shared/observable.ts";
-import { equalValue, snapshotValue, type Immutable, type SnapshotValue } from "../../../src/core/values.ts";
+import { equalValue, snapshotValue, type Immutable, type SnapshotValue } from "./values.ts";
 import type { Observable } from "../../../src/index.ts";
 
 export type FormId = "configuration" | "transfer";

@@ -178,7 +178,7 @@ test("unrelated 20Hz traffic and persisted transitions retain views until final 
     await page.locator("#prepend").click(); await ready(page); expect(await page.evaluate(() => window.viewportFixture.range(0, 15))).toBe("new first line\n");
     await page.evaluate(() => { window.viewportFixture.scroll("primary", 200, 0); window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })); });
     const stopped = await page.evaluate(() => window.viewportFixture.snapshot());
-    expect(stopped.diagnostics).toMatchObject({ resources: 0, documents: 0, views: 0, subscriptions: 0, leases: 0 });
+    expect(stopped.diagnostics).toMatchObject({ documents: 0, views: 0, subscriptions: 0, leases: 0 });
     expect(stopped.primary).toMatchObject({ disposed: true, pending: false, rows: 0, textUnits: 0 });
     expect(await page.locator(".st-viewport").count()).toBe(0);
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));

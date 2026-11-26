@@ -425,7 +425,7 @@ test("out-of-order refresh rejects old results and never replaces the mounted wo
     const after = await page.evaluate(() => window.comparisonFixture.snapshot());
     expect(after.baseline).toEqual(fresh.baseline); expect(after.working).toEqual(before.working); expect(after.viewId).toBe(before.viewId);
     await expect(page.getByRole("textbox", { name: "Comparison working source", exact: true })).toHaveAttribute("data-retained", "yes");
-    expect(after.diagnostics).toMatchObject({ resources: 2, documents: 2, views: 2, leases: 3 });
+    expect(after.diagnostics).toMatchObject({ documents: 2, views: 2, leases: 3 });
 });
 
 test("a stale selected hunk cannot retarget after typing, and permissions gate revert", async ({ page }) => {
@@ -505,7 +505,7 @@ test("custom host controls observe captured selection, alignment, authority and 
             navigate: state.canNavigate, revert: state.canRevert, rejected: f.review.hunkAt(0) === undefined, diagnostics: f.snapshot().diagnostics };
     });
     expect(terminal).toMatchObject({ notified: true, disposed: true, status: "disposed", selected: null, navigate: false, revert: false, rejected: true,
-        diagnostics: { resources: 1, views: 0, leases: 0, subscriptions: 0 } });
+        diagnostics: { documents: 1, views: 0, leases: 0, subscriptions: 0 } });
     await expect(controls).toHaveCount(0);
 });
 
@@ -527,7 +527,7 @@ test("a remounted comparison rejects both baseline replies captured by its prede
     const state = await page.evaluate(() => window.comparisonFixture.snapshot());
     expect(state.status).toBe("disposed");
     expect(state.reference).toMatchObject({ disposed: true, revision: null, rows: 0 });
-    expect(state.diagnostics).toMatchObject({ resources: 1, views: 0, leases: 0, subscriptions: 0 });
+    expect(state.diagnostics).toMatchObject({ documents: 1, views: 0, leases: 0, subscriptions: 0 });
     await expect(page.locator(".st-comparison")).toHaveCount(0);
 });
 

@@ -1,6 +1,6 @@
 import { isSaveKey } from "../../../examples/shared/host-shortcuts.ts";
 import type { HostController, Connection } from "./controller.ts";
-import type { SnapshotValue } from "../../../src/index.ts";
+import type { SnapshotValue } from "./values.ts";
 import { configurationValidation } from "./configuration.ts";
 import type { FormSave, FormSavePresentation, FormSnapshot } from "./form-save.ts";
 

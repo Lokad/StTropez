@@ -1,11 +1,11 @@
 import { test, expect } from "./fixtures.ts";
 import { editorModules } from "../helpers/fixture-modules.ts";
-import type { Workspace, ResourceId } from "../../src/index.ts";
+import type { Workspace, DocumentId } from "../../src/index.ts";
 import type { TextEditor, TextComparison } from "../../src/browser/index.ts";
 import { fontFixture } from "../fixtures/consumer/font-fixture.ts";
 import { paintedCharacter } from "../helpers/painted-character.ts";
 
-type Fixture = { workspace: Workspace; editor: TextEditor; host: HTMLElement; resource: ResourceId; comparison?: TextComparison };
+type Fixture = { workspace: Workspace; editor: TextEditor; host: HTMLElement; resource: DocumentId; comparison?: TextComparison };
 declare global { interface Window { presentationFixture: Fixture } }
 
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });

@@ -247,8 +247,8 @@ test("snapshots are immutable, stable between changes and notify subscribers onc
 });
 
 test("scoped publication defers inventory traversal until the coarse snapshot is requested", t => {
-    const workspace = new Workspace(), forms = Array.from({ length: 1000 }, (_, i) => workspace.createResource(
-        { scope: "test", resource: String(i), variant: "form" }, "Form", { value: { field: "before" } }));
+    const workspace = new Workspace(), files = Array.from({ length: 1000 }, (_, i) => workspace.createTextResource(
+        { scope: "test", resource: String(i), variant: "working" }, "Document", { value: "before" }));
     const before = workspace.getSnapshot(); let after = before, notifications = 0;
     const stop = workspace.subscribe(() => { notifications++; });
     // Count synchronous collection visits, not elapsed time on a shared machine.
@@ -263,20 +263,20 @@ test("scoped publication defers inventory traversal until the coarse snapshot is
     };
     try {
         let applied = false;
-        const publication = visits(() => { applied = workspace.updateResource(forms[0]!, { expectedRevision: 0, value: { field: "after" }, origin: "human" }).applied; });
+        const publication = visits(() => { applied = workspace.replaceText(files[0]!.id, "after", { expectedRevision: 0, origin: "human", history: "record" }).applied; });
         const capture = visits(() => { after = workspace.getSnapshot(); }), repeated = visits(() => { workspace.getSnapshot(); });
         t.diagnostic(JSON.stringify({ publication, capture, repeated }));
         assert.equal(applied, true); assert.equal(notifications, 1);
         // Delivery visits one callback. It must not also traverse the resource inventory.
         assert.ok(publication <= 1, `Publication visited ${publication} collection values`);
-        assert.ok(capture <= forms.length); assert.equal(repeated, 0); assert.equal(after.resources.length, forms.length);
+        assert.ok(capture <= files.length); assert.equal(repeated, 0); assert.equal(after.resources.length, files.length);
         assert.equal(after.revision, before.revision + 1); assert.equal(after, workspace.getSnapshot());
         assert.equal(before.resources[0]!.dirty, false); assert.equal(after.resources[0]!.dirty, true);
         assert.equal(after.resources[1], before.resources[1]);
         for (const value of [after, after.resources, after.documents]) assert.ok(Object.isFrozen(value));
-        workspace.releaseResource(forms[0]!.id, true);
-        assert.equal(notifications, 2); assert.equal(workspace.getSnapshot().resources.length, forms.length - 1);
-        assert.equal(after.resources.length, forms.length); assert.equal(after.resources[0]!.state, "ready");
+        workspace.releaseResource(files[0]!.id, true);
+        assert.equal(notifications, 2); assert.equal(workspace.getSnapshot().resources.length, files.length - 1);
+        assert.equal(after.resources.length, files.length); assert.equal(after.resources[0]!.state, "ready");
     } finally { stop(); }
 });
 

@@ -1,4 +1,4 @@
-import type { SnapshotValue } from "../../../src/index.ts";
+import type { SnapshotValue } from "./values.ts";
 import { FormSave } from "./form-save.ts";
 
 export type TransferSettings = Readonly<{ destination: string; batchSize: string; [key: string]: SnapshotValue }>;

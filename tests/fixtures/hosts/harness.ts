@@ -2,7 +2,7 @@ import { createWorkingSource } from "./working-source.ts";
 import type { Connection, HostController } from "./controller.ts";
 import type { ViewBindings } from "./bindings.ts";
 import type { HostLifecycle } from "./lifecycle.ts";
-import type { DocumentId, HistorySnapshot, ResourceId, Selection, TextEdit, TextResourceHandle } from "../../../src/index.ts";
+import type { DocumentId, HistorySnapshot, Selection, TextEdit, TextResourceHandle } from "../../../src/index.ts";
 import type { JsonValue } from "../../../src/protocol/index.ts";
 
 type TransferTargetSnapshot = Readonly<{ documentId: DocumentId; revision: number; text: string; history: HistorySnapshot }>;
@@ -95,7 +95,7 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     { bindings: ReturnType<ViewBindings["debug"]>; commits: Readonly<{ form: number; metadata: number }> };
     editSource: (expectedRevision: number, edits: readonly TextEdit[]) => ReturnType<HostController["workspace"]["edit"]>;
     seedInactiveDocuments: () => void;
-    inactiveDocuments: () => readonly Readonly<{ id: ResourceId; revision: number; dirty: boolean }>[];
+    inactiveDocuments: () => readonly Readonly<{ id: DocumentId; revision: number; dirty: boolean }>[];
     previewProposal: (text: string) => void; applyProposal: () => void; runCapture: (index: number) => ReturnType<HostController["runCapture"]>; setPath: (path: string) => void;
     recoveryText: () => string | null;
     finishRun: () => void; failRun: () => void; finishSave: () => void; failSave: () => void; range: (from: number, to: number) => string;

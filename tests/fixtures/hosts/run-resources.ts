@@ -1,6 +1,6 @@
 import type { FormId, FormSave } from "./form-save.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
-import type { ResourceId, TextResourceHandle, Workspace } from "../../../src/index.ts";
+import type { DocumentId, TextResourceHandle, Workspace } from "../../../src/index.ts";
 import type { SubmittedRun } from "./fixture-services.ts";
 import type { Connection } from "./controller.ts";
 import type { TransferSettings } from "./transfers.ts";
@@ -8,11 +8,11 @@ import { transferValidation } from "./transfers.ts";
 
 type Status = "running" | "completed" | "failed" | "interrupted";
 type Link<Id> = Readonly<{ id: Id; revision: number; serverVersion: string | null }>;
-export type RunInput = Readonly<{ kind: "run"; number: number; source: Link<ResourceId> & Readonly<{ value: string }>;
+export type RunInput = Readonly<{ kind: "run"; number: number; source: Link<DocumentId> & Readonly<{ value: string }>;
     configuration: Link<FormId> & Readonly<{ value: Connection }>; transfer: Link<FormId> & Readonly<{ value: TransferSettings }>; mode: string }>;
 type RunLog = Readonly<{ kind: "log"; runId: number; ordinal: number; message: string; progress: number }>;
 type RunInfo = Readonly<{ id: number; number: number; status: Status; progress: number; logs: readonly number[] }>;
-export type InspectionId = number | ResourceId | FormId;
+export type InspectionId = number | DocumentId | FormId;
 type Inspection = Readonly<{ id: InspectionId; title: string; text: string; preview: string | null; links: readonly Readonly<{ label: string; id: InspectionId }>[] }>;
 export type RunResourcesSnapshot = Readonly<{ runs: readonly RunInfo[]; selected: InspectionId | null; inspection: Inspection | null }>;
 

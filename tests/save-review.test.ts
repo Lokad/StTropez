@@ -216,7 +216,7 @@ test("reviewed retry preserves the old baseline until a receipt, then keeps late
     const failed = await commands.save(workspace.captureSave(source), { save: async submission => { assert.equal(submission.expectedServerVersion, "v0"); return { kind: "conflict", serverVersion: "v1" }; } });
     assert.equal(failed.kind, "conflict"); assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
     const revision = source.getSnapshot().revision;
-    let resolve!: (value: SaveResponse<string>) => void, submission: SaveSubmission<string> | undefined;
+    let resolve!: (value: SaveResponse) => void, submission: SaveSubmission | undefined;
     const saving = commands.save(workspace.captureSave(source, { target: workspace.captureResource(source.id), expectedRevision: revision, expectedServerVersion: "v1" }), { save: value => { submission = value; return new Promise(done => { resolve = done; }); } });
     await Promise.resolve(); assert.equal(submission!.expectedServerVersion, "v1"); assert.equal(submission!.value, "merged  ");
     assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
@@ -263,20 +263,6 @@ test("a review version is copied at capture and an intervening local receipt exp
     assert.equal(source.metadata.getSnapshot().serverVersion, "other-receipt"); assert.equal(workspace.ownership(source.id).leases, 0);
 });
 
-
-test("typed resources use the reviewed precondition without acquiring a text document", async () => {
-    const workspace = new Workspace(), commands = new HostSaveQueue(workspace);
-    const form = workspace.createResource({ scope: "review", resource: "form", variant: "working" }, "Form", { value: { path: "base.csv" }, serverVersion: "v0" });
-    workspace.updateResource(form, { expectedRevision: 0, origin: "human", value: { path: "merged.csv" } });
-    const result = await commands.save(workspace.captureSave(form, { target: workspace.captureResource(form.id), expectedRevision: 1, expectedServerVersion: "v1" }), { save: async submission => {
-        assert.equal(submission.expectedServerVersion, "v1");
-        workspace.updateResource(form, { expectedRevision: 1, origin: "human", value: { path: "later.csv" } });
-        return { kind: "saved", serverVersion: "v2" };
-    } });
-    assert.equal(result.kind, "saved"); const final = form.getSnapshot(); assert.equal(final.state, "ready");
-    if (final.state === "ready") assert.deepEqual(final.value(), { path: "later.csv" });
-    assert.equal(final.metadata.dirty, true); assert.equal(workspace.diagnostics().documents, 0); assert.equal(workspace.ownership(form.id).leases, 0);
-});
 
 test("reviewed preconditions cannot transfer to an equal-revision resource in this or another workspace", () => {
     const { workspace, source } = fixture(), other = workspace.createTextResource({ scope: "review", resource: "other", variant: "working" }, "Other", { value: "other", serverVersion: "v0" });

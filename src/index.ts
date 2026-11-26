@@ -27,12 +27,11 @@ export type { Snippet, SnippetStop, SnippetOccurrence, SnippetParseResult, Snipp
 export { Workspace, type SaveResponse } from "./core/workspace.ts";
 export type { TextTransaction } from "./core/text-transaction.ts";
 export type {
-    BatchEditResult, Capabilities, ChangeResult, DocumentChange, DocumentEditRequest, DocumentId, DocumentLanguage, DocumentSnapshot, DocumentView,
+    BatchEditResult, Capabilities, DocumentChange, DocumentEditRequest, DocumentId, DocumentLanguage, DocumentSnapshot, DocumentView,
     DocumentViewSnapshot, EditOrigin, EditRequest, EditResult, HistoryRequest,
-    LoadedResource, ResourceLoad, ResourceHandle, ResourceId, ResourceKey, ResourceLease,
-    ResourceMetadata, ResourceOptions, ResourceSnapshot, ResourceTarget, ResourceVisibility, SaveReceipt, SaveReview, SaveSubmission, SaveTicket, TextResourceHandle, TextResourceOptions, TextTransactionOptions, TextWriteResult,
+    LoadedResource, ResourceLoad, ResourceKey, ResourceLease,
+    ResourceMetadata, ResourceSnapshot, ResourceTarget, ResourceVisibility, SaveReceipt, SaveReview, SaveSubmission, SaveTicket, TextResourceHandle, TextResourceOptions, TextTransactionOptions, TextWriteResult,
     ViewId, WorkspaceOptions, WorkspaceSnapshot,
 } from "./core/workspace.ts";
 export type { AfterDelivery, NotificationScope, Observable, ObservableListener } from "./core/observable.ts";
 export type { DocumentationContent, DocumentationPart } from "./core/documentation.ts";
-export type { Immutable, SnapshotValue } from "./core/values.ts";

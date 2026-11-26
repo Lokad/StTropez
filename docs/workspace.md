@@ -1,6 +1,6 @@
 # Workspace
 
-`Workspace` owns resources, revisions and Undo. Each pane can keep its own selection and folds.
+`Workspace` owns text documents, revisions and Undo. Each pane can keep its own selection and folds.
 
 ## Use
 
@@ -28,8 +28,8 @@ export function openFile() {
 
 ### Identities and snapshots
 
-A resource key groups scope, resource and variant. Reopening a released key gives it a new `ResourceId`.
-A text handle’s `id` is its `DocumentId`. Use it to edit, read metadata, acquire a lease or release the resource.
+A resource key groups scope, resource and variant. Reopening a released key gives it a new `DocumentId`.
+Use the handle’s `id` to edit, read metadata, acquire a lease or release the resource.
 Across awaits, capture and resolve a `ResourceTarget`. Views of one document share text and history.
 Local revision tracks edits. Server version identifies the saved baseline.
 
@@ -41,20 +41,7 @@ capture its editor and check `editor.signal`. Disposing the editor aborts the si
 Read `getSnapshot()` or subscribe to `metadata`. `document(id)` requires ready text.
 `observeDocument(id).getSnapshot()` can return `undefined`. Read ranges through `buffer`.
 
-```ts
-import type { DocumentSnapshot, ResourceSnapshot } from "sttropez";
-
-export function serializeCapturedInputs(
-    source: DocumentSnapshot, settings: ResourceSnapshot<{ limit: number }>
-) {
-    if (settings.state !== "ready") return null;
-    return JSON.stringify({ source: { revision: source.revision, text: source.text() },
-        settings: { revision: settings.revision, value: settings.value() } });
-}
-```
-
-Snapshots survive release. Panel values are frozen copies of null, booleans, finite numbers, strings, dense
-arrays or acyclic plain objects. `setDocumentLanguage(id, pair)` binds a URI and language ID, `null` removes
+Snapshots retain their captured text after release. `setDocumentLanguage(id, pair)` binds a URI and language ID, `null` removes
 it. `documentForUri(uri)` requires one exact, ready, visible match.
 
 ### Inventory visibility
@@ -95,7 +82,6 @@ An edit that returns `applied: false` leaves the target unchanged.
 
 | Reason | When it occurs |
 | --- | --- |
-| `missing-resource` | The resource handle is missing or released. |
 | `missing-document` | The target has no live text document. |
 | `not-ready` | Loading or failure prevents editing, or a pending save or protected load prevents adopting saved text. |
 | `read-only` | The resource denies the requested edit origin. |
@@ -116,8 +102,7 @@ export function applyPeerBatches(
 ```
 
 For delayed writes, pass `expectedRevision`. Origin selects edit permission. On refusal, inspect the reason
-before retrying. Equal text keeps its buffer and revision but can move the initiating selection. Panel
-values have revisions and no text Undo.
+before retrying. Equal text keeps its buffer and revision but can move the initiating selection.
 
 #### Selections across replacements
 
@@ -228,7 +213,7 @@ import type { SaveResponse, SaveReview, SaveSubmission, TextResourceHandle, Work
 
 export function createFileSaver(
     workspace: Workspace, source: TextResourceHandle,
-    write: (submission: SaveSubmission<string>) => Promise<SaveResponse<string>>
+    write: (submission: SaveSubmission) => Promise<SaveResponse>
 ) {
     let previous: Promise<unknown> = Promise.resolve();
     return async function save(review?: SaveReview) {
@@ -290,9 +275,9 @@ delivery. Unsubscribe to cancel queued work. Follow-up chains allow 256 callback
 callbacks run once in order. For atomic writes use `editDocuments`.
 
 ```ts
-import type { ResourceId, Workspace } from "sttropez";
+import type { DocumentId, Workspace } from "sttropez";
 
-export function restrictPair(workspace: Workspace, first: ResourceId, second: ResourceId): void {
+export function restrictPair(workspace: Workspace, first: DocumentId, second: DocumentId): void {
     // Resolve both targets before changing either one.
     workspace.resource(first);
     workspace.resource(second);

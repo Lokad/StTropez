@@ -299,17 +299,14 @@ button("Save", async () => {
 
 #### Run a check on the draft
 
-**Run** counts unchecked tasks using the marker in settings.
+**Run** counts unchecked tasks starting with the checklist marker.
 
 ```js file=app.js
-const rules = workspace.createResource(
-    { scope: "checklist", resource: "rules", variant: "working" },
-    "Checklist rules", { value: { marker: "- [ ] " } });
+const marker = "- [ ] ";
 button("Run", () => {
     if (!checklistReady()) return;
-    const draft = file.getSnapshot(), config = rules.getSnapshot();
-    if (draft.state !== "ready" || config.state !== "ready") return;
-    const marker = config.value().marker;
+    const draft = file.getSnapshot();
+    if (draft.state !== "ready") return;
     const count = draft.value().split("\n").filter(line => line.startsWith(marker)).length;
     output.textContent = `${count} open tasks`;
 });
@@ -394,7 +391,6 @@ button("Close", () => {
     editor.dispose();
     workspace.releaseResourceWhenUnowned(file.id, dirty);
     workspace.releaseResourceWhenUnowned(notes.id, dirty);
-    workspace.releaseResourceWhenUnowned(rules.id);
     toolbar.replaceChildren();
 });
 ```

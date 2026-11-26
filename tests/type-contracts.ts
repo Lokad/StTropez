@@ -1,4 +1,4 @@
-import type { DocumentSnapshot, DocumentView, Observable, ResourceHandle, ResourceSnapshot, SaveSubmission } from "../src/index.ts";
+import type { DocumentSnapshot, DocumentView } from "../src/index.ts";
 import type { JsonValue, LspDocument, LspWorkspaceScope } from "../src/protocol/index.ts";
 import type { JsonRpcConnection, LspSession } from "../src/kernels/index.ts";
 
@@ -14,21 +14,6 @@ export function graphemeReadContract(index: GraphemeIndex, progress: GraphemePro
     index.source.kind = "buffer";
     // @ts-expect-error Ready-only progress is immutable.
     progress.result = null;
-}
-
-type Form = { nested: { enabled: boolean }; fields: string[] };
-/** Compile-only consumer contract; these attempted writes must remain type errors. */
-export function readCompatibility(handle: ResourceHandle<Form>, submission: SaveSubmission<Form>): Observable<ResourceSnapshot<Form>> {
-    const snapshot = handle.getSnapshot();
-    if (snapshot.state === "ready") {
-        // @ts-expect-error Published nested values are deeply readonly even for a mutable host schema.
-        snapshot.value().nested.enabled = false;
-        // @ts-expect-error Published arrays are immutable.
-        snapshot.value().fields.push("field");
-    }
-    // @ts-expect-error A captured submission must not become a second writable form.
-    submission.value.nested.enabled = false;
-    return handle;
 }
 
 export function documentReadContract(document: DocumentSnapshot, view: DocumentView): void {

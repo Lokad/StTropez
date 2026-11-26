@@ -66,13 +66,13 @@ test("independent comparison modules share workspace identity and release retain
             leases: workspace.diagnostics().leases, views: workspace.diagnostics().views, subscriptions: workspace.diagnostics().subscriptions,
             retained: [old.getSnapshot().state, current.getSnapshot().state] };
         oldLease.release(); currentLease.release(); await Promise.resolve();
-        const afterRelease = { resources: workspace.diagnostics().resources, retained: [old.getSnapshot().state, current.getSnapshot().state] };
+        const afterRelease = { documents: workspace.diagnostics().documents, retained: [old.getSnapshot().state, current.getSnapshot().state] };
         view.dispose(); workspace.releaseResource(source.id); host.remove();
         return { distinct, internal, hiddenThroughout, afterRefresh, afterDestroy, afterRelease, leases: workspace.diagnostics().leases };
     });
     expect(result).toEqual({ distinct: true, internal: true, hiddenThroughout: true, afterRefresh: { stable: true, oldText: "head\n  needle\nend", text: "head\n  needle\nend\nneedle", retiredRejected: true, rulers: [72], query: "needle", folded: true, collapsed: 1, defaultWorking: true, activeReference: true },
         afterDestroy: { children: 0, controllers: ["disposed", "disposed"], leases: 3, views: 1, subscriptions: 0, retained: ["ready", "ready"] },
-        afterRelease: { resources: 1, retained: ["released", "released"] }, leases: 0 });
+        afterRelease: { documents: 1, retained: ["released", "released"] }, leases: 0 });
 });
 
 test("a translated review toolbar shares navigation labels with both panes", async ({ page }) => {

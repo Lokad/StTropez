@@ -92,8 +92,8 @@ export async function benchmarkModel() {
         for (const views of workspaceWorkload.activeViews) {
             const workspace = new Workspace();
             const source = workspace.createTextResource({ scope: "bench", resource: "source", variant: "working" }, "Source", { value: "baseline" });
-            const others = Array.from({ length: resources - 1 }, (_, index) => workspace.createResource(
-                { scope: "bench", resource: `form-${index}`, variant: "working" }, "Form", { value: { field: "unchanged" } }));
+            const others = Array.from({ length: resources - 1 }, (_, index) => workspace.createTextResource(
+                { scope: "bench", resource: `document-${index}`, variant: "working" }, "Document", { value: "unchanged" }));
             /** @param {string} value */
             const write = value => workspace.edit({ documentId: source.id,
                 expectedRevision: workspace.document(source.id).revision, origin: "human",

@@ -19,11 +19,11 @@ export function referenceStorage(initial: string) {
             || !("text" in copy) || typeof copy.text !== "string") throw new Error("Cannot read the saved quote.");
         return { version: copy.version, text: copy.text };
     }
-    async function write(submission: SaveSubmission<string>, mode: StorageMode): Promise<SaveResponse<string>> {
+    async function write(submission: SaveSubmission, mode: StorageMode): Promise<SaveResponse> {
         if (mode.delay) await new Promise(resolve => setTimeout(resolve, 500));
         if (mode.fault === "fail") throw new Error("The write failed. Your edits are still here.");
         const text = mode.canonical ? submission.value.trimEnd() + "\n" : submission.value;
-        function commit(): SaveResponse<string> {
+        function commit(): SaveResponse {
             const latest = read();
             if (latest.text === text) return { kind: "saved", serverVersion: latest.version, canonical: text };
             if (mode.compareVersions && latest.version !== submission.expectedServerVersion) {

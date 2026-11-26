@@ -402,7 +402,7 @@ test("a read-only view keeps bounded navigation and Find while its peer retains 
     expect((await state(page)).document).toEqual(edited.document); expect((await state(page)).history).toEqual(edited.history);
     await peer.press("ControlOrMeta+z"); await ready(page); expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe("alpha");
     await reader.press("Escape"); await reader.press("Tab"); await expect(peer).toBeFocused();
-    await page.evaluate(() => window.editingFixture.dispose()); expect((await state(page)).diagnostics).toMatchObject({ resources: 0, views: 0, leases: 0, subscriptions: 0 });
+    await page.evaluate(() => window.editingFixture.dispose()); expect((await state(page)).diagnostics).toMatchObject({ documents: 0, views: 0, leases: 0, subscriptions: 0 });
 });
 
 test("measured tab/CJK/cluster coordinates drive pointer selection and whole-grapheme deletion", async ({ page }) => {
@@ -507,7 +507,7 @@ test("two views retain text and selections through persisted transitions, then d
     await page.keyboard.press("Tab"); expect(await page.evaluate(() => window.editingFixture.range(0, 5))).toBe("!   f");
     await page.keyboard.press("Escape"); await page.keyboard.press("Tab"); await expect(page.getByRole("textbox", { name: "Secondary source" })).toBeFocused();
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));
-    expect((await state(page)).diagnostics).toMatchObject({ resources: 0, documents: 0, views: 0, subscriptions: 0, leases: 0 });
+    expect((await state(page)).diagnostics).toMatchObject({ documents: 0, views: 0, subscriptions: 0, leases: 0 });
     expect((await state(page)).primary).toMatchObject({ disposed: true, viewport: { disposed: true, pending: false } });
     expect(await page.locator("textarea, .st-viewport").count()).toBe(0);
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false })));

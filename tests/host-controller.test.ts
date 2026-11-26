@@ -149,12 +149,12 @@ test("immutable Run/log resources link captured inputs and keep older progress/r
         const beforeRun = h.debug().diagnostics;
         assert.deepEqual(h.workspace.getSnapshot().resources.map(resource => resource.id), [h.source.id]);
         const first = h.run(); await settled(); const id = h.runResources.state.getSnapshot().runs[0]!.id, input = h.runResources.capture(id)!;
-        const sourceId: import("../src/index.ts").ResourceId = input.source.id; assert.equal(sourceId, h.source.id); assert.equal(input.configuration.id, h.configurationSave.id); assert.equal(input.transfer.id, h.transfer.save.id); assert.equal(input.source.value, "start");
+        const sourceId: import("../src/index.ts").DocumentId = input.source.id; assert.equal(sourceId, h.source.id); assert.equal(input.configuration.id, h.configurationSave.id); assert.equal(input.transfer.id, h.transfer.save.id); assert.equal(input.source.value, "start");
         assert.ok(Object.isFrozen(input) && Object.isFrozen(input.transfer) && Object.isFrozen(input.transfer.value));
         const initialLog = h.runResources.state.getSnapshot().runs[0]!.logs[0]!;
         h.runResources.open(initialLog);
         const oldLog = h.runResources.inspect();
-        assert.equal(h.debug().diagnostics.resources, beforeRun.resources);
+        assert.equal(h.debug().diagnostics.documents, beforeRun.documents);
         sourceEdit(h, " later"); h.setPath("later-connection.csv"); h.transfer.update("destination", "later-target.csv"); const second = h.run(); await settled(); const latest = h.debug().activity.lastRun;
         const secondId = h.runResources.state.getSnapshot().runs[1]!.id; h.runResources.open(secondId); const selection = h.runResources.state.getSnapshot().selected, before = h.debug();
         const capturedInspection = outputs.state.getSnapshot();

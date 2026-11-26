@@ -202,7 +202,7 @@ function save(review?: SaveReview): boolean {
         }
     }
     const buffer = workspace.document(file.id).buffer;
-    let ticket: SaveTicket<string>;
+    let ticket: SaveTicket;
     try {
         ticket = workspace.captureSave(file, review);
     } catch (error) {

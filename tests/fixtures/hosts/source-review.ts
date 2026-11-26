@@ -10,7 +10,7 @@ export type SaveConflict = Readonly<{ id: number; submittedRevision: number; exp
 export type SaveConflictPresentation = Readonly<{ conflict: SaveConflict | null; canSaveReviewed: boolean; disposed: boolean }>;
 type Reference = Readonly<{ generation: number; baseline: ComparisonBaseline }>;
 type ReviewPorts = Readonly<{ inputReady: () => boolean; presentation: Observable<HostPane>; present: () => void;
-    server: () => Readonly<{ buffer: TextBuffer; version: string }>; save: SavePort<string>["save"];
+    server: () => Readonly<{ buffer: TextBuffer; version: string }>; save: SavePort["save"];
     track: (task: Promise<unknown>) => void; saved: (revision: number) => void; reportError: (error: unknown) => void }>;
 
 /** One source-save/reference owner, including the ordering shared by conflict and version reads. */
@@ -77,7 +77,7 @@ export class HostSourceReview {
     private saveSource(review?: SaveReview): void {
         if (!this.ports.inputReady()) return;
         const conflictId = this.conflictCell.get()?.id;
-        let captured: SaveSubmission<string> | undefined;
+        let captured: SaveSubmission | undefined;
         this.ports.track(this.saves.save(this.workspace.captureSave(this.source, review), { save: submission => { captured = submission; return this.ports.save(submission); } })
             .then(result => {
                 if (!this.disposed && result.kind === "saved") {
