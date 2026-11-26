@@ -1,6 +1,6 @@
 import { ready, test, expect } from "./fixtures.ts";
 
-test("a growing popup moves when its opening side can no longer show the content", async ({ page }) => {
+test("an above-caret popup keeps its near edge in place as it resizes, then switches sides when it runs out of room", async ({ page }) => {
     await page.goto("/editing/");
     await page.evaluate(() => {
         document.querySelector<HTMLElement>("#primary")!.style.cssText = "position:fixed;top:100px;left:50px;width:600px;height:450px";
@@ -9,14 +9,27 @@ test("a growing popup moves when its opening side can no longer show the content
     await ready(page);
     const call = await page.evaluateHandle(() => {
         const f = window.editingFixture, element = document.createElement("aside");
-        element.textContent = "Result"; element.style.cssText = "width:160px;height:30px"; document.body.append(element);
+        const button = document.createElement("button");
+        button.textContent = "Result";
+        element.append(button);
+        element.style.cssText = "width:160px;height:30px";
+        document.body.append(element);
         const overlay = f.overlay(element, { prefer: "above" }), anchor = { revision: f.snapshot().document!.revision, offset: 1 };
-        overlay.show(anchor);
-        return { element, grow() { element.style.height = "250px"; overlay.show(anchor); }, dispose() { overlay.dispose(); element.remove(); } };
+        overlay.show(anchor, button);
+        return { element, resize(height: number) { element.style.height = height + "px"; }, dispose() { overlay.dispose(); element.remove(); } };
     });
     try {
         await expect.poll(() => call.evaluate(({ element }) => !element.hidden && element.getBoundingClientRect().bottom <= window.editingFixture.coords(1)!.top)).toBe(true);
-        await call.evaluate(handle => handle.grow());
+        await expect(page.getByRole("button", { name: "Result", exact: true })).toBeFocused();
+        const shifts = await call.evaluate(handle => {
+            const bottom = handle.element.getBoundingClientRect().bottom;
+            return [75, 24, 60].map(height => {
+                handle.resize(height);
+                return handle.element.getBoundingClientRect().bottom - bottom;
+            });
+        });
+        expect(shifts).toEqual([0, 0, 0]);
+        await call.evaluate(handle => handle.resize(250));
         await expect.poll(() => call.evaluate(({ element }) => {
             const box = element.getBoundingClientRect(), caret = window.editingFixture.coords(1)!;
             return [box.height, box.top >= caret.top + caret.height];

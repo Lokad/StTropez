@@ -114,7 +114,7 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
         proposed = mark.color;
         rgb.value = hex(proposed);
         alpha.value = String(proposed.alpha * 100);
-        overlay.show({ revision: target.document.revision, offset: mark.from });
+        overlay.show({ revision: target.document.revision, offset: mark.from }, rgb);
         onAbort(target.signal, () => closeLater(target));
         if (discovered) {
             choice = discovered;
@@ -131,9 +131,6 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
         return true;
     }
     const listen = listenUntil(signal);
-    listen(panel, "toggle", () => {
-        if (source && panel.matches(":popover-open")) rgb.focus({ preventScroll: true });
-    });
     listen(panel, "keydown", event => {
         if (event.key === "Escape") {
             event.preventDefault();

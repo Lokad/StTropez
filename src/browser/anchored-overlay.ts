@@ -16,7 +16,7 @@ export type AnchoredOverlayOptions = Readonly<{
     dismissOn?: readonly DismissEvent[];
     onHide?: (reason: OverlayHideReason, hadFocus: boolean) => void;
 }>;
-export type AnchoredOverlay = Readonly<{ show: (anchor: OverlayAnchor) => void; hide: () => void; dispose: () => void }>;
+export type AnchoredOverlay = Readonly<{ show: (anchor: OverlayAnchor, focusTarget?: HTMLElement) => void; hide: () => void; dispose: () => void }>;
 
 type Placement = { priority: number; rectangle: DOMRect | undefined; schedule: () => void };
 const activeOverlays = new WeakMap<TextEditor, Set<Placement>>();
@@ -104,7 +104,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     activeOverlays.set(editor, peers);
     let previousSlot: Slot | undefined;
     const placement: Placement = { priority, rectangle: undefined, schedule: reconsider };
-    const style = element.style, original = { left: style.left, top: style.top, maxWidth: style.maxWidth, maxHeight: style.maxHeight };
+    const style = element.style, original = { left: style.left, top: style.top, bottom: style.bottom, maxWidth: style.maxWidth, maxHeight: style.maxHeight };
     const alreadyStyled = element.classList.contains("st-editor-overlay");
     const detached = !element.parentNode;
     const scoped = detached || editor.element.contains(element);
@@ -116,6 +116,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     element.classList.add("st-editor-overlay");
     element.hidden = true;
     let anchor: OverlayAnchor | undefined, events: AbortController | undefined, frame: number | undefined, disposed = false;
+    let focusTarget: HTMLElement | undefined;
     function report(rectangle?: DOMRect): void {
         const old = placement.rectangle;
         if (old?.left === rectangle?.left && old?.right === rectangle?.right
@@ -158,8 +159,13 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         const room = slot.bottom - slot.top;
         if (size.height > room) style.maxHeight = `${room / zoom}px`;
         style.left = `${x / zoom}px`;
-        style.top = `${(slot.above ? slot.bottom - Math.min(room, size.height) : slot.top) / zoom}px`;
+        // The edge beside the text stays fixed even when content grows before the next measurement.
+        style.top = slot.above ? "auto" : `${slot.top / zoom}px`;
+        style.bottom = slot.above ? `${(owner.documentElement.clientHeight - slot.bottom) / zoom}px` : "auto";
         report(element.getBoundingClientRect());
+        const target = focusTarget;
+        focusTarget = undefined;
+        if (target && element.contains(target)) target.focus({ preventScroll: true });
     }
     function schedule(): void {
         if (anchor && frame === undefined) frame = win.requestAnimationFrame(position);
@@ -168,6 +174,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     const resize = new win.ResizeObserver(schedule);
     function hide(reason: OverlayHideReason = "hide"): void {
         if (!anchor) return;
+        focusTarget = undefined;
         const notify = reason !== "clipped" || !!placement.rectangle;
         const hadFocus = element.matches(":focus-within");
         if (reason !== "clipped") {
@@ -185,10 +192,12 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         report();
         if (notify) onHide?.(reason, hadFocus);
     }
-    function show(next: OverlayAnchor): void {
+    function show(next: OverlayAnchor, target?: HTMLElement): void {
         if (disposed) return;
         const from = "offset" in next ? next.offset : next.from, to = "offset" in next ? next.offset : next.to;
         if (!isOffsetRange(from, to)) throw new RangeError("Invalid overlay anchor.");
+        if (target && !element.contains(target)) throw new RangeError("Focus target must belong to the overlay.");
+        focusTarget = target;
         anchor = Object.freeze({ ...next });
         if (!events) {
             peers.add(placement);

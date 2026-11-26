@@ -138,18 +138,18 @@ idle flush sends no notification. `getDiagnostics()` reports rows, buffer reads 
 
 ### Anchored popups
 
-`mountAnchoredOverlay(editor, element)` places a detached element in the browser top layer with editor
-styles. An element in a host container stays there. `show({ revision, offset, affinity? })` anchors to a
-caret. Use `{ revision, from, to }` for a half-open range’s first visible row, even with both ends
-offscreen.
+`mountAnchoredOverlay(editor, element)` mounts detached elements in the top layer with editor styles.
+Host elements stay put. Call `show({ revision, offset, affinity? }, focusTarget?)` for a caret
+or pass `{ revision, from, to }` for the first visible row of a half-open range. Placement focuses the
+field or button. Clipping, dismissal or another call cancels pending focus.
 
-Placement follows scroll, folds and resize. Clipped popups can reappear. A new revision expires the anchor.
-Placement prefers below. Set `prefer: "above"` to reverse it. Higher `priority` gets space first.
-Constrained content scrolls.
+Popups follow scrolling, folds and resizing. Clipped anchors can reappear until the revision changes.
+Placement defaults to below. Use `prefer: "above"` to reverse it. Higher `priority` wins space.
+Overflow scrolls.
 
 `dismissOn` accepts `"focus-leave"` or `"outside-pointerdown"` outside editor and popup.
-`onHide(reason, hadFocus)` distinguishes clipping, expiry and dismissal. Disposing removes a supplied
-detached element. Editor disposal releases its overlays.
+`onHide(reason, hadFocus)` reports clipping, expiry or dismissal. Disposal removes detached elements.
+Disposing the editor releases all its overlays.
 
 ### Input adapter ownership
 
