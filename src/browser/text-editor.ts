@@ -373,15 +373,21 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         }
         viewport.revealOffset(offset, { horizontal: "nearest", vertical, affinity: selected.headAffinity ?? "after" });
     }
-    type ApplyOptions = { type?: string | undefined; expectedRevision?: number; recoveryText?: string | undefined;
+    type ApplyOptions = { type?: string | undefined; expectedRevision?: number; recoveryText?: string | undefined; commandText?: string;
         adjustNewlines?: boolean; accepted?: ((edits: readonly TextEdit[]) => void) | undefined; typedText?: string | undefined };
     function apply(edits: readonly TextEdit[], selection: Selection | SelectionSet, kind: EditKind,
-        { type, expectedRevision = revision, recoveryText, adjustNewlines, accepted, typedText }: ApplyOptions = {}): boolean {
+        { type, expectedRevision = revision, recoveryText, adjustNewlines, accepted, typedText,
+            commandText = recoveryText ?? typedText ?? "" }: ApplyOptions = {}): boolean {
         if (disposed) return false;
         hostInsertion?.cancel();
-        if (readOnly) { conflict("read-only", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
-        activeCommand = undefined; preferred = undefined;
-        if (!live()) { conflict("expired-view", edits[0], expectedRevision, context.from, recoveryText); refresh(); return false; }
+        const refusal = readOnly ? "read-only" : live() ? undefined : "expired-view";
+        if (refusal) {
+            conflict(refusal, edits[0], expectedRevision, context.from, recoveryText);
+            refresh();
+            return false;
+        }
+        activeCommand = undefined;
+        preferred = undefined;
         let key: string | undefined;
         const before = currentView(), typed = type === "insertText" ? edits[0]?.insert : undefined;
         let tail: NonNullable<typeof group>["tail"] = typed === undefined ? undefined : typingRun(typed);
@@ -395,7 +401,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
                     + edits.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0), [selection]), kind,
                 ...(adjustNewlines ? { adjustNewlines: true } : {}) }));
         } catch (error) {
-            commandFailure(error, expectedRevision, recoveryText ?? typedText ?? "");
+            commandFailure(error, expectedRevision, commandText);
             return false;
         }
         if (transformed) { edits = transformed.edits; selection = transformed.selectionSet; }
@@ -422,7 +428,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         } finally {
             committing = false;
             try { transformed?.complete?.(applied); }
-            catch (error) { commandFailure(error, expectedRevision, applied ? "" : recoveryText ?? typedText ?? ""); }
+            catch (error) { commandFailure(error, expectedRevision, applied ? "" : commandText); }
             finally {
                 refresh();
                 if (typedAt && typedText && !disposed && live()) dispatchTypedText(root, before, typedAt, typedText);
@@ -453,7 +459,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const to = exactTarget ? Math.max(selected.anchor, selected.head) : edit.from === edit.to ? from : projection.toModel(edit.to);
         const typing = type === "insertText" && !edit.insert.includes("\n"), deleting = type === "deleteContentBackward" || type === "deleteContentForward";
         const kind = typing ? "typing" : deleting ? "delete" : type === "insertCompositionText" ? "composition" : type === "insertFromPaste" ? "paste" : "replace";
-        const options = { type: typing || deleting ? type : undefined, expectedRevision: captured.revision, recoveryText: edit.insert,
+        const options = { type: typing || deleting ? type : undefined, expectedRevision: captured.revision, commandText: edit.insert,
             typedText: type === "insertText" || type === "insertCompositionText" ? edit.insert : undefined };
         if (captured.selectionSet.ranges.length > 1 || kind === "paste" && captured.wholeLines && exactTarget) {
             // A native textarea describes one primary target. Replicate only an exact captured
