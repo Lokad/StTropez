@@ -16,6 +16,7 @@ import type { SearchMatch, SearchStep } from "../core/search.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { Store } from "../core/observable.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
+import { indexedSelection, matchesRange, replacementRange, nextIndexedMatch } from "./find-navigation.ts";
 import { visibleFindMatch } from "./find-preview.ts";
 import { humanEditRefusal } from "./input-events.ts";
 import type { TextViewport } from "./viewport.ts";
@@ -127,7 +128,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
     let previewed: { index: number; selection: SelectionSet } | undefined;
     const cancelPreview = () => { pendingPreview?.listeners.abort(); pendingPreview = undefined; };
     let stopPlanAuthority: (() => void) | undefined;
-    let matches = new FindIndex(), count = 0, navigationTo = 0, observed = initial;
+    let matches = new FindIndex(), navigationTo = 0, observed = initial;
     let pendingRepair: LiteralFindRepair | undefined;
     let literal: { document: DocumentSnapshot; index: FindIndex; query: string; wholeWord: boolean; matchCase: boolean } | undefined;
     let edges: { prefix: number; suffix: number } | undefined;
@@ -157,23 +158,11 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
         publish({ ...patch, current: null, wrappedTo: null, matchesVersion: store.get().matchesVersion + 1 });
     }
     const reset = (patch: FindPatch) => {
-        matches = new FindIndex(); count = 0; literal = undefined; edges = undefined; navigationTo = 0;
+        matches = new FindIndex(); literal = undefined; edges = undefined; navigationTo = 0;
         publishNewIndex({ ...patch, retained: false, count: 0, scanned: 0 });
     };
     const later = (work: () => void, delay = 0) => { runner.schedule(work, delay); };
-    const offsetAt = (index: number) => matches.at(index).from;
-    const endAt = (index: number) => matches.at(index).to;
-    const indexAt = (offset: number) => matches.lowerBound(offset);
-    const matchesRange = (index: number, from: number, to: number) => {
-        const range = index < count ? matches.at(index) : undefined;
-        return range?.from === from && range.to === to;
-    };
-    function selectionIndex(): number | null {
-        const { anchor, head } = viewSnapshot().selection;
-        const from = Math.min(anchor, head), index = matches.firstIntersecting(from);
-        if (anchor !== head) return matchesRange(index, from, Math.max(anchor, head)) ? index : null;
-        return index < count && offsetAt(index) <= head ? index : null;
-    }
+    const selectionIndex = () => indexedSelection(matches, viewSnapshot().selection);
     const emptyMatches: readonly SearchMatch[] = emptyList;
     const matchesIn = (from: number, to: number, capture = store.get()): readonly SearchMatch[] => {
         if (!isOffsetRange(from, to)) invalidRange("match range");
@@ -247,8 +236,8 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
                     ? unchangedPositionEdges(change.mapping) : undefined;
             if (proof) {
                 if (document.buffer === literal.document.buffer) {
-                    matches = literal.index; count = matches.count; literal.document = document; edges = undefined; observed = document; navigationTo = document.buffer.length;
-                    publishNewIndex({ ...patch, retained: false, status: "ready", count, scanned: patch.length });
+                    matches = literal.index; literal.document = document; edges = undefined; observed = document; navigationTo = document.buffer.length;
+                    publishNewIndex({ ...patch, retained: false, status: "ready", count: matches.count, scanned: patch.length });
                     return;
                 }
                 const prefix = Math.min(edges?.prefix ?? proof.prefix, proof.prefix, literal.document.buffer.length, document.buffer.length);
@@ -259,8 +248,8 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
         observed = document;
         if (repair) {
             pendingRepair = repair;
-            matches = repair.index; count = matches.count; navigationTo = repair.start;
-            publishNewIndex({ ...patch, status: "searching", retained: true, count, scanned: repair.start });
+            matches = repair.index; navigationTo = repair.start;
+            publishNewIndex({ ...patch, status: "searching", retained: true, count: matches.count, scanned: repair.start });
         } else reset({ ...patch, status: query ? "searching" : "idle" });
         if (!query) return;
         const initialSelection = currentSelection();
@@ -295,21 +284,20 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
                 if (!valid() || readDocument().revision !== document.revision) { restart(query); return false; }
                 if (result.matches.length > 8192
                     || !isOffsetRange(scanned, result.scanned, document.buffer.length)) throw new Error("Invalid search result.");
-                let previous = count ? matches.at(count - 1) : undefined;
+                let previous = matches.count ? matches.at(matches.count - 1) : undefined;
                 for (const match of repair ? [] : result.matches) {
                     if (!isOffsetRange(match.from, match.to, document.buffer.length)
                         || previous && (match.from < previous.to || match.from === previous.from && match.to === previous.to)) {
                         throw new Error("Invalid search range.");
                     }
                     matches.append(match);
-                    count++;
                     previous = match;
                 }
                 if (repair) {
                     const index = repair.index, ordinal = store.get().current;
                     if (index !== matches && ordinal !== null) current = index.lowerBound(matches.at(ordinal).from);
-                    matches = index; count = index.count;
-                    if (!repair.hasRetainedSuffix) navigationTo = Math.max(navigationTo, count ? endAt(count - 1) : 0);
+                    matches = index;
+                    if (!repair.hasRetainedSuffix) navigationTo = Math.max(navigationTo, matches.count ? matches.at(matches.count - 1).to : 0);
                 }
                 scanned = result.scanned;
                 scanMaximum = Math.max(scanMaximum, dispatchMs, win.performance.now() - began);
@@ -323,6 +311,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
                 return token === generation && valid();
             };
             const present = (result: SearchStep) => {
+                const count = matches.count;
                 const state = store.get();
                 if (result.done || count !== state.count || result.scanned !== state.scanned)
                     publish({ count, ...(current !== undefined && { current }), matchesVersion: state.matchesVersion + (count !== state.count ? 1 : 0), scanned: result.scanned, status: result.done ? "ready" : "searching", retained: !!repair && !result.done });
@@ -367,39 +356,16 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
     const currentRange = (): SearchMatch | undefined => {
         const state = store.get();
         if (!valid() || !hasResults(state) || state.revision !== readDocument().revision) return;
-        const selected = viewSnapshot().selection, low = Math.min(selected.anchor, selected.head), high = Math.max(selected.anchor, selected.head);
-        if (!state.query) return undefined;
-        const index = indexAt(low);
-        if (matchesRange(index, low, high) && !(low === high && replacedHere())) return { from: low, to: high };
-        if (state.status !== "ready") return undefined;
-        // A global scan can skip a second match starting inside the previous one.
-        if (state.regularExpression) return high > low && index > 0 && endAt(index - 1) > low
-            ? { from: low, to: high } : undefined;
-        if (state.wholeWord) return undefined;
-        const buffer = readDocument().buffer;
-        if (state.matchCase && !state.query.includes("\n")) return high - low === state.query.length && buffer.slice(low, high) === state.query ? { from: low, to: high } : undefined;
-        // Recheck a manually selected overlap using the same newline and case rules as the index.
-        if (high - low < Math.ceil(state.query.length / 2) || high - low > state.query.length * 2) return undefined;
-        const selectedSearch = new LiteralSearch(buffer, state.query, { from: low, to: high, matchCase: state.matchCase, lineEndings: "equivalent" });
-        try { const match = selectedSearch.next(high - low + 3, 1).matches[0]; return match?.from === low && match.to === high ? match : undefined; }
-        finally { selectedSearch.dispose(); }
+        return replacementRange(matches, state, readDocument().buffer, viewSnapshot().selection, replacedHere());
     };
-    function nextMatch(direction: 1 | -1): { index: number; wrappedTo: FindSnapshot["wrappedTo"] } | undefined {
+    function nextMatch(direction: 1 | -1) {
         const state = store.get();
-        if (!hasResults(state) || !count) return;
-        const selection = viewSnapshot(), selected = selection.selection, bound = direction === 1 ? Math.max(selected.anchor, selected.head) : Math.min(selected.anchor, selected.head);
-        let raw = indexAt(bound);
-        if (previewed?.selection === selection.selectionSet) raw = previewed.index + direction;
-        else if (direction === -1) raw--;
-        else if (raw < count && endAt(raw) === bound
-            && (navigatedMatch?.index === raw && navigatedMatch.selectionSet === selection.selectionSet || replacedHere())) raw++;
-        if (state.status !== "ready" && (raw < 0 || raw >= count)) return;
-        if (state.status !== "ready") {
-            if (pendingRepair?.hasRetainedSuffix && raw >= pendingRepair.prefixCount) {
-                if (bound < pendingRepair.suffixStart) return;
-            } else if (direction === -1 && bound > navigationTo) return;
-        }
-        return { index: (raw + count) % count, wrappedTo: raw < 0 ? "end" : raw >= count ? "start" : null };
+        if (!hasResults(state) || !matches.count) return;
+        const { selectionSet, selection } = viewSnapshot();
+        return nextIndexedMatch(matches, direction, selection,
+            previewed?.selection === selectionSet ? previewed.index : undefined,
+            navigatedMatch?.selectionSet === selectionSet ? navigatedMatch.index : undefined,
+            replacedHere(), state.status === "ready", pendingRepair, navigationTo);
     }
     function selectMatch(index: number, clearNotice: boolean, wrappedTo: FindSnapshot["wrappedTo"] = null): boolean {
         const { from, to } = matches.at(index);
@@ -417,13 +383,13 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
         const preview = pendingPreview;
         if (!preview) return;
         const current = () => valid() && preview.scrollUnchanged() && editor.activity().input !== "composing" && currentSelection() === preview.selection;
-        if (!count || !current()) { cancelPreview(); return; }
+        if (!matches.count || !current()) { cancelPreview(); return; }
         const selected = preview.selection.ranges[preview.selection.primary]!;
-        const start = Math.min(selected.anchor, selected.head), preferred = indexAt(start) % count;
-        if (preview.followSelected && !pendingNext && offsetAt(preferred) === start) {
+        const start = Math.min(selected.anchor, selected.head), preferred = matches.lowerBound(start) % matches.count;
+        if (preview.followSelected && !pendingNext && matches.at(preferred).from === start) {
             cancelPreview(); selectMatch(preferred, true); return;
         }
-        const fold = projection.collapsedCount ? projection.hiddenBy(readDocument().buffer.lineAt(offsetAt(preferred))) : undefined;
+        const fold = projection.collapsedCount ? projection.hiddenBy(readDocument().buffer.lineAt(matches.at(preferred).from)) : undefined;
         const visible = viewport && visibleFindMatch(viewport, matches, preferred, fold?.lineFrom);
         const index = visible ?? preferred;
         // Flushing painted fragments can notify a host, which may replace the search or the view.
@@ -503,7 +469,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
         if (refusal) return refusal;
         advanceAfterReplace = undefined;
         const request = state.regularExpression ? capture(state) : undefined;
-        const positions = matches, total = range ? 1 : count;
+        const positions = matches, total = range ? 1 : matches.count;
         const selectionSet = currentSelection();
         // Regex replies may outlive this turn. A literal index is already local and validated.
         if (request) stop();
@@ -559,7 +525,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
                 return commit(edits);
             } catch (error) { failed(error, token, true); return failure(error); }
         }
-        const unindexed = !!range && !matchesRange(indexAt(range.from), range.from, range.to);
+        const unindexed = !!range && !matchesRange(matches, matches.lowerBound(range.from), range.from, range.to);
         const acceptPlan = createFindReplacementPlan(positions, total, range, unindexed);
         observePlanAuthority(token);
         publish({ status: "replacing", ...noNotice });
@@ -602,7 +568,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
         if (!valid()) return stale;
         const state = store.get();
         if (state.status !== "ready") return refused("not-ready");
-        if (!count) return refused("no-match");
+        if (!matches.count) return refused("no-match");
         return planReplacement(state, replacement, undefined, options?.focusEditor);
     };
     // Disabling the command button can clear activeElement without a new focus choice.
