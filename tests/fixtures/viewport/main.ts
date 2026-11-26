@@ -10,45 +10,45 @@ import "./style.css";
 const workspace = new Workspace(), source = workspace.createTextResource({ scope: "viewport", resource: "source", variant: "working" }, "Source", { value: corpus("lines-10000") });
 const progress = workspace.createTextResource({ scope: "viewport", resource: "progress", variant: "working" }, "Progress", { value: "0" });
 const pane = (name: string) => document.getElementById(name)!;
-const views = { primary: mountTextViewport(pane("primary"), workspace, source.documentId, { ariaLabel: "Primary text viewport" }),
-    secondary: mountTextViewport(pane("secondary"), workspace, source.documentId, { ariaLabel: "Secondary text viewport" }) };
+const views = { primary: mountTextViewport(pane("primary"), workspace, source.id, { ariaLabel: "Primary text viewport" }),
+    secondary: mountTextViewport(pane("secondary"), workspace, source.id, { ariaLabel: "Secondary text viewport" }) };
 let ticks = 0, timer: ReturnType<typeof setInterval> | undefined, disposed = false;
 const listeners = new AbortController();
 function edit(expectedRevision: number, edits: readonly TextEdit[]) {
-    return workspace.edit({ documentId: source.documentId, expectedRevision, edits, origin: "host", history: { kind: "live" } });
+    return workspace.edit({ documentId: source.id, expectedRevision, edits, origin: "host", history: { kind: "live" } });
 }
 function load(id: CorpusId) {
     if (!corpusIds.includes(id)) throw new RangeError("Unknown workload.");
-    const current = workspace.document(source.documentId); edit(current.revision, [{ from: 0, to: current.buffer.length, insert: corpus(id) }]);
-    Object.values(views).forEach(view => { view.view.setSelection(workspace.document(source.documentId).revision, { anchor: 0, head: 0 }); view.scrollTo({ top: 0, left: 0 }); });
+    const current = workspace.document(source.id); edit(current.revision, [{ from: 0, to: current.buffer.length, insert: corpus(id) }]);
+    Object.values(views).forEach(view => { view.view.setSelection(workspace.document(source.id).revision, { anchor: 0, head: 0 }); view.scrollTo({ top: 0, left: 0 }); });
 }
 function background(active: boolean) {
     if (timer !== undefined) clearInterval(timer); timer = undefined;
     if (active) timer = setInterval(() => {
-        const other = workspace.document(progress.documentId);
+        const other = workspace.document(progress.id);
         workspace.edit({ documentId: other.id, expectedRevision: other.revision, origin: "host",
             edits: [{ from: 0, to: other.buffer.length, insert: String(++ticks) }] });
     }, 50);
 }
 const on = (id: string, action: () => void) => pane(id).addEventListener("click", action, { signal: listeners.signal });
 on("start", () => views.primary.scrollTo({ top: 0, left: 0 }));
-on("middle", () => views.primary.revealOffset(Math.floor(workspace.document(source.documentId).buffer.length / 2)));
-on("end", () => views.primary.revealOffset(workspace.document(source.documentId).buffer.length));
-on("prepend", () => edit(workspace.document(source.documentId).revision, [{ from: 0, to: 0, insert: "new first line\n" }]));
-on("undo", () => workspace.undo({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision }));
-on("redo", () => workspace.redo({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision }));
+on("middle", () => views.primary.revealOffset(Math.floor(workspace.document(source.id).buffer.length / 2)));
+on("end", () => views.primary.revealOffset(workspace.document(source.id).buffer.length));
+on("prepend", () => edit(workspace.document(source.id).revision, [{ from: 0, to: 0, insert: "new first line\n" }]));
+on("undo", () => workspace.undo({ documentId: source.id, expectedRevision: workspace.document(source.id).revision }));
+on("redo", () => workspace.redo({ documentId: source.id, expectedRevision: workspace.document(source.id).revision }));
 pane("workload").addEventListener("change", event => load((event.currentTarget as HTMLSelectElement).value as CorpusId), { signal: listeners.signal });
-const documentState = workspace.observeDocument(source.documentId);
+const documentState = workspace.observeDocument(source.id);
 const status = () => {
     const current = documentState.getSnapshot();
     pane("status").textContent = current ? `${current.buffer.lineCount.toLocaleString()} lines · Revision ${current.revision}` : "Loading";
 };
 const unsubscribe = documentState.subscribe(status); status();
 const fixture = { ready: true, load, edit, background,
-    bindLanguage: (uri: string) => workspace.setDocumentLanguage(source.documentId, { uri, languageId: "typescript" }),
+    bindLanguage: (uri: string) => workspace.setDocumentLanguage(source.id, { uri, languageId: "typescript" }),
     get settled() { return !disposed && viewportSettled(views.primary) && viewportSettled(views.secondary); },
     reload: (value: string) => workspace.beginLoad(source).accept({ value }),
-    select: (which: "primary" | "secondary", ranges: readonly Selection[], primary = 0) => views[which].view.setSelections(workspace.document(source.documentId).revision, ranges, primary),
+    select: (which: "primary" | "secondary", ranges: readonly Selection[], primary = 0) => views[which].view.setSelections(workspace.document(source.id).revision, ranges, primary),
     capture: (which: "primary" | "secondary") => views[which].captureView(),
     restore: (which: "primary" | "secondary", state: ViewState) => views[which].restoreView(state),
     closePrimary: views.primary.dispose,
@@ -57,9 +57,9 @@ const fixture = { ready: true, load, edit, background,
     resize: (width: number, height: number, lineHeight = "1.6") => {
         pane("primary").style.width = `${width}px`; pane("primary").style.height = `${height}px`; views.primary.element.style.setProperty("--st-line-height", lineHeight);
     },
-    range: (from: number, to: number) => workspace.document(source.documentId).buffer.slice(from, to),
+    range: (from: number, to: number) => workspace.document(source.id).buffer.slice(from, to),
     snapshot: () => {
-        const current = workspace.getSnapshot().documents.find(document => document.id === source.documentId);
+        const current = workspace.getSnapshot().documents.find(document => document.id === source.id);
         return { document: current ? { revision: current.revision, length: current.buffer.length, lines: current.buffer.lineCount,
             longest: current.buffer.longestLineLength } : null,
             primary: views.primary.getDiagnostics(), secondary: views.secondary.getDiagnostics(), diagnostics: workspace.diagnostics(), ticks, disposed };

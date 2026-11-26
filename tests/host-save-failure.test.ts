@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { HostController } from "./fixtures/hosts/controller.ts";
 
 const settled = () => new Promise<void>(resolve => setImmediate(resolve));
-const value = (host: HostController) => host.workspace.document(host.source.documentId).buffer.slice(0, host.debug().source.length);
+const value = (host: HostController) => host.workspace.document(host.source.id).buffer.slice(0, host.debug().source.length);
 function edit(host: HostController, text: string): void {
     const current = host.debug().source;
-    assert.equal(host.workspace.edit({ documentId: host.source.documentId, expectedRevision: current.revision, origin: "human",
+    assert.equal(host.workspace.edit({ documentId: host.source.id, expectedRevision: current.revision, origin: "human",
         edits: [{ from: 0, to: current.length, insert: text }] }).applied, true);
 }
 
@@ -34,9 +34,9 @@ test("a failed host save retains corrections and baseline; retry keeps later edi
         assert.equal(saved.activity.lastSavedRevision, retryRevision); assert.equal(saved.source.serverVersion, "v1");
         assert.equal(saved.source.dirty, true); assert.equal(saved.activity.writes, 1);
         assert.equal(host.savedComparisonReference().buffer.slice(0, "corrected later".length), "corrected later");
-        host.workspace.undo({ documentId: host.source.documentId, expectedRevision: saved.source.revision });
+        host.workspace.undo({ documentId: host.source.id, expectedRevision: saved.source.revision });
         assert.equal(value(host), "corrected later"); assert.equal(host.debug().source.dirty, false);
-        host.workspace.redo({ documentId: host.source.documentId, expectedRevision: host.debug().source.revision });
+        host.workspace.redo({ documentId: host.source.id, expectedRevision: host.debug().source.revision });
         assert.equal(value(host), "corrected later newest"); assert.equal(host.debug().source.dirty, true);
         assert.equal(host.debug().diagnostics.leases, 0);
         assert.equal(host.debug().activity.writes, 1); assert.equal(value(host), "corrected later newest");

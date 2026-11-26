@@ -25,7 +25,7 @@ test("scene identity ignores modal/review traffic while readiness and captured t
     const host = new HostController();
     try {
         const layout = host.layout.getSnapshot(), tab = host.panes.primary.getSnapshot();
-        const derive = (next = layout, target = tab, ready = true) => hostSceneModel(next, target, ready, host.source.documentId);
+        const derive = (next = layout, target = tab, ready = true) => hostSceneModel(next, target, ready, host.source.id);
         const initial = derive(), reviewLayout = { ...layout, navigation: { kind: "review" as const } }, review = derive(reviewLayout);
         assert.equal(review.key, initial.key); assert.equal(review.primaryKey, initial.primaryKey); assert.ok(review.reviewKey);
         const modal = derive({ ...reviewLayout, modal: { kind: "error", message: "Keep typing" } });
@@ -36,7 +36,7 @@ test("scene identity ignores modal/review traffic while readiness and captured t
         assert.notEqual(derive(reviewLayout, { ...tab, generation: tab.generation + 1 }).reviewKey, review.reviewKey);
         for (const unavailable of [derive({ ...reviewLayout, visible: false }), derive({ ...reviewLayout, formFault: true }),
             derive({ ...reviewLayout, primarySurface: "loading" }), derive(reviewLayout, tab, false),
-            hostSceneModel(reviewLayout, undefined, true, host.source.documentId)]) {
+            hostSceneModel(reviewLayout, undefined, true, host.source.id)]) {
             assert.equal(unavailable.primaryKey, undefined); assert.equal(unavailable.reviewKey, undefined);
         }
         const hidden = derive({ ...reviewLayout, visible: false }); assert.equal(hidden.placeholder, undefined); assert.equal(hidden.secondary, false);

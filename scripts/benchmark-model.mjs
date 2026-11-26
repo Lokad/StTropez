@@ -73,7 +73,7 @@ export async function benchmarkModel() {
             assert.equal(result.applied, true); assert.equal(workspace.document(documentId).buffer, roots[index]);
             if (index < roots.length - 5) undo.push(elapsed);
         }
-        assert.equal(workspace.resourceForDocument(documentId).metadata.getSnapshot().dirty, false);
+        assert.equal(workspace.resource(documentId).metadata.getSnapshot().dirty, false);
         for (let index = 0; index < roots.length; index++) {
             const revision = workspace.document(documentId).revision, start = performance.now();
             const result = workspace.redo({ documentId, expectedRevision: revision });
@@ -95,17 +95,17 @@ export async function benchmarkModel() {
             const others = Array.from({ length: resources - 1 }, (_, index) => workspace.createResource(
                 { scope: "bench", resource: `form-${index}`, variant: "working" }, "Form", { value: { field: "unchanged" } }));
             /** @param {string} value */
-            const write = value => workspace.edit({ documentId: source.documentId,
-                expectedRevision: workspace.document(source.documentId).revision, origin: "human",
-                edits: [{ from: 0, to: workspace.document(source.documentId).buffer.length, insert: value }] });
+            const write = value => workspace.edit({ documentId: source.id,
+                expectedRevision: workspace.document(source.id).revision, origin: "human",
+                edits: [{ from: 0, to: workspace.document(source.id).buffer.length, insert: value }] });
             write("dirty");
             const metadata = source.metadata.getSnapshot(), snapshots = others.map(other => other.getSnapshot());
             let unrelatedCalls = 0, metadataCalls = 0, viewCalls = 0, selectionCalls = 0, coarseCalls = 0;
             others.forEach(other => other.subscribe(() => unrelatedCalls++));
             source.metadata.subscribe(() => metadataCalls++);
             for (let index = 0; index < views; index++) {
-                workspace.observeDocument(source.documentId).subscribe(() => viewCalls++);
-                workspace.createDocumentView(source.documentId).subscribe(() => selectionCalls++);
+                workspace.observeDocument(source.id).subscribe(() => viewCalls++);
+                workspace.createDocumentView(source.id).subscribe(() => selectionCalls++);
             }
             workspace.subscribe(() => coarseCalls++);
             const samples = [];

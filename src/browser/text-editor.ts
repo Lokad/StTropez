@@ -139,7 +139,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     const automaticIndent = automaticIndentation();
     const readOnly = options.readOnly === true;
     let readOnlyReason: EditRefusedDetail["reason"] | undefined;
-    const resource = workspace.resourceForDocument(documentId);
+    const resource = workspace.resource(documentId);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
     const source = workspace.observeDocument(documentId);

@@ -35,14 +35,14 @@ export function applyLspWorkspaceEdit(workspace: Workspace, edit: LspWorkspaceEd
     for (const { target, edits } of edit.documents) {
         const captured = target.document;
         const document = workspace.document(captured.documentId as DocumentId);
-        if (!target.isCurrent() || target.index.buffer !== captured.buffer || document.resourceId !== captured.resourceId
+        if (!target.isCurrent() || target.index.buffer !== captured.buffer
             || document.revision !== captured.revision || document.buffer !== captured.buffer) {
             throw staleRequest();
         }
         if (identities.has(document.id)) throw new TypeError("An LSP edit must name each document once.");
         identities.add(document.id);
         if (!edits.length) continue;
-        const metadata = workspace.resourceForDocument(document.id).metadata.getSnapshot();
+        const metadata = workspace.resource(document.id).metadata.getSnapshot();
         if (requiredOrigins?.some(required => !metadata.capabilities.edit.includes(required))) throw new Error("read-only");
         requests.push({ documentId: document.id, expectedRevision: document.revision, edits, origin,
             ...(source === undefined ? {} : { source }), history: { kind: historyKind },
@@ -58,17 +58,17 @@ export function applyLspWorkspaceEdit(workspace: Workspace, edit: LspWorkspaceEd
 }
 
 export type LspWorkspaceEditNote = Readonly<{
-    document: string; resource: string; title: string; revision: number;
+    document: string; title: string; revision: number;
     from: number; to: number; before: string; insert: string; insertUnits: number; context: string;
 }>;
 export type LspEditNotes = Readonly<{ total: number; notes: readonly LspWorkspaceEditNote[] }>;
 
-export function describeLspEdit(source: Pick<LspDocumentSnapshot, "buffer" | "resourceId" | "revision">, document: string, title: string, edit: TextEdit): LspWorkspaceEditNote {
+export function describeLspEdit(source: Pick<LspDocumentSnapshot, "buffer" | "revision">, document: string, title: string, edit: TextEdit): LspWorkspaceEditNote {
     const { from, to, insert } = edit, { buffer } = source;
     let start = Math.max(0, from - 32);
     if (splitsTextPair(buffer, start)) start++;
     return Object.freeze({
-        document, resource: source.resourceId, revision: source.revision, from, to,
+        document, revision: source.revision, from, to,
         title: textExcerpt(title, wireLimits.previewLabelUnits),
         before: textExcerpt(buffer, 256, "…", from, to),
         insert: textExcerpt(insert, 256),

@@ -180,7 +180,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; view
     listen(document, "sttropez-text-drag-end", finish);
     listen(document, "keydown", event => { if (event.key === "Escape") finish(); });
     listen(win, "pagehide", finish);
-    const resource = workspace.resourceForDocument(view.documentId);
+    const resource = workspace.resource(view.documentId);
     const subscriptions = [workspace.observeDocument(view.documentId).subscribe(changed), view.subscribe(changed), resource.metadata.subscribe(changed)];
 
     return Object.freeze({

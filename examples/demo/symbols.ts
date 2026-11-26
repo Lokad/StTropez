@@ -11,13 +11,13 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, edit
     provider: LspWorkspace, valid: () => boolean, open: (target: DemoSymbolTarget, origin: NavigationOrigin) => void,
     notice: (message: string, signal: AbortSignal) => void) {
     const { workspace } = project;
-    const fileAt = (documentId: string) => project.files.find(file => file.resource.documentId === documentId);
+    const fileAt = (documentId: string) => project.files.find(file => file.resource.id === documentId);
     const events = new AbortController();
     scope.defer(() => events.abort());
     const language = attachEditorLanguage(editor, provider, {
         navigation: {
             canCapture: valid,
-            documents: () => project.files.map(file => workspace.document(file.resource.documentId)),
+            documents: () => project.files.map(file => workspace.document(file.resource.id)),
             chooser: {
                 fileLabel: at => fileAt(at.document.documentId)?.name ?? at.document.uri,
                 capture(kind, offset) {
@@ -25,7 +25,7 @@ export function mountDemoSymbols(scope: CleanupScope, project: DemoProject, edit
                     if (!origin) return;
                     return at => {
                         const file = fileAt(at.document.documentId);
-                        if (file) open({ documentId: file.resource.documentId, revision: at.document.revision,
+                        if (file) open({ documentId: file.resource.id, revision: at.document.revision,
                             from: at.from, to: kind === "definition" ? at.from : at.to }, origin);
                     };
                 },

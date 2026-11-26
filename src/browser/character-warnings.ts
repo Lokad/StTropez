@@ -13,7 +13,7 @@ export type CharacterWarningHighlights = Readonly<{
 
 /** Internal view owner: no document scans, subscriptions or asynchronous work. */
 export function mountCharacterWarnings(workspace: Workspace, view: DocumentView, viewport: TextViewport, initial?: CharacterWarnings) {
-    const documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
+    const documentId = view.documentId, resource = workspace.resource(documentId);
     let classifier = initial, disposed = false;
     const rows = new Map<number, Readonly<{ from: number; text: string; decorations: readonly InlineDecoration[] }>>();
     const available = () => !disposed && workspace.ownsDocumentView(view) && resource.getSnapshot().state === "ready";

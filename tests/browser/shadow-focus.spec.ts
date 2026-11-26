@@ -32,7 +32,7 @@ async function mount(page: Page, language: boolean) {
         outside.id = "shadow-focus-outside"; outside.textContent = "Outside"; document.body.append(outside, outer); outer.attachShadow({ mode: "open" }).append(inner);
         const tree = inner.attachShadow({ mode: "closed" }), style = document.createElement("style"), host = document.createElement("section");
         style.textContent = css; host.style.cssText = "height:240px;width:600px"; tree.append(style, host);
-        const editor = mountTextEditor(host, workspace, source.documentId, { ariaLabel: "Shadow source" }), errors: string[] = [], cancellations: string[] = [];
+        const editor = mountTextEditor(host, workspace, source.id, { ariaLabel: "Shadow source" }), errors: string[] = [], cancellations: string[] = [];
         // A cancelled request may already be removed when its peer's cancellation reply arrives.
         // The protocol reports that late reply; keep it distinct from unexpected diagnostics.
         const report = (error: unknown) => { if (error instanceof RpcError && error.code === -32800) cancellations.push(error.message); else errors.push(String(error)); };
@@ -51,7 +51,7 @@ async function mount(page: Page, language: boolean) {
     }, { css, language });
     return page.evaluateHandle(() => window.shadowFocus.editor.element.querySelector("textarea")!);
 }
-const text = (page: Page) => page.evaluate(() => { const f = window.shadowFocus, buffer = f.workspace.document(f.source.documentId).buffer; return buffer.slice(0, buffer.length); });
+const text = (page: Page) => page.evaluate(() => { const f = window.shadowFocus, buffer = f.workspace.document(f.source.id).buffer; return buffer.slice(0, buffer.length); });
 const completion = (page: Page) => page.evaluate(() => window.shadowFocus.completion!.getSnapshot());
 
 test("native undo and redo belong to the focused text field", async ({ page }) => {
@@ -98,7 +98,7 @@ test("a link controller on a later pane requests links on the already open conne
         await provider!.connect();
         const epoch = provider!.getSnapshot().epoch;
         const host = document.createElement("div"); document.body.append(host);
-        const second = mountTextEditor(host, workspace, source.documentId);
+        const second = mountTextEditor(host, workspace, source.id);
         try {
             const { links } = attachEditorLanguage(second, provider!, { links: {} });
             editor.dispose();
@@ -164,7 +164,7 @@ test("discovering an expanded fold while typing preserves one undo group", async
     await page.keyboard.type("c");
     await page.evaluate(() => {
         const { editor, workspace, source } = window.shadowFocus;
-        const { folding } = editor.view, buffer = workspace.document(source.documentId).buffer;
+        const { folding } = editor.view, buffer = workspace.document(source.id).buffer;
         const from = buffer.offsetAt(0), to = buffer.length;
         if (!folding.setRanges(folding.getSnapshot(), [{ id: "body", from, to }])) throw Error("Fold installation failed");
     });
@@ -210,7 +210,7 @@ test("public input recovery reaches retained listeners inside a closed root befo
                 node.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
                 node.value = "é";
                 f.editor.dispose();
-                return { name: inputConflictEvent, received, inside, outside, states, documentId: f.source.documentId, revision: f.workspace.document(f.source.documentId).revision };
+                return { name: inputConflictEvent, received, inside, outside, states, documentId: f.source.id, revision: f.workspace.document(f.source.id).revision };
             } finally { listeners.abort(); }
         });
         expect(result.states).toEqual([

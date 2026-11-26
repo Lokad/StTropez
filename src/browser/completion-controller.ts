@@ -72,7 +72,7 @@ function connectionStatus(phase: LspWorkspaceSnapshot["phase"]): CompletionSnaps
 export function mountCompletion(editor: TextEditor, ownerConnection: LspDocumentOwner,
     options: CompletionControllerOptions): CompletionController {
     const input = editorInput(editor);
-    const { workspace, view } = editor, documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
+    const { workspace, view } = editor, documentId = view.documentId, resource = workspace.resource(documentId);
     const listeners = new AbortController();
     const listen = listenUntil(listeners.signal);
     const { scope, binding, provider } = ownerConnection;

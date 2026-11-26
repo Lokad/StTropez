@@ -15,7 +15,7 @@ export type TextDropResult = Readonly<{ applied: false; reason: string } | {
 
 function resolve(workspace: Workspace, view: DocumentView) {
     if (!workspace.ownsDocumentView(view)) return;
-    const document = workspace.observeDocument(view.documentId).getSnapshot(), metadata = workspace.resourceForDocument(view.documentId).metadata.getSnapshot();
+    const document = workspace.observeDocument(view.documentId).getSnapshot(), metadata = workspace.resource(view.documentId).metadata.getSnapshot();
     if (!document || metadata.state !== "ready" || view.getSnapshot().revision !== document.revision) return;
     return { document, metadata };
 }

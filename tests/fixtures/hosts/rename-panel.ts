@@ -14,7 +14,7 @@ function renameActions(tools: RenamePanelTools, s: HostRenameSnapshot) {
     ];
 }
 export const renameDescription = "Enter a new name and request its provider edit preview, then review the captured changes before applying. Changing the name requires a fresh preview. This fixture returns lexical replacements and a source comment; it does not resolve scopes or types. Long edit text is explicitly abbreviated.";
-export function renameTarget(at: RenameNote): string { return `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · ${at.line + 1}:${at.column + 1} [${at.from},${at.to}) · ${at.before} → ${at.after}\n${at.context}`; }
+export function renameTarget(at: RenameNote): string { return `${at.title} · ${at.document} @ revision ${at.revision} · ${at.line + 1}:${at.column + 1} [${at.from},${at.to}) · ${at.before} → ${at.after}\n${at.context}`; }
 
 /** One captured preview supplies both renderers; formatting stays lazy for retained lists. */
 export function renamePanelModel(tools: RenamePanelTools, s: HostRenameSnapshot) {

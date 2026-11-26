@@ -94,7 +94,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
     const backend = options.regularExpressionBackend, regexDelay = options.regularExpressionDelayMs ?? 80;
     if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) throw new RangeError("Invalid regular-expression query delay.");
     if (editor.activity().disposed || !workspace.ownsDocumentView(editor.view)) throw new Error("Find requires the captured document view.");
-    const documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
+    const documentId = editor.view.documentId, resource = workspace.resource(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
     const viewSnapshot = () => editor.view.getSnapshot();
     const currentSelection = () => viewSnapshot().selectionSet;
     const readDocument = () => workspace.document(documentId);
@@ -121,7 +121,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
     let literal: { document: DocumentSnapshot; index: FindIndex; query: string; wholeWord: boolean; matchCase: boolean } | undefined;
     let edges: { prefix: number; suffix: number } | undefined;
     let scanMaximum = 0, replaceTransactionMs = 0;
-    const sameOwner = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key;
+    const sameOwner = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.key === b.key;
     const valid = () => !disposed && lease.active() && workspace.ownsDocumentView(editor.view)
         && documentChanges.getSnapshot() !== undefined && !editor.activity().disposed;
     const publish = (patch: FindPatch) => {

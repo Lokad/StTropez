@@ -20,18 +20,18 @@ test("viewport maps retained source rows through newline edits without stale con
         const host = document.createElement("section");
         host.style.cssText = "height:260px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let shade = "row-token", early = false;
-        const stopEarly = workspace.observeDocument(source.documentId).subscribe(() => { if (early) viewport.flush(); });
-        const { viewport, setComparisonRows } = mountViewport(host, workspace, source.documentId);
+        const stopEarly = workspace.observeDocument(source.id).subscribe(() => { if (early) viewport.flush(); });
+        const { viewport, setComparisonRows } = mountViewport(host, workspace, source.id);
         viewport.decorations.addProvider({ order: 0,
             provide: row => [{ from: row.from, to: Math.min(row.to, row.from + 5), className: shade }], lineClass: row => row.line % 2 ? "row-odd" : "row-even" });
-        const doc = () => workspace.document(source.documentId), row = (line: number) => host.querySelector<HTMLElement>(`.st-viewport-row[data-line="${line}"]`)!;
+        const doc = () => workspace.document(source.id), row = (line: number) => host.querySelector<HTMLElement>(`.st-viewport-row[data-line="${line}"]`)!;
         const mounted = () => [...host.querySelectorAll<HTMLElement>(".st-viewport-row")];
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.activity().pending) return; } throw new Error("Viewport did not settle"); };
         const edit = (edits: readonly import("../../src/core/changes.ts").TextEdit[]) => {
-            const result = workspace.edit({ documentId: source.documentId, expectedRevision: doc().revision, origin: "human", edits });
+            const result = workspace.edit({ documentId: source.id, expectedRevision: doc().revision, origin: "human", edits });
             if (!result.applied) throw new Error("Fixture edit rejected");
         };
-        const history = (direction: "undo" | "redo") => { if (!workspace[direction]({ documentId: source.documentId, expectedRevision: doc().revision }).applied) throw new Error("History rejected"); };
+        const history = (direction: "undo" | "redo") => { if (!workspace[direction]({ documentId: source.id, expectedRevision: doc().revision }).applied) throw new Error("History rejected"); };
         const exact = () => mounted().every(node => {
             const from = Number(node.dataset.from), to = Number(node.dataset.to), line = Number(node.dataset.line);
             return node.textContent === doc().buffer.slice(from, to).replaceAll("\r", "␍") && doc().buffer.lineAt(from) === line
@@ -83,7 +83,7 @@ test("viewport maps retained source rows through newline edits without stale con
             run("mapped folds", () => { edit([{ from: 0, to: 0, insert: "header\r\n" }]); target++; });
             const folds = viewport.view.folding.getSnapshot(), buffer = doc().buffer, cursor = new ComparisonRowsCursor(buffer, buffer, Object.freeze([]), folds.index, folds.index);
             let alignment = cursor.next(4096); while (!alignment.result) alignment = cursor.next(4096); cursor.dispose();
-            setComparisonRows({ documentId: source.documentId, revision: doc().revision, foldGeneration: folds.generation, id: 1,
+            setComparisonRows({ documentId: source.id, revision: doc().revision, foldGeneration: folds.generation, id: 1,
                 lineHeight: viewport.getSnapshot().lineHeight + 2, index: alignment.result.working }); settle();
             run("expired alignment", () => { edit([{ from: 0, to: 0, insert: "aligned header\n" }]); target++; });
             const selected = row(target).querySelector(".st-viewport-selected")?.textContent;

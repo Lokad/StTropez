@@ -131,12 +131,12 @@ export class HostNavigationTools {
     };
     readonly addCompanion = (): void => {
         if (this.disposed) return; this.cancel();
-        this.companion ??= createWorkingSource(this.host.workspace, "navigation-companion", "Navigation companion", { value: "const catalogue = 1;\r\ncatalogue;\r\n" }).documentId;
+        this.companion ??= createWorkingSource(this.host.workspace, "navigation-companion", "Navigation companion", { value: "const catalogue = 1;\r\ncatalogue;\r\n" }).id;
         this.publish({ message: "Navigation companion added. Find catalogue from a source view to open its captured definition." });
     };
     releaseCompanion(): boolean {
         if (!this.companion) return false; this.cancel();
-        try { this.host.workspace.releaseDocument(this.companion); this.companion = undefined; this.publish(); return true; } catch { return false; }
+        try { this.host.workspace.releaseResource(this.companion); this.companion = undefined; this.publish(); return true; } catch { return false; }
     }
     debug() {
         return { requested: this.requested, pending: this.state.getSnapshot().status === "pending",

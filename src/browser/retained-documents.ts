@@ -7,7 +7,7 @@ export function observeProjectDocument(workspace: Workspace, expected: () => Doc
     expire: () => void, stops: (() => void)[]) {
     const id = expected().id;
     const handle = workspace.observeDocument(id);
-    const metadata = workspace.resourceForDocument(id).metadata;
+    const metadata = workspace.resource(id).metadata;
     const permission = metadata.getSnapshot();
     const checkText = () => {
         const current = handle.getSnapshot();
@@ -30,13 +30,13 @@ export function retainDocuments(workspace: Workspace, available: (id: DocumentId
         let live: DocumentSnapshot;
         try { live = existing ?? workspace.document(id); }
         catch { throw staleRequest(); }
-        if (live.resourceId !== snapshot.resourceId || live.revision !== snapshot.revision
+        if (live.revision !== snapshot.revision
             || live.buffer !== snapshot.buffer || !available(id) || disposed) throw staleRequest();
         if (existing) return;
         const doc = "id" in snapshot ? snapshot : live;
         documents.set(doc.id, doc);
         if (doc.id === retainedByView) return;
-        stops.push(workspace.acquire(doc.resourceId).release);
+        stops.push(workspace.acquire(doc.id).release);
         // A command can advance this snapshot with its first edit before reviewing its next one.
         observeProjectDocument(workspace, () => documents.get(id)!, expire, stops);
     }

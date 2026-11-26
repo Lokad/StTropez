@@ -10,13 +10,13 @@ async function fixture(count: number, relatedLine?: number) {
     const workspace = new Workspace(), files = Array.from({ length: count }, (_, i) => {
         const name = `${i}.ts`, resource = workspace.createTextResource({ scope: "diagnostics", resource: name, variant: "working" }, name, { value: "let value = 1;" }, undefined,
             { language: { uri: `file:///${name}`, languageId: "typescript" } });
-        return { name, resource, view: workspace.createDocumentView(resource.documentId) };
+        return { name, resource, view: workspace.createDocumentView(resource.id) };
     });
     const captures = new Map<string, LspDocumentCapture>(), valid = files.map(() => true), calls: { uri: string; kind: string }[] = [];
     let visits = 0, beforeReply = (_uri: string) => {};
     for (const [i, file] of files.entries()) {
-        const doc = workspace.document(file.resource.documentId), uri = doc.language!.uri;
-        captures.set(uri, { document: { uri, languageId: "typescript", resourceId: doc.resourceId, documentId: doc.id, revision: doc.revision, buffer: doc.buffer },
+        const doc = workspace.document(file.resource.id), uri = doc.language!.uri;
+        captures.set(uri, { document: { uri, languageId: "typescript", documentId: doc.id, revision: doc.revision, buffer: doc.buffer },
             index: await LspLineIndex.create(doc.buffer, async () => {}), version: 1, epoch: 1, registrationGeneration: 1,
             isCurrent: () => { visits++; return valid[i]! && workspace.document(doc.id).revision === doc.revision; } });
     }
@@ -73,7 +73,7 @@ test("a final project guard and source generation exclude expired and cross-file
     f.valid[0] = true; let edited = false;
     f.beforeReply(() => {
         if (edited) return; edited = true;
-        const file = f.files[2]!, doc = f.workspace.document(file.resource.documentId);
+        const file = f.files[2]!, doc = f.workspace.document(file.resource.id);
         f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "human", edits: [{ from: 0, to: 0, insert: "// changed\n" }] });
     });
     const before = f.calls.length; await f.check();

@@ -19,8 +19,8 @@ export class HostLayout {
     private closeIfCurrent: (() => boolean) | undefined;
     constructor(workspace: Workspace, source: TextResourceHandle, configuration: ResourceId) {
         this.workspace = workspace; this.source = source; this.configuration = configuration;
-        this.primary = new HostCell<HostPane>({ documentId: source.documentId, generation: 0 });
-        this.secondary = new HostCell<HostPane>({ documentId: source.documentId, generation: 0 });
+        this.primary = new HostCell<HostPane>({ documentId: source.id, generation: 0 });
+        this.secondary = new HostCell<HostPane>({ documentId: source.id, generation: 0 });
         this.panes = { primary: this.primary.observable, secondary: this.secondary.observable };
     }
     setSecondary(documentId: DocumentId | null): void {
@@ -45,7 +45,7 @@ export class HostLayout {
     readonly openClosePrompt = (): void => {
         const target = this.primary.get();
         if (this.cell.get().primarySurface === "closed") return;
-        const resource = target.documentId ? this.workspace.resourceForDocument(target.documentId)
+        const resource = target.documentId ? this.workspace.resource(target.documentId)
             : this.workspace.resource(this.configuration);
         const revision = resource.getSnapshot().revision;
         this.closeIfCurrent = () => {
@@ -66,7 +66,7 @@ export class HostLayout {
         this.targetText(null);
         this.cell.set({ ...this.cell.get(), primarySurface: "panel" });
     };
-    readonly reopenPrimary = (): void => { this.targetText(this.source.documentId); this.surface("text"); };
+    readonly reopenPrimary = (): void => { this.targetText(this.source.id); this.surface("text"); };
     readonly cancelClose = (): void => { this.closeIfCurrent = undefined; this.clearError(); };
     readonly clearError = (): void => { this.cell.set({ ...this.cell.get(), modal: { kind: "none" } }); };
     readonly injectFormError = (): void => { this.cell.set({ ...this.cell.get(), formFault: true }); };

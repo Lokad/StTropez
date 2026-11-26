@@ -13,8 +13,8 @@ async function fixture(t: TestContext) {
     const f = clientFixture(t);
     const { workspace, provider } = f;
     const scope = provider.createScope();
-    const binding = scope.attachDocument(f.source.documentId);
-    const view = workspace.createDocumentView(f.source.documentId);
+    const binding = scope.attachDocument(f.source.id);
+    const view = workspace.createDocumentView(f.source.id);
     const lifetime = new AbortController();
     const editor = {
         ...editorState(), workspace, view, signal: lifetime.signal,
@@ -231,7 +231,7 @@ test("a rename preview expires when its attachment closes or the provider discon
 
 test("direct rename applies its whole project in one undo step or refuses it", async t => {
     const f = await fixture(t);
-    const other = () => f.workspace.document(f.other.documentId);
+    const other = () => f.workspace.document(f.other.id);
     const { rename } = attachEditorLanguage(f.editor, f.provider, { rename: { documents: () => [other()] } });
     let previews = 0;
     rename.subscribe(() => { if (rename.getSnapshot().preview) previews++; });
@@ -304,7 +304,7 @@ for (const method of ["textDocument/codeAction", "textDocument/rename", "textDoc
 
 test("requests expire an obsolete project capture before contacting the provider", async t => {
     const f = await fixture(t);
-    const other = f.workspace.document(f.other.documentId);
+    const other = f.workspace.document(f.other.id);
     const project = { documents: () => [other] };
     const { rename, links, codeActions } = attachEditorLanguage(f.editor, f.provider, {
         rename: project, links: project, codeActions: project,
@@ -352,7 +352,7 @@ for (const [cause, interrupt] of Object.entries(colorChanges)) {
         interrupt(f);
         await settled();
         const source = f.document();
-        const other = f.workspace.document(f.other.documentId);
+        const other = f.workspace.document(f.other.id);
         assert.equal(f.sent("$/cancelRequest").length, 1);
         assert.deepEqual(await pending, { status: "stale" });
         held.send();
@@ -417,7 +417,7 @@ test("a second pane takes over a shared color scan when the first pane closes", 
     const old = holdReply(f, method, [{ range, color: red }]);
     const painted = latch<void>();
     const initial = f.provider.snapshot().scopes;
-    const secondView = f.workspace.createDocumentView(f.source.documentId);
+    const secondView = f.workspace.createDocumentView(f.source.id);
     const firstLayers = createDecorationLayers(f.document, () => {}, () => true);
     const secondLayers = createDecorationLayers(f.document, () => painted.resolve(), () => true);
     const first = attachEditorLanguage({ ...f.editor, decorations: firstLayers.handle }, f.provider, { colors: { swatches: true } });
@@ -454,7 +454,7 @@ test("a painted link resolves on its clicked pane after the scanning pane closes
     const method = "textDocument/documentLink";
     const scan = holdReply(f, method, [lazy]);
     const painted = latch<void>();
-    const sibling = f.workspace.createDocumentView(f.source.documentId);
+    const sibling = f.workspace.createDocumentView(f.source.id);
     const a = createDecorationLayers(f.document, () => {}, () => true);
     const b = createDecorationLayers(f.document, () => painted.resolve(), () => true);
     const initial = f.provider.snapshot().scopes;
@@ -498,7 +498,7 @@ test("a painted link resolves on its clicked pane after the scanning pane closes
 const linkChanges = {
     ...sourceChanges,
     "target edit": (f: Fixture) => {
-        const target = f.workspace.document(f.other.documentId);
+        const target = f.workspace.document(f.other.id);
         f.workspace.edit({ documentId: target.id, expectedRevision: target.revision, origin: "host",
             edits: [{ from: 0, to: 0, insert: "new " }] });
     },
@@ -508,7 +508,7 @@ for (const [cause, interrupt] of Object.entries(linkChanges)) {
     test(`a delayed link reply leaves no destination after ${cause}`, { timeout: 5000 }, async t => {
         const f = await fixture(t);
         const { links } = attachEditorLanguage(f.editor, f.provider, { links: {
-            documents: () => [f.workspace.document(f.other.documentId)],
+            documents: () => [f.workspace.document(f.other.id)],
         } });
         const answer = [{ range, target: "generic:other" }];
         const held = holdReply(f, "textDocument/documentLink", answer);
@@ -558,7 +558,7 @@ test("cancelling while collecting link targets releases the project and permits 
     const { links } = attachEditorLanguage(f.editor, f.provider, { links: {
         documents() {
             if (cancel) links.cancel();
-            return [f.workspace.document(f.other.documentId)];
+            return [f.workspace.document(f.other.id)];
         },
     } });
     f.peer.onRequest("textDocument/documentLink", () => [{ range, target: "generic:other" }]);

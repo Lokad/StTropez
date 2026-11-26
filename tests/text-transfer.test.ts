@@ -6,9 +6,9 @@ import { applyTextDrop, captureTextTransfer } from "../src/browser/text-transfer
 function fixture(value: string, other = "target") {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "transfer", resource: "source", variant: "working" }, "Source", { value });
     const destination = workspace.createTextResource({ scope: "transfer", resource: "target", variant: "working" }, "Target", { value: other });
-    const sourceView = workspace.createDocumentView(source.documentId), targetView = workspace.createDocumentView(destination.documentId);
+    const sourceView = workspace.createDocumentView(source.id), targetView = workspace.createDocumentView(destination.id);
     return { workspace, source, destination, sourceView, targetView,
-        text: (id = source.documentId) => { const b = workspace.document(id).buffer; return b.slice(0, b.length); },
+        text: (id = source.id) => { const b = workspace.document(id).buffer; return b.slice(0, b.length); },
         capture: () => captureTextTransfer(workspace, sourceView)! };
 }
 
@@ -17,30 +17,30 @@ test("same-document movement preserves raw fragments and restores the complete i
     const before = f.sourceView.getSnapshot().selectionSet, transfer = f.capture(); assert.equal(transfer.text, "ab\n😀");
     const result = applyTextDrop({ workspace: f.workspace, view: f.sourceView, expectedRevision: 0, offset: 10, source: transfer });
     assert.equal(result.applied, true); assert.equal(f.text(), "\r\ncdefab\n😀");
-    assert.equal(f.workspace.undo({ documentId: f.source.documentId, expectedRevision: 1 }).applied, true);
+    assert.equal(f.workspace.undo({ documentId: f.source.id, expectedRevision: 1 }).applied, true);
     assert.equal(f.text(), "ab\r\ncd😀ef"); assert.deepEqual(f.sourceView.getSnapshot().selectionSet, before);
-    assert.equal(f.workspace.redo({ documentId: f.source.documentId, expectedRevision: 2 }).applied, true); assert.equal(f.text(), "\r\ncdefab\n😀");
+    assert.equal(f.workspace.redo({ documentId: f.source.id, expectedRevision: 2 }).applied, true); assert.equal(f.text(), "\r\ncdefab\n😀");
 });
 
 test("cross-document move is atomic and has one linked undo unit, including both view sets", () => {
     const f = fixture("first second", "tail"); f.sourceView.setSelections(0, [{ anchor: 0, head: 5 }, { anchor: 6, head: 12 }], 1);
     f.targetView.setSelections(0, [{ anchor: 1, head: 0 }, { anchor: 4, head: 4 }]);
     const before = [f.sourceView.getSnapshot().selectionSet, f.targetView.getSnapshot().selectionSet], seen: string[][] = [];
-    const off = f.workspace.observeDocument(f.source.documentId).subscribe(() => seen.push([f.text(), f.text(f.destination.documentId)]));
+    const off = f.workspace.observeDocument(f.source.id).subscribe(() => seen.push([f.text(), f.text(f.destination.id)]));
     const result = applyTextDrop({ workspace: f.workspace, view: f.targetView, expectedRevision: 0, offset: 2, source: f.capture() });
     off(); assert.equal(result.applied, true); assert.deepEqual(seen, [[" ", "tafirst\nsecondil"]]);
-    assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 1); assert.equal(f.workspace.observeHistory(f.destination.documentId).getSnapshot().undoDepth, 1);
-    assert.equal(f.workspace.undo({ documentId: f.destination.documentId, expectedRevision: 1 }).applied, true);
-    assert.equal(f.text(), "first second"); assert.equal(f.text(f.destination.documentId), "tail");
+    assert.equal(f.workspace.observeHistory(f.source.id).getSnapshot().undoDepth, 1); assert.equal(f.workspace.observeHistory(f.destination.id).getSnapshot().undoDepth, 1);
+    assert.equal(f.workspace.undo({ documentId: f.destination.id, expectedRevision: 1 }).applied, true);
+    assert.equal(f.text(), "first second"); assert.equal(f.text(f.destination.id), "tail");
     assert.deepEqual([f.sourceView.getSnapshot().selectionSet, f.targetView.getSnapshot().selectionSet], before);
-    assert.equal(f.workspace.redo({ documentId: f.source.documentId, expectedRevision: 2 }).applied, true); assert.equal(f.text(), " ");
+    assert.equal(f.workspace.redo({ documentId: f.source.id, expectedRevision: 2 }).applied, true); assert.equal(f.text(), " ");
 });
 
 test("copy and own-source no-op do not delete source text or create spurious history", () => {
     const f = fixture("abcd"); f.sourceView.setSelection(0, { anchor: 1, head: 3 }); const source = f.capture(), set = f.sourceView.getSnapshot().selectionSet;
     const request = { workspace: f.workspace, view: f.sourceView, expectedRevision: 0, offset: 2, source };
     assert.deepEqual(applyTextDrop(request), { applied: true, operation: "noop", revision: 0, offset: null });
-    assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 0); assert.equal(f.sourceView.getSnapshot().selectionSet, set);
+    assert.equal(f.workspace.observeHistory(f.source.id).getSnapshot().undoDepth, 0); assert.equal(f.sourceView.getSnapshot().selectionSet, set);
     assert.equal(applyTextDrop({ ...request, copy: true }).applied, true); assert.equal(f.text(), "abbccd");
 });
 
@@ -48,11 +48,11 @@ test("stale source sets/revisions and stale destination revisions cannot partial
     for (const changed of ["set", "source", "target"]) {
         const f = fixture("abcd"); f.sourceView.setSelection(0, { anchor: 1, head: 3 }); const source = f.capture();
         if (changed === "set") f.sourceView.setSelections(0, [{ anchor: 1, head: 3 }, { anchor: 4, head: 4 }]);
-        else { const id = changed === "source" ? f.source.documentId : f.destination.documentId;
+        else { const id = changed === "source" ? f.source.id : f.destination.id;
             f.workspace.edit({ documentId: id, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "!" }] }); }
-        const before = [f.text(), f.text(f.destination.documentId)];
+        const before = [f.text(), f.text(f.destination.id)];
         assert.equal(applyTextDrop({ workspace: f.workspace, view: f.targetView, expectedRevision: 0, offset: 2, source }).applied, false);
-        assert.deepEqual([f.text(), f.text(f.destination.documentId)], before);
+        assert.deepEqual([f.text(), f.text(f.destination.id)], before);
     }
 });
 
@@ -61,13 +61,13 @@ test("a readonly source copies, while loss of source or destination permission r
     readonly.workspace.setCapabilities(readonly.source.id, { edit: [], save: false });
     const source = readonly.capture(); assert.equal(source.moveAllowed, false);
     const copied = applyTextDrop({ workspace: readonly.workspace, view: readonly.targetView, expectedRevision: 0, offset: 0, source });
-    assert.deepEqual(copied, { applied: true, operation: "copy", revision: 1, offset: 2 }); assert.equal(readonly.text(), "abcd"); assert.equal(readonly.text(readonly.destination.documentId), "bctarget");
+    assert.deepEqual(copied, { applied: true, operation: "copy", revision: 1, offset: 2 }); assert.equal(readonly.text(), "abcd"); assert.equal(readonly.text(readonly.destination.id), "bctarget");
     for (const lost of ["source", "destination"] as const) {
         const f = fixture("abcd"); f.sourceView.setSelection(0, { anchor: 1, head: 3 }); const capture = f.capture();
         f.workspace.setCapabilities(f[lost].id, { edit: [], save: false });
         const result = applyTextDrop({ workspace: f.workspace, view: f.targetView, expectedRevision: 0, offset: 1, source: capture });
-        assert.equal(result.applied, false); assert.equal(f.text(), "abcd"); assert.equal(f.text(f.destination.documentId), "target");
-        assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 0);
+        assert.equal(result.applied, false); assert.equal(f.text(), "abcd"); assert.equal(f.text(f.destination.id), "target");
+        assert.equal(f.workspace.observeHistory(f.source.id).getSnapshot().undoDepth, 0);
     }
 });
 
@@ -76,27 +76,27 @@ test("disposing either view invalidates a captured transfer", () => {
         const f = fixture("abcd"); f.sourceView.setSelection(0, { anchor: 1, head: 3 }); const source = f.capture();
         f[changed].dispose();
         assert.equal(applyTextDrop({ workspace: f.workspace, view: f.targetView, expectedRevision: 0, offset: 1, source }).applied, false);
-        assert.equal(f.text(), "abcd"); assert.equal(f.text(f.destination.documentId), "target");
+        assert.equal(f.text(), "abcd"); assert.equal(f.text(f.destination.id), "target");
     }
 });
 
 test("a move between views retains source history ownership and explicitly positions only the captured target view", () => {
-    const f = fixture("abcdef"), dropView = f.workspace.createDocumentView(f.source.documentId);
+    const f = fixture("abcdef"), dropView = f.workspace.createDocumentView(f.source.id);
     f.sourceView.setSelections(0, [{ anchor: 0, head: 0 }, { anchor: 1, head: 3 }], 0);
     const before = f.sourceView.getSnapshot().selectionSet;
     const result = applyTextDrop({ workspace: f.workspace, view: dropView, expectedRevision: 0, offset: 6, source: f.capture() });
     assert.equal(result.applied, true); assert.equal(f.text(), "adefbc"); assert.equal(dropView.getSnapshot().selection.head, 6);
     assert.equal(dropView.getSnapshot().selection.anchor, 4);
-    assert.equal(f.workspace.undo({ documentId: f.source.documentId, expectedRevision: 1 }).applied, true);
+    assert.equal(f.workspace.undo({ documentId: f.source.id, expectedRevision: 1 }).applied, true);
     assert.equal(f.text(), "abcdef"); assert.deepEqual(f.sourceView.getSnapshot().selectionSet, before);
 });
 
 test("external text inserts at the captured drop position instead of replacing the current selection", () => {
     const f = fixture("source"); f.targetView.setSelection(0, { anchor: 6, head: 0 }); const before = f.targetView.getSnapshot().selectionSet, text = "<$&>\r\n😀";
     const result = applyTextDrop({ workspace: f.workspace, view: f.targetView, expectedRevision: 0, offset: 3, text });
-    assert.equal(result.applied, true); assert.equal(f.text(f.destination.documentId), "tar" + text + "get");
+    assert.equal(result.applied, true); assert.equal(f.text(f.destination.id), "tar" + text + "get");
     assert.equal(f.targetView.getSnapshot().selection.anchor, 3); assert.equal(f.targetView.getSnapshot().selection.head, 3 + text.length);
-    assert.equal(f.workspace.undo({ documentId: f.destination.documentId, expectedRevision: 1 }).applied, true); assert.deepEqual(f.targetView.getSnapshot().selectionSet, before);
+    assert.equal(f.workspace.undo({ documentId: f.destination.id, expectedRevision: 1 }).applied, true); assert.deepEqual(f.targetView.getSnapshot().selectionSet, before);
 });
 
 test("workspace identity prevents cross-workspace deletion, and internal payloads do not retarget to supplied plain text", () => {
@@ -105,12 +105,12 @@ test("workspace identity prevents cross-workspace deletion, and internal payload
         expectedRevision: 0, offset: 1, source: from.capture(), text: "unrelated" });
     assert.deepEqual(result, { applied: true, operation: "copy", revision: 1, offset: 3 });
     assert.equal(from.text(), "abcd"); assert.equal(to.text(), "zbc");
-    assert.equal(from.workspace.observeHistory(from.source.documentId).getSnapshot().undoDepth, 0);
+    assert.equal(from.workspace.observeHistory(from.source.id).getSnapshot().undoDepth, 0);
 });
 
 test("a source document mismatch is rejected independently of a matching revision and view set", () => {
     const f = fixture("abcd"); f.sourceView.setSelection(0, { anchor: 1, head: 3 });
-    const source = { ...f.capture(), documentId: f.destination.documentId };
+    const source = { ...f.capture(), documentId: f.destination.id };
     const result = applyTextDrop({ workspace: f.workspace, view: f.targetView, expectedRevision: 0, offset: 1, source });
-    assert.deepEqual(result, { applied: false, reason: "stale-drag-source" }); assert.equal(f.text(), "abcd"); assert.equal(f.text(f.destination.documentId), "target");
+    assert.deepEqual(result, { applied: false, reason: "stale-drag-source" }); assert.equal(f.text(), "abcd"); assert.equal(f.text(f.destination.id), "target");
 });

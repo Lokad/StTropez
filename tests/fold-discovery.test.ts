@@ -42,17 +42,17 @@ test("off-side discovery handles nested indentation, tab stops, interior blanks 
 });
 test("rediscovery follows mapped headers, keeps view choices through edit/undo and rejects crossing discoveries", () => {
     const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "fold", resource: "discover", variant: "working" }, "Outline", { value: "root\n  child\n    leaf\n  sibling\nend" });
-    const a = workspace.createDocumentView(resource.documentId), b = workspace.createDocumentView(resource.documentId);
-    const discover = () => { const doc = workspace.document(resource.documentId); for (const view of [a, b]) view.folding.setRanges(view.folding.getSnapshot(), reconcileFoldRanges(doc.buffer, finish(discoverIndentationFolds(doc.buffer)), view.folding.getSnapshot().regions)); };
+    const a = workspace.createDocumentView(resource.id), b = workspace.createDocumentView(resource.id);
+    const discover = () => { const doc = workspace.document(resource.id); for (const view of [a, b]) view.folding.setRanges(view.folding.getSnapshot(), reconcileFoldRanges(doc.buffer, finish(discoverIndentationFolds(doc.buffer)), view.folding.getSnapshot().regions)); };
     try {
         discover(); const original = a.folding.getSnapshot().regions[1]!;
         a.folding.setCollapsed(a.folding.getSnapshot(), original.id, true);
-        workspace.edit({ documentId: resource.documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "preface\n" }], origin: "host" }); discover();
+        workspace.edit({ documentId: resource.id, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "preface\n" }], origin: "host" }); discover();
         assert.equal(a.folding.getSnapshot().regions[1]!.id, original.id); assert.equal(a.folding.getSnapshot().regions[1]!.collapsed, true);
         assert.equal(b.folding.getSnapshot().regions[1]!.collapsed, false);
-        workspace.undo({ documentId: resource.documentId, expectedRevision: 1 }); discover();
+        workspace.undo({ documentId: resource.id, expectedRevision: 1 }); discover();
         assert.equal(a.folding.getSnapshot().regions[1]!.lineFrom, 1); assert.equal(a.folding.getSnapshot().regions[1]!.collapsed, true);
-        const buffer = workspace.document(resource.documentId).buffer;
+        const buffer = workspace.document(resource.id).buffer;
         const ranges = reconcileFoldRanges(buffer, [{ from: 0, to: buffer.offsetAt(3) }, { from: buffer.offsetAt(1), to: buffer.length }, { from: 0, to: buffer.offsetAt(2) }], []);
         assert.equal(ranges.length, 1); assert.equal(ranges[0]!.to, buffer.offsetAt(3));
     } finally { a.dispose(); b.dispose(); workspace.releaseResource(resource.id, true); }
@@ -163,14 +163,14 @@ test("marker validation and lookup cooperate and cancelled or failed discovery s
 
 test("expanded discovery metadata does not split an otherwise continuous typing undo group", () => {
     const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "fold", resource: "history", variant: "working" }, "Outline", { value: "root\n  child" });
-    const view = workspace.createDocumentView(resource.documentId);
-    const type = (insert: string) => { const doc = workspace.document(resource.documentId); workspace.edit({ documentId: doc.id, expectedRevision: doc.revision,
+    const view = workspace.createDocumentView(resource.id);
+    const type = (insert: string) => { const doc = workspace.document(resource.id); workspace.edit({ documentId: doc.id, expectedRevision: doc.revision,
         edits: [{ from: doc.buffer.length, to: doc.buffer.length, insert }], origin: "human", view,
         selection: { anchor: doc.buffer.length + insert.length, head: doc.buffer.length + insert.length }, history: { kind: "typing", group: "continuous" } }); };
     try {
-        type("a"); const doc = workspace.document(resource.documentId);
+        type("a"); const doc = workspace.document(resource.id);
         view.folding.setRanges(view.folding.getSnapshot(), reconcileFoldRanges(doc.buffer, finish(discoverIndentationFolds(doc.buffer)), []));
-        type("b"); workspace.undo({ documentId: resource.documentId, expectedRevision: 2 });
-        const buffer = workspace.document(resource.documentId).buffer; assert.equal(buffer.slice(0, buffer.length), "root\n  child");
+        type("b"); workspace.undo({ documentId: resource.id, expectedRevision: 2 });
+        const buffer = workspace.document(resource.id).buffer; assert.equal(buffer.slice(0, buffer.length), "root\n  child");
     } finally { view.dispose(); workspace.releaseResource(resource.id, true); }
 });

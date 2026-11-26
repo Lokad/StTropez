@@ -23,7 +23,7 @@ export class ReviewVariants {
     private disposed = false;
     readonly state: Observable<VariantReviewSnapshot>;
     constructor(workspace: Workspace, source: TextResourceHandle, ports: VariantPorts) {
-        if (workspace.resourceForDocument(source.documentId) !== source) throw new Error("Variant source belongs to another workspace.");
+        if (workspace.resource(source.id) !== source) throw new Error("Variant source belongs to another workspace.");
         this.workspace = workspace; this.source = source; this.ports = ports;
         this.history.set(`history-${++this.serial}`, captureBaseline(ports.saved()));
         this.cell = new HostCell<VariantReviewSnapshot>({ generation: 0, choices: this.choices(), selected: null, requested: null, status: "idle", pending: 0, message: "Choose an immutable version to review." });
@@ -51,7 +51,7 @@ export class ReviewVariants {
     readonly keepDraft = (): void => {
         if (this.disposed || this.source.getSnapshot().state !== "ready") return;
         if (this.draft) this.remember(this.draft);
-        const current = this.workspace.document(this.source.documentId);
+        const current = this.workspace.document(this.source.id);
         this.draft = Object.freeze({ buffer: current.buffer, version: `reference:draft-${++this.serial}-r${current.revision}` });
         this.cell.set({ ...this.cell.get(), choices: this.choices(), message: "Kept the current committed text as an immutable draft." });
     };
@@ -60,7 +60,7 @@ export class ReviewVariants {
         const choice = this.choices().find(item => item.id === id), baseline = id === "saved" ? this.ports.saved() : id === "server" ? this.ports.server() : id === "draft" ? this.draft : this.history.get(id);
         if (!choice || !baseline) { this.cell.set({ ...this.cell.get(), generation: this.cell.get().generation + 1, status: "expired", message: "That version is no longer available." }); return false; }
         const presentation = this.ports.presentation.getSnapshot();
-        if (presentation.documentId !== this.source.documentId) return false;
+        if (presentation.documentId !== this.source.id) return false;
         this.ports.present();
         this.loads.push({ presentation, baseline: captureBaseline(baseline), choice, reference: this.ports.reference.getSnapshot(),
             currentRequest: this.ports.beginReferenceRequest() });

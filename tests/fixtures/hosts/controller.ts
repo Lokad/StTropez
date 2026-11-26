@@ -41,7 +41,7 @@ export class HostController {
     readonly layout = this.presentation.state;
     readonly activity = this.activityCell.observable;
     readonly settings = this.settingsCell.observable;
-    private readonly services = new HostFixtureServices(this.workspace.document(this.source.documentId).buffer, activity => this.updateActivity(activity));
+    private readonly services = new HostFixtureServices(this.workspace.document(this.source.id).buffer, activity => this.updateActivity(activity));
     private readonly recoveryCell = new HostCell<Readonly<{ visible: boolean; items: readonly RecoveredInput[] }>>({ visible: false, items: [] });
     readonly recovery = this.recoveryCell.observable;
     private readonly sourceReview = new HostSourceReview(this.workspace, this.saves, this.source, {
@@ -135,7 +135,7 @@ export class HostController {
     readonly previewProposal = (): void => this.previewProposalText("agent proposal");
     readonly previewProposalText = (text: string): void => this.safe(() => {
         if (!this.sourceInputReady()) return;
-        const doc = this.workspace.document(this.source.documentId);
+        const doc = this.workspace.document(this.source.id);
         const preview = { buffer: TextBuffer.from(text), version: `proposal-for-r${doc.revision}` };
         this.proposal = { documentId: doc.id, revision: doc.revision, original: { buffer: doc.buffer, version: `source-r${doc.revision}` }, preview };
         this.sourceReview.showComparison(preview);
@@ -192,7 +192,7 @@ export class HostController {
     readonly demonstrateOrdering = (): void => {
         if (this.disposed || !this.sourceInputReady()) return;
         const phases: string[] = [], write = this.settingsCell.enqueue({ mode: "inspect" });
-        const document = this.workspace.document(this.source.documentId);
+        const document = this.workspace.document(this.source.id);
         const result = this.workspace.edit({ documentId: document.id, expectedRevision: document.revision, origin: "host",
             edits: [{ from: document.buffer.length, to: document.buffer.length, insert: "Q" }] });
         phases.push(`edit:${result.applied}`);
@@ -233,13 +233,13 @@ export class HostController {
     debug() {
         const source = this.source.getSnapshot(), form = this.connection.getSnapshot();
         return { diagnostics: this.workspace.diagnostics(), layout: this.layout.getSnapshot(), activity: this.activity.getSnapshot(),
-            source: { id: this.source.id, uri: this.workspace.document(this.source.documentId).language!.uri, revision: source.revision, length: source.state === "ready" ? this.workspace.document(this.source.documentId).buffer.length : 0,
+            source: { id: this.source.id, uri: this.workspace.document(this.source.id).language!.uri, revision: source.revision, length: source.state === "ready" ? this.workspace.document(this.source.id).buffer.length : 0,
                 serverVersion: source.metadata.serverVersion, dirty: source.metadata.dirty, saveStatus: source.metadata.saveStatus },
             ...this.sourceReview.debug(),
             transfer: { id: this.transfer.resource.id, revision: this.transfer.resource.getSnapshot().revision, dirty: this.transfer.resource.metadata.getSnapshot().dirty, saveStatus: this.transfer.resource.metadata.getSnapshot().saveStatus, serverVersion: this.transfer.resource.metadata.getSnapshot().serverVersion }, transferSave: this.transfer.save.debug(), runResources: this.runResources.debug(), instruction: this.instruction.debug(),
             ...this.services.debug(),
             lastError: this.reportedError instanceof Error ? { name: this.reportedError.name, message: this.reportedError.message, stack: this.reportedError.stack } : null,
-            history: this.workspace.observeHistory(this.source.documentId).getSnapshot(),
+            history: this.workspace.observeHistory(this.source.id).getSnapshot(),
             configuration: { id: this.connection.id, revision: form.revision, dirty: form.metadata.dirty, serverVersion: form.metadata.serverVersion, saveStatus: form.metadata.saveStatus }, configurationSave: this.configurationSave.debug(),
             proposalTransactionMs: this.proposalTransactionMs, pendingCommands: this.operations.size,
             inputRecovery: this.recoveryCell.get().items.map(item => ({ documentId: item.documentId, expectedRevision: item.expectedRevision, reason: item.reason, contextFrom: item.contextFrom, attemptedUnits: item.attemptedText.length })),

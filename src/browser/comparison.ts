@@ -191,7 +191,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, doc
         const comparison = comparisonState(), ready = !disposed && comparison.status === "ready";
         const canNavigate = ready && comparison.hunks.length > 0 && !!referenceViewport() && epoch === comparison.baseline?.epoch && !composing();
         const selectedHunk = ready && epoch === comparison.baseline?.epoch && comparison.hunks.length ? caretPosition(comparison, activePane()).selected : null;
-        const metadata = comparison.working ? workspace.resource(comparison.working.resourceId).metadata.getSnapshot() : undefined;
+        const metadata = comparison.working ? workspace.resource(comparison.working.id).metadata.getSnapshot() : undefined;
         const access = working.getSnapshot();
         const canRevert = canNavigate && selectedHunk !== null && access.readOnlyReason === null && !access.disabled
             && metadata?.capabilities.edit.includes("human") === true;
@@ -220,7 +220,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, doc
         if (state.baseline && !referenceEditor()) {
             if (typeof baseline !== "string") display = workspace.createTextResourceFromBuffer(workspace.createResourceKey("comparison", "baseline"), "Comparison baseline",
                 { buffer: state.baseline.buffer, serverVersion: state.baseline.version }, { edit: [], save: false }, { visibility: "internal" });
-            const referenceId = typeof baseline === "string" ? baseline : display!.documentId;
+            const referenceId = typeof baseline === "string" ? baseline : display!.id;
             const mounted = mountEditor(referencePane.content, workspace, referenceId, {
                 ariaLabel: strings.text("Comparison baseline source"), readOnly: true, ...paneOptions,
             }, presentation("baseline"));
@@ -232,7 +232,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, doc
         const nextEpoch = state.baseline?.epoch ?? -1;
         if (epoch !== nextEpoch) {
             // An equal saved reference keeps the editor's existing document buffer.
-            referenceBuffer = display ? workspace.document(display.documentId).buffer : state.baseline?.buffer;
+            referenceBuffer = display ? workspace.document(display.id).buffer : state.baseline?.buffer;
             epoch = nextEpoch;
         }
         if (root.dataset.status !== state.status) root.dataset.status = state.status;
@@ -320,7 +320,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, doc
     // A document notification can paint the working viewport before the scheduled controls.
     // Decoration queries must already see the mapped capture for that same revision.
     const unsubscribe = controller.subscribe(() => { state = comparisonState(); changed(); }),
-        stopMetadata = workspace.resourceForDocument(controller.view.documentId).metadata.subscribe(changed);
+        stopMetadata = workspace.resource(controller.view.documentId).metadata.subscribe(changed);
     function dispose(): void {
         if (disposed) return; stateScope.assertWritable(); disposed = true; runner.cancel(); scheduled = false;
         try {

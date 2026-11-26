@@ -39,7 +39,7 @@ export class TransferInstruction {
         return Object.freeze({ from, to });
     }
     readonly anchor = (offset: number): void => {
-        if (this.disposed) return; const d = this.host.workspace.document(this.host.source.documentId);
+        if (this.disposed) return; const d = this.host.workspace.document(this.host.source.id);
         if (!Number.isSafeInteger(offset) || offset < 0 || offset > d.buffer.length) throw new RangeError("Instruction anchor is outside the document.");
         this.cancelCopy(); this.stops.forEach(stop => stop()); this.stops = [];
         this.span = this.line(d.buffer, offset); this.buffer = d.buffer; this.revision = d.revision;
@@ -52,7 +52,7 @@ export class TransferInstruction {
     };
     private refresh(): void {
         if (this.disposed || !this.cell.get().active) return;
-        const d = this.host.workspace.document(this.host.source.documentId), m = this.host.source.metadata.getSnapshot(); this.reads = 0;
+        const d = this.host.workspace.document(this.host.source.id), m = this.host.source.metadata.getSnapshot(); this.reads = 0;
         if (d.buffer !== this.buffer) {
             if (this.anchors.has(d.buffer)) this.span = this.anchors.get(d.buffer) ?? undefined;
             else if (this.span && d.change?.previousRevision === this.revision) {
@@ -87,13 +87,13 @@ export class TransferInstruction {
             || this.host.workspace.resolveResource(capture.target) !== this.host.source || (this.parsed.fields[capture.field]?.raw ?? null) !== capture.token) return this.reject(capture, value, "instruction-target-changed");
         try {
             const edit = instructionEdit(this.parsed, capture.field, value); if (!edit) return true;
-            const result = this.host.workspace.edit({ documentId: this.host.source.documentId, expectedRevision: this.revision, origin: "human",
+            const result = this.host.workspace.edit({ documentId: this.host.source.id, expectedRevision: this.revision, origin: "human",
                 edits: [{ from: this.span.from + edit.from, to: this.span.from + edit.to, insert: edit.insert }], history: { kind: "form", ...(group ? { group } : {}) }, ...(view ? { view } : {}) });
             if (!result.applied) return this.reject(capture, value, result.reason); this.publish({ message: "Instruction field edited in source. Save, transfer settings and Run remain independent." }); return true;
         } catch { return this.reject(capture, value, "instruction-edit-unavailable"); }
     }
     reject(capture: InstructionCapture, value: string, reason: string): false {
-        if (!this.disposed) { this.host.captureInputConflict(this.host.source.documentId, { documentId: this.host.source.documentId, expectedRevision: capture.revision,
+        if (!this.disposed) { this.host.captureInputConflict(this.host.source.id, { documentId: this.host.source.id, expectedRevision: capture.revision,
             contextFrom: capture.from, reason: `${reason}:${capture.field}`, attemptedText: value });
             this.publish({ message: "Instruction input retained for recovery. Source was not overwritten." }); } return false;
     }

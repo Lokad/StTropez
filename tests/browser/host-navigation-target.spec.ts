@@ -41,7 +41,7 @@ test("links and definitions retry a failed presentation and keep the requesting 
         const { mountDocumentLinksPanel } = await import(path + "linkPanel.js") as typeof import("../fixtures/hosts/document-links-panel.ts");
         const ws = new Workspace(), source = ws.createTextResource({ scope: "host", resource: "main", variant: "working" }, "Main",
             { value: "Currency" }, undefined, { language: { uri: "project:main", languageId: "generic" } });
-        const editor = mountTextEditor(document.getElementById("source")!, ws, source.documentId, { ariaLabel: "Main" });
+        const editor = mountTextEditor(document.getElementById("source")!, ws, source.id, { ariaLabel: "Main" });
         const url = new URL("/lsp-fixture", location.href); url.protocol = "ws:";
         const provider = new BrowserLspWorkspace(ws, { connect: signal => openWebSocketTransport(url.href, { signal }),
             resolveTarget: async uri => uri === "library:types" ? { text: "// declarations\ntype Currency = string", languageId: "generic" } : undefined });
@@ -50,18 +50,18 @@ test("links and definitions retry a failed presentation and keep the requesting 
         let destination: typeof editor | undefined;
         const attempted = new Set<string>();
         const panes = createNavigationHost({ workspace: ws, canCapture: () => true, present: id => {
-            const label = id === module.documentId ? "Module" : "Declaration";
+            const label = id === module.id ? "Module" : "Declaration";
             if (!attempted.has(label)) { attempted.add(label); throw new Error(label + " pane is unavailable."); }
             destination?.dispose();
             return destination = mountTextEditor(document.getElementById("destination")!, ws, id, { ariaLabel: label });
         } });
         const notes = ws.createTextResource({ scope: "host", resource: "notes", variant: "working" }, "Notes", { value: "Plain text" });
-        const notesEditor = mountTextEditor(document.body.appendChild(document.createElement("div")), ws, notes.documentId, { ariaLabel: "Notes" });
+        const notesEditor = mountTextEditor(document.body.appendChild(document.createElement("div")), ws, notes.id, { ariaLabel: "Notes" });
         // The host closes an unrelated, non-language pane while the declaration lookup is in flight.
         const host = new HostNavigationTools(panes, { provider, prepare: () => async () => { notesEditor.dispose(); } });
         host.attach("notes", notesEditor);
         const links = new HostDocumentLinks(panes, { provider, prepare: () => async () => {} });
-        links.setAlias("currency", module.documentId);
+        links.setAlias("currency", module.id);
         links.attach("notes", notesEditor);
         links.attach("source", editor);
         const removeLinks = mountDocumentLinksPanel(document.getElementById("links")!, links);

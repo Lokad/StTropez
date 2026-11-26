@@ -11,13 +11,13 @@ test("viewport retains valid native geometry and expires changed captures withou
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "geometry", variant: "text" }, "Geometry", { value: ("x".repeat(500) + "\r\n").repeat(60) });
         const host = document.createElement("section"), style = document.createElement("style");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host, style);
-        const viewport = mountTextViewport(host, workspace, source.documentId);
+        const viewport = mountTextViewport(host, workspace, source.id);
         viewport.decorations.addProvider({ order: 0, provide: line => [{ from: line.from, to: line.from + 250, className: "geometry-a" }, { from: line.from + 250, to: line.to, className: "geometry-b" }] });
         let allocations = 0, queries = 0;
         const createRange = document.createRange, getClientRects = Range.prototype.getClientRects;
         document.createRange = function () { allocations++; return createRange.call(this); };
         Range.prototype.getClientRects = function () { queries++; return getClientRects.call(this); };
-        const buffer = () => workspace.document(source.documentId).buffer;
+        const buffer = () => workspace.document(source.id).buffer;
         const row = () => host.querySelector<HTMLElement>('.st-viewport-row[data-line="2"]')!;
         const steps: { name: string; allocations: number; queries: number; revision: number; error: number }[] = [];
         const measure = (name: string) => {
@@ -39,7 +39,7 @@ test("viewport retains valid native geometry and expires changed captures withou
             viewport.view.setSelection(0, { anchor: from + 20, head: from + 30 }); viewport.flush(); measure("changed children");
             viewport.view.setSelection(0, { anchor: 1, head: 1 }); viewport.flush(); measure("restored children");
             const unchangedChild = row().firstChild;
-            workspace.edit({ documentId: source.documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "q" }], origin: "host" });
+            workspace.edit({ documentId: source.id, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "q" }], origin: "host" });
             const stale = viewport.coordsAt(from + 50) === undefined;
             viewport.flush(); measure("new revision and source offset");
             const retainedNodes = row() === originalRow && row().firstChild === unchangedChild && child !== unchangedChild;
@@ -54,7 +54,7 @@ test("viewport retains valid native geometry and expires changed captures withou
             document.fonts.dispatchEvent(new Event("loadingdone")); viewport.flush(); measure("font completion");
             viewport.scrollTo({ top: 2000 }); viewport.flush(); const removed = !originalRow.isConnected;
             viewport.scrollTo({ top: 12 }); viewport.flush(); measure("remounted row");
-            workspace.edit({ documentId: source.documentId, expectedRevision: 1, edits: [{ from: 0, to: buffer().length, insert: "ab\r\ncd\n" }], origin: "host" });
+            workspace.edit({ documentId: source.id, expectedRevision: 1, edits: [{ from: 0, to: buffer().length, insert: "ab\r\ncd\n" }], origin: "host" });
             viewport.scrollTo({ top: 0, left: 0 }); viewport.flush();
             const boundaries = [0, 2, 3, 4, 6, 7].map(offset => viewport.coordsAt(offset)!);
             viewport.view.folding.setRanges(viewport.view.folding.getSnapshot(), [{ id: "fold", from: 0, to: 7, collapsed: true }]);

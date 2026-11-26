@@ -8,7 +8,7 @@ import { latch } from "./helpers/latch.ts";
 import { clientFixture, settled } from "./helpers/lsp-client.ts";
 
 async function fixture(t: TestContext, text: string, diagnostics?: HoverDiagnostics) {
-    const f = clientFixture(t), { workspace, provider } = f, documentId = f.source.documentId;
+    const f = clientFixture(t), { workspace, provider } = f, documentId = f.source.id;
     workspace.edit({ documentId, expectedRevision: f.document().revision, origin: "human", edits: [{ from: 0, to: f.document().buffer.length, insert: text }] });
     const view = workspace.createDocumentView(documentId);
     const timers = new Map<number, () => void>(); let serial = 0;

@@ -77,7 +77,7 @@ type CommandReply = { epoch: number; id?: number; received: boolean };
 type CommandIntent = { scope: Scope; epoch: number; generation: number; registrationGeneration: number; reply?: CommandReply;
     cancelled: boolean; listeners: Set<() => void>; applyEdit: Handler | undefined };
 export function sameDocument(live: DocumentSnapshot | undefined, snapshot: DocumentSnapshot): boolean {
-    return live?.resourceId === snapshot.resourceId && live.revision === snapshot.revision && live.buffer === snapshot.buffer && live.language === snapshot.language;
+    return live?.key === snapshot.key && live.id === snapshot.id && live.revision === snapshot.revision && live.buffer === snapshot.buffer && live.language === snapshot.language;
 }
 
 /** A feature or follow-up cancels only its own wire calls. Closing the scope interrupts every read. */
@@ -281,8 +281,8 @@ export class LspWorkspace {
             if (this.#bindingCurrent(owner)) throw new Error("Provider URI is already owned by another document.");
             this.#closeDocument(owner);
         }
-        const lease = this.#workspace.acquire(current.resourceId); let binding: LspDocument;
-        try { binding = this.#session.bindDocument({ ...info, resourceId: current.resourceId, documentId: id, revision: current.revision, buffer: current.buffer }); }
+        const lease = this.#workspace.acquire(current.id); let binding: LspDocument;
+        try { binding = this.#session.bindDocument({ ...info, documentId: id, revision: current.revision, buffer: current.buffer }); }
         catch (error) { lease.release(); throw error; }
         const entry: DocumentEntry = { id, language: info, binding, lease, active: true, queued: false, stop: () => {}, users: new Set(),
             diagnostics: new Store<LspDiagnosticState>(emptyDiagnostics, this.#notifications) };
@@ -363,7 +363,7 @@ export class LspWorkspace {
                 if (!isLspIdentityPart(doc.language.languageId)) throw new TypeError("Invalid target language ID.");
                 if (this.#workspace.document(doc.id) !== doc) throw staleRequest();
                 if (doc.buffer.length > limit) throw new RangeError("LSP target size limit exceeded.");
-                lease = this.#workspace.acquire(doc.resourceId);
+                lease = this.#workspace.acquire(doc.id);
             } else {
                 if (context.purpose === "edit") throw new TypeError("An editable target requires a project document.");
                 if (!isLspIdentityPart(source.languageId) || !(typeof source.text === "string" || source.text instanceof TextBuffer)) throw new TypeError("Invalid read-only target.");
@@ -373,9 +373,9 @@ export class LspWorkspace {
                     { edit: [], save: false }, { visibility: "internal", language: { uri, languageId: source.languageId } });
                 lease = this.#workspace.acquire(resource.id);
                 this.#workspace.releaseResourceWhenUnowned(resource.id);
-                doc = this.#workspace.document(resource.documentId);
+                doc = this.#workspace.document(resource.id);
             }
-            const documents = this.#workspace.observeDocument(doc.id), metadata = this.#workspace.resourceForDocument(doc.id).metadata, access = metadata.getSnapshot();
+            const documents = this.#workspace.observeDocument(doc.id), metadata = this.#workspace.resource(doc.id).metadata, access = metadata.getSnapshot();
             const entry = this.#uris.get(uri);
             if (entry && entry.id !== doc.id && this.#bindingCurrent(entry)) throw staleRequest();
             const capture = entry && this.#live(entry) ? this.#session.synchronized(entry.binding, didChangeMethod) : undefined;
@@ -396,7 +396,7 @@ export class LspWorkspace {
                 });
                 const index = capture?.index ?? await LspLineIndex.create(doc.buffer, cooperateDuringScan(check, pause, this.#options.now));
                 check();
-                const document = Object.freeze({ ...doc.language!, resourceId: doc.resourceId, documentId: doc.id, revision: doc.revision, buffer: doc.buffer });
+                const document = Object.freeze({ ...doc.language!, documentId: doc.id, revision: doc.revision, buffer: doc.buffer });
                 return Object.freeze({ target: Object.freeze({ document, index, version: capture?.version ?? null, isCurrent }), release });
             } finally { stop(); }
         } catch (error) { release(); throw error; }
@@ -554,7 +554,7 @@ export class LspWorkspace {
             },
             bindDocument: snapshot => {
                 writable(); const live = this.#workspace.document(snapshot.documentId as DocumentId), info = live.language;
-                if (live.resourceId !== snapshot.resourceId || live.revision !== snapshot.revision || live.buffer !== snapshot.buffer || info?.uri !== snapshot.uri || info.languageId !== snapshot.languageId) throw staleRequest();
+                if (live.revision !== snapshot.revision || live.buffer !== snapshot.buffer || info?.uri !== snapshot.uri || info.languageId !== snapshot.languageId) throw staleRequest();
                 return attach(live.id);
             },
             ensureConnected: async () => { writable(); const generation = scope.generation; await this.connect(); if (!current(generation)) throw cancelledRequest(); },

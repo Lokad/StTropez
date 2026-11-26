@@ -9,7 +9,7 @@ import { latch } from "./helpers/latch.ts";
 
 test("occurrences coalesce refreshes and bound busy retries from the actual debounce turn", { timeout: 10000 }, async t => {
     for (const delay of [undefined, 37]) {
-        const f = clientFixture(t), view = f.workspace.createDocumentView(f.source.documentId);
+        const f = clientFixture(t), view = f.workspace.createDocumentView(f.source.id);
         f.peer.onRequest("textDocument/documentHighlight", () => [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } } }]);
         await f.provider.connect();
         const tasks = new Map<number, { run: () => void; delay: number }>(); let serial = 0, time = 0, busy = true;

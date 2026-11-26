@@ -21,7 +21,7 @@ export function hostDecorations(line: PresentedLine): readonly InlineDecoration[
 
 function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile, editor: TextEditor, open: (target: DemoSymbolTarget) => void) {
     const owner = editor.element.ownerDocument, layer = owner.createElement("div"), events = new AbortController(), nodes = new Map<number, HTMLElement>();
-    const observed = project.workspace.observeDocument(file.resource.documentId);
+    const observed = project.workspace.observeDocument(file.resource.id);
     // Sample-owned linkage: note labels and file names are host policy, not editor syntax.
     const inventory = file.name === "workflow.rules" ? project.files.find(candidate => candidate.name === "inventory.csv") : undefined;
     layer.className = "demo-source-notes"; layer.setAttribute("aria-label", "Host source notes"); owner.body.append(layer);
@@ -41,7 +41,7 @@ function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile
                 node = owner.createElement(destination ? "button" : "span"); node.className = "demo-source-note";
                 if (destination) {
                     const link = node as HTMLButtonElement, workspace = project.workspace;
-                    const document = workspace.document(destination.resource.documentId);
+                    const document = workspace.document(destination.resource.id);
                     link.type = "button"; link.title = `Open ${destination.name}`;
                     link.onclick = () => {
                         if (!link.isConnected || !isMountedEditor(workspace, editor)

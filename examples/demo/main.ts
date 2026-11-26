@@ -219,8 +219,8 @@ function renderLanguage(): void {
     const problems = document.querySelector<HTMLButtonElement>('[data-panel="problems"]')!;
     problems.textContent = state.diagnostics.length ? `Problems (${state.diagnostics.length})` : "Problems";
     if (active && diagnosticsLayer && paintedDiagnostics !== state.diagnostics) {
-        const revision = project.workspace.document(active.resource.documentId).revision;
-        const ranges = state.diagnostics.filter(problem => problem.documentId === active!.resource.documentId && problem.revision === revision);
+        const revision = project.workspace.document(active.resource.id).revision;
+        const ranges = state.diagnostics.filter(problem => problem.documentId === active!.resource.id && problem.revision === revision);
         diagnosticsLayer.set(revision, ranges.map(diagnosticDecoration));
         paintedDiagnostics = state.diagnostics;
     }
@@ -234,7 +234,7 @@ function renderMetadata(): void {
     scheduleMetadata();
     // Capture every revision immediately. Deferring this with the DOM would skip position
     // maps and lose provisional colors when several edits arrive before one frame.
-    presentation.update(project.workspace.document(active.resource.documentId), hostLanguage());
+    presentation.update(project.workspace.document(active.resource.id), hostLanguage());
 }
 function paintRecovery(project: DemoProject): void {
     const recovery = project.recovery.state.getSnapshot();
@@ -304,7 +304,7 @@ function detachView(keepProblems = false): void {
 }
 function openLocation(capturedProject: DemoProject, target: DemoSymbolTarget, origin: NavigationOrigin | undefined): boolean {
     if (disposed || project !== capturedProject || !origin) return false;
-    const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
+    const destination = capturedProject.files.find(file => file.resource.id === target.documentId);
     if (!destination || capturedProject.workspace.document(target.documentId).revision !== target.revision) return false;
     const sameView = editor?.view === destination.view;
     let opened = false;
@@ -373,7 +373,7 @@ function mountFile(file: DemoFile, focus?: "working" | "reference"): void {
     const surface = demoSurface(element(panel === "changes" ? "panel-content" : "editor"), project.sample.id === "host");
     if (panel === "changes") {
         const baseline = project.baseline(file);
-        comparison = mountTextComparison(surface, project.workspace, file.resource.documentId, baseline,
+        comparison = mountTextComparison(surface, project.workspace, file.resource.id, baseline,
             { settings, view: file.view, requestLine: linePrompt(document), scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
@@ -402,7 +402,7 @@ function mountFile(file: DemoFile, focus?: "working" | "reference"): void {
             (capture, signal) => plain ? discoverIndentationFolds(capture.buffer, outlineFolds(editingConfiguration().tabSize!)) : syntax!.discoverFolds(capture, signal));
         stopReferenceFolding = foldMenu.bind(reference, referenceFolding, "Saved copy");
     } else {
-        editor = mountTextEditor(surface, project.workspace, file.resource.documentId,
+        editor = mountTextEditor(surface, project.workspace, file.resource.id,
             { settings, view: file.view, ariaLabel: file.name, requestLine: linePrompt(document) });
         renderProblems();
     }

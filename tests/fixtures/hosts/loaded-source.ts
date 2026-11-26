@@ -37,10 +37,10 @@ export class HostLoadedSource {
             this.discardLoaded = undefined;
             if (state.metadata.dirty) this.layout.error("Loaded source changed after the discard request. Reopen it or discard again.");
         }
-        if (state.metadata.dirty && !discard || this.layout.primaryContains(loaded.documentId) || this.layout.panes.secondary.getSnapshot().documentId === loaded.documentId) return;
+        if (state.metadata.dirty && !discard || this.layout.primaryContains(loaded.id) || this.layout.panes.secondary.getSnapshot().documentId === loaded.id) return;
         this.collecting = true;
         try {
-            for (const cleanup of this.detachedCleanup) cleanup(loaded.documentId);
+            for (const cleanup of this.detachedCleanup) cleanup(loaded.id);
             if (this.workspace.ownership(loaded.id).leases) return;
             const latest = loaded.getSnapshot();
             if (latest.metadata.dirty && (!discard || latest.revision !== state.revision)) {
@@ -54,7 +54,7 @@ export class HostLoadedSource {
         if (this.disposed || !this.ports.canCaptureRecovery() || this.pending || generation !== this.cell.get().generation) return;
         const previous = this.loaded, resource = previous ?? this.createResource(true), state = resource.getSnapshot();
         if (state.state !== "ready") return;
-        const result = this.workspace.replaceText(resource.documentId, text,
+        const result = this.workspace.replaceText(resource.id, text,
             { expectedRevision: state.revision, origin: "human", history: "record", ...(view ? { view } : {}) });
         if (!result.applied) { if (!previous) this.workspace.releaseResource(resource.id, true); return; }
         this.setLoaded(resource); return resource;
@@ -69,7 +69,7 @@ export class HostLoadedSource {
         if (this.loaded?.metadata.getSnapshot().dirty) {
             this.layout.error("Loaded source has unsaved changes. Reopen or explicitly discard it before starting another load."); return;
         }
-        const loaded = this.loaded ?? this.createResource(), target = this.layout.targetText(loaded.documentId), operation = this.workspace.beginLoad(loaded);
+        const loaded = this.loaded ?? this.createResource(), target = this.layout.targetText(loaded.id), operation = this.workspace.beginLoad(loaded);
         this.layout.surface("loading");
         this.pendingLoad = () => {
             operation.accept({ value: "loaded resource", serverVersion: "loaded-v1" });
@@ -80,12 +80,12 @@ export class HostLoadedSource {
     };
     readonly reopen = (): void => {
         const loaded = this.loaded; if (this.disposed || !loaded || this.pending) return;
-        this.layout.targetText(loaded.documentId); this.layout.surface("text");
+        this.layout.targetText(loaded.id); this.layout.surface("text");
     };
     readonly discard = (): void => {
         const loaded = this.loaded; if (this.disposed || !loaded || this.pending) return;
         this.discardLoaded = { resource: loaded, revision: loaded.getSnapshot().revision };
-        if (this.layout.primaryContains(loaded.documentId)) this.ports.reopenPrimary();
+        if (this.layout.primaryContains(loaded.id)) this.ports.reopenPrimary();
         this.collect();
     };
     readonly finish = (): void => { const finish = this.pendingLoad; this.pendingLoad = undefined; finish?.(); };

@@ -53,7 +53,7 @@ test("host server authority captures one immutable invocation, refuses other arg
 test("explicit server route retains captured applyEdit ownership and does not authorize unsolicited edits", async t => {
     const f = clientFixture(t), client = actionClient(f.provider, { commandPolicy: () => ({ kind: "server" }) }); t.after(client.dispose);
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "command", command: "host.allowed" }]);
-    const other = f.workspace.document(f.other.documentId);
+    const other = f.workspace.document(f.other.id);
     const snapshots = () => [f.document(), f.workspace.document(other.id)];
     const batch = await client.run({ document: f.document(), project: snapshots(), from: 0, to: 0 }).result;
     const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } };
@@ -78,8 +78,8 @@ test("explicit server route retains captured applyEdit ownership and does not au
 
 test("an action command cannot borrow a sibling feature's edit targets on the same scope", async t => {
     const f = clientFixture(t, undefined, undefined, { maxScopes: 1 });
-    const owner = retainLspDocument(f.provider, f.source.documentId);
-    const other = f.workspace.document(f.other.documentId);
+    const owner = retainLspDocument(f.provider, f.source.id);
+    const other = f.workspace.document(f.other.id);
     const sibling = owner.replace(new Map(), [other]);
     const client = actionClient(owner);
     t.after(() => {

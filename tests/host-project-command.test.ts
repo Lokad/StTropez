@@ -12,8 +12,8 @@ function fixture(t: TestContext) {
     const f = clientFixture(t, undefined, async uri =>
         uri === companion.language?.uri ? { document: companion } : undefined);
     const { workspace, provider, source, other } = f;
-    companion = workspace.document(other.documentId);
-    const view = workspace.createDocumentView(source.documentId);
+    companion = workspace.document(other.id);
+    const view = workspace.createDocumentView(source.id);
     const editor = { workspace, view, ...editorState(), signal: new AbortController().signal,
         activity: () => ({ disposed: false, input: "idle" }), viewport: { revealOffset() {} }, focus() {},
         element: Object.assign(new EventTarget(), { isConnected: true, ownerDocument: { defaultView: globalThis } }) } as unknown as TextEditor;

@@ -7,9 +7,9 @@ import type { ComparisonController } from "../src/index.ts";
 function fixture(suffix = "") {
     const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "working", variant: "source" }, "Working", { value: "first\nworking\nlast\n" + suffix, serverVersion: "saved-1" });
     const reference = Object.freeze({ buffer: TextBuffer.from("first\nbaseline\nlast\n" + suffix), version: "reference-1" });
-    const comparison = compareText(workspace, resource.documentId, reference);
-    const edit = (insert: string) => workspace.edit({ documentId: resource.documentId, expectedRevision: workspace.document(resource.documentId).revision,
-        origin: "human", edits: [{ from: workspace.document(resource.documentId).buffer.length, to: workspace.document(resource.documentId).buffer.length, insert }] });
+    const comparison = compareText(workspace, resource.id, reference);
+    const edit = (insert: string) => workspace.edit({ documentId: resource.id, expectedRevision: workspace.document(resource.id).revision,
+        origin: "human", edits: [{ from: workspace.document(resource.id).buffer.length, to: workspace.document(resource.id).buffer.length, insert }] });
     return { workspace, resource, reference, comparison, edit };
 }
 function ready(controller: ComparisonController) { let state = controller.getSnapshot(); for (let i = 0; state.status === "running" && i < 10000; i++) state = controller.advance(512); assert.equal(state.status, "ready"); return state; }
@@ -37,7 +37,7 @@ test("a comparison of two documents follows reference edits and rejects an older
 test("invalid comparison budgets preserve live work and the shared minimum can finish it", () => {
     const workspace = new Workspace(), prefix = "same\r\n".repeat(1000), reference = TextBuffer.from(prefix + "baseline\n");
     const resource = workspace.createTextResource({ scope: "test", resource: "budget", variant: "working" }, "Working", { value: prefix + "working\n" });
-    const comparison = compareText(workspace, resource.documentId, { buffer: reference, version: "one" });
+    const comparison = compareText(workspace, resource.id, { buffer: reference, version: "one" });
     let notifications = 0; const unsubscribe = comparison.subscribe(() => notifications++);
     const rejectInvalid = () => {
         const before = comparison.getSnapshot(), count = notifications;
@@ -54,25 +54,25 @@ test("invalid comparison budgets preserve live work and the shared minimum can f
     }
     assert.equal(state.status, "ready"); assert.equal(state.hunks.length, 1); rejectInvalid();
     assert.equal(comparison.hunkAt(0)!.revert(), true);
-    assert.equal(workspace.document(resource.documentId).buffer.equals(reference), true);
+    assert.equal(workspace.document(resource.id).buffer.equals(reference), true);
     unsubscribe(); comparison.dispose(); assert.equal(workspace.diagnostics().leases, 0);
 });
 
 test("captured whole-review reversion preserves distant changes and complete shared history", () => {
     const workspace = new Workspace(), text = "first\r\n" + "unchanged value\r\n".repeat(10_000) + "last 😀\r", reference = TextBuffer.from(text);
     const resource = workspace.createTextResourceFromBuffer({ scope: "review", resource: "source", variant: "working" }, "Working", { buffer: reference, serverVersion: "saved-1" });
-    const comparison = compareText(workspace, resource.documentId, { buffer: reference, version: "review-1" }), peer = workspace.createDocumentView(resource.documentId);
-    workspace.edit({ documentId: resource.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 5, insert: "different" }, { from: text.length - 8, to: text.length, insert: "tail" }] });
-    ready(comparison); const buffer = workspace.document(resource.documentId).buffer;
+    const comparison = compareText(workspace, resource.id, { buffer: reference, version: "review-1" }), peer = workspace.createDocumentView(resource.id);
+    workspace.edit({ documentId: resource.id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 5, insert: "different" }, { from: text.length - 8, to: text.length, insert: "tail" }] });
+    ready(comparison); const buffer = workspace.document(resource.id).buffer;
     comparison.view.setSelections(1, [{ anchor: 8, head: 0 }, { anchor: 70_000, head: 70_003 }, { anchor: buffer.length, head: buffer.length }], 2);
-    peer.setSelection(1, { anchor: 123456, head: 123460 }); const before = comparison.view.getSnapshot().selectionSet, peerBefore = peer.getSnapshot().selectionSet, history = workspace.observeHistory(resource.documentId).getSnapshot();
+    peer.setSelection(1, { anchor: 123456, head: 123460 }); const before = comparison.view.getSnapshot().selectionSet, peerBefore = peer.getSnapshot().selectionSet, history = workspace.observeHistory(resource.id).getSnapshot();
     const ticket = comparison.beginReversion(); assert.equal(ticket.isCurrent(), true); assert.equal(ticket.complete(), true);
-    assert.equal(workspace.document(resource.documentId).buffer.equals(reference), true); assert.equal(workspace.observeHistory(resource.documentId).getSnapshot().undoDepth, history.undoDepth + 1);
+    assert.equal(workspace.document(resource.id).buffer.equals(reference), true); assert.equal(workspace.observeHistory(resource.id).getSnapshot().undoDepth, history.undoDepth + 1);
 
     assert.equal(resource.metadata.getSnapshot().serverVersion, "saved-1"); assert.equal(resource.metadata.getSnapshot().dirty, false);
-    assert.equal(workspace.undo({ documentId: resource.documentId, expectedRevision: 2 }).applied, true);
-    assert.equal(workspace.document(resource.documentId).buffer, buffer); assert.deepEqual(comparison.view.getSnapshot().selectionSet, before); assert.deepEqual(peer.getSnapshot().selectionSet, peerBefore);
-    assert.equal(workspace.redo({ documentId: resource.documentId, expectedRevision: 3 }).applied, true); assert.equal(workspace.document(resource.documentId).buffer.equals(reference), true);
+    assert.equal(workspace.undo({ documentId: resource.id, expectedRevision: 2 }).applied, true);
+    assert.equal(workspace.document(resource.id).buffer, buffer); assert.deepEqual(comparison.view.getSnapshot().selectionSet, before); assert.deepEqual(peer.getSnapshot().selectionSet, peerBefore);
+    assert.equal(workspace.redo({ documentId: resource.id, expectedRevision: 3 }).applied, true); assert.equal(workspace.document(resource.id).buffer.equals(reference), true);
     assert.equal(ticket.complete(), false); peer.dispose(); comparison.dispose(); assert.equal(workspace.diagnostics().leases, 0);
 });
 
@@ -88,8 +88,8 @@ test("delayed whole-review reversion rejects newer typing, selection, reference 
         if (change === "new-reversion") f.comparison.beginReversion().cancel();
         if (change === "view") f.comparison.view.dispose();
         if (change === "dispose") f.comparison.dispose();
-        const before = f.workspace.document(f.resource.documentId), history = f.workspace.observeHistory(f.resource.documentId).getSnapshot();
-        assert.equal(ticket.complete(), false, change); assert.equal(f.workspace.document(f.resource.documentId), before, change); assert.deepEqual(f.workspace.observeHistory(f.resource.documentId).getSnapshot(), history, change);
+        const before = f.workspace.document(f.resource.id), history = f.workspace.observeHistory(f.resource.id).getSnapshot();
+        assert.equal(ticket.complete(), false, change); assert.equal(f.workspace.document(f.resource.id), before, change); assert.deepEqual(f.workspace.observeHistory(f.resource.id).getSnapshot(), history, change);
         f.comparison.dispose(); assert.equal(f.workspace.diagnostics().leases, 0, change);
     }
 });
@@ -101,9 +101,9 @@ test("restoring permission cannot revive an old discard confirmation", () => {
     const original = f.resource.metadata.getSnapshot().capabilities;
     f.workspace.setCapabilities(f.resource.id, { edit: ["host"], save: true });
     f.workspace.setCapabilities(f.resource.id, original);
-    const before = f.workspace.document(f.resource.documentId);
+    const before = f.workspace.document(f.resource.id);
     assert.equal(ticket.complete(), false);
-    assert.equal(f.workspace.document(f.resource.documentId), before);
+    assert.equal(f.workspace.document(f.resource.id), before);
     f.comparison.dispose();
     assert.equal(f.workspace.diagnostics().leases, 0);
 });
@@ -112,20 +112,20 @@ test("cancelled and empty whole-review reversions are inert and release explicit
     const f = fixture(); assert.throws(() => f.comparison.beginReversion(), /unavailable/); ready(f.comparison);
     const cancelled = f.comparison.beginReversion(); cancelled.cancel(); cancelled.finish(); assert.equal(cancelled.complete(), false);
     const acceptance = f.comparison.beginAcceptance(); acceptance.complete({ buffer: acceptance.capture.working.buffer, version: "same" }); ready(f.comparison);
-    const before = f.workspace.document(f.resource.documentId), history = f.workspace.observeHistory(f.resource.documentId).getSnapshot();
-    assert.equal(f.comparison.beginReversion().complete(), true); assert.equal(f.workspace.document(f.resource.documentId), before); assert.deepEqual(f.workspace.observeHistory(f.resource.documentId).getSnapshot(), history);
+    const before = f.workspace.document(f.resource.id), history = f.workspace.observeHistory(f.resource.id).getSnapshot();
+    assert.equal(f.comparison.beginReversion().complete(), true); assert.equal(f.workspace.document(f.resource.id), before); assert.deepEqual(f.workspace.observeHistory(f.resource.id).getSnapshot(), history);
     const pending = f.comparison.beginReversion(); f.comparison.dispose(); assert.equal(pending.complete(), false); assert.equal(f.workspace.diagnostics().leases, 0); assert.equal(f.workspace.diagnostics().subscriptions, 0);
 });
 
 test("comparison hunk reversion is revision-guarded, undoable and shared across views", () => {
-    const { workspace, resource, reference, comparison, edit } = fixture(), sibling = workspace.createDocumentView(resource.documentId);
+    const { workspace, resource, reference, comparison, edit } = fixture(), sibling = workspace.createDocumentView(resource.id);
     const state = ready(comparison); assert.equal(state.hunks.length, 1); const hunk = comparison.hunkAt(0)!;
     comparison.view.setSelection(0, { anchor: 2, head: 4 });
     assert.equal(hunk.revert(), true);
-    assert.equal(workspace.document(resource.documentId).buffer.equals(reference.buffer), true);
+    assert.equal(workspace.document(resource.id).buffer.equals(reference.buffer), true);
     assert.equal(sibling.getSnapshot().revision, 1);
     assert.equal(hunk.revert(), false);
-    assert.equal(workspace.undo({ documentId: resource.documentId, expectedRevision: 1 }).applied, true);
+    assert.equal(workspace.undo({ documentId: resource.id, expectedRevision: 1 }).applied, true);
     assert.deepEqual(comparison.view.getSnapshot().selection, { anchor: 2, head: 4, anchorAffinity: "after", headAffinity: "before" });
     ready(comparison); const stale = comparison.hunkAt(0)!; edit("later"); assert.equal(stale.revert(), false);
     assert.equal(reference.buffer.slice(0, reference.buffer.length), "first\nbaseline\nlast\n");
@@ -136,7 +136,7 @@ test("running comparisons map retained review hunks through consecutive edits wi
     const f = fixture("common tail\n".repeat(64));
     try {
         const exact = ready(f.comparison), hunk = f.comparison.hunkAt(0)!, original = exact.hunks, originalJson = JSON.stringify(original);
-        let before = f.workspace.document(f.resource.documentId), prior = original;
+        let before = f.workspace.document(f.resource.id), prior = original;
         for (const edit of [{ from: 0, to: 0, insert: "prefix\n" }, { from: 14, to: 14, insert: "x" }, { from: 2, to: 7, insert: "\n" }]) {
             f.workspace.edit({ documentId: before.id, expectedRevision: before.revision, origin: "host", edits: [edit] });
             const running = f.comparison.getSnapshot(), after = f.workspace.document(before.id), map = after.change!.mapping;
@@ -194,7 +194,7 @@ test("unrelated edits leave the comparison snapshot intact and permissions gover
     class ObservedWorkspace extends Workspace { reads = 0; override document(...args: Parameters<Workspace["document"]>) { this.reads++; return super.document(...args); } }
     const workspace = new ObservedWorkspace(), source = workspace.createTextResource({ scope: "review", resource: "own", variant: "source" }, "Own", { value: "working" });
     const other = workspace.createDocument({ scope: "review", resource: "other", variant: "source" }, "Other", "other");
-    const controller = compareText(workspace, source.documentId, { buffer: TextBuffer.from("base"), version: "one" });
+    const controller = compareText(workspace, source.id, { buffer: TextBuffer.from("base"), version: "one" });
     try {
         const captured = ready(controller), hunk = controller.hunkAt(0)!; workspace.reads = 0;
         workspace.edit({ documentId: other, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "x" }] });
@@ -205,16 +205,16 @@ test("unrelated edits leave the comparison snapshot intact and permissions gover
 
 test("refresh and acceptance preserve later typing, saved identity, history and explicit versions", () => {
     const { workspace, resource, comparison, edit } = fixture(); edit("before capture\n");
-    const ticket = comparison.beginAcceptance(), captured = ticket.capture.working.buffer, history = workspace.observeHistory(resource.documentId).getSnapshot();
-    edit("after capture\n"); const working = workspace.document(resource.documentId), view = comparison.view;
+    const ticket = comparison.beginAcceptance(), captured = ticket.capture.working.buffer, history = workspace.observeHistory(resource.id).getSnapshot();
+    edit("after capture\n"); const working = workspace.document(resource.id), view = comparison.view;
     assert.equal(ticket.complete({ buffer: captured, version: "reviewed-2" }), true);
     assert.equal(comparison.getSnapshot().baseline!.buffer, captured); assert.equal(comparison.getSnapshot().baseline!.version, "reviewed-2");
-    assert.equal(workspace.document(resource.documentId), working); assert.equal(comparison.view, view);
+    assert.equal(workspace.document(resource.id), working); assert.equal(comparison.view, view);
     assert.equal(resource.metadata.getSnapshot().serverVersion, "saved-1"); assert.equal(resource.metadata.getSnapshot().dirty, true);
-    assert.equal(workspace.observeHistory(resource.documentId).getSnapshot().undoDepth, history.undoDepth + 1);
-    const refresh = comparison.beginRefresh(); edit("during refresh\n"); const later = workspace.document(resource.documentId);
+    assert.equal(workspace.observeHistory(resource.id).getSnapshot().undoDepth, history.undoDepth + 1);
+    const refresh = comparison.beginRefresh(); edit("during refresh\n"); const later = workspace.document(resource.id);
     assert.equal(refresh.complete({ buffer: TextBuffer.from("new reference\r\n"), version: "reference-3" }), true);
-    assert.equal(workspace.document(resource.documentId), later); assert.equal(ready(comparison).hunks.length > 0, true);
+    assert.equal(workspace.document(resource.id), later); assert.equal(ready(comparison).hunks.length > 0, true);
     assert.equal(ticket.complete({ buffer: captured, version: "duplicate" }), false);
     comparison.dispose(); assert.equal(workspace.diagnostics().leases, 0);
 });
@@ -234,17 +234,17 @@ test("same-lane and cross-lane races reject stale tickets, permission changes re
 
 test("supplied views remain owned by the host and buffer resources retain their identity", () => {
     const { workspace, resource, reference, comparison } = fixture(); comparison.dispose();
-    const view = workspace.createDocumentView(resource.documentId), controller = compareText(workspace, resource.documentId, reference, { view });
+    const view = workspace.createDocumentView(resource.id), controller = compareText(workspace, resource.id, reference, { view });
     controller.dispose(); assert.equal(workspace.ownsDocumentView(view), true); view.dispose();
     const buffer = TextBuffer.from("a\r\nb\n").replace(1, 1, "\t"), display = workspace.createTextResourceFromBuffer({ scope: "test", resource: "reference", variant: "display" }, "Reference", { buffer, serverVersion: "v1" }, { edit: [], save: false });
-    assert.equal(workspace.document(display.documentId).buffer, buffer);
-    for (const origin of ["human", "agent", "host"] as const) assert.equal(workspace.edit({ documentId: display.documentId, expectedRevision: 0, origin, edits: [{ from: 0, to: 0, insert: "bad" }] }).applied, false);
+    assert.equal(workspace.document(display.id).buffer, buffer);
+    for (const origin of ["human", "agent", "host"] as const) assert.equal(workspace.edit({ documentId: display.id, expectedRevision: 0, origin, edits: [{ from: 0, to: 0, insert: "bad" }] }).applied, false);
     workspace.releaseResource(display.id); assert.equal(workspace.diagnostics().leases, 0);
 });
 
 test("disposal cancels unfinished tickets and repeated long-line work without retaining workspace ownership", () => {
     const { workspace, resource, comparison } = fixture();
-    workspace.edit({ documentId: resource.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "x".repeat(100000) }] });
+    workspace.edit({ documentId: resource.id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "x".repeat(100000) }] });
     assert.equal(comparison.advance(512).status, "running");
     const refresh = comparison.beginRefresh(), acceptance = comparison.beginAcceptance();
     comparison.dispose(); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0);
@@ -261,8 +261,8 @@ test("saving a captured revision changes the saved version independently of refe
     assert.equal(acceptance.capture.serverVersion, "saved-1");
     assert.equal(acceptance.complete({ buffer: acceptance.capture.working.buffer, version: "reference-2" }), true);
     assert.equal(resource.metadata.getSnapshot().serverVersion, "saved-2"); assert.equal(resource.metadata.getSnapshot().dirty, true);
-    const revision = workspace.document(resource.documentId).revision;
-    assert.equal(workspace.undo({ documentId: resource.documentId, expectedRevision: revision }).applied, true);
+    const revision = workspace.document(resource.id).revision;
+    assert.equal(workspace.undo({ documentId: resource.id, expectedRevision: revision }).applied, true);
     assert.equal(resource.metadata.getSnapshot().dirty, false);
     assert.equal(comparison.getSnapshot().baseline!.version, "reference-2"); comparison.dispose();
 });
@@ -272,7 +272,7 @@ test("notification commands reject reentrancy and a disposed supplied view expir
     let refusal: unknown;
     const unsubscribe = comparison.subscribe(() => { try { comparison.beginRefresh(); } catch (error) { refusal = error; } });
     ready(comparison); assert.match(String(refusal), /Reentrant/); unsubscribe(); comparison.dispose();
-    const view = workspace.createDocumentView(resource.documentId), controller = compareText(workspace, resource.documentId, reference, { view });
+    const view = workspace.createDocumentView(resource.id), controller = compareText(workspace, resource.id, reference, { view });
     view.dispose(); assert.equal(controller.advance().status, "expired"); assert.equal(controller.getSnapshot().baseline, null);
     controller.dispose(); assert.equal(workspace.diagnostics().leases, 0);
 });

@@ -49,7 +49,7 @@ export class HostProjectTools {
     private available(s: Session): boolean {
         return !this.disposed && this.sessions.get(s.token) === s && isMountedEditor(this.host.workspace, s.editor);
     }
-    private authority(id: DocumentId): string { const m = this.host.workspace.resourceForDocument(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit]); }
+    private authority(id: DocumentId): string { const m = this.host.workspace.resource(id).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit]); }
     private publish(patch: Partial<ProjectSnapshot> = {}): void {
         const preview = this.review ? this.describeReview(this.review) : null;
         this.cell.set({ ...this.cell.get(), ...patch, available: !!this.active && this.available(this.active), connected: this.lane.value?.snapshot().connected ?? false,
@@ -96,11 +96,11 @@ export class HostProjectTools {
         const id = document.id, participant = { document, authority: this.authority(id) };
         job.documents.set(id, participant);
         if (id === job.capture.document.id) return;
-        job.leases.push(this.host.workspace.acquire(document.resourceId));
+        job.leases.push(this.host.workspace.acquire(document.id));
         job.stops.push(this.host.workspace.onDocumentChange(id, (_change, followUp) => {
             this.changed(job, followUp);
         }));
-        job.stops.push(this.host.workspace.resourceForDocument(id).metadata.subscribe(() => {
+        job.stops.push(this.host.workspace.resource(id).metadata.subscribe(() => {
             const current = this.host.workspace.observeDocument(id).getSnapshot();
             if (this.authority(id) !== participant.authority || !current?.change && current?.revision !== participant.document.revision) this.changed(job);
         }));

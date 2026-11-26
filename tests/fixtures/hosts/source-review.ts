@@ -36,7 +36,7 @@ export class HostSourceReview {
     private disposed = false;
     constructor(workspace: Workspace, saves: HostSaveQueue, source: TextResourceHandle, ports: ReviewPorts) {
         this.workspace = workspace; this.saves = saves; this.source = source; this.ports = ports;
-        this.savedReference = Object.freeze({ buffer: workspace.document(source.documentId).buffer, version: "reference:saved-v0" });
+        this.savedReference = Object.freeze({ buffer: workspace.document(source.id).buffer, version: "reference:saved-v0" });
         this.referenceCell = new HostCell<Reference>({ generation: 0, baseline: this.savedReference }); this.comparisonReference = this.referenceCell.observable;
         this.saveConflictPresentation = Object.freeze({ getSnapshot: () => this.presentationSnapshot(), subscribe: (listener: ObservableListener) => {
             const stops: (() => void)[] = [];
@@ -99,7 +99,7 @@ export class HostSourceReview {
         if (this.disposed || expected !== this.conflictCell.get()) return;
         const conflict = this.conflictCell.get(); if (!conflict) return;
         const presentation = this.ports.presentation.getSnapshot();
-        if (presentation.documentId !== this.source.documentId) return;
+        if (presentation.documentId !== this.source.id) return;
         this.conflictReads.push({ presentation, conflictId: conflict.id, ...this.ports.server(),
             reference: this.referenceCell.get(), currentRequest: this.beginReferenceRequest() });
         this.conflictReference = undefined; this.conflictPresentation = undefined;
@@ -139,7 +139,7 @@ export class HostSourceReview {
         if (!this.canSaveReviewedSource()) {
             this.conflictCell.set({ ...conflict, review: "expired", message: "The remote review is no longer current. Review again before saving." }); return;
         }
-        this.saveSource({ target: this.workspace.captureResource(this.source.id), expectedRevision: this.workspace.document(this.source.documentId).revision, expectedServerVersion: conflict.reviewVersion! });
+        this.saveSource({ target: this.workspace.captureResource(this.source.id), expectedRevision: this.workspace.document(this.source.id).revision, expectedServerVersion: conflict.reviewVersion! });
     };
     subscriptions(): number { return this.referenceCell.count() + this.conflictCell.count(); }
     debug() {

@@ -16,9 +16,9 @@ function fixture() {
     const workspace = new Workspace();
     const source = workspace.createTextResource({ scope: "scope", resource: "source", variant: "working" }, "Same label", { value: "abc", serverVersion: "v0" });
     const form = workspace.createResource<{ path: string; nested: { enabled: boolean } }>({ scope: "scope", resource: "configuration", variant: "working" }, "Same label", { value: { path: "in.csv", nested: { enabled: true } }, serverVersion: "c0" });
-    const edit = (text: string, origin: "human" | "agent" | "host" = "human") => workspace.edit({ documentId: source.documentId,
-        expectedRevision: workspace.document(source.documentId).revision, origin,
-        edits: [{ from: 0, to: workspace.document(source.documentId).text().length, insert: text }] });
+    const edit = (text: string, origin: "human" | "agent" | "host" = "human") => workspace.edit({ documentId: source.id,
+        expectedRevision: workspace.document(source.id).revision, origin,
+        edits: [{ from: 0, to: workspace.document(source.id).text().length, insert: text }] });
     return { workspace, source, form, edit };
 }
 
@@ -105,17 +105,17 @@ test("internal resources keep captured ownership while workspace inventories con
             const resourceTarget = workspace.captureResource(reference.id);
     const inventory = workspace.getSnapshot();
     assert.deepEqual(inventory.resources.map(resource => resource.id), [source.id, form.id]);
-    assert.deepEqual(inventory.documents.map(document => document.id), [source.documentId]);
+    assert.deepEqual(inventory.documents.map(document => document.id), [source.id]);
     assert.equal(before.resources.length, 2);
     assert.equal(reference.metadata.getSnapshot().visibility, "internal");
     assert.equal(workspace.resolveResource(resourceTarget), reference);
-    assert.equal(workspace.document(reference.documentId).buffer, buffer);
-    assert.equal(workspace.edit({ documentId: reference.documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "x" }], origin: "human" }).applied, false);
+    assert.equal(workspace.document(reference.id).buffer, buffer);
+    assert.equal(workspace.edit({ documentId: reference.id, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "x" }], origin: "human" }).applied, false);
     // Inventory visibility is independent of permissions and text/value mutation.
-    assert.equal(workspace.edit({ documentId: scratch.documentId, expectedRevision: 0, edits: [{ from: 0, to: 1, insert: "y" }], origin: "human" }).applied, true);
+    assert.equal(workspace.edit({ documentId: scratch.id, expectedRevision: 0, edits: [{ from: 0, to: 1, insert: "y" }], origin: "human" }).applied, true);
     assert.equal(workspace.updateResource(panel, { expectedRevision: 0, value: { count: 1 }, origin: "human" }).applied, true);
     assert.equal(panel.metadata.getSnapshot().visibility, "internal");
-    const view = workspace.createDocumentView(reference.documentId), lease = workspace.acquire(reference.id);
+    const view = workspace.createDocumentView(reference.id), lease = workspace.acquire(reference.id);
     workspace.releaseResourceWhenUnowned(reference.id);
     await Promise.resolve(); assert.equal(reference.getSnapshot().state, "ready");
     lease.release(); await Promise.resolve(); assert.equal(reference.getSnapshot().state, "ready");
@@ -209,8 +209,8 @@ test("loads distinguish readiness, ignore superseded responses and release owner
     const workspace = new Workspace();
     const handle = workspace.createTextResource({ scope: "probe", resource: "loading", variant: "working" }, "Loading");
     assert.equal(handle.getSnapshot().state, "loading");
-    assert.throws(() => workspace.document(handle.documentId));
-    assert.equal(workspace.edit({ documentId: handle.documentId, expectedRevision: 0, origin: "human", edits: [] }).applied, false);
+    assert.throws(() => workspace.document(handle.id));
+    assert.equal(workspace.edit({ documentId: handle.id, expectedRevision: 0, origin: "human", edits: [] }).applied, false);
     const abandoned = workspace.beginLoad(handle); abandoned.dispose();
     assert.equal(handle.getSnapshot().state, "failed"); assert.ok(handle.metadata.getSnapshot().failure);
     abandoned.dispose(); assert.equal(workspace.ownership(handle.id).leases, 0);
@@ -229,7 +229,7 @@ test("loads distinguish readiness, ignore superseded responses and release owner
         return "v1";
     } }), false);
     assert.equal(handle.metadata.getSnapshot().serverVersion, "v2");
-    assert.equal(workspace.document(handle.documentId).text(), "ready");
+    assert.equal(workspace.document(handle.id).text(), "ready");
     assert.equal(workspace.ownership(handle.id).leases, 0);
     const target = workspace.captureResource(handle.id);
     workspace.releaseResource(handle.id);
@@ -257,15 +257,15 @@ test("abandoning superseded refreshes restores the saved panel value with curren
 test("text reload resets every view's folds and selection at the accepted document revision", () => {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) }), initial = "header\nbody\nlast\n";
     const resource = workspace.createTextResource({ scope: "load", resource: "source", variant: "working" }, "Source", { value: initial });
-    const views = [workspace.createDocumentView(resource.documentId), workspace.createDocumentView(resource.documentId)];
+    const views = [workspace.createDocumentView(resource.id), workspace.createDocumentView(resource.id)];
     const old = views.map(view => {
         view.setSelection(0, { anchor: initial.length, head: initial.length });
         view.folding.setRanges(view.folding.getSnapshot(), [{ id: "old", from: 0, to: initial.length, collapsed: true }]);
         return view.folding.getSnapshot();
     });
     let publications = 0;
-    const stop = workspace.observeDocument(resource.documentId).subscribe(() => {
-        const document = workspace.observeDocument(resource.documentId).getSnapshot(); if (!document) return;
+    const stop = workspace.observeDocument(resource.id).subscribe(() => {
+        const document = workspace.observeDocument(resource.id).getSnapshot(); if (!document) return;
         publications++;
         for (const view of views) {
             const folds = view.folding.getSnapshot();
@@ -276,7 +276,7 @@ test("text reload resets every view's folds and selection at the accepted docume
     });
     for (const value of ["", "a\nb\nc\nd\ne\n", "short"]) {
         assert.equal(workspace.beginLoad(resource).accept({ value }), true);
-        const document = workspace.document(resource.documentId);
+        const document = workspace.document(resource.id);
         for (const [i, view] of views.entries()) {
             const folds = view.folding.getSnapshot();
             assert.equal(folds.revision, document.revision); assert.equal(folds.generation, old[i]!.generation + document.revision);
@@ -293,38 +293,38 @@ test("scoped subscriptions keep unrelated handles and metadata stable, deliver d
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => { errors.push(error); throw new Error("Reporter failed"); } });
     const source = workspace.createTextResource({ scope: "probe", resource: "source", variant: "working" }, "Source", { value: "a" });
     const form = workspace.createResource({ scope: "probe", resource: "form", variant: "working" }, "Form", { value: { field: "one" } });
-    const write = (insert: string) => workspace.edit({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision,
+    const write = (insert: string) => workspace.edit({ documentId: source.id, expectedRevision: workspace.document(source.id).revision,
         origin: "human", edits: [{ from: 0, to: 1, insert }] });
     write("b"); // Make dirty before measuring unchanged metadata.
     const meta = source.metadata.getSnapshot(), formSnapshot = form.getSnapshot();
     let formCalls = 0, metadataCalls = 0, delivered = 0;
     form.subscribe(() => formCalls++); source.metadata.subscribe(() => metadataCalls++);
     const observations: string[] = [];
-    source.subscribe(() => { observations.push(workspace.document(source.documentId).text()); throw new Error("Listener failed"); });
+    source.subscribe(() => { observations.push(workspace.document(source.id).text()); throw new Error("Listener failed"); });
     source.subscribe(() => { write("illegal"); });
-    const unsubscribe = source.subscribe(() => { delivered++; observations.push(workspace.document(source.documentId).text()); });
+    const unsubscribe = source.subscribe(() => { delivered++; observations.push(workspace.document(source.id).text()); });
     write("c");
     assert.deepEqual(observations, ["c", "c"]);
     assert.equal(errors.length, 2);
     assert.equal(delivered, 1); assert.equal(formCalls, 0); assert.equal(metadataCalls, 0);
     assert.equal(source.metadata.getSnapshot(), meta); assert.equal(form.getSnapshot(), formSnapshot);
     unsubscribe(); write("d"); assert.equal(delivered, 1);
-    assert.equal(workspace.document(source.documentId).text(), "d");
+    assert.equal(workspace.document(source.id).text(), "d");
 });
 
 test("deferred resource release follows final ownership and preserves later unsaved work", async () => {
     const workspace = new Workspace(), keys = [workspace.createResourceKey("test", "display"), workspace.createResourceKey("test", "display")];
     assert.notDeepEqual(keys[0], keys[1]); assert.ok(Object.isFrozen(keys[0]));
     const source = workspace.createTextResource(keys[0]!, "Reference", { value: "base" }), target = workspace.captureResource(source.id);
-    const view = workspace.createDocumentView(source.documentId), lease = workspace.acquire(source.id);
+    const view = workspace.createDocumentView(source.id), lease = workspace.acquire(source.id);
     workspace.releaseResourceWhenUnowned(source.id); view.dispose(); await Promise.resolve();
-    assert.equal(workspace.resolveResource(target), source); assert.equal(workspace.document(source.documentId).text(), "base");
+    assert.equal(workspace.resolveResource(target), source); assert.equal(workspace.document(source.id).text(), "base");
     lease.release(); const replacementLease = workspace.acquire(source.id); await Promise.resolve();
     assert.equal(workspace.resolveResource(target), source); replacementLease.release(); await Promise.resolve();
     assert.equal(workspace.resolveResource(target), undefined); assert.equal(source.getSnapshot().state, "released"); lease.release();
 
     const observed = workspace.createTextResource(workspace.createResourceKey("test", "display"), "Observed", { value: "read" });
-    const observedView = workspace.createDocumentView(observed.documentId);
+    const observedView = workspace.createDocumentView(observed.id);
     workspace.releaseResourceWhenUnowned(observed.id);
     const stop = workspace.subscribe(() => observedView.dispose());
     const trigger = workspace.createTextResource(workspace.createResourceKey("test", "trigger"), "Trigger", { value: "change" });
@@ -332,9 +332,9 @@ test("deferred resource release follows final ownership and preserves later unsa
 
     const edited = workspace.createTextResource(keys[1]!, "Edited", { value: "base" }), held = workspace.acquire(edited.id), editedTarget = workspace.captureResource(edited.id);
     workspace.releaseResourceWhenUnowned(edited.id);
-    workspace.edit({ documentId: edited.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "keep " }] });
+    workspace.edit({ documentId: edited.id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "keep " }] });
     held.release(); await Promise.resolve(); assert.equal(workspace.resolveResource(editedTarget), edited);
-    assert.equal(workspace.document(edited.documentId).text(), "keep base"); assert.throws(() => workspace.releaseResourceWhenUnowned(edited.id), /Explicit discard/);
+    assert.equal(workspace.document(edited.id).text(), "keep base"); assert.throws(() => workspace.releaseResourceWhenUnowned(edited.id), /Explicit discard/);
     workspace.releaseResourceWhenUnowned(edited.id, true); assert.equal(edited.getSnapshot().state, "released");
     assert.equal(workspace.diagnostics().resources, 0); assert.equal(workspace.diagnostics().leases, 0);
 });
@@ -347,7 +347,7 @@ test("capabilities reject all edit origins and prevent stale refresh from erasin
     workspace.setCapabilities(source.id, { edit: ["human"], save: true });
     edit("new work");
     assert.throws(() => workspace.beginLoad(source));
-    assert.equal(workspace.document(source.documentId).text(), "new work");
+    assert.equal(workspace.document(source.id).text(), "new work");
 });
 
 test("failing an unstarted save leaves the submitted write in control of its status", () => {
@@ -365,7 +365,7 @@ test("failing an unstarted save leaves the submitted write in control of its sta
     queued.finish();
     assert.equal(source.metadata.getSnapshot().saveStatus, "conflict");
     assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
-    assert.equal(workspace.document(source.documentId).text(), "unsaved");
+    assert.equal(workspace.document(source.id).text(), "unsaved");
 });
 
 test("two queued saves capture exact contents; canonical replies preserve later typing", async () => {
@@ -387,7 +387,7 @@ test("two queued saves capture exact contents; canonical replies preserve later 
     assert.equal(calls.length, 2); assert.equal(calls[1]!.value, "second"); assert.equal(calls[1]!.expectedServerVersion, "v1");
 
     responses[1]!.resolve({ kind: "saved", serverVersion: "v2" }); await second;
-    assert.equal(workspace.document(source.documentId).text(), "human correction");
+    assert.equal(workspace.document(source.id).text(), "human correction");
     assert.equal(source.metadata.getSnapshot().dirty, true); assert.equal(source.metadata.getSnapshot().serverVersion, "v2");
     edit("second"); assert.equal(source.metadata.getSnapshot().dirty, false);
     assert.equal(workspace.ownership(source.id).leases, 0);
@@ -398,7 +398,7 @@ test("canonical saves apply only without later edits or a revoked edit capabilit
     const errors: unknown[] = [], commands = new HostSaveQueue(workspace, error => errors.push(error));
     edit("local");
     const saved = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "saved", serverVersion: "v1", canonical: "LOCAL" }) });
-    assert.equal(saved.kind, "saved"); assert.equal(workspace.document(source.documentId).text(), "LOCAL"); assert.equal(source.metadata.getSnapshot().dirty, false);
+    assert.equal(saved.kind, "saved"); assert.equal(workspace.document(source.id).text(), "LOCAL"); assert.equal(source.metadata.getSnapshot().dirty, false);
     edit("retry");
     const conflict = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "conflict", serverVersion: "remote" }) });
     assert.equal(conflict.kind, "conflict"); assert.equal(source.metadata.getSnapshot().saveStatus, "conflict"); assert.equal(source.metadata.getSnapshot().serverVersion, "v1");
@@ -408,7 +408,7 @@ test("canonical saves apply only without later edits or a revoked edit capabilit
     const pending = commands.save(workspace.captureSave(source), { save: () => response.promise }); await Promise.resolve();
     workspace.setCapabilities(source.id, { edit: [], save: true });
     response.resolve({ kind: "saved", serverVersion: "v2", canonical: "RETRY" }); await pending;
-    assert.equal(workspace.document(source.documentId).text(), "retry"); assert.equal(source.metadata.getSnapshot().dirty, true);
+    assert.equal(workspace.document(source.id).text(), "retry"); assert.equal(source.metadata.getSnapshot().dirty, true);
 });
 
 test("Run captures source/configuration/settings before awaiting and retains both resources without saving", async () => {
@@ -446,7 +446,7 @@ test("save permission is rechecked before queued submission, and host error reco
     const pending = commands.save(workspace.captureSave(source), { save: async () => { calls++; return { kind: "saved", serverVersion: "unexpected" }; } });
     workspace.setCapabilities(source.id, { edit: ["human", "host"], save: false });
     assert.equal((await pending).kind, "failed"); assert.equal(calls, 0); assert.equal(errors, 1);
-    assert.equal(workspace.document(source.documentId).text(), "host recovery");
+    assert.equal(workspace.document(source.id).text(), "host recovery");
     assert.equal(source.metadata.getSnapshot().serverVersion, "v0"); assert.equal(workspace.ownership(source.id).leases, 0);
     workspace.setCapabilities(source.id, { edit: ["human", "host"], save: true });
     const retry = await commands.save(workspace.captureSave(source), { save: async () => ({ kind: "saved", serverVersion: "v1" }) });

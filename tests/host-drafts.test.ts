@@ -14,8 +14,8 @@ function storage() {
     return { shared, port };
 }
 async function idle(draft: HostDraftRecovery) { for (let i = 0; i < 100 && draft.debug().jobs; i++) await new Promise<void>(done => setTimeout(done, 0)); assert.equal(draft.debug().jobs, 0); }
-function text(c: HostController) { const b = c.workspace.document(c.source.documentId).buffer; return b.slice(0, b.length); }
-function edit(c: HostController, value: string) { const d = c.workspace.document(c.source.documentId); assert.equal(c.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from: 0, to: d.buffer.length, insert: value }], history: { kind: "replace" } }).applied, true); }
+function text(c: HostController) { const b = c.workspace.document(c.source.id).buffer; return b.slice(0, b.length); }
+function edit(c: HostController, value: string) { const d = c.workspace.document(c.source.id); assert.equal(c.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from: 0, to: d.buffer.length, insert: value }], history: { kind: "replace" } }).applied, true); }
 async function seeded() { const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); edit(c, "stored café😀\r\ndraft"); c.setPath("stored.csv"); d.prepare("keep"); await idle(d); await d.dispose(); await c.dispose(); return store; }
 async function close(c: HostController, d: HostDraftRecovery) { const a = d.dispose(), b = c.dispose(); await Promise.all([a, b]); assert.equal(c.workspace.diagnostics().subscriptions, 0); }
 
@@ -57,7 +57,7 @@ test("checkpoint includes dirty temporary text after close and reopen", async ()
 
 function editLoaded(c: HostController, value: string) {
     const resource = c.loadedSource.getSnapshot().resource!; assert.ok(resource);
-    const document = c.workspace.document(resource.documentId);
+    const document = c.workspace.document(resource.id);
     assert.equal(c.workspace.edit({ documentId: document.id, expectedRevision: document.revision, origin: "human",
         edits: [{ from: 0, to: document.buffer.length, insert: value }], history: { kind: "replace" } }).applied, true);
     return resource;
@@ -73,7 +73,7 @@ test("loaded checkpoint captures immutable text and failed replacement revokes i
         const gate = deferred(); store.shared.writeGate = gate.promise; d.prepare("keep"); editLoaded(c, "later loaded correction"); gate.resolve(); await idle(d);
         assert.equal((store.shared.value!.value as { loaded: { text: string } }).loaded.text, "captured loaded text");
         assert.equal(d.shouldWarnOnLeave(), true);
-        c.workspace.undo({ documentId: resource.documentId, expectedRevision: c.workspace.document(resource.documentId).revision }); assert.equal(d.shouldWarnOnLeave(), false);
+        c.workspace.undo({ documentId: resource.id, expectedRevision: c.workspace.document(resource.id).revision }); assert.equal(d.shouldWarnOnLeave(), false);
         const old = structuredClone(store.shared.value); store.shared.failWrite = true; d.prepare("keep"); d.confirm(); await idle(d);
         assert.deepEqual(store.shared.value, old); assert.equal(d.shouldWarnOnLeave(), true);
     } finally { await close(c, d); }
@@ -87,13 +87,13 @@ test("loaded restore creates a fresh owned resource and keeps independent input 
         d.prepare("loaded"); edit(c, "independent original source"); c.setPath("later.csv"); c.transfer.update("batchSize", "invalid");
         const configuration = c.connection.getSnapshot(), transfer = c.transfer.resource.getSnapshot(), reference = c.savedComparisonReference();
         d.confirm(); await idle(d); const resource = c.loadedSource.getSnapshot().resource!; assert.ok(resource); assert.notEqual(resource.id, c.source.id);
-        assert.equal(c.workspace.document(resource.documentId).text(), "stored loaded café😀\r\ndraft"); assert.equal(resource.metadata.getSnapshot().serverVersion, "loaded-v1");
+        assert.equal(c.workspace.document(resource.id).text(), "stored loaded café😀\r\ndraft"); assert.equal(resource.metadata.getSnapshot().serverVersion, "loaded-v1");
         assert.equal(text(c), "independent original source"); assert.equal(c.connection.getSnapshot(), configuration); assert.equal(c.transfer.resource.getSnapshot(), transfer); assert.equal(c.savedComparisonReference(), reference);
-        assert.equal(c.workspace.observeHistory(resource.documentId).getSnapshot().undoDepth, 1);
-        c.workspace.undo({ documentId: resource.documentId, expectedRevision: c.workspace.document(resource.documentId).revision }); assert.equal(c.workspace.document(resource.documentId).text(), "loaded resource"); assert.equal(resource.metadata.getSnapshot().dirty, false);
-        editLoaded(c, "later loaded text"); view = c.workspace.createDocumentView(resource.documentId); view.setSelections(c.workspace.document(resource.documentId).revision, [{ anchor: 2, head: 1 }, { anchor: 8, head: 4 }], 1);
+        assert.equal(c.workspace.observeHistory(resource.id).getSnapshot().undoDepth, 1);
+        c.workspace.undo({ documentId: resource.id, expectedRevision: c.workspace.document(resource.id).revision }); assert.equal(c.workspace.document(resource.id).text(), "loaded resource"); assert.equal(resource.metadata.getSnapshot().dirty, false);
+        editLoaded(c, "later loaded text"); view = c.workspace.createDocumentView(resource.id); view.setSelections(c.workspace.document(resource.id).revision, [{ anchor: 2, head: 1 }, { anchor: 8, head: 4 }], 1);
         stop = c.registerInputCaptureGuard(() => true, () => view); const set = view.getSnapshot().selectionSet; d.prepare("loaded"); d.confirm(); await idle(d);
-        c.workspace.undo({ documentId: resource.documentId, expectedRevision: c.workspace.document(resource.documentId).revision }); assert.equal(c.workspace.document(resource.documentId).text(), "later loaded text"); assert.deepEqual(view.getSnapshot().selectionSet, set);
+        c.workspace.undo({ documentId: resource.id, expectedRevision: c.workspace.document(resource.id).revision }); assert.equal(c.workspace.document(resource.id).text(), "later loaded text"); assert.deepEqual(view.getSnapshot().selectionSet, set);
     } finally { stop(); view?.dispose(); await close(c, d); }
 });
 for (const change of ["revision", "authority", "slot-generation"] as const) test(`loaded restore rejects ${change} changes after storage read starts`, async () => {
@@ -104,8 +104,8 @@ for (const change of ["revision", "authority", "slot-generation"] as const) test
         if (change === "slot-generation") { c.beginDeferredLoad(); c.finishLoad(); c.reopenPrimary(); }
         else if (change === "revision") editLoaded(c, "later correction wins");
         else { const r = c.loadedSource.getSnapshot().resource!, m = r.metadata.getSnapshot(); c.workspace.setCapabilities(r.id, { ...m.capabilities, edit: ["host"] }); c.workspace.setCapabilities(r.id, m.capabilities); }
-        const loaded = c.loadedSource.getSnapshot().resource, before = loaded ? c.workspace.document(loaded.documentId) : null;
-        gate.resolve(); await idle(d); assert.equal(c.loadedSource.getSnapshot().resource, loaded); if (loaded) assert.equal(c.workspace.document(loaded.documentId), before);
+        const loaded = c.loadedSource.getSnapshot().resource, before = loaded ? c.workspace.document(loaded.id) : null;
+        gate.resolve(); await idle(d); assert.equal(c.loadedSource.getSnapshot().resource, loaded); if (loaded) assert.equal(c.workspace.document(loaded.id), before);
         assert.match(d.state.getSnapshot().message, /stale|changed/i); assert.equal(text(c), "start");
     } finally { await close(c, d); }
 });
@@ -130,11 +130,11 @@ test("new session offers independent source/configuration restore with a new und
     const extra = { remoteOptions: { columns: ["id", "Δ"], separator: ";", retained: true }, opaqueZero: -0 };
     const payload = envelope.value as { configuration: { value: Record<string, unknown> } }; payload.configuration.value = { ...payload.configuration.value, ...extra }; store.shared.value = envelope;
     const c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); assert.equal(text(c), "start"); assert.equal(d.state.getSnapshot().present, true);
-    d.prepare("source"); d.confirm(); await idle(d); assert.equal(text(c), "stored café😀\r\ndraft"); assert.equal(c.source.metadata.getSnapshot().serverVersion, "v0"); assert.equal(c.workspace.observeHistory(c.source.documentId).getSnapshot().undoDepth, 1);
+    d.prepare("source"); d.confirm(); await idle(d); assert.equal(text(c), "stored café😀\r\ndraft"); assert.equal(c.source.metadata.getSnapshot().serverVersion, "v0"); assert.equal(c.workspace.observeHistory(c.source.id).getSnapshot().undoDepth, 1);
     const initialConfiguration = c.connection.getSnapshot(); assert.equal(initialConfiguration.state === "ready" && initialConfiguration.value().path, "source.csv");
     d.prepare("configuration"); d.confirm(); await idle(d); const configuration = c.connection.getSnapshot(); assert.equal(configuration.state === "ready" && configuration.value().path, "stored.csv"); assert.equal(d.shouldWarnOnLeave(), false);
     assert.deepEqual(configuration.state === "ready" && configuration.value(), { path: "stored.csv", format: "csv", ...extra });
-    c.workspace.undo({ documentId: c.source.documentId, expectedRevision: c.workspace.document(c.source.documentId).revision }); assert.equal(text(c), "start"); await close(c, d);
+    c.workspace.undo({ documentId: c.source.id, expectedRevision: c.workspace.document(c.source.id).revision }); assert.equal(text(c), "start"); await close(c, d);
 });
 test("stale source confirmation retains corrections while independent configuration can restore", async () => {
     const store = await seeded(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d); d.prepare("source"); edit(c, "human correction"); d.confirm(); await idle(d); assert.equal(text(c), "human correction");
@@ -166,9 +166,9 @@ for (const format of [1, 2]) test(`unsupported recovery format ${format} cannot 
     payload.format = format; delete payload.loaded; if (format === 1) delete payload.transfer; store.shared.value = envelope;
     const c = new HostController(); edit(c, "current source"); c.setPath("current.csv"); c.transfer.update("batchSize", "invalid");
     c.beginDeferredLoad(); c.finishLoad(); editLoaded(c, "current loaded source");
-    const loaded = c.loadedSource.getSnapshot().resource!, source = c.workspace.document(c.source.documentId),
-        loadedSource = c.workspace.document(loaded.documentId), configuration = c.connection.getSnapshot(), transfer = c.transfer.resource.getSnapshot(),
-        history = c.workspace.observeHistory(c.source.documentId).getSnapshot(), loadedHistory = c.workspace.observeHistory(loaded.documentId).getSnapshot(),
+    const loaded = c.loadedSource.getSnapshot().resource!, source = c.workspace.document(c.source.id),
+        loadedSource = c.workspace.document(loaded.id), configuration = c.connection.getSnapshot(), transfer = c.transfer.resource.getSnapshot(),
+        history = c.workspace.observeHistory(c.source.id).getSnapshot(), loadedHistory = c.workspace.observeHistory(loaded.id).getSnapshot(),
         baseline = c.savedComparisonReference();
     const d = new HostDraftRecovery(c, store.port());
     try {
@@ -177,11 +177,11 @@ for (const format of [1, 2]) test(`unsupported recovery format ${format} cannot 
         for (const kind of ["source", "configuration", "transfer", "loaded"] as const) {
             d.prepare(kind); assert.equal(d.state.getSnapshot().confirmation, null); d.confirm(); await idle(d);
         }
-        assert.equal(c.workspace.document(c.source.documentId), source); assert.equal(c.workspace.document(loaded.documentId), loadedSource);
+        assert.equal(c.workspace.document(c.source.id), source); assert.equal(c.workspace.document(loaded.id), loadedSource);
         assert.equal(c.connection.getSnapshot(), configuration); assert.equal(c.transfer.resource.getSnapshot(), transfer);
         assert.equal(c.loadedSource.getSnapshot().resource, loaded); assert.equal(c.savedComparisonReference(), baseline);
-        assert.deepEqual(c.workspace.observeHistory(c.source.documentId).getSnapshot(), history);
-        assert.deepEqual(c.workspace.observeHistory(loaded.documentId).getSnapshot(), loadedHistory);
+        assert.deepEqual(c.workspace.observeHistory(c.source.id).getSnapshot(), history);
+        assert.deepEqual(c.workspace.observeHistory(loaded.id).getSnapshot(), loadedHistory);
         assert.deepEqual(store.shared.value, envelope); assert.equal(d.shouldWarnOnLeave(), true);
     } finally { await close(c, d); }
 });
@@ -200,12 +200,12 @@ for (const kind of ["keep", "discard"] as const) for (const input of ["source", 
     try { await idle(d); if (input === "source") edit(c, "owned unsaved work");
         else if (input === "configuration") c.setPath("owned.csv");
         else if (input === "transfer") c.transfer.update("destination", "owned-target.csv");
-        else c.captureInputConflict(c.source.documentId, { documentId: c.source.documentId, expectedRevision: 0, reason: "composition-detached", contextFrom: 0, attemptedText: "owned preedit", attemptedEdit: { from: 0, to: 0, insert: "owned preedit" } });
+        else c.captureInputConflict(c.source.id, { documentId: c.source.id, expectedRevision: 0, reason: "composition-detached", contextFrom: 0, attemptedText: "owned preedit", attemptedEdit: { from: 0, to: 0, insert: "owned preedit" } });
         d.prepare("keep"); await idle(d); assert.equal(d.shouldWarnOnLeave(), false);
         const peer = structuredClone(store.shared.value!.value) as { id: string; source: { text: string }; configuration: { value: { path: string } }; transfer: { value: { destination: string } }; input: unknown[] }; peer.id = "peer-newer"; peer.source.text = "other page draft"; peer.configuration.value.path = "peer.csv"; peer.transfer.value.destination = "peer-target.csv"; peer.input = [];
-        store.shared.value = { token: peer.id, value: peer }; const before = c.workspace.document(c.source.documentId), history = c.workspace.observeHistory(c.source.documentId).getSnapshot(), beforeText = text(c), configuration = c.connection.getSnapshot(), recovered = c.recovery.getSnapshot();
+        store.shared.value = { token: peer.id, value: peer }; const before = c.workspace.document(c.source.id), history = c.workspace.observeHistory(c.source.id).getSnapshot(), beforeText = text(c), configuration = c.connection.getSnapshot(), recovered = c.recovery.getSnapshot();
         d.prepare(kind); d.confirm(); await idle(d);
-        assert.equal(text(c), beforeText); assert.equal(c.workspace.document(c.source.documentId).revision, before.revision); assert.deepEqual(c.workspace.observeHistory(c.source.documentId).getSnapshot(), history); assert.deepEqual(c.connection.getSnapshot(), configuration); assert.deepEqual(c.recovery.getSnapshot(), recovered); assert.deepEqual(store.shared.value, { token: peer.id, value: peer });
+        assert.equal(text(c), beforeText); assert.equal(c.workspace.document(c.source.id).revision, before.revision); assert.deepEqual(c.workspace.observeHistory(c.source.id).getSnapshot(), history); assert.deepEqual(c.connection.getSnapshot(), configuration); assert.deepEqual(c.recovery.getSnapshot(), recovered); assert.deepEqual(store.shared.value, { token: peer.id, value: peer });
         assert.equal(d.shouldWarnOnLeave(), true); assert.equal(d.state.getSnapshot().unprotected, true);
     } finally { await close(c, d); }
 });
@@ -219,7 +219,7 @@ test("pending input prevents checkpoint transfer and disposal expires a delayed 
 });
 test("rejected preedit survives storage without becoming committed text in a new session", async () => {
     const store = storage(), c = new HostController(), d = new HostDraftRecovery(c, store.port()); await idle(d);
-    c.captureInputConflict(c.source.documentId, { documentId: c.source.documentId, expectedRevision: 0, reason: "composition-detached", attemptedText: "uncommitted café😀", contextFrom: 0, attemptedEdit: { from: 0, to: 0, insert: "uncommitted café😀" } });
+    c.captureInputConflict(c.source.id, { documentId: c.source.id, expectedRevision: 0, reason: "composition-detached", attemptedText: "uncommitted café😀", contextFrom: 0, attemptedEdit: { from: 0, to: 0, insert: "uncommitted café😀" } });
     d.prepare("keep"); await idle(d); assert.equal(text(c), "start"); assert.equal(d.shouldWarnOnLeave(), false); await close(c, d);
     const next = new HostController(), recovered = new HostDraftRecovery(next, store.port()); await idle(recovered); assert.equal(text(next), "start"); assert.equal(next.recovery.getSnapshot().items.length, 0); assert.equal(recovered.state.getSnapshot().inputCount, 1);
     recovered.inspect(); assert.ok(recovered.state.getSnapshot().preview!.includes("uncommitted café😀")); await close(next, recovered);

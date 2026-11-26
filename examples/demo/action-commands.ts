@@ -10,7 +10,7 @@ export function demoCommandPolicy(file: DemoFile, uri: () => string | undefined,
         if (invocation.command !== projectCommand || invocation.arguments.length !== 2 || target !== uri()
             || !["note", "check", "fail"].includes(String(mode))) return null;
         return { kind: "host", isCurrent: () => current() && uri() === target, run: async (_command, context) => {
-            const docs = context.snapshots(), source = docs.find(doc => doc.id === file.resource.documentId);
+            const docs = context.snapshots(), source = docs.find(doc => doc.id === file.resource.id);
             if (!source || docs.length !== 2 || docs.some(doc => !doc.buffer.slice(0, projectActionMarker.length).startsWith(projectActionMarker))) throw new Error("The captured demo project changed.");
             if (mode === "note") {
                 const index = await LspLineIndex.create(source.buffer, async () => { if (!context.isCurrent()) throw new Error("The captured command changed."); }), end = index.at(source.buffer.length);

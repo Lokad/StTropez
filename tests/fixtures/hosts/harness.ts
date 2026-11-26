@@ -31,13 +31,13 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
     }));
     const transferSnapshot = (): TransferTargetSnapshot => {
         if (!transferTarget) throw new Error("No transfer target is mounted.");
-        const current = controller.workspace.document(transferTarget.documentId);
-        return { documentId: transferTarget.documentId, revision: current.revision, text: current.buffer.slice(0, current.buffer.length),
-            history: controller.workspace.observeHistory(transferTarget.documentId).getSnapshot() };
+        const current = controller.workspace.document(transferTarget.id);
+        return { documentId: transferTarget.id, revision: current.revision, text: current.buffer.slice(0, current.buffer.length),
+            history: controller.workspace.observeHistory(transferTarget.id).getSnapshot() };
     };
     const fixture = Object.freeze({ ready: true, get settled() { return !lifecycle.disposed && bindings.settled(); }, mode, snapshot: () => { const state = controller.debug(), views = bindings.debug();
         return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions + views.navigation.subscriptions + views.project.subscriptions + views.signature.subscriptions + views.rename.subscriptions + views.actions.subscriptions + views.links.subscriptions + views.colors.subscriptions + (draft?.debug().subscriptions ?? 0), draft: draft?.debug() ?? null, bindings: views, commits: commits() }; },
-        editSource: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: controller.source.documentId,
+        editSource: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: controller.source.id,
             expectedRevision, edits, origin: "host", history: { kind: "live" } }),
         previewProposal: controller.previewProposalText, applyProposal: controller.applyProposal, runCapture: (index: number) => controller.runCapture(index), setPath: controller.setPath, recoveryText: () => controller.recoveryText(),
         finishRun: controller.finishRun, failRun: controller.failRun, finishSave: controller.finishSave, failSave: controller.failSave,
@@ -45,7 +45,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         configurationCapture: () => controller.configurationSave.capture(), configurationValue: () => { const s = controller.connection.getSnapshot(); return s.state === "ready" ? s.value() : null; },
         transferCapture: () => controller.transfer.save.capture(), transferValue: () => { const s = controller.transfer.resource.getSnapshot(); return s.state === "ready" ? s.value() : null; },
         setTransfer: controller.transfer.update, runInput: (id: number) => controller.runResources.capture(id),
-        range: (from: number, to: number) => controller.workspace.document(controller.source.documentId).buffer.slice(from, to),
+        range: (from: number, to: number) => controller.workspace.document(controller.source.id).buffer.slice(from, to),
         referenceRange: (from: number, to: number) => bindings.referenceRange(from, to),
         onSourceRender: (id: "primary" | "secondary" | "comparison", listener: () => void) => bindings.onSourceRender(id, listener),
         selectSource: (id: "primary" | "secondary", revision: number, selection: Selection) => bindings.selectSource(id, revision, selection),
@@ -57,7 +57,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
             lifecycle.unmount();
             const resource = createWorkingSource(controller.workspace, "transfer-text", "Transfer target", { value: text });
             transferTarget = resource;
-            controller.setSecondary(resource.documentId);
+            controller.setSecondary(resource.id);
             const target = controller.panes.secondary.getSnapshot();
             lifecycle.onDispose(async () => {
                 if (controller.panes.secondary.getSnapshot() === target) controller.setSecondary(null);
@@ -84,7 +84,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         editLinkTarget: (id: DocumentId, revision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: id, expectedRevision: revision, origin: "host", edits }),
         setActionDelay: bindings.actions.fixture.setDelay, faultActionNext: bindings.actions.fixture.faultNext, faultIdleAction: () => bindings.actions.faultIdle(), requestAction: bindings.actions.request,
         faultIdleProject: () => bindings.project.faultIdle(),
-        setProjectTargetReadOnly: (id: DocumentId, value: boolean) => { const resource = controller.workspace.resourceForDocument(id), metadata = resource.metadata.getSnapshot();
+        setProjectTargetReadOnly: (id: DocumentId, value: boolean) => { const resource = controller.workspace.resource(id), metadata = resource.metadata.getSnapshot();
             controller.workspace.setCapabilities(resource.id, { ...metadata.capabilities, edit: value ? ["host"] : ["human", "host", "agent"] }); },
         navigationDocument: (id: DocumentId) => { const doc = controller.workspace.document(id); return { revision: doc.revision, length: doc.buffer.length, text: doc.buffer.slice(0, Math.min(4096, doc.buffer.length)) }; },
         inspectSymbol: (id: "primary" | "secondary" | "comparison") => bindings.hover.inspectCaret(id),

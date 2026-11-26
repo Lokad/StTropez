@@ -76,7 +76,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                     completion: { autoConnect: false, filterManualCompletions: true, canCapture: valid, list: true },
                     signature: { popup: links, canCapture: valid },
                     hover: { canCapture: idle, popup: links, diagnostics: { subscribe: language.state.subscribe, getSnapshot() {
-                        const state = language.state.getSnapshot(), doc = workspace.document(file.resource.documentId);
+                        const state = language.state.getSnapshot(), doc = workspace.document(file.resource.id);
                         return { diagnosticRevision: doc.revision, diagnosticsPending: state.checking,
                             diagnostics: state.diagnostics.filter(item => item.documentId === doc.id && item.revision === doc.revision) };
                     } } },

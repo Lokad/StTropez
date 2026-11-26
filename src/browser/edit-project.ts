@@ -26,6 +26,6 @@ export function writableEdit(editor: TextEditor, edit: LspWorkspaceEdit | null) 
 
 export function writableDocument(editor: TextEditor, document: DocumentId) {
     if (document === editor.view.documentId && editor.getSnapshot().readOnlyReason !== null) return false;
-    const metadata = editor.workspace.resourceForDocument(document).metadata.getSnapshot();
+    const metadata = editor.workspace.resource(document).metadata.getSnapshot();
     return metadata.capabilities.edit.includes("human") && metadata.capabilities.edit.includes("host");
 }

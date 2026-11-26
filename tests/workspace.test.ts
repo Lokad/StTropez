@@ -13,7 +13,7 @@ function fixture() {
 
 test("language changes publish a new document identity without replaying an edit", () => {
     const { workspace, documentId } = fixture(), changes: DocumentChange[] = [];
-    const resource = workspace.resourceForDocument(documentId), view = workspace.createDocumentView(documentId);
+    const resource = workspace.resource(documentId), view = workspace.createDocumentView(documentId);
     const stop = workspace.onDocumentChange(documentId, change => changes.push(change));
     assert.ok(workspace.edit({ documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "!" }], origin: "human" }).applied);
     const before = workspace.document(documentId), history = workspace.observeHistory(documentId).getSnapshot(), selection = view.getSnapshot();
@@ -52,34 +52,34 @@ test("URI lookup selects one visible ready document and release belongs to its c
     workspace.createTextResource(key("internal"), "Preview", { value: "copy" }, undefined, { ...options, visibility: "internal" });
     const loading = workspace.createTextResource(key("loading"), "Loading", undefined, undefined, options);
     const events: string[] = [];
-    const watch = (id: typeof first.documentId) => workspace.onDocumentChange(id, change => events.push(change.kind),
+    const watch = (id: typeof first.id) => workspace.onDocumentChange(id, change => events.push(change.kind),
         after => { events.push("released " + id); after(() => events.push("after " + id)); });
-    const stop = watch(first.documentId);
-    const stopLoading = watch(loading.documentId);
-    const unsubscribe = watch(first.documentId);
+    const stop = watch(first.id);
+    const stopLoading = watch(loading.id);
+    const unsubscribe = watch(first.id);
     unsubscribe();
-    assert.equal(workspace.documentForUri(language.uri), workspace.document(first.documentId));
+    assert.equal(workspace.documentForUri(language.uri), workspace.document(first.id));
     assert.equal(workspace.documentForUri("project:a/b"), undefined);
     const second = workspace.createTextResource(key("peer"), "Peer", { value: "two" }, undefined, options);
     assert.equal(workspace.documentForUri(language.uri), undefined);
-    workspace.setDocumentLanguage(second.documentId, null);
-    assert.equal(workspace.documentForUri(language.uri)?.id, first.documentId);
-    const view = workspace.createDocumentView(first.documentId);
-    workspace.replaceText(first.documentId, "edited", { origin: "host", history: "record" });
+    workspace.setDocumentLanguage(second.id, null);
+    assert.equal(workspace.documentForUri(language.uri)?.id, first.id);
+    const view = workspace.createDocumentView(first.id);
+    workspace.replaceText(first.id, "edited", { origin: "host", history: "record" });
     workspace.releaseResourceWhenUnowned(first.id, true);
     assert.deepEqual(events, ["replace"]);
     view.dispose();
     await Promise.resolve();
     assert.equal(workspace.documentForUri(language.uri), undefined);
     const replacement = workspace.createTextResource(key("work"), "Reopened", { value: "new" }, undefined, options);
-    assert.equal(workspace.documentForUri(language.uri)?.id, replacement.documentId);
-    workspace.replaceText(replacement.documentId, "fresh", { origin: "host", history: "record" });
+    assert.equal(workspace.documentForUri(language.uri)?.id, replacement.id);
+    workspace.replaceText(replacement.id, "fresh", { origin: "host", history: "record" });
     await Promise.resolve();
     workspace.releaseResource(loading.id);
     stopLoading();
     await Promise.resolve();
-    assert.deepEqual(events, ["replace", "released " + first.documentId, "after " + first.documentId,
-        "released " + loading.documentId]);
+    assert.deepEqual(events, ["replace", "released " + first.id, "after " + first.id,
+        "released " + loading.id]);
     stop();
 });
 

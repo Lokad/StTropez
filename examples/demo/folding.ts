@@ -32,7 +32,7 @@ export function mountDemoFolding(project: DemoProject, editor: TextEditor, tabSi
         if (signal.aborted || client !== language.foldingClient) throw new Error("Folding discovery cancelled.");
         // Startup assigns the language URI after the editor can already request folds.
         const bound = project.workspace.document(document.id);
-        if (bound.resourceId !== document.resourceId || bound.buffer !== document.buffer
+        if (bound.id !== document.id || bound.buffer !== document.buffer
             || bound.revision !== document.revision || (document.language !== null && bound.language !== document.language)) {
             throw new Error("Folding discovery target changed.");
         }

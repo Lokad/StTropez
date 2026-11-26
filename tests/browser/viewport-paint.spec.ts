@@ -21,14 +21,14 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
         const host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let calls = 0, notices = 0, shade = "paint-a";
-        const { viewport, setComparisonRows } = mountViewport(host, workspace, source.documentId);
+        const { viewport, setComparisonRows } = mountViewport(host, workspace, source.id);
         let lastGeometry = viewport.getSnapshot(), geometryChanges = 0;
         const stopGeometry = viewport.subscribe(() => { lastGeometry = viewport.getSnapshot(); geometryChanges++; });
         viewport.decorations.addProvider({ order: 0, provide: line => { calls++; return [{ from: line.from, to: line.to, className: shade }]; } });
         viewport.onRender(() => notices++);
         const input = viewport.bindInput(() => {});
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true, characterData: true });
-        const documentState = () => workspace.document(source.documentId);
+        const documentState = () => workspace.document(source.id);
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.activity().pending) return; } throw new Error("Viewport did not settle."); };
         const work = (name: string, change: () => void = () => {}, count = 1) => {
             change(); observer.takeRecords();
@@ -56,7 +56,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
             const selected = row.querySelector(".st-viewport-selected")?.textContent;
             const stableGeometry = lastGeometry === geometry && geometryChanges === middleChanges && Object.isFrozen(geometry);
             const afterSelection = work("idle after selection");
-            changes.push(work("revision", () => workspace.edit({ documentId: source.documentId, expectedRevision: 0, edits: [{ from, to: from, insert: "//" }], origin: "host" })));
+            changes.push(work("revision", () => workspace.edit({ documentId: source.id, expectedRevision: 0, edits: [{ from, to: from, insert: "//" }], origin: "host" })));
             const revision = viewport.activity().revision, text = row.textContent;
             changes.push(work("decorations", () => { shade = "paint-b"; viewport.invalidate(); }));
             const decorated = row.querySelector(".paint-b") !== null;
@@ -65,7 +65,7 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
             const folded = viewport.getDiagnostics().collapsedFolds, folds = viewport.view.folding.getSnapshot(), buffer = documentState().buffer;
             const cursor = new ComparisonRowsCursor(buffer, buffer, Object.freeze([]), folds.index, folds.index); let aligned = cursor.next(4096);
             while (!aligned.result) aligned = cursor.next(4096); cursor.dispose();
-            changes.push(work("comparison rows", () => { setComparisonRows({ documentId: source.documentId, revision: 1, foldGeneration: folds.generation,
+            changes.push(work("comparison rows", () => { setComparisonRows({ documentId: source.id, revision: 1, foldGeneration: folds.generation,
                 id: 1, lineHeight: middle.lineHeight + 4, index: aligned.result!.working }); }));
             const alignment = viewport.activity().alignmentId;
             changes.push(work("clear comparison", () => { setComparisonRows(undefined); }));
@@ -81,12 +81,12 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
             changes.push(work("composition controls", () => { input.setComposing(true); }));
             const disabledFold = host.querySelector<HTMLButtonElement>(".st-fold-button")!.disabled;
             changes.push(work("scroll", () => viewport.scrollTo({ top: viewport.getSnapshot().scrollTop + 100 })));
-            workspace.edit({ documentId: source.documentId, expectedRevision: 1, edits: [{ from: 0, to: buffer.length, insert: "\t".repeat(100) }], origin: "host" });
+            workspace.edit({ documentId: source.id, expectedRevision: 1, edits: [{ from: 0, to: buffer.length, insert: "\t".repeat(100) }], origin: "host" });
             viewport.scrollTo({ top: 0, left: 0 }); viewport.flush();
             const correcting = viewport.activity().pending, beforeCorrection = viewport.getDiagnostics().renders;
             settle(); const corrected = viewport.getDiagnostics(), measured = host.querySelector<HTMLElement>(".st-viewport-row")!.getBoundingClientRect().width / 1.25;
             const idleAfterCorrection = work("idle after width correction");
-            workspace.edit({ documentId: source.documentId, expectedRevision: 2, edits: [{ from: 0, to: 100, insert: "\t".repeat(4096) }], origin: "host" });
+            workspace.edit({ documentId: source.id, expectedRevision: 2, edits: [{ from: 0, to: 100, insert: "\t".repeat(4096) }], origin: "host" });
             viewport.revealOffset(2048); settle(); const capture = viewport.captureView(), point = viewport.coordsAt(2048)!;
             const partialIdle = work("idle after partial reveal");
             changes.push(work("clear partial placement", () => viewport.scrollTo({ top: capture.scrollTop, left: capture.scrollLeft })));

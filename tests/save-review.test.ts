@@ -7,13 +7,13 @@ import type { SaveResponse } from "./fixtures/save-queue.ts";
 
 function fixture() {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "review", resource: "source", variant: "working" }, "Source", { value: "base", serverVersion: "v0" });
-    const edit = (text: string) => { const current = workspace.document(source.documentId); return workspace.edit({ documentId: current.id, expectedRevision: current.revision,
+    const edit = (text: string) => { const current = workspace.document(source.id); return workspace.edit({ documentId: current.id, expectedRevision: current.revision,
         origin: "human", edits: [{ from: 0, to: current.buffer.length, insert: text }] }); };
     return { workspace, source, edit, commands: new HostSaveQueue(workspace) };
 }
 
 test("successive edits publish one revision, map other views and undo together", () => {
-    const { workspace, source } = fixture(), id = source.documentId;
+    const { workspace, source } = fixture(), id = source.id;
     const view = workspace.createDocumentView(id, { anchor: 4, head: 4 });
     const options = { origin: "host", source: "peer", history: "record" } as const;
     const changes: number[] = [];
@@ -43,7 +43,7 @@ test("successive edits publish one revision, map other views and undo together",
 });
 
 test("an invalid second step, async callback or reentrant write cannot partially commit a transaction", async () => {
-    const { workspace, source, edit } = fixture(), id = source.documentId, before = workspace.document(id);
+    const { workspace, source, edit } = fixture(), id = source.id, before = workspace.document(id);
     const options = { origin: "host", history: "reset" } as const;
     const insert = [{ from: 0, to: 0, insert: "first" }];
     let notifications = 0;
@@ -61,7 +61,7 @@ test("an invalid second step, async callback or reentrant write cannot partially
 
 test("whole-text writes retain unchanged ranges, report no-ops and guard the captured revision", () => {
     const { workspace, source } = fixture();
-    const id = source.documentId, options = { origin: "host", history: "record", source: "draft" } as const;
+    const id = source.id, options = { origin: "host", history: "record", source: "draft" } as const;
     const view = workspace.createDocumentView(id, { anchor: 4, head: 4 });
     const changed = workspace.replaceText(id, "new base", options);
     assert.deepEqual(changed, { applied: true, changed: true, revision: 1 });
@@ -80,7 +80,7 @@ test("whole-text writes retain unchanged ranges, report no-ops and guard the cap
 });
 
 test("whole-file replacement and saved adoption retain each pane's directed selection through undo and redo", () => {
-    const { workspace, source } = fixture(), id = source.documentId;
+    const { workspace, source } = fixture(), id = source.id;
     const options = { origin: "host", history: "record" } as const;
     workspace.replaceText(id, "x = 1\n", options);
     const first = workspace.createDocumentView(id, { anchor: 0, head: 0 });
@@ -109,12 +109,12 @@ test("whole-file replacement and saved adoption retain each pane's directed sele
 test("adopting a saved buffer publishes the revision, authority and mapped view together", () => {
     const { workspace, source, edit } = fixture();
     edit("head\n  child\nend");
-    const view = workspace.createDocumentView(source.documentId, { anchor: 13, head: 16 });
+    const view = workspace.createDocumentView(source.id, { anchor: 13, head: 16 });
     view.folding.setRanges(view.folding.getSnapshot(), [{ id: "h", from: 0, to: 12, collapsed: true }]);
-    const old = workspace.document(source.documentId);
+    const old = workspace.document(source.id);
     const saved = old.buffer.replace(0, 0, "note\n");
     const observed: unknown[] = [];
-    const stop = workspace.onDocumentChange(source.documentId, change => observed.push({
+    const stop = workspace.onDocumentChange(source.id, change => observed.push({
         edits: change.edits, source: change.source, saved: source.metadata.getSnapshot().serverVersion,
         dirty: source.metadata.getSnapshot().dirty, selection: view.getSnapshot().selection,
         folded: view.folding.getSnapshot().index.collapsedCount
@@ -124,61 +124,61 @@ test("adopting a saved buffer publishes the revision, authority and mapped view 
     assert.deepEqual(adopted, { applied: true, revision: 2 });
     assert.deepEqual(observed, [{ edits: [{ from: 0, to: 0, insert: "note\n" }], source: "review", saved: "v2",
         dirty: false, selection: { anchor: 18, head: 21, anchorAffinity: "after", headAffinity: "before" }, folded: 1 }]);
-    assert.equal(workspace.document(source.documentId).buffer, saved);
-    const doc = workspace.document(source.documentId), selection = view.getSnapshot(), folding = view.folding.getSnapshot();
+    assert.equal(workspace.document(source.id).buffer, saved);
+    const doc = workspace.document(source.id), selection = view.getSnapshot(), folding = view.folding.getSnapshot();
     assert.deepEqual(workspace.adoptSaved(source.id, { text: TextBuffer.from("note\nhead\n  child\nend"), serverVersion: "v3", history: "record", expectedRevision: 2 }),
         { applied: true, revision: 2 });
-    assert.equal(workspace.document(source.documentId), doc); assert.equal(view.getSnapshot(), selection); assert.equal(view.folding.getSnapshot(), folding);
+    assert.equal(workspace.document(source.id), doc); assert.equal(view.getSnapshot(), selection); assert.equal(view.folding.getSnapshot(), folding);
     assert.equal(source.metadata.getSnapshot().serverVersion, "v3");
-    assert.equal(workspace.undo({ documentId: source.documentId, expectedRevision: 2 }).applied, true);
-    assert.equal(workspace.document(source.documentId).buffer, old.buffer);
+    assert.equal(workspace.undo({ documentId: source.id, expectedRevision: 2 }).applied, true);
+    assert.equal(workspace.document(source.id).buffer, old.buffer);
     assert.equal(source.metadata.getSnapshot().dirty, true);
     assert.deepEqual(workspace.adoptSaved(source.id, { text: saved, serverVersion: "late", history: "reset", expectedRevision: 2 }),
         { applied: false, reason: "stale-revision" });
-    assert.equal(workspace.document(source.documentId).buffer, old.buffer); assert.equal(source.metadata.getSnapshot().serverVersion, "v3");
-    assert.equal(workspace.redo({ documentId: source.documentId, expectedRevision: 3 }).applied, true);
+    assert.equal(workspace.document(source.id).buffer, old.buffer); assert.equal(source.metadata.getSnapshot().serverVersion, "v3");
+    assert.equal(workspace.redo({ documentId: source.id, expectedRevision: 3 }).applied, true);
     assert.equal(source.metadata.getSnapshot().dirty, false);
     workspace.adoptSaved(source.id, { text: saved, serverVersion: "v4", history: "reset" });
-    assert.equal(workspace.observeHistory(source.documentId).getSnapshot().undoDepth, 0);
+    assert.equal(workspace.observeHistory(source.id).getSnapshot().undoDepth, 0);
     view.dispose();
 });
 
 test("reviewed documents adopt together, reject a stale participant and share Undo", () => {
     const { workspace, source, edit } = fixture(); edit("local");
     const helper = workspace.createTextResource({ scope: "review", resource: "helper", variant: "working" }, "Helper", { value: "helper", serverVersion: "v0" });
-    const first = { resourceId: source.id, expectedRevision: 1, text: "remote", serverVersion: "v2" };
-    const second = { resourceId: helper.id, expectedRevision: 0, text: "remote helper", serverVersion: "v2" };
+    const first = { documentId: source.id, expectedRevision: 1, text: "remote", serverVersion: "v2" };
+    const second = { documentId: helper.id, expectedRevision: 0, text: "remote helper", serverVersion: "v2" };
     const options = { history: "record" as const };
-    const original = source.getSnapshot(), undo = workspace.observeHistory(source.documentId).getSnapshot();
+    const original = source.getSnapshot(), undo = workspace.observeHistory(source.id).getSnapshot();
     assert.deepEqual(workspace.adoptSavedDocuments([first, { ...second, expectedRevision: 1 }], options), { applied: false, reason: "stale-revision" });
     const lease = workspace.acquire(helper.id, { preventReload: true });
     assert.deepEqual(workspace.adoptSavedDocuments([first, second], options), { applied: false, reason: "not-ready" }); lease.release();
-    assert.equal(source.getSnapshot(), original); assert.equal(workspace.observeHistory(source.documentId).getSnapshot(), undo);
+    assert.equal(source.getSnapshot(), original); assert.equal(workspace.observeHistory(source.id).getSnapshot(), undo);
     const observed: string[][] = [];
-    const stop = workspace.subscribe(() => observed.push([source, helper].map(file => workspace.document(file.documentId).text())));
+    const stop = workspace.subscribe(() => observed.push([source, helper].map(file => workspace.document(file.id).text())));
     assert.equal(workspace.adoptSavedDocuments([first, second], options).applied, true); stop();
     assert.deepEqual(observed, [["remote", "remote helper"]]);
-    assert.equal(workspace.undo({ documentId: helper.documentId, expectedRevision: 1 }).applied, true);
-    assert.deepEqual([source, helper].map(file => [workspace.document(file.documentId).text(), file.metadata.getSnapshot().serverVersion, file.metadata.getSnapshot().dirty]),
+    assert.equal(workspace.undo({ documentId: helper.id, expectedRevision: 1 }).applied, true);
+    assert.deepEqual([source, helper].map(file => [workspace.document(file.id).text(), file.metadata.getSnapshot().serverVersion, file.metadata.getSnapshot().dirty]),
         [["local", "v2", true], ["helper", "v2", true]]);
-    assert.equal(workspace.redo({ documentId: source.documentId, expectedRevision: 3 }).applied, true);
+    assert.equal(workspace.redo({ documentId: source.id, expectedRevision: 3 }).applied, true);
     for (const file of [source, helper]) assert.equal(file.metadata.getSnapshot().dirty, false);
 });
 
 test("a reviewed batch can mark local text saved while changing another document", () => {
     const { workspace, source, edit } = fixture(); edit("local");
     const helper = workspace.createTextResource({ scope: "review", resource: "other", variant: "working" }, "Other", { value: "old" });
-    const doc = workspace.document(source.documentId), versions = [
-        { resourceId: helper.id, text: "new", serverVersion: "v2", expectedRevision: 0 },
-        { resourceId: source.id, text: doc.buffer, serverVersion: "v2", expectedRevision: doc.revision },
+    const doc = workspace.document(source.id), versions = [
+        { documentId: helper.id, text: "new", serverVersion: "v2", expectedRevision: 0 },
+        { documentId: source.id, text: doc.buffer, serverVersion: "v2", expectedRevision: doc.revision },
     ];
     const changes: string[] = [];
-    const stop = workspace.onDocumentChange(source.documentId, () => changes.push("source"));
+    const stop = workspace.onDocumentChange(source.id, () => changes.push("source"));
     assert.deepEqual(workspace.adoptSavedDocuments(versions, { history: "record" }), { applied: true,
-        revisions: [{ documentId: helper.documentId, revision: 1 }, { documentId: source.documentId, revision: doc.revision }] });
-    assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(workspace.document(source.documentId), doc);
-    assert.ok(workspace.undo({ documentId: helper.documentId, expectedRevision: 1 }).applied);
-    assert.equal(workspace.document(helper.documentId).text(), "old"); assert.equal(workspace.document(source.documentId), doc);
+        revisions: [{ documentId: helper.id, revision: 1 }, { documentId: source.id, revision: doc.revision }] });
+    assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(workspace.document(source.id), doc);
+    assert.ok(workspace.undo({ documentId: helper.id, expectedRevision: 1 }).applied);
+    assert.equal(workspace.document(helper.id).text(), "old"); assert.equal(workspace.document(source.id), doc);
     assert.deepEqual(changes, []); stop();
 });
 
@@ -193,7 +193,7 @@ test("saved text respects outstanding saves, reload reservations and dirty read-
     assert.equal(source.getSnapshot().revision, state.revision);
     workspace.setCapabilities(source.id, { edit: [], save: false });
     assert.deepEqual(workspace.adoptSaved(source.id, next), { applied: false, reason: "read-only" });
-    assert.equal(workspace.document(source.documentId).buffer.slice(0, 5), "local");
+    assert.equal(workspace.document(source.id).buffer.slice(0, 5), "local");
 });
 
 test("reviewed retry preserves the old baseline until a receipt, then keeps later typing and canonical dirty semantics", async () => {
@@ -208,9 +208,9 @@ test("reviewed retry preserves the old baseline until a receipt, then keeps late
     edit("merged   later"); resolve({ kind: "saved", serverVersion: "v2", canonical: "merged" });
     const result = await saving; assert.equal(result.kind, "saved");
     if (result.kind === "saved") { assert.equal(result.receipt.canonicalApplied, false); assert.equal(result.receipt.submission.revision, revision); }
-    assert.equal(workspace.document(source.documentId).text(), "merged   later"); assert.equal(source.metadata.getSnapshot().dirty, true);
-    workspace.undo({ documentId: source.documentId, expectedRevision: source.getSnapshot().revision });
-    assert.equal(workspace.document(source.documentId).text(), "merged  "); assert.equal(source.metadata.getSnapshot().dirty, true);
+    assert.equal(workspace.document(source.id).text(), "merged   later"); assert.equal(source.metadata.getSnapshot().dirty, true);
+    workspace.undo({ documentId: source.id, expectedRevision: source.getSnapshot().revision });
+    assert.equal(workspace.document(source.id).text(), "merged  "); assert.equal(source.metadata.getSnapshot().dirty, true);
     edit("merged"); assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(source.metadata.getSnapshot().serverVersion, "v2");
     assert.equal(workspace.ownership(source.id).leases, 0);
 });
@@ -220,16 +220,16 @@ test("another remote change rejects a reviewed retry without adopting either rem
     const reviewed = { target: workspace.captureResource(source.id), expectedRevision: source.getSnapshot().revision, expectedServerVersion: "v1" };
     const result = await commands.save(workspace.captureSave(source, reviewed), { save: async submission => { assert.equal(submission.expectedServerVersion, "v1"); return { kind: "conflict", serverVersion: "v2" }; } });
     assert.deepEqual(result, { kind: "conflict", serverVersion: "v2" }); assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
-    assert.equal(workspace.document(source.documentId).text(), "local");
+    assert.equal(workspace.document(source.id).text(), "local");
     edit("base"); assert.equal(source.metadata.getSnapshot().dirty, false); assert.equal(workspace.ownership(source.id).leases, 0);
 });
 
 test("stale or malformed review and reserved saves reject before acquiring ownership or changing snapshots", () => {
     const { workspace, source, edit } = fixture(); edit("local"); const revision = source.getSnapshot().revision;
-    const before = source.getSnapshot(), history = workspace.observeHistory(source.documentId).getSnapshot();
+    const before = source.getSnapshot(), history = workspace.observeHistory(source.id).getSnapshot();
     for (const review of [{ target: workspace.captureResource(source.id), expectedRevision: revision - 1, expectedServerVersion: "v1" }, { target: workspace.captureResource(source.id), expectedRevision: -1, expectedServerVersion: "v1" } ]) {
         assert.throws(() => workspace.captureSave(source, review));
-        assert.equal(source.getSnapshot(), before); assert.equal(workspace.observeHistory(source.documentId).getSnapshot(), history);
+        assert.equal(source.getSnapshot(), before); assert.equal(workspace.observeHistory(source.id).getSnapshot(), history);
         assert.equal(workspace.ownership(source.id).leases, 0);
     }
     const pending = workspace.captureSave(source);

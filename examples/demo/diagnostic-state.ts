@@ -6,7 +6,7 @@ type Location = Readonly<{ documentId: DocumentId; revision: number; from: numbe
 export type DemoDiagnostic = LspDiagnostic & Location & Readonly<{ name: string;
     related: readonly Readonly<{ name: string; message: string; line: number; character: number; target: Location | null }>[] }>;
 type Entry = { document: DocumentSnapshot; syntax?: readonly DemoDiagnostic[] };
-const same = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key
+const same = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.key === b.key
     && a.language === b.language && a.revision === b.revision && a.buffer === b.buffer;
 
 /** Example-owned presentation and syntax cache. Mapped messages are not fresh provider authority. */
@@ -21,7 +21,7 @@ export class DemoDiagnosticState {
         const next = new Map<DocumentId, Entry>(documents.map(document => [document.id, { document }]));
         const moved = (target: Location): Location | undefined => {
             const before = this.documents.get(target.documentId)?.document, after = next.get(target.documentId)?.document;
-            if (!before || !after || before.key !== after.key || before.resourceId !== after.resourceId || before.language !== after.language || before.revision !== target.revision) return;
+            if (!before || !after || before.key !== after.key || before.id !== after.id || before.language !== after.language || before.revision !== target.revision) return;
             if (same(before, after)) return target;
             const length = before.buffer.length;
             // A point at a nonempty EOF depends on the last source unit. Map that unit, then display its end.

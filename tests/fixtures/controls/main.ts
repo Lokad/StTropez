@@ -13,7 +13,7 @@ const strings: ControlStrings = location.search === "?locale=fr" ? {
     reviewChanges: count => String(count) + (count === 1 ? " modification" : " modifications"),
     findStatus: state => String(state.count) + " résultats",
 } : {};
-export const editor = mountTextEditor(document.querySelector("main")!, workspace, file.documentId, { strings });
+export const editor = mountTextEditor(document.querySelector("main")!, workspace, file.id, { strings });
 const find = mountFindBar(document.querySelector("#find")!, { strings });
 find.attach(editor);
 const provider = new BrowserLspWorkspace(workspace, {

@@ -17,7 +17,7 @@ const cancelled = (error: unknown) => error instanceof RpcError && error.code ==
 
 test("fixture hover policy belongs to the captured request across overlapping scopes, cancellation and retry", { timeout: 15000 }, async () => withProtocolFixture(async ({ url, defer }) => {
     const workspace = new Workspace(), documents = ["first", "second"].map(name => workspace.document(workspace.createTextResource(
-        { scope: "requests", resource: name, variant: "working" }, name, { value: "const sample = 1;" }, undefined, { language: { uri: `host+fixture:${name}`, languageId: "fixture" } }).documentId));
+        { scope: "requests", resource: name, variant: "working" }, name, { value: "const sample = 1;" }, undefined, { language: { uri: `host+fixture:${name}`, languageId: "fixture" } }).id));
     defer(() => assert.equal(workspace.diagnostics().leases, 0));
     const packets: { id?: number; method?: string; params?: { id?: number; _fixture?: unknown; textDocument?: { uri: string } } }[] = [];
     let onHoverSent = () => {};
@@ -86,7 +86,7 @@ async function languagePolicy({ url, defer }: ProtocolFixture) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "language", resource: "source", variant: "working" }, "Source",
         { value: 'lookup("a", );\nimport "sample-utils";\nconst color = "#abc";' }, undefined, { language: { uri: "host+fixture:source", languageId: "fixture" } });
     defer(() => assert.equal(workspace.diagnostics().leases, 0));
-    const document = workspace.document(source.documentId), defaultUri = "host+fixture:default", firstUri = "host+fixture:first", secondUri = "host+fixture:second";
+    const document = workspace.document(source.id), defaultUri = "host+fixture:default", firstUri = "host+fixture:first", secondUri = "host+fixture:second";
     const owner = new FixtureLspWorkspace(workspace, {
         connect: () => openWebSocketTransport(url),
         initializationOptions: { fixtureModuleUris: [{ module: "sample-utils", uri: defaultUri }] },

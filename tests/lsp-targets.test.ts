@@ -13,9 +13,9 @@ const range = { start: { line: 0, character: 6 }, end: { line: 0, character: 10 
 const stale = (error: unknown) => error instanceof RpcError && error.code === -32801;
 const cancelled = (error: unknown) => error instanceof RpcError && error.code === -32800;
 function retained(f: ReturnType<typeof clientFixture>, addressed = uri) {
-    f.workspace.setDocumentLanguage(f.other.documentId, { uri: addressed, languageId: "generic" });
+    f.workspace.setDocumentLanguage(f.other.id, { uri: addressed, languageId: "generic" });
     let released = 0;
-    const value = { document: f.workspace.document(f.other.documentId), release: () => { released++; } } satisfies LspTargetSource;
+    const value = { document: f.workspace.document(f.other.id), release: () => { released++; } } satisfies LspTargetSource;
     return { get released() { return released; }, value };
 }
 
@@ -100,7 +100,7 @@ test("target checks visit the captured project once per pass and retain independ
         client = navigationClient(f.provider); t.after(client.dispose);
     const resources = [f.source, ...Array.from({ length: 19 }, (_, i) => f.workspace.createTextResource(
         { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, { value: "source" }, undefined, { language: { uri: `generic:extra/${i}`, languageId: "generic" } }))];
-    const snapshots = resources.map(resource => f.workspace.document(resource.documentId));
+    const snapshots = resources.map(resource => f.workspace.document(resource.id));
     f.peer.onRequest("textDocument/references", () => Array.from({ length: 40 }, (_, i) => ({ uri: `${uri}/${i}`, range })));
     let visits = 0; const observe = f.workspace.observeDocument;
     Reflect.set(f.workspace, "observeDocument", (...args: Parameters<typeof observe>) => { visits++; return observe.apply(f.workspace, args); });
@@ -127,9 +127,9 @@ test("navigation resolves an opaque target once without synchronizing it, and re
     const [result, same] = await Promise.all([preview.resolve(), preview.resolve()]);
     assert.equal(result, same); assert.equal(f.sent("textDocument/definition").length, 1);
     assert.equal(calls, 1); assert.equal(result.locations.length, 2); assert.equal(context!.purpose, "navigation");
-    assert.equal(context!.source!.documentId, source.id); assert.equal(result.locations[0]!.target.document.documentId, f.other.documentId);
+    assert.equal(context!.source!.documentId, source.id); assert.equal(result.locations[0]!.target.document.documentId, f.other.id);
     assert.equal(result.locations[0]!.from, 6); assert.equal(f.sent("textDocument/didOpen").length, 1); assert.equal(result.isCurrent(), true);
-    const doc = f.workspace.document(f.other.documentId);
+    const doc = f.workspace.document(f.other.id);
     f.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, edits: [{ from: 0, to: 0, insert: "changed " }], origin: "human" });
     assert.equal(result.isCurrent(), false); client.cancel(); await settled(); assert.equal(lease!.released, 1); assert.equal(f.workspace.diagnostics().leases, 1);
     client.dispose(); await settled(); assert.equal(f.workspace.diagnostics().leases, 0);
@@ -193,8 +193,8 @@ test("rename and resolved actions retain unloaded null-version edit targets thro
     const source = f.document(), edit = { documentChanges: [{ textDocument: { uri, version: null }, edits: [{ range: { ...range, end: { line: 0, character: 11 } }, newText: "omega" }] }] };
     f.peer.onRequest("textDocument/rename", () => edit);
     const plan = await rename.run({ document: source, offset: 6, newName: "omega" }).result; assert.equal(plan.isCurrent(), true);
-    f.workspace.editDocuments(plan.documents.map(item => ({ documentId: f.other.documentId, expectedRevision: item.target.document.revision, edits: item.edits, origin: "human" })));
-    assert.equal(f.workspace.document(f.other.documentId).text(), "gamma omega"); assert.equal(plan.isCurrent(), false);
+    f.workspace.editDocuments(plan.documents.map(item => ({ documentId: f.other.id, expectedRevision: item.target.document.revision, edits: item.edits, origin: "human" })));
+    assert.equal(f.workspace.document(f.other.id).text(), "gamma omega"); assert.equal(plan.isCurrent(), false);
     rename.cancel(); await settled(); assert.equal(leases[0]!.released, 1);
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "lazy", data: { key: 1 } }]);
     f.peer.onRequest("codeAction/resolve", (value: object) => ({ ...value, edit }));
@@ -232,7 +232,7 @@ test("a closed target cannot satisfy an invented wire version or bypass read-onl
     const applied = f.workspace.editDocuments(plan.documents.map(item => ({ documentId: item.target.document.documentId as typeof source.id,
         expectedRevision: item.target.document.revision, edits: item.edits, origin: "human" })));
     assert.equal(applied.applied, false);
-    assert.equal(f.document(), source); assert.equal(f.workspace.document(f.other.documentId).text(), "gamma delta");
+    assert.equal(f.document(), source); assert.equal(f.workspace.document(f.other.id).text(), "gamma delta");
 });
 
 test("server-proposed edits resolve through the same host policy and release targets after the decision", async t => {

@@ -63,7 +63,7 @@ test("a saved color action cannot open or displace a picker after editing and Un
             { value: '"#5fae99"' }, undefined, { language: { uri: "fixture:/colors", languageId: "generic" } });
         const host = document.body.appendChild(document.createElement("main"));
         host.style.height = "220px";
-        const editor = mountTextEditor(host, workspace, file.documentId, { ariaLabel: "Colors" });
+        const editor = mountTextEditor(host, workspace, file.id, { ariaLabel: "Colors" });
         const provider = new BrowserLspWorkspace(workspace, {
             connect: signal => openWebSocketTransport("ws://" + location.host + "/lsp-fixture", { signal }),
         });
@@ -106,7 +106,7 @@ test("definition lookup uses its attached scope and recovers from a refused moun
         const source = workspace.createTextResource({ scope: "test", resource: "source", variant: "working" }, "Source",
             { value: "const catalogue = 1;\ncatalogue" }, undefined, { language: { uri: "fixture:/source", languageId: "generic" } });
         const host = document.createElement("main"); host.style.height = "240px"; document.body.append(host);
-        const editor = mountTextEditor(host, workspace, source.documentId);
+        const editor = mountTextEditor(host, workspace, source.id);
         const connect = (signal: AbortSignal) => openWebSocketTransport("ws://" + location.host + "/lsp-fixture", { signal });
         const provider = new BrowserLspWorkspace(workspace, { maxScopes: 1, connect });
         const ownership = () => { const { leases, subscriptions } = workspace.diagnostics(); return { leases, subscriptions }; };
@@ -128,7 +128,7 @@ test("definition lookup uses its attached scope and recovers from a refused moun
                         cancelLookup = false;
                         navigation.cancel();
                     }
-                    return [workspace.document(source.documentId)];
+                    return [workspace.document(source.id)];
                 },
                 prepareRequest() { prepared++; return undefined; },
             },
@@ -175,7 +175,7 @@ test("signature help can release focus to a host field and recover from a refuse
             { value: text }, undefined, { language: { uri: "fixture:/source", languageId: "generic" } });
         const host = document.createElement("main"), field = document.createElement("input");
         host.style.height = "240px"; field.setAttribute("aria-label", "Host field"); document.body.append(host, field);
-        const editor = mountTextEditor(host, workspace, source.documentId, { ariaLabel: "Source" });
+        const editor = mountTextEditor(host, workspace, source.id, { ariaLabel: "Source" });
         const caret = text.indexOf(")"); editor.view.setSelection(0, { anchor: caret, head: caret }); editor.focus();
         const connect = (signal: AbortSignal) => openWebSocketTransport("ws://" + location.host + "/lsp-fixture", { signal });
         const provider = new BrowserLspWorkspace(workspace, { connect, maxScopes: 1 });
@@ -236,10 +236,10 @@ test("document mounts own Find, fold discovery and pending insertions across a r
         const { mountTextEditor, createFindController, createFoldingController } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace();
         const source = workspace.createTextResource({ scope: "test", resource: "document", variant: "working" }, "Source", { value: "one\n  two\nend" });
-        const view = workspace.createDocumentView(source.documentId);
+        const view = workspace.createDocumentView(source.id);
         const host = document.createElement("main");
         host.style.height = "240px"; document.body.append(host);
-        const mount = () => mountTextEditor(host, workspace, source.documentId, { view });
+        const mount = () => mountTextEditor(host, workspace, source.id, { view });
         const editor = mount(), find = createFindController(editor);
         let reply: (() => void) | undefined, discoverySignal: AbortSignal | undefined;
         const folds = createFoldingController(editor, (_document, signal) => {
@@ -260,7 +260,7 @@ test("document mounts own Find, fold discovery and pending insertions across a r
                     cancelled: discoverySignal?.aborted, find: find.getSnapshot().status, folds: folds.getSnapshot().status };
             },
             finish: () => {
-                const text = workspace.document(source.documentId).buffer.text(), ranges = view.folding.getSnapshot().regions.length;
+                const text = workspace.document(source.id).buffer.text(), ranges = view.folding.getSnapshot().regions.length;
                 replacement.dispose(); view.dispose(); workspace.releaseResource(source.id, true);
                 return { text, ranges, ...workspace.diagnostics() };
             }
@@ -282,7 +282,7 @@ test("cancelling a refresh makes the same selection editable before the stale re
         const workspace = new Workspace();
         const source = workspace.createTextResource({ scope: "test", resource: "refresh", variant: "working" }, "Source", { value: "left middle right" });
         const host = document.createElement("main"); document.body.append(host);
-        const editor = mountTextEditor(host, workspace, source.documentId);
+        const editor = mountTextEditor(host, workspace, source.id);
         editor.view.setSelection(0, { anchor: 11, head: 5 });
         const refresh = workspace.beginLoad(source);
         return { cancel: refresh.dispose, late: () => refresh.accept({ value: "obsolete" }), dispose: editor.dispose };
@@ -346,7 +346,7 @@ test("remounting after edits uses the retained selection, maps a fresh view or c
         const { mountTextEditor } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace();
         const file = workspace.createTextResource({ scope: "test", resource: "restore", variant: "working" }, "Source", { value: "left\nmiddle\nright" });
-        const id = file.documentId, view = workspace.createDocumentView(id);
+        const id = file.id, view = workspace.createDocumentView(id);
         const host = document.createElement("main"); host.style.height = "160px"; document.body.append(host);
         let editor = mountTextEditor(host, workspace, id, { view });
         try {
@@ -366,7 +366,7 @@ test("remounting after edits uses the retained selection, maps a fresh view or c
             editor = mountTextEditor(host, workspace, id);
             const clamped = editor.restoreView(saved), second = editor.view.getSnapshot().selectionSet;
             const wrong = { ...saved, folding: { ...saved.folding!, documentId: workspace.createTextResource(
-                { scope: "test", resource: "other", variant: "working" }, "Other", { value: "" }).documentId } };
+                { scope: "test", resource: "other", variant: "working" }, "Other", { value: "" }).id } };
             const foreign = editor.restoreView(wrong);
             editor.dispose();
             editor = mountTextEditor(host, workspace, id, { view });
@@ -399,7 +399,7 @@ test("Back restores the origin selections across edits at a same-file destinatio
         const padding = "abc\n".repeat(60);
         const resource = workspace.createTextResource({ scope: "test", resource: "jump", variant: "source" }, "Jump",
             { value: padding + "abc\norigin line\n" + padding });
-        const { documentId } = resource;
+        const { id: documentId } = resource;
         const host = document.body.appendChild(document.createElement("section"));
         host.style.height = "160px";
         const editor = mountTextEditor(host, workspace, documentId), history = createNavigationHistory(workspace);
@@ -444,9 +444,9 @@ test("revealing a source range in a read-only editor aligns the painted rows and
             { value: Array.from({ length: 200 }, (_, i) => "row " + i + " 😀").join("\r\n") });
         const host = document.createElement("main"), other = document.createElement("button");
         host.style.height = "200px"; document.body.append(other, host);
-        const editor = mountTextEditor(host, workspace, resource.documentId, { readOnly: true });
+        const editor = mountTextEditor(host, workspace, resource.id, { readOnly: true });
         try {
-            const { view, viewport } = editor, { buffer, revision } = workspace.document(resource.documentId);
+            const { view, viewport } = editor, { buffer, revision } = workspace.document(resource.id);
             view.setSelections(revision, [{ anchor: 5, head: 1 }, { anchor: 7, head: 7 }], 0);
             const selection = view.getSnapshot().selectionSet, folding = view.folding;
             folding.setRanges(folding.getSnapshot(), [{ id: "section", from: buffer.offsetAt(12), to: buffer.offsetAt(160), collapsed: true }]);
@@ -487,11 +487,11 @@ test("minimap gestures preserve focus and multiple selections as the document pr
         const resource = workspace.createTextResource({ scope: "test", resource: "map", variant: "text" }, "Map", { value: lines.join("\n") });
         const host = document.createElement("section");
         host.style.cssText = "width:410.5px;height:240.5px;zoom:1.25"; document.body.append(host);
-        const editor = mountTextEditor(host, workspace, resource.documentId), viewport = editor.viewport;
+        const editor = mountTextEditor(host, workspace, resource.id), viewport = editor.viewport;
         window.presentationFixture = { workspace, resource: resource.id, host, editor };
         if (viewport.settings().minimap || host.querySelector("canvas")) throw new Error("Expected an opt-in overview.");
         viewport.configure({ minimap: true });
-        editor.view.setSelections(workspace.document(resource.documentId).revision, [{ anchor: 6, head: 2 }, { anchor: 9, head: 9 }], 0);
+        editor.view.setSelections(workspace.document(resource.id).revision, [{ anchor: 6, head: 2 }, { anchor: 9, head: 9 }], 0);
         editor.focus(); viewport.flush();
         return editor.view.getSnapshot().selectionSet;
     });
@@ -555,7 +555,7 @@ test("minimap projects comparison gaps and follows linked and independent scroll
         const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "map-review", variant: "text" }, "Working", { value: lines.join("\n") });
         const host = document.createElement("section");
         host.style.width = "900px"; document.body.append(host); lines.splice(40, 0, ...Array<string>(80).fill("baseline section"));
-        const comparison = mountTextComparison(host, workspace, resource.documentId, { buffer: TextBuffer.from(lines.join("\n")), version: "one" }, { rowsAligned: true, settings: {
+        const comparison = mountTextComparison(host, workspace, resource.id, { buffer: TextBuffer.from(lines.join("\n")), version: "one" }, { rowsAligned: true, settings: {
             minimap: true, minimapLabel: line => line === null ? "Espace" : "Ligne " + line,
         } });
         window.presentationFixture = { workspace, host, resource: resource.id, editor: comparison.panes.working, comparison };
@@ -618,7 +618,7 @@ test.describe("scrolling beyond the last line", () => {
             const host = document.createElement("section");
             host.style.cssText = "height:240.4px;width:600.4px;zoom:1.25"; document.body.append(host);
 
-            const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Trailing source" }), viewport = editor.viewport;
+            const editor = mountTextEditor(host, workspace, resource.id, { ariaLabel: "Trailing source" }), viewport = editor.viewport;
             window.presentationFixture = { workspace, editor, host, resource: resource.id };
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
             const defaults = viewport.settings().scrollBeyondLastLine, ordinary = viewport.getDiagnostics(), selection = editor.view.getSnapshot().selectionSet;
@@ -684,7 +684,7 @@ test.describe("scrolling beyond the last line", () => {
             const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "aligned-trailing", variant: "text" }, "Working", { value: "a\nb\nc" });
             const host = document.createElement("section");
             host.style.cssText = "height:500px;width:800px"; document.body.append(host);
-            const comparison = mountTextComparison(host, workspace, resource.documentId, { buffer: TextBuffer.from("extra\na\nb\nc"), version: "one" }, { rowsAligned: true });
+            const comparison = mountTextComparison(host, workspace, resource.id, { buffer: TextBuffer.from("extra\na\nb\nc"), version: "one" }, { rowsAligned: true });
             window.presentationFixture = { workspace, resource: resource.id, host, comparison, editor: comparison.panes.working };
         });
         await page.waitForFunction(() => { const c = window.presentationFixture.comparison!;
@@ -712,11 +712,11 @@ test.describe("scrolling beyond the last line", () => {
             const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "empty-trailing", variant: "text" }, "Empty", { value: "" });
             const host = document.createElement("section");
             host.style.cssText = "height:240.6px;width:600.6px;zoom:1.25"; document.body.append(host);
-            const editor = mountTextEditor(host, workspace, resource.documentId, { settings: { scrollBeyondLastLine: true } }), viewport = editor.viewport;
+            const editor = mountTextEditor(host, workspace, resource.id, { settings: { scrollBeyondLastLine: true } }), viewport = editor.viewport;
             const samples: { width: number; height: number; overflow: boolean; extent: number; lineHeight: number }[] = [];
             for (const value of ["", "single"]) {
                 viewport.configure({ minimap: value === "single" });
-                const doc = workspace.document(resource.documentId);
+                const doc = workspace.document(resource.id);
                 if (value) workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "host", edits: [{ from: 0, to: 0, insert: value }] });
                 for (let i = 0; i < 12; i++) {
                     await new Promise(resolve => requestAnimationFrame(resolve)); viewport.flush(); const s = viewport.getDiagnostics(), root = viewport.element;
@@ -740,7 +740,7 @@ test("ligature policy changes native shaping while preserving caret, selection, 
         const host = document.createElement("section");
         host.style.cssText = "height:240px;width:600px;--st-font:StLigatureFixture;--st-font-size:40px"; document.body.append(host);
 
-        const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Ligature source" }), viewport = editor.viewport;
+        const editor = mountTextEditor(host, workspace, resource.id, { ariaLabel: "Ligature source" }), viewport = editor.viewport;
         window.presentationFixture = { workspace, editor, host, resource: resource.id };
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); viewport.flush();
         const selection = editor.view.getSnapshot().selectionSet, child = host.querySelector('.st-viewport-row[data-line="0"]')!.firstChild!;
@@ -759,7 +759,7 @@ test("ligature policy changes native shaping while preserving caret, selection, 
         const renders = viewport.getDiagnostics().renders; viewport.configure({ fontLigatures: true }); viewport.flush();
         const noOp = { mutations: observer.takeRecords().length, renders: viewport.getDiagnostics().renders - renders, pending: viewport.activity().pending }; observer.disconnect();
         return { off, on, restored, again, noOp, enabled: viewport.settings().fontLigatures, sameChild: child === host.querySelector('.st-viewport-row[data-line="0"]')!.firstChild,
-            sameSelection: selection === editor.view.getSnapshot().selectionSet, revision: workspace.document(resource.documentId).revision };
+            sameSelection: selection === editor.view.getSnapshot().selectionSet, revision: workspace.document(resource.id).revision };
     }, Array.from(fontFixture({ ligatures: true })));
     expect(initial).toMatchObject({ enabled: true, sameChild: true, sameSelection: true, revision: 0,
         noOp: { mutations: 0, renders: 0, pending: false }, off: { enabled: false, css: "none" }, on: { enabled: true, css: "normal" } });
@@ -810,11 +810,11 @@ test("column rulers follow measured scroll/font/zoom without changing source geo
         host.style.cssText = "height:240px;width:600px"; document.body.append(host);
         for (const columns of [[0], [-1], [1.5], [Infinity], [NaN], [Number.MAX_SAFE_INTEGER + 1], Array(1), Array(129).fill(80)]) {
             const before = workspace.diagnostics().views;
-            try { mountTextEditor(host, workspace, resource.documentId, { settings: { columnRulers: columns } }); throw new Error("Invalid rulers accepted."); }
+            try { mountTextEditor(host, workspace, resource.id, { settings: { columnRulers: columns } }); throw new Error("Invalid rulers accepted."); }
             catch (error) { if (!(error instanceof RangeError)) throw error; }
             if (workspace.diagnostics().views !== before || host.childNodes.length) throw new Error("Invalid mount leaked ownership.");
         }
-        const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Ruler source" }), viewport = editor.viewport;
+        const editor = mountTextEditor(host, workspace, resource.id, { ariaLabel: "Ruler source" }), viewport = editor.viewport;
         window.presentationFixture = { workspace, editor, host, resource: resource.id };
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.activity().pending) return; } throw new Error("Viewport did not settle."); };
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -908,7 +908,7 @@ test("current-line presentation follows the primary caret through input, folding
         host.style.cssText = "height:400px;width:800px;--st-current-line:#ffffff18";
         style.textContent = ".host-row { background: rgb(30, 45, 65) } .host-color { color: rgb(180, 60, 160) }"; document.body.append(style, host);
 
-        const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Line source" }), viewport = editor.viewport;
+        const editor = mountTextEditor(host, workspace, resource.id, { ariaLabel: "Line source" }), viewport = editor.viewport;
         editor.decorations.addProvider({ order: 0, lineClass: () => "host-row",
             provide: line => [{ from: line.from, to: line.to, className: "host-color" }] });
         window.presentationFixture = { workspace, editor, resource: resource.id, host };

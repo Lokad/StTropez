@@ -16,7 +16,7 @@ export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, edi
     let copy: HTMLButtonElement | undefined, finish: HTMLButtonElement | undefined, cancel: HTMLButtonElement | undefined;
     let disposed = false, visible = false, renders = 0, lastLayoutMs = 0, maxLayoutMs = 0, top = 0, anchorTop = 0, groupSerial = 0, groupField: InstructionField | undefined, groupAt = 0, groupRevision = -1;
     let layouts = 0, layoutWorkMs = 0, formInputs = 0, lastFormInputMs = 0;
-    const current = () => controller.panes.primary.getSnapshot() === target && target.documentId === controller.source.documentId;
+    const current = () => controller.panes.primary.getSnapshot() === target && target.documentId === controller.source.id;
     const capture = (field: Field): InputCapture | undefined => { const value = model.capture(field.key); return value ? { model: value, raw: model.state.getSnapshot().values[field.key], projection: exportText(model.state.getSnapshot().values[field.key], "lf") } : undefined; };
     const value = (field: Field, captured: InputCapture): string => {
         const diff = textDifference(captured.projection.text, field.node.value); if (!diff) return captured.raw;
@@ -27,10 +27,10 @@ export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, edi
         if (field.composing || disposed) return; const old = field.capture ?? (field.ignored ? undefined : capture(field)); field.capture = undefined;
         if (!old) { sync(); return; }
         if (!current()) { model.reject(old.model, value(field, old), "instruction-view-expired"); sync(); return; }
-        const now = win.performance.now(), revision = controller.workspace.document(controller.source.documentId).revision;
+        const now = win.performance.now(), revision = controller.workspace.document(controller.source.id).revision;
         if (groupField !== field.key || now - groupAt >= 1000 || groupRevision !== revision) { groupSerial++; groupField = field.key; }
         model.edit(old.model, value(field, old), editor.view, `instruction-${editor.view.id}-${model.state.getSnapshot().generation}-${groupSerial}`);
-        groupAt = now; groupRevision = controller.workspace.document(controller.source.documentId).revision; sync();
+        groupAt = now; groupRevision = controller.workspace.document(controller.source.id).revision; sync();
     };
     const unmount = (restore: boolean) => {
         if (!panel) return; const focused = fields.find(f => owner.activeElement === f.node); memory.focus = focused?.key;
@@ -59,7 +59,7 @@ export function mountInstructionWidget(host: HTMLElement, lane: HTMLElement, edi
                 const command = isPrimaryShortcut(event), key = event.key.toLowerCase();
                 if (!command || !["s", "z", "y"].includes(key) || key === "s" && event.shiftKey) return; event.preventDefault(); event.stopPropagation();
                 if (event.repeat || event.isComposing || field.composing || fields.some(f => !!f.capture)) return; groupField = undefined;
-                if (key === "s") controller.save(); else { const d = controller.workspace.document(controller.source.documentId); controller.workspace[key === "y" || event.shiftKey ? "redo" : "undo"]({ documentId: d.id, expectedRevision: d.revision }); }
+                if (key === "s") controller.save(); else { const d = controller.workspace.document(controller.source.id); controller.workspace[key === "y" || event.shiftKey ? "redo" : "undo"]({ documentId: d.id, expectedRevision: d.revision }); }
             }, { signal });
         }
         status = owner.createElement("output"); status.setAttribute("aria-label", "Instruction status"); panel.append(status);

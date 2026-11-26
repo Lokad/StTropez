@@ -17,7 +17,7 @@ export function openFile() {
         "Source", { value: "const value = 1;\n", serverVersion: "source-v1" }, undefined,
         { language: { uri: "project:source.ts", languageId: "typescript" } }
     );
-    return { workspace, source, view: workspace.createDocumentView(source.documentId) };
+    return { workspace, source, view: workspace.createDocumentView(source.id) };
 }
 ```
 
@@ -26,7 +26,8 @@ export function openFile() {
 ### Identities and snapshots
 
 A resource key groups scope, resource and variant. Reopening a released key gives it a new `ResourceId`.
-Across awaits, capture and resolve a `ResourceTarget`. Views of one `DocumentId` share text and history.
+A text handle’s `id` is its `DocumentId`. Use it to edit, read metadata, acquire a lease or release the resource.
+Across awaits, capture and resolve a `ResourceTarget`. Views of one document share text and history.
 Local revision tracks edits. Server version identifies the saved baseline.
 
 `ownsDocumentView(view)` checks that the view belongs to this workspace. To target one mount,

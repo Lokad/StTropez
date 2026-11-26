@@ -33,8 +33,8 @@ function fixture(t: test.TestContext, capabilities: InitializeResult["capabiliti
     t.after(() => { for (const next of peers) { next.rpc.dispose(); next.wire.left.dispose(); } for (const timer of timers) clearTimeout(timer); });
     return { connect, schedule, peers, timers };
 }
-const input = (text = "a😀\r\nb\rc\n", uri = "host+fixture://project/scope/doc%20one.ts", resourceId = "resource:one", revision = 40) =>
-    ({ uri, resourceId, documentId: resourceId + ":working", revision, languageId: "typescript", buffer: TextBuffer.from(text) });
+const input = (text = "a😀\r\nb\rc\n", uri = "host+fixture://project/scope/doc%20one.ts", documentId = "resource:one", revision = 40) =>
+    ({ uri, documentId, revision, languageId: "typescript", buffer: TextBuffer.from(text) });
 
 test("initialize advertises the supported methods or the explicit subset on every connection", async t => {
     for (const limited of [false, true]) {
@@ -412,7 +412,7 @@ test("reconnect reopens current captures, clears registrations and never replays
     const host = fixture(t), session = new LspSession({ ...host, features: ["textDocument/hover"] }); t.after(() => session.dispose()); const initial = input(), document = session.bindDocument(initial);
     let handled = 0; const remove = session.onRequest("host/custom", () => { handled++; return { ok: true }; }); await session.connect(); const first = host.peers[0]!;
     await first.rpc.sendRequest(RegistrationRequest.type, { registrations: [{ id: "temporary", method: "textDocument/hover", registerOptions: { documentSelector: null } }] });
-    first.rpc.onRequest("fixture/command", () => new Promise(() => {})); const call = session.request("fixture/command", { captured: initial.resourceId }), rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32097); await settled();
+    first.rpc.onRequest("fixture/command", () => new Promise(() => {})); const call = session.request("fixture/command", { captured: initial.documentId }), rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32097); await settled();
     session.disconnect(); await rejected; const latest = initial.buffer.replace(0, 0, "offline"); document.update(initial.revision, 99, latest); await session.connect(); await settled();
     const second = host.peers[1]!; assert.equal(second.documents.get(initial.uri)?.getText(), latest.slice(0, latest.length)); assert.equal(second.documents.get(initial.uri)?.version, 1); assert.equal(session.getSnapshot().registrations.length, 0);
     assert.equal(second.wire.messages[0]!.some(value => (value as { method?: string }).method === "fixture/command"), false);

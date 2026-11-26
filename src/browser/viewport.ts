@@ -217,7 +217,7 @@ export type MountedViewport = Readonly<{
 export function mountViewport(host: HTMLElement, workspace: Workspace, documentId: DocumentId,
     options: TextViewportOptions = {}, comparison?: ComparisonPresentation): MountedViewport {
     let settings = viewportSettings(defaultSettings, options.settings);
-    const resource = workspace.resourceForDocument(documentId);
+    const resource = workspace.resource(documentId);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId), owner = host.ownerDocument, browserWindow = owner.defaultView;
     if (!browserWindow) { if (!options.view) view.dispose(); throw new Error("Viewport requires an attached browser document."); }

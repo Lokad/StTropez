@@ -13,9 +13,9 @@ function fixture(count = 5000) {
     const workspace = new Workspace(), baseline = TextBuffer.from("a\n-\n".repeat(count));
     const resource = workspace.createTextResource({ scope: "test", resource: "working", variant: "text" }, "Working", { value: "b\n-\n".repeat(count) });
     const ref = workspace.createTextResource({ scope: "test", resource: "baseline", variant: "text" }, "Baseline", { value: "a\n-\n".repeat(count) });
-    const view = workspace.createDocumentView(resource.documentId), refView = workspace.createDocumentView(ref.documentId);
+    const view = workspace.createDocumentView(resource.id), refView = workspace.createDocumentView(ref.id);
     let state: ComparisonSnapshot = Object.freeze({ status: "ready", generation: 0, baseline: Object.freeze({ buffer: baseline, version: "one", epoch: 0 }),
-        working: workspace.document(resource.documentId), progress: null, failure: null,
+        working: workspace.document(resource.id), progress: null, failure: null,
         hunks: Object.freeze(Array.from({ length: count }, (_, i) => {
             const range = Object.freeze({ from: i * 4, to: i * 4 + 1, lineFrom: i * 2, lineTo: i * 2 + 1 });
             return Object.freeze({ baseline: range, working: range, whitespaceOnly: false });

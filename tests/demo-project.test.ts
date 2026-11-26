@@ -22,7 +22,7 @@ test("source notes follow every edit in a workspace batch", () => {
     const workspace = new Workspace();
     const resource = workspace.createTextResource({ scope: "notes", resource: "rules", variant: "working" },
         "Rules", { value: "one two three" });
-    const documentId = resource.documentId;
+    const documentId = resource.id;
     const notes = new HostSourceNotes(workspace, documentId);
     notes.add(0, 4, 7, "keep");
     notes.add(0, 8, 13, "remove");
@@ -84,10 +84,10 @@ test("overlapping Saves use the captured files and the last acknowledged storage
         try {
             const [main, helper] = project.files;
             assert.ok(main && helper);
-            const edit = (id: typeof main.resource.documentId, text: string) =>
+            const edit = (id: typeof main.resource.id, text: string) =>
                 project.workspace.replaceText(id, text, { origin: "human", history: "record" });
             const save = () => project.save(() => {});
-            edit(main.resource.documentId, "first");
+            edit(main.resource.id, "first");
             const reviewed = outcome === "failed reviewed write";
             if (reviewed) {
                 store.row = { token: "peer", value: { version: 1, files: { ...project.sample.files, [main.name]: "peer" } } };
@@ -97,11 +97,11 @@ test("overlapping Saves use the captured files and the last acknowledged storage
             store.write = holdFirstWrite;
             const first = project.save(() => {}, reviewed);
             await started.promise;
-            edit(main.resource.documentId, "second");
-            edit(helper.resource.documentId, "helper");
+            edit(main.resource.id, "second");
+            edit(helper.resource.id, "helper");
             const second = save();
             const same = save();
-            edit(helper.resource.documentId, "later");
+            edit(helper.resource.id, "later");
             assert.equal(submissions.length, 1);
             assert.deepEqual(submissions[0]!.value, {
                 version: 1, files: { ...project.sample.files, [main.name]: "first" },
@@ -134,7 +134,7 @@ test("overlapping Saves use the captured files and the last acknowledged storage
                 assert.equal(project.hasConflict(), false);
                 assert.equal(main.resource.metadata.getSnapshot().dirty, false);
                 assert.equal(helper.resource.metadata.getSnapshot().dirty, true);
-                assert.equal(project.workspace.document(helper.resource.documentId).text(), "later");
+                assert.equal(project.workspace.document(helper.resource.id).text(), "later");
                 assert.equal(project.workspace.ownership(helper.resource.id).saves, 0);
             }
         } finally {
@@ -156,7 +156,7 @@ test("equivalent peer saves preserve the draft and distinct unopened files requi
     });
     try {
         const originals = project.sample.files, file = project.files[0]!;
-        const id = file.resource.documentId, workspace = project.workspace;
+        const id = file.resource.id, workspace = project.workspace;
         const emit = async (files: Record<string, string>, token: string) => {
             store.row = { token, value: { version: 1, files } };
             seen = latch<void>();
@@ -252,7 +252,7 @@ test("a missing saved copy can be recreated without overwriting a replacement", 
         await save();
         const first = store.row!;
         const file = project.files[0]!;
-        project.workspace.replaceText(file.resource.documentId, "// keep my edit", { origin: "human", history: "record" });
+        project.workspace.replaceText(file.resource.id, "// keep my edit", { origin: "human", history: "record" });
         await store.remove(first.token);
 
         const read = store.read;
@@ -298,15 +298,15 @@ test("taking a reviewed copy preserves edits and replacement views during the st
     const project = await DemoProject.open("pricing", () => true, unusedProvider,
         { createStore: name => name === "sttropez-demo-projects-v1" ? store : recovery });
     try {
-        const files = project.files, workspace = project.workspace, second = files[1]!.resource.documentId;
+        const files = project.files, workspace = project.workspace, second = files[1]!.resource.id;
         const peer = { token: "peer", value: { version: 1, files: Object.fromEntries(files.map(file => [file.name, "// peer " + file.name])) } };
         store.row = peer; await project.save(() => {}); assert.equal(project.reviewConflict(), true);
-        const before = files.map(file => workspace.document(file.resource.documentId).buffer);
+        const before = files.map(file => workspace.document(file.resource.id).buffer);
         const held = latch<StoredDraft>(); store.read = () => held.promise;
         const take = project.takeReviewedCopy(() => {}, () => true);
         workspace.replaceText(second, "// typed during read", { origin: "human", history: "record" });
         held.resolve(peer); await take;
-        assert.equal(workspace.document(files[0]!.resource.documentId).buffer, before[0]);
+        assert.equal(workspace.document(files[0]!.resource.id).buffer, before[0]);
         assert.equal(workspace.document(second).text(), "// typed during read");
         assert.equal(project.canSaveReviewed(), false); assert.match(project.message, /Review the saved copy again/);
         project.reviewConflict();
@@ -334,7 +334,7 @@ test("demo startup falls back only for unreadable storage and preserves the stor
             { createStore: name => name === "sttropez-demo-projects-v1" ? store : recovery });
         try {
             assert.match(project.message, failure === "read" ? /Storage is unavailable/ : /stored copy has been left untouched/);
-            const doc = project.workspace.document(project.files[0]!.resource.documentId);
+            const doc = project.workspace.document(project.files[0]!.resource.id);
             assert.equal(project.workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "human",
                 edits: [{ from: 0, to: 0, insert: "// still editable\n" }] }).applied, true);
             await project.save(() => {});
@@ -392,7 +392,7 @@ test("demo save releases partial capture and started tickets before retry or pro
             const [first, second] = project.files;
             assert.ok(first && second);
             const workspace = project.workspace, permissions = second.resource.metadata.getSnapshot().capabilities;
-            const doc = workspace.document(first.resource.documentId);
+            const doc = workspace.document(first.resource.id);
             workspace.edit({ documentId: doc.id, expectedRevision: doc.revision, origin: "human", edits: [{ from: 0, to: 0, insert: "// keep\n" }] });
             const owners = project.files.map(file => workspace.ownership(file.resource.id));
             // Capture fails after the first acquisition, or start fails after the first writer starts.
@@ -403,7 +403,7 @@ test("demo save releases partial capture and started tickets before retry or pro
             await project.save(() => { renders++; });
             assert.equal(project.saving, false); assert.equal(store.writes, 0); assert.equal(renders, 1);
             assert.match(project.message, /Could not save/);
-            assert.equal(workspace.document(first.resource.documentId).text(), "// keep\n" + doc.text());
+            assert.equal(workspace.document(first.resource.id).text(), "// keep\n" + doc.text());
             other?.fail(); other?.finish();
             workspace.setCapabilities(second.resource.id, permissions);
             assert.deepEqual(project.files.map(file => workspace.ownership(file.resource.id)), owners);

@@ -93,7 +93,7 @@ export class ViewBindings {
             scope.defer(() => { if (this.reviewStatus === status) this.reviewStatus = undefined; status.remove(); });
             const publication = this.controller.comparisonReference.getSnapshot(), baseline = publication.baseline;
             this.referenceGeneration = publication.generation;
-            const view = this.retainedView("comparison", this.controller.source.documentId);
+            const view = this.retainedView("comparison", this.controller.source.id);
             const presentation = new EditingPresentation(), referencePresentation = new EditingPresentation();
             const review = mountTextComparison(host, this.controller.workspace, view.documentId,
                 baseline, { ariaLabel: "Source review", view, requestLine: linePrompt(host.ownerDocument), scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned });
@@ -130,7 +130,7 @@ export class ViewBindings {
         scope.defer(() => { events.abort(); if (this.commandSource === editor) this.commandSource = undefined; });
         scope.defer(registerCommandPalette(editor));
         scope.defer(editor.commands.register({ id: "source.save", label: "Save source",
-            enabled: () => pane.getSnapshot() === target && target.documentId === this.controller.source.documentId, run: () => this.controller.save() },
+            enabled: () => pane.getSnapshot() === target && target.documentId === this.controller.source.id, run: () => this.controller.save() },
             { keys: ["Mod+s"], shared: true, repeat: false }).dispose);
     }
     private beginReference(kind: "refresh" | "accept"): void {
@@ -229,7 +229,7 @@ export class ViewBindings {
         this.signature = new HostSignatureTools(canCapture, this.hover, lsp.signature, reconnectProvider);
         this.tools = [this.language, this.signature, this.domain, this.navigation, this.project,
             this.rename, this.actions, this.links, this.colors];
-        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && this.review?.panes.working.activity().input !== "host-insertion"
+        this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.id) && this.review?.panes.working.activity().input !== "host-insertion"
             && ![...this.mounted.values()].some(value => value.editor.activity().input === "host-insertion"),
             documentId => this.selections.get("primary")?.get(documentId) ?? this.selections.get("comparison")?.get(documentId) ?? this.selections.get("secondary")?.get(documentId));
         this.stopDocumentCleanup = controller.registerDetachedDocumentCleanup(documentId => {
@@ -304,7 +304,7 @@ export class ViewBindings {
                     scope.defer(() => { if (this.instructionMount === instruction) this.instructionMount = undefined; instruction.dispose(); });
                 }
                 this.attachTools(scope, id, editor, presentation);
-                const original = this.controller.source.documentId;
+                const original = this.controller.source.id;
                 if (id === "secondary" && documentId !== original) {
                     const bar = host.ownerDocument.createElement("div"), title = host.ownerDocument.createElement("strong");
                     const back = host.ownerDocument.createElement("button"), note = host.ownerDocument.createElement("span");
@@ -351,11 +351,11 @@ export class ViewBindings {
         }
     }
     readonly anchorInstruction = (): void => {
-        const current = this.mounted.get("primary"); if (!current || current.documentId !== this.controller.source.documentId || !this.controller.canCaptureRecovery()) return;
+        const current = this.mounted.get("primary"); if (!current || current.documentId !== this.controller.source.id || !this.controller.canCaptureRecovery()) return;
         this.controller.instruction.anchor(current.editor.view.getSnapshot().selection.head);
     };
     readonly insertInstruction = (): void => {
-        const current = this.mounted.get("primary"); if (!current || current.documentId !== this.controller.source.documentId || !this.controller.canCaptureRecovery()) return;
+        const current = this.mounted.get("primary"); if (!current || current.documentId !== this.controller.source.id || !this.controller.canCaptureRecovery()) return;
         const d = this.controller.workspace.document(current.documentId), at = d.buffer.offsetAt(d.buffer.lineAt(current.editor.view.getSnapshot().selection.head));
         const firstEnd = d.buffer.lineCount > 1 ? d.buffer.offsetAt(1) : 0, tail = d.buffer.slice(Math.max(0, firstEnd - 2), firstEnd), eol = tail.endsWith("\r\n") ? "\r\n" : tail.endsWith("\r") ? "\r" : "\n";
         const result = this.controller.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from: at, to: at,

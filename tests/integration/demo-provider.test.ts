@@ -89,14 +89,14 @@ test("real demo provider uses public workspace capture/sync over WebSocket and r
         owner = new LspWorkspace(workspace, { connect: () => openWebSocketTransport(url.replace("http:", "ws:") + config.endpoint),
             rootUri: config.rootUri, features: ["textDocument/hover", "textDocument/definition", "workspace/executeCommand"],
             schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); } });
-        const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId)));
+        const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.id)));
         await scope.ensureConnected();
         const source = files.find(file => file.name === "main.ts")!;
-        const binding = scope.attachDocument(source.resource.documentId);
+        const binding = scope.attachDocument(source.resource.id);
         const diagnostics = await scope.requestCommand("typescript.tsserverRequest", ["semanticDiagnosticsSync", { file: config.documents["main.ts"]!.path }, {}]).result;
         assert.match(JSON.stringify(diagnostics), /2551/);
         const captured = scope.synchronized(binding); assert.ok(captured); assert.ok(captured.isCurrent());
-        const document = workspace.document(source.resource.documentId), from = document.text().indexOf("quanity");
+        const document = workspace.document(source.resource.id), from = document.text().indexOf("quanity");
         assert.ok(from > 0);
         const rows = [...document.text().matchAll(/Example row/g)].map(({ index }) => ({ from: index, to: index + 11, insert: "Updated" }));
         assert.equal(rows.length, 300);
@@ -135,8 +135,8 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
         owner = new LspWorkspace(workspace, { connect: () => openWebSocketTransport(url.replace("http:", "ws:") + config.endpoint), rootUri: config.rootUri,
             features: ["textDocument/completion", "textDocument/codeAction", "workspace/executeCommand"], applyEdit: true,
             schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); } });
-        const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId))); await scope.ensureConnected();
-        const source = files.find(file => file.name === "main.ts")!, before = workspace.document(source.resource.documentId), binding = scope.attachDocument(before.id);
+        const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.id))); await scope.ensureConnected();
+        const source = files.find(file => file.name === "main.ts")!, before = workspace.document(source.resource.id), binding = scope.attachDocument(before.id);
         let capture: LspDocumentCapture | undefined;
         const response = await scope.requestDocument("textDocument/completion", binding, (index, _document, current) => {
             capture = current; return { position: index.at(before.buffer.length) };
@@ -175,7 +175,7 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
         assert.ok(workspace.undo({ documentId: before.id, expectedRevision: snippetAfter.revision }).applied); assert.equal(workspace.document(before.id).text(), snippetSource);
 
         const refactorSource = "export function price(count: number) {\n    return count * (1 + 2);\n}\n", refactorBefore = replace(refactorSource);
-        const snapshots = () => files.map(file => workspace.document(file.resource.documentId));
+        const snapshots = () => files.map(file => workspace.document(file.resource.id));
         const pathKey = (path: string) => process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
         let renameHints = 0;
         scope.onRequest("_typescript.rename", (params, context) => {
@@ -188,7 +188,7 @@ test("real lazy imports, snippets and reviewed command edits use public clients 
             return invocation.command === "_typescript.applyRefactoring" && typeof file === "string"
                 && pathKey(file) === pathKey(config.documents["main.ts"]!.path) ? { kind: "server" } : null;
         } });
-        const from = refactorSource.indexOf("1 + 2"), batch = await actions.run({ document: workspace.document(source.resource.documentId), project: snapshots(), from, to: from + 5, prepare: async session => {
+        const from = refactorSource.indexOf("1 + 2"), batch = await actions.run({ document: workspace.document(source.resource.id), project: snapshots(), from, to: from + 5, prepare: async session => {
             for (const kind of ["syntactic", "semantic"]) await session.request("sttropez/diagnostics", { uri: config.documents["main.ts"]!.uri, kind }).result;
         } }).result;
         await assert.rejects(scope.requestCommand("_typescript.applyRefactoring", [{ file: config.documents["main.ts"]!.path + ".outside",
@@ -231,26 +231,26 @@ test("real quick fixes use correlated diagnostic context through the public acti
         owner = new LspWorkspace(workspace, { connect: () => openWebSocketTransport(url.replace("http:", "ws:") + config.endpoint), rootUri: config.rootUri,
             features: ["textDocument/codeAction"], diagnostics: false,
             schedule: (ms, callback) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); } });
-        const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.documentId))); await scope.ensureConnected();
-        const source = files.find(file => file.name === "main.ts")!, binding = scope.attachDocument(source.resource.documentId), doc = workspace.document(source.resource.documentId), from = doc.text().indexOf("calculateTotl(");
+        const scope = owner.createScope(); scope.setDocuments(files.map(file => workspace.document(file.resource.id))); await scope.ensureConnected();
+        const source = files.find(file => file.name === "main.ts")!, binding = scope.attachDocument(source.resource.id), doc = workspace.document(source.resource.id), from = doc.text().indexOf("calculateTotl(");
         const request = () => scope.requestDocument("textDocument/codeAction", binding, index => ({ range: { start: index.at(from), end: index.at(from + 13) }, context: { diagnostics: [] } })).result;
         await assert.rejects(request(), /current captured diagnostics/);
         client = actionClient(owner);
         const prepare = async (session: LspScopeAccess) => {
             for (const kind of ["syntactic", "semantic"]) await session.request("sttropez/diagnostics", { uri: config.documents["main.ts"]!.uri, kind }).result;
         };
-        let batch = await client.run({ document: doc, project: files.map(file => workspace.document(file.resource.documentId)), from, to: from + 13, prepare }).result;
+        let batch = await client.run({ document: doc, project: files.map(file => workspace.document(file.resource.id)), from, to: from + 13, prepare }).result;
         assert.ok(batch.isCurrent());
-        const helper = workspace.document(files.find(file => file.name === "pricing.ts")!.resource.documentId);
+        const helper = workspace.document(files.find(file => file.name === "pricing.ts")!.resource.id);
         assert.ok(workspace.edit({ documentId: helper.id, expectedRevision: helper.revision, origin: "host", edits: [{ from: 0, to: 0, insert: "// Related file changed\n" }] }).applied);
         await scope.flush(); assert.equal(batch.isCurrent(), false); await assert.rejects(request(), /current captured diagnostics/);
-        batch = await client.run({ document: doc, project: files.map(file => workspace.document(file.resource.documentId)), from, to: from + 13, prepare }).result;
+        batch = await client.run({ document: doc, project: files.map(file => workspace.document(file.resource.id)), from, to: from + 13, prepare }).result;
         const fix = batch.actions.find(action => action.title === "Change spelling to 'calculateTotal'"); assert.ok(fix?.edit); assert.equal(fix.command, null); assert.ok(batch.isCurrent());
         // The live demo refreshes diagnostics independently of explicit action requests.
         const refresh = scope.request("sttropez/diagnostics", { uri: config.documents["main.ts"]!.uri, kind: "semantic" });
         const [duringRefresh] = await Promise.all([request(), refresh.result]); assert.ok(Array.isArray(duringRefresh));
         const applied = workspace.editDocuments(fix.edit.documents.map(change => ({
-            documentId: files.find(file => file.resource.documentId === change.target.document.documentId)!.resource.documentId,
+            documentId: files.find(file => file.resource.id === change.target.document.documentId)!.resource.id,
             expectedRevision: change.target.document.revision, origin: "host", edits: change.edits, history: { kind: "refactor" } })));
         assert.ok(applied.applied); assert.match(workspace.document(doc.id).text(), /calculateTotal\(cart, 0.1\)/); assert.equal(batch.isCurrent(), false);
         await scope.flush(); await assert.rejects(request(), /current captured diagnostics/);

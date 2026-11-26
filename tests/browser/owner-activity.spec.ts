@@ -20,7 +20,7 @@ test("owner activity retains immutable captures without collecting metrics and f
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "activity", variant: "text" }, "Activity", { value: "const sample = 123;\n".repeat(100) });
         const host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const { editor, input, setComparisonRows } = mountEditor(host, workspace, source.documentId), viewport = editor.viewport;
+        const { editor, input, setComparisonRows } = mountEditor(host, workspace, source.id), viewport = editor.viewport;
         const forbidden = () => { throw new Error("Readiness collected metrics"); };
         const readyViewport = { ...viewport, getDiagnostics: forbidden }, readyEditor = { ...editor, viewport: readyViewport, getDiagnostics: forbidden };
         const ready = () => editorSettled(readyEditor), frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
@@ -54,15 +54,15 @@ test("owner activity retains immutable captures without collecting metrics and f
             editor.view.setSelection(0, { anchor: 6, head: 6 }); state("selection queued");
             const selectionStale = viewport.activity().selectionSet !== editor.view.getSnapshot().selectionSet;
             await settle(); state("selection painted");
-            workspace.edit({ documentId: source.documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "//" }], origin: "host" }); state("revision queued");
+            workspace.edit({ documentId: source.id, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "//" }], origin: "host" }); state("revision queued");
             await settle(); state("revision painted");
-            const buffer = workspace.document(source.documentId).buffer;
+            const buffer = workspace.document(source.id).buffer;
             editor.view.folding.setRanges(editor.view.folding.getSnapshot(), [{ id: "fold", from: buffer.offsetAt(3), to: buffer.offsetAt(8), collapsed: true }]); state("fold queued");
             const foldStale = viewport.activity().foldGeneration !== editor.view.folding.getSnapshot().generation;
             await settle(); state("fold painted");
             const folds = editor.view.folding.getSnapshot(), cursor = new ComparisonRowsCursor(buffer, buffer, Object.freeze([]), folds.index, folds.index);
             let alignment = cursor.next(4096); while (!alignment.result) alignment = cursor.next(4096); cursor.dispose();
-            setComparisonRows({ documentId: source.documentId, revision: 1, foldGeneration: folds.generation, id: 42,
+            setComparisonRows({ documentId: source.id, revision: 1, foldGeneration: folds.generation, id: 42,
                 lineHeight: viewport.getSnapshot().lineHeight, index: alignment.result.working }); state("alignment queued");
             await settle(); state("alignment painted");
             setComparisonRows(undefined); await settle(); state("alignment cleared");

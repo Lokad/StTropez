@@ -39,9 +39,9 @@ try {
 const workspace = new Workspace();
 const file = workspace.createTextResource({ scope: "quote", resource: name, variant: "working" }, name,
     { value: opened, serverVersion: opened }, undefined, { language: { uri: "file:///reference/quote.ts", languageId: "typescript" } });
-const view = workspace.createDocumentView(file.documentId);
+const view = workspace.createDocumentView(file.id);
 const settings = { minimap: true, bracketMatching: true, language: { tabSize: 4, lineComment: "//" } };
-let baseline = { buffer: workspace.document(file.documentId).buffer, version: "opened" };
+let baseline = { buffer: workspace.document(file.id).buffer, version: "opened" };
 const provider = new BrowserLspWorkspace(workspace, {
     workspaceEdits: true,
     connect(signal) {
@@ -58,12 +58,12 @@ let savedReference: SavedReferenceView | undefined;
 function mount(review: boolean) {
     let comparison: TextComparison | undefined;
     if (review) {
-        comparison = mountTextComparison(pane, workspace, file.documentId, baseline, { view, settings, ...reviewLayout });
+        comparison = mountTextComparison(pane, workspace, file.id, baseline, { view, settings, ...reviewLayout });
         restoreReferenceView(comparison.panes.reference, baseline, savedReference);
         savedReference = undefined;
     }
     const editor = comparison?.panes.working
-        ?? mountTextEditor(pane, workspace, file.documentId, { ariaLabel: name, view, settings });
+        ?? mountTextEditor(pane, workspace, file.id, { ariaLabel: name, view, settings });
     (comparison ?? editor).commands.register({ id: "source.save", label: "Save for this tab", run() { save(); } },
         { keys: ["Mod+s"], repeat: false });
     function showReviewSave() {
@@ -115,7 +115,7 @@ function renderConnection() {
 const stopConnection = provider.subscribe(renderConnection);
 connect.onclick = () => {
     focusActivePane();
-    project.attachDocument(file.documentId);
+    project.attachDocument(file.id);
     languageEnabled = true;
     current.enableLanguage();
     const attempt = provider.getSnapshot().commandRequiresReconnect ? provider.reconnect() : provider.connect();
@@ -166,11 +166,11 @@ function refreshBaseline() {
         try { refresh.complete(baseline); } finally { refresh.finish(); }
     }
 }
-const stopDirty = workspace.onDocumentChange(file.documentId, showSaveState);
+const stopDirty = workspace.onDocumentChange(file.id, showSaveState);
 function save(review?: SaveReview): boolean {
     if (!readyForHostAction()) return false;
     const ticket = workspace.captureSave(file, review);
-    const buffer = workspace.document(file.documentId).buffer;
+    const buffer = workspace.document(file.id).buffer;
     let conflict: string | undefined;
     try {
         const submission = ticket.start();

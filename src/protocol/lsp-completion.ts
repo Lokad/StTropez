@@ -25,7 +25,7 @@ export type LspCompletionClient = LspFeatureClient<"textDocument/completion", Ls
 
 type Batch = { binding: LspBindingCapture; value: LspCompletionBatch; requestedAt: number };
 const same = (left: DocumentSnapshot | undefined, right: DocumentSnapshot) => !!left && left.id === right.id
-    && left.resourceId === right.resourceId && left.revision === right.revision && left.buffer === right.buffer;
+    && left.key === right.key && left.revision === right.revision && left.buffer === right.buffer;
 
 /** One current choice batch and one request/resolve intent; host view and acceptance policy stay outside. */
 export function completionClient(provider: LspWorkspace | LspDocumentOwner): LspCompletionClient {

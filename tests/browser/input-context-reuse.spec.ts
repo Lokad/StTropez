@@ -21,8 +21,8 @@ test("input refresh reuses bounded projections while repairing native state and 
             { value: "const row = '東京 😀';\r\n".repeat(1000) });
         const host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const editor = mountTextEditor(host, workspace, source.documentId), input = editor.element.querySelector("textarea")!;
-        const doc = () => workspace.document(source.documentId), refresh = () => input.dispatchEvent(new KeyboardEvent("keyup", { key: "Tab", bubbles: true }));
+        const editor = mountTextEditor(host, workspace, source.id), input = editor.element.querySelector("textarea")!;
+        const doc = () => workspace.document(source.id), refresh = () => input.dispatchEvent(new KeyboardEvent("keyup", { key: "Tab", bubbles: true }));
         const settle = async () => { for (let i = 0; i < 60; i++) {
             await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
             if (!editor.activity().pendingCaret && !editor.viewport.activity().pending) return;
@@ -38,7 +38,7 @@ test("input refresh reuses bounded projections while repairing native state and 
             work.push({ name, sliceUnits: reads.read(buffer).sliceUnits - before });
         };
         const edit = (from: number, to: number, insert: string) => {
-            if (!workspace.edit({ documentId: source.documentId, expectedRevision: doc().revision, origin: "host", edits: [{ from, to, insert }] }).applied) throw new Error("Edit rejected");
+            if (!workspace.edit({ documentId: source.id, expectedRevision: doc().revision, origin: "host", edits: [{ from, to, insert }] }).applied) throw new Error("Edit rejected");
         };
         const reads = observeBufferReads();
         try {

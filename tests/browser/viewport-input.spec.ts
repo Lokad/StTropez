@@ -11,11 +11,11 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "interaction", variant: "text" }, "Input", { value: "a\nb\nc\nd\n" });
         const host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
-        const viewport = mountTextViewport(host, workspace, source.documentId), root = viewport.element, input = document.createElement("textarea"); root.append(input);
+        const viewport = mountTextViewport(host, workspace, source.id), root = viewport.element, input = document.createElement("textarea"); root.append(input);
         const order: string[] = []; let stopLater = () => {}, focus = 0, errors = 0, afterError = 0;
         const stopFirst = viewport.onRender(() => {
             order.push("first"); stopFirst(); stopRemoved(); stopLater = viewport.onRender(() => order.push("later"));
-            workspace.edit({ documentId: source.documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "x" }], origin: "host" });
+            workspace.edit({ documentId: source.id, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "x" }], origin: "host" });
         });
         const stopRemoved = viewport.onRender(() => order.push("removed")), stopLast = viewport.onRender(() => order.push("last"));
         const error = (event: ErrorEvent) => { if (event.error?.message === "viewport observer test") { errors++; event.preventDefault(); } };
@@ -27,7 +27,7 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
             const binding = viewport.bindInput(() => { focus++; input.focus({ preventScroll: true }); });
             let duplicate = false;
             try { viewport.bindInput(() => {}); } catch { duplicate = true; }
-            const buffer = workspace.document(source.documentId).buffer, folding = viewport.view.folding;
+            const buffer = workspace.document(source.id).buffer, folding = viewport.view.folding;
             const ranges = [{ id: "first", from: 0, to: buffer.offsetAt(2) }, { id: "second", from: buffer.offsetAt(2), to: buffer.offsetAt(4) }];
             folding.setRanges(folding.getSnapshot(), ranges.slice(0, 1)); viewport.flush();
             binding.setComposing(true); root.classList.remove("st-composing");
@@ -53,7 +53,7 @@ test("viewport input ownership and render delivery survive removal, reentrancy a
             folding.setRanges(folding.getSnapshot(), []); viewport.flush();
             const destroyed = viewport.getDiagnostics(); const inactive = !replacement.setComposing(true); replacement.dispose();
             viewport.onRender(() => afterDestroy++)(); viewport.flush();
-            return { firstOrder, secondOrder, revision: workspace.document(source.documentId).revision, errors, afterError, duplicate,
+            return { firstOrder, secondOrder, revision: workspace.document(source.id).revision, errors, afterError, duplicate,
                 guarded, existingEscaped, newEscaped, markersIgnored, escapedFocus, removedFocus, detached, expired, inactive, afterDestroy,
                 destroyed: { disposed: destroyed.disposed, revision: destroyed.revision, rows: destroyed.rows, pending: destroyed.pending } };
         } finally { window.removeEventListener("error", error); viewport.dispose(); workspace.releaseResource(source.id, true); host.remove(); }

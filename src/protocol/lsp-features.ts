@@ -375,7 +375,7 @@ export function decodeLspCompletions(value: unknown, capture: LspDocumentCapture
 export function decodeLspResolvedCompletion(value: unknown, original: LspCompletion, capture: LspDocumentCapture): LspCompletion {
     current(capture);
     if (!isRecord(original.resolve) || !isRecord(value)) invalid();
-    if (original.source.uri !== capture.document.uri || original.source.resourceId !== capture.document.resourceId || original.source.documentId !== capture.document.documentId
+    if (original.source.uri !== capture.document.uri || original.source.documentId !== capture.document.documentId
         || original.source.revision !== capture.document.revision || original.source.buffer !== capture.document.buffer) throw staleRequest();
     const before = { ...original.resolve }, after = { ...value };
     for (const key of ["detail", "documentation", "additionalTextEdits", "insertText", "textEdit"]) { delete before[key]; delete after[key]; }
@@ -417,7 +417,7 @@ export function rebaseLspCompletion<C extends Pick<DocumentChange, "previousRevi
 ): LspCompletion | undefined {
     const before = original.source, mapping = change.mapping, units = next.buffer.length - before.buffer.length, primary = original.primary;
     if (change.previousRevision !== before.revision || next.revision !== before.revision + 1 || change.origin !== "human"
-        || next.uri !== before.uri || next.resourceId !== before.resourceId || next.documentId !== before.documentId || next.languageId !== before.languageId
+        || next.uri !== before.uri || next.documentId !== before.documentId || next.languageId !== before.languageId
         || mapping.oldLength !== before.buffer.length || mapping.newLength !== next.buffer.length || Math.abs(units) > 2048
         || caret !== original.offset || caret < primary.from || caret > primary.insertTo) return;
     const changes = positionChanges(mapping), edit = changes?.length === 1 ? changes[0] : undefined;

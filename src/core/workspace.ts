@@ -20,9 +20,8 @@ import { equalValue, snapshotValue } from "./values.ts";
 import type { Immutable, SnapshotValue } from "./values.ts";
 
 export type ResourceId = string & { readonly resourceId: unique symbol };
-export type DocumentId = string & { readonly documentId: unique symbol };
+export type DocumentId = ResourceId & { readonly documentId: unique symbol };
 export type ViewId = string & { readonly viewId: unique symbol };
-const documentIdPrefix = "document-";
 
 export type ResourceKey = Readonly<{ scope: string; resource: string; variant: string }>;
 export type EditOrigin = "human" | "agent" | "host";
@@ -44,11 +43,11 @@ export type ResourceSnapshot<T> = Readonly<{ revision: number; metadata: Resourc
 export type ResourceHandle<T extends SnapshotValue> = Observable<ResourceSnapshot<T>> & Readonly<{
     id: ResourceId; metadata: Observable<ResourceMetadata>;
 }>;
-export type TextResourceHandle = ResourceHandle<string> & Readonly<{ documentId: DocumentId }>;
+export type TextResourceHandle = ResourceHandle<string> & Readonly<{ id: DocumentId }>;
 export type LoadedResource<T> = Readonly<{ value: T; serverVersion?: string | null }>;
 export type LoadedTextBuffer = Readonly<{ buffer: TextBuffer; serverVersion?: string | null }>;
 export type DocumentSnapshot = Readonly<{
-    id: DocumentId; resourceId: ResourceId; key: ResourceKey; title: string; buffer: TextBuffer; text: () => string; revision: number;
+    id: DocumentId; key: ResourceKey; title: string; buffer: TextBuffer; text: () => string; revision: number;
     language: DocumentLanguage | null; change: DocumentChange | null;
 }>;
 export type DocumentChange = Readonly<{ previousRevision: number; revision: number; transactionId: number; origin: EditOrigin;
@@ -226,7 +225,7 @@ export class Workspace {
         return this.#create(key, title, "text", loaded, permissions, options) as TextResourceHandle;
     }
     createDocument(key: ResourceKey, title: string, text: string): DocumentId {
-        return this.createTextResource(key, title, { value: text }).documentId;
+        return this.createTextResource(key, title, { value: text }).id;
     }
     #create(key: ResourceKey, title: string, kind: "text" | "panel", loaded: LoadedResource<SnapshotValue> | LoadedTextBuffer | undefined, permissions: Capabilities, options: TextResourceOptions): ResourceHandle<SnapshotValue> {
         this.#scope.assertWritable();
@@ -239,14 +238,14 @@ export class Workspace {
         if (kind === "text" && value !== undefined && typeof value !== "string") throw new TypeError("Text resource requires a string.");
         const buffer = loaded && "buffer" in loaded ? loaded.buffer : kind === "text" && typeof value === "string" ? TextBuffer.from(value) : null;
         const id = `resource-${++this.#nextId}` as ResourceId;
-        const documentId = kind === "text" ? `${documentIdPrefix}${++this.#nextId}` as DocumentId : null;
+        const documentId = kind === "text" ? id as DocumentId : null;
         const metadata = Object.freeze({ id, key, title, kind, visibility,
             state: loaded === undefined ? "loading" as const : "ready" as const, dirty: false,
             serverVersion: loaded?.serverVersion ?? null, capabilities: capabilities(permissions), saveStatus: "idle" as const, failure: null });
         const state = new Store<ResourceSnapshot<SnapshotValue>>(loaded === undefined
             ? Object.freeze({ metadata, state: "loading", revision: 0 }) : readySnapshot(metadata, 0, buffer ?? value!), this.#scope);
         const meta = new Store(metadata, this.#scope);
-        const handle = Object.freeze({ ...state.observable, id, metadata: meta.observable, ...(documentId === null ? {} : { documentId }) });
+        const handle = Object.freeze({ ...state.observable, id, metadata: meta.observable });
         const record: ResourceRecord = { handle, documentId, state, metadata: meta, language: documentLanguage(options.language),
             document: new Store<DocumentSnapshot | undefined>(undefined, this.#scope), saved: buffer ? undefined : value,
             buffer, savedBuffer: buffer, change: null, history: new Store<HistorySnapshot>(this.#history.snapshot(documentId ?? ""), this.#scope), views: new Map(),
@@ -259,6 +258,8 @@ export class Workspace {
         return handle;
     }
 
+    resource(id: DocumentId): TextResourceHandle;
+    resource(id: ResourceId): ResourceHandle<SnapshotValue>;
     resource(id: ResourceId): ResourceHandle<SnapshotValue> { return this.#requireResource(id).handle; }
     diagnostics(): Readonly<{ resources: number; documents: number; views: number; leases: number; subscriptions: number;
         history: Readonly<{ groups: number; changes: number; changedUnits: number }> }> {
@@ -270,9 +271,6 @@ export class Workspace {
         const record = this.#documents.get(id);
         if (!record) throw new Error("Unknown document.");
         return record;
-    }
-    resourceForDocument(id: DocumentId): TextResourceHandle {
-        return this.#requireDocument(id).handle as TextResourceHandle;
     }
     documentForUri(uri: string): DocumentSnapshot | undefined {
         let found: DocumentSnapshot | undefined;
@@ -665,12 +663,12 @@ export class Workspace {
     }
 
     /** Install an authoritative text version and its saved baseline in one publication. */
-    adoptSaved(id: ResourceId, version: Readonly<{ text: string | TextBuffer; serverVersion: string | null; history: "record" | "reset"; expectedRevision?: number; source?: string }>): EditResult {
-        const result = this.adoptSavedDocuments([{ ...version, resourceId: id }], version);
+    adoptSaved(id: DocumentId, version: Readonly<{ text: string | TextBuffer; serverVersion: string | null; history: "record" | "reset"; expectedRevision?: number; source?: string }>): EditResult {
+        const result = this.adoptSavedDocuments([{ ...version, documentId: id }], version);
         return result.applied ? { applied: true, revision: result.revisions[0]!.revision } : result;
     }
     /** Install related saved versions together. Undo restores the previous working text across the batch. */
-    adoptSavedDocuments(versions: readonly Readonly<{ resourceId: ResourceId; text: string | TextBuffer; serverVersion: string | null; expectedRevision?: number }>[],
+    adoptSavedDocuments(versions: readonly Readonly<{ documentId: DocumentId; text: string | TextBuffer; serverVersion: string | null; expectedRevision?: number }>[],
         options: Readonly<{ history: "record" | "reset"; source?: string }>): BatchEditResult {
         this.#scope.assertWritable();
         if (!versions.length) throw new RangeError("At least one saved document is required.");
@@ -679,7 +677,7 @@ export class Workspace {
         const documents = new Set<DocumentId>(), history: HistoryChange[] = [];
         const prepared: (PreparedText | Pick<PreparedText, "record" | "buffer" | "state">)[] = [];
         for (const version of versions) {
-            const record = this.#records.get(version.resourceId);
+            const record = this.#documents.get(version.documentId);
             if (!record?.documentId) return refuseEdit("missing-document");
             if (documents.has(record.documentId)) throw new Error("A saved document may appear only once.");
             documents.add(record.documentId);
@@ -828,7 +826,6 @@ export class Workspace {
         record.history.set(Object.freeze({ undoDepth: 0, redoDepth: 0 }), changed); this.#syncHistory(changed);
         this.#publish(changed);
     }
-    releaseDocument(id: DocumentId, discard = false): void { this.releaseResource(this.resourceForDocument(id).id, discard); }
     #requireResource(id: ResourceId): ResourceRecord {
         const record = this.#records.get(id);
         if (!record) throw new Error("Unknown resource."); return record;
@@ -839,7 +836,7 @@ export class Workspace {
         const language = record.language;
         if (previous?.revision === state.revision && previous.language === language) return;
         const buffer = record.buffer!;
-        record.document.set(Object.freeze({ id: record.documentId, resourceId: record.handle.id, key: state.metadata.key,
+        record.document.set(Object.freeze({ id: record.documentId, key: state.metadata.key,
             title: state.metadata.title, buffer, text: state.value as () => string, revision: state.revision, language,
             change: record.change }), changed);
     }

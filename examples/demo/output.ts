@@ -7,7 +7,7 @@ export function mountDemoOutput(host: HTMLElement, text: string, settings: Edito
     const workspace = new Workspace();
     const resource = workspace.createTextResource({ scope: "demo-output", resource: "javascript", variant: "generated" }, "JavaScript output",
         { value: text }, { edit: [], save: false });
-    const editor = mountTextEditor(host, workspace, resource.documentId,
+    const editor = mountTextEditor(host, workspace, resource.id,
         { ariaLabel: "JavaScript output", readOnly: true, requestLine: linePrompt(host.ownerDocument), settings });
     editor.element.classList.add("demo-output");
     let disposed = false;

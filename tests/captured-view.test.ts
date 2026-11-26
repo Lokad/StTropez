@@ -6,7 +6,7 @@ import { captureViewRequest } from "../src/browser/index.ts";
 
 function fixture(t: TestContext) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "capture", resource: "source", variant: "working" }, "Source", { value: "alpha\nbeta\ngamma" });
-    const view = workspace.createDocumentView(source.documentId);
+    const view = workspace.createDocumentView(source.id);
     t.after(async () => {
         await Promise.resolve(); view.dispose(); workspace.releaseResource(source.id, true);
         assert.deepEqual({ leases: workspace.diagnostics().leases, subscriptions: workspace.diagnostics().subscriptions }, { leases: 0, subscriptions: 0 });
@@ -19,21 +19,21 @@ test("read captures survive expanded fold metadata and defer abort handlers beyo
     const f = fixture(t); f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: true });
     const captured = captureViewRequest(f.editor); assert.ok(captured);
     assert.equal(captureViewRequest(f.editor, { editOrigin: "human" }), undefined);
-    assert.ok(Object.isFrozen(captured)); assert.equal(captured.document.id, f.source.documentId);
+    assert.ok(Object.isFrozen(captured)); assert.equal(captured.document.id, f.source.id);
     f.view.folding.setRanges(f.view.folding.getSnapshot(), [{ id: "body", from: 0, to: captured.document.buffer.length, collapsed: false }]);
     assert.notEqual(f.view.folding.getSnapshot().generation, captured.folding.generation); assert.equal(captured.isCurrent(), true);
     f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: false }); assert.equal(captured.isCurrent(), true);
     let aborted = 0;
     captured.signal.addEventListener("abort", () => {
         aborted++;
-        assert.ok(f.workspace.edit({ documentId: f.source.documentId, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "!" }] }).applied);
+        assert.ok(f.workspace.edit({ documentId: f.source.id, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "!" }] }).applied);
     }, { once: true });
     f.workspace.setCapabilities(f.source.id, { edit: [], save: false });
     assert.equal(captured.isCurrent(), false); assert.equal(aborted, 0);
     f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: false });
     assert.equal(captured.isCurrent(), false);
     await Promise.resolve(); assert.equal(aborted, 1); assert.equal(captured.signal.aborted, true);
-    assert.equal(f.workspace.document(f.source.documentId).buffer.slice(0, 1), "!");
+    assert.equal(f.workspace.document(f.source.id).buffer.slice(0, 1), "!");
 });
 
 test("a capture commits once, retains its source during the operation and cleans up thrown operations", t => {
@@ -44,7 +44,7 @@ test("a capture commits once, retains its source during the operation and cleans
         assert.equal(f.workspace.diagnostics().subscriptions, before.subscriptions);
         assert.equal(f.workspace.diagnostics().leases, before.leases + 1);
         assert.equal(captured.commit(() => { throw new Error("Reentered operation"); }), false);
-        return f.workspace.edit({ documentId: f.source.documentId, expectedRevision: captured.document.revision, origin: "human", edits: [{ from: 0, to: 5, insert: "changed" }] }).applied;
+        return f.workspace.edit({ documentId: f.source.id, expectedRevision: captured.document.revision, origin: "human", edits: [{ from: 0, to: 5, insert: "changed" }] }).applied;
     }), true);
     assert.equal(captured.signal.aborted, true); assert.equal(f.workspace.diagnostics().leases, before.leases);
     assert.equal(captured.commit(() => { throw new Error("Repeated operation"); }), false);

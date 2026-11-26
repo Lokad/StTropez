@@ -112,7 +112,7 @@ export class DemoRecovery {
         this.observed = next; this.generation++; this.schedule();
     }
     private capture(): Capture {
-        return this.files.map(file => ({ file, document: this.workspace.document(file.resource.documentId), metadata: file.resource.metadata.getSnapshot() }));
+        return this.files.map(file => ({ file, document: this.workspace.document(file.resource.id), metadata: file.resource.metadata.getSnapshot() }));
     }
     private targetsCurrent(capture: Capture): boolean {
         const files = this.files;

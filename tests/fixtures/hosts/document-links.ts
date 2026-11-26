@@ -309,8 +309,8 @@ export class HostDocumentLinks {
         } finally { events.abort(); }
     }
     private retainOrigin(source: DocumentSnapshot) {
-        const lease = this.host.workspace.acquire(source.resourceId), handle = this.host.workspace.observeDocument(source.id);
-        const metadata = this.host.workspace.resourceForDocument(source.id).metadata;
+        const lease = this.host.workspace.acquire(source.id), handle = this.host.workspace.observeDocument(source.id);
+        const metadata = this.host.workspace.resource(source.id).metadata;
         const invalidate = () => {
             if (this.visit?.release !== release) return;
             this.visit = undefined;
@@ -345,7 +345,7 @@ export class HostDocumentLinks {
     }
     readonly addCompanion = () => {
         if (this.disposed) return;
-        this.companion ??= createWorkingSource(this.host.workspace, "module-companion", "Module companion", { value: "export const value = 1;\r\n" }).documentId;
+        this.companion ??= createWorkingSource(this.host.workspace, "module-companion", "Module companion", { value: "export const value = 1;\r\n" }).id;
         this.setAlias("sample-utils", this.companion); this.publish({ message: "Module companion registered for sample-utils." });
     };
     debug() { return { ...this.metrics, state: this.cell.get(), companion: this.companion ?? null,

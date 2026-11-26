@@ -35,7 +35,7 @@ test("proved prefix adoption reads the actual Core change during notification an
     const f = clientFixture(t), client = completionClient(f.provider); t.after(client.dispose);
     const wire = choice(); f.peer.onRequest("textDocument/completion", () => [wire]);
     const initial = await client.run({ document: f.document(), offset: 2 }).result; let rebased: LspCompletionBatch | undefined;
-    const stop = f.workspace.observeDocument(f.source.documentId).subscribe(() => {
+    const stop = f.workspace.observeDocument(f.source.id).subscribe(() => {
         assert.equal(initial.isCurrent(), false); assert.equal(initial.isBindingCurrent(), true);
         rebased = client.rebase(initial, { ...f.document(), change: null }); // The supplied change cannot replace Core's proof.
     }); t.after(stop);
@@ -92,7 +92,7 @@ test("shortening a typed prefix cancels resolution and stops at the provider's o
     f.peer.onRequest("completionItem/resolve", () => { entered.resolve(); return answer.promise; });
     const old = client.resolve(extended, extended.items[0]!), rejected = assert.rejects(old.result, cancelled);
     await entered.promise;
-    const erase = (from: number, to: number) => f.workspace.edit({ documentId: f.source.documentId, expectedRevision: f.document().revision,
+    const erase = (from: number, to: number) => f.workspace.edit({ documentId: f.source.id, expectedRevision: f.document().revision,
         edits: [{ from, to, insert: "" }], origin: "human", history: { kind: "delete" } });
     assert.ok(erase(2, 3).applied);
     const shortened = client.rebase(extended, f.document())!;
@@ -151,18 +151,18 @@ test("unsupported lazy snippets omit one choice and preserve current alternative
 test("registration and URI replacement expire retained choices, while cancellation leaves diagnostic participation", async t => {
     const f = clientFixture(t),
         client = completionClient(f.provider), diagnostics = f.provider.createScope();
-    t.after(() => { client.dispose(); diagnostics.dispose(); }); const binding = diagnostics.attachDocument(f.source.documentId);
+    t.after(() => { client.dispose(); diagnostics.dispose(); }); const binding = diagnostics.attachDocument(f.source.id);
     f.peer.onRequest("textDocument/completion", () => [choice()]); const batch = await client.run({ document: f.document(), offset: 2 }).result;
     assert.equal(f.workspace.diagnostics().leases, 1);
     await f.peer.sendRequest("client/registerCapability", { registrations: [{ id: "completion", method: "textDocument/completion", registerOptions: { documentSelector: null, resolveProvider: true } }] });
     assert.equal(batch.isBindingCurrent(), false); assert.throws(() => client.resolve(batch, batch.items[0]!), stale);
     const fresh = await client.run({ document: f.document(), offset: 2 }).result;
     const original = f.document().language!;
-    f.workspace.setDocumentLanguage(f.source.documentId, { ...original, languageId: "other" });
-    f.workspace.setDocumentLanguage(f.source.documentId, original);
+    f.workspace.setDocumentLanguage(f.source.id, { ...original, languageId: "other" });
+    f.workspace.setDocumentLanguage(f.source.id, original);
     assert.equal(fresh.isBindingCurrent(), false);
     assert.equal(diagnostics.captureBinding(binding), undefined);
-    const replacing = f.provider.createScope(); t.after(replacing.dispose); replacing.attachDocument(f.source.documentId);
+    const replacing = f.provider.createScope(); t.after(replacing.dispose); replacing.attachDocument(f.source.id);
     assert.equal(fresh.isCurrent(), false); assert.throws(() => client.resolve(fresh, fresh.items[0]!), stale);
     const next = await client.run({ document: f.document(), offset: 2 }).result; client.cancel(); assert.equal(next.isCurrent(), false);
     client.dispose(); assert.ok(f.provider.snapshot().documents > 0); assert.equal(f.provider.getSnapshot().phase, "ready");

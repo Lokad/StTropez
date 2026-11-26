@@ -35,8 +35,8 @@ test("nested collapsed rows keep independent child state and index visible rows 
 
 function fixture() {
     const model = new Workspace(), source = model.createTextResource({ scope: "fold", resource: "source", variant: "working" }, "Source", { value: "header\r\nbody one\r\nbody two\r\nend" });
-    const view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
-    const text = () => { const b = model.document(source.documentId).buffer; return b.slice(0, b.length); };
+    const view = model.createDocumentView(source.id), peer = model.createDocumentView(source.id);
+    const text = () => { const b = model.document(source.id).buffer; return b.slice(0, b.length); };
     return { model, source, view, peer, text, finish: () => { view.dispose(); peer.dispose(); model.releaseResource(source.id, true); assert.equal(model.diagnostics().views, 0); assert.equal(model.diagnostics().leases, 0); assert.equal(model.diagnostics().subscriptions, 0); } };
 }
 
@@ -45,7 +45,7 @@ test("composed host edits replay folded moves in order and preserve later fold c
     const source = workspace.createTextResource({ scope: "fold", resource: "group", variant: "text" }, "Outline", {
         value: "a\n  A\nb\n  B\nc\n  C\ntail"
     });
-    const id = source.documentId;
+    const id = source.id;
     const view = workspace.createDocumentView(id);
     const document = () => workspace.document(id);
     const snapshot = () => view.folding.getSnapshot();
@@ -110,7 +110,7 @@ test("copied line moves carry each view's folds through undo and redo", () => {
     const source = workspace.createTextResource({ scope: "fold", resource: "move", variant: "text" }, "Move", {
         value: "a\r\n  A\nb\n  B\r\nc\n  C\r\nd\r\n  D"
     });
-    const documentId = source.documentId;
+    const documentId = source.id;
     const main = workspace.createDocumentView(documentId);
     const peer = workspace.createDocumentView(documentId);
     const original = workspace.document(documentId);
@@ -157,7 +157,7 @@ test("copied line moves carry each view's folds through undo and redo", () => {
 });
 
 test("shifted headers and hidden rows keep their revision and per-view collapse state through Undo", () => {
-    const f = fixture(), id = f.source.documentId;
+    const f = fixture(), id = f.source.id;
     try {
         const buffer = f.model.document(id).buffer, header = buffer.offsetAt(1);
         const range = { id: "body", group: "outline", from: header, to: buffer.offsetAt(3) };
@@ -189,10 +189,10 @@ test("shifted headers and hidden rows keep their revision and per-view collapse 
 });
 test("fold commands capture view/revision/generation and keep source, history and other views independent", () => {
     const f = fixture(); try {
-        const folds = f.view.folding, before = folds.getSnapshot(), document = f.model.document(f.source.documentId), history = f.model.observeHistory(f.source.documentId).getSnapshot();
+        const folds = f.view.folding, before = folds.getSnapshot(), document = f.model.document(f.source.id), history = f.model.observeHistory(f.source.id).getSnapshot();
         assert.equal(folds.setRanges(before, [{ id: "block", from: 0, to: document.buffer.offsetAt(3), collapsed: true }]), true);
         assert.equal(folds.setCollapsed(before, "block", false), false); assert.equal(folds.getSnapshot().index.visibleLineCount, 2); assert.equal(f.peer.folding.getSnapshot().regions.length, 0);
-        assert.equal(f.model.document(f.source.documentId), document); assert.equal(f.source.getSnapshot().metadata.dirty, false); assert.deepEqual(f.model.observeHistory(f.source.documentId).getSnapshot(), history);
+        assert.equal(f.model.document(f.source.id), document); assert.equal(f.source.getSnapshot().metadata.dirty, false); assert.deepEqual(f.model.observeHistory(f.source.id).getSnapshot(), history);
         const current = folds.getSnapshot(); assert.equal(folds.setRanges(current, [{ id: "block", from: 0, to: document.buffer.offsetAt(3) }]), true); assert.equal(folds.getSnapshot(), current);
         assert.throws(() => folds.setRanges(current, [{ id: "a", from: 0, to: document.buffer.offsetAt(2) }, { id: "b", from: document.buffer.offsetAt(1), to: document.buffer.length }]), /nest/);
         assert.equal(folds.getSnapshot(), current); assert.ok(Object.isFrozen(current.regions)); assert.ok(Object.isFrozen(current.regions[0]));
@@ -207,7 +207,7 @@ test("fold commands capture view/revision/generation and keep source, history an
 test("a complete selection through EOF keeps the block folded in either direction", () => {
     const f = fixture();
     try {
-        const folds = f.view.folding, end = f.model.document(f.source.documentId).buffer.length;
+        const folds = f.view.folding, end = f.model.document(f.source.id).buffer.length;
         folds.setRanges(folds.getSnapshot(), [{ id: "block", from: 0, to: end, collapsed: true }]);
         for (const range of [{ anchor: 0, head: end }, { anchor: end, head: 0 }]) {
             f.view.setSelection(0, range);
@@ -224,7 +224,7 @@ test("a complete selection through EOF keeps the block folded in either directio
 test("a group collapse publishes both visible carets and folds together or leaves both alone", () => {
     const f = fixture();
     try {
-        const folds = f.view.folding, buffer = f.model.document(f.source.documentId).buffer;
+        const folds = f.view.folding, buffer = f.model.document(f.source.id).buffer;
         const second = buffer.offsetAt(2);
         folds.setRanges(folds.getSnapshot(), [{ id: "first", from: 0, to: second }, { id: "second", from: second, to: buffer.length }]);
         f.view.setSelections(0, [{ anchor: 9, head: 9 }, { anchor: buffer.length, head: buffer.length }], 1);
@@ -248,15 +248,15 @@ test("a group collapse publishes both visible carets and folds together or leave
 
 test("fold anchors map through interior edits, shared undo/redo and no-op selection requests", () => {
     const f = fixture(); try {
-        const folds = f.view.folding, before = f.model.document(f.source.documentId).buffer;
+        const folds = f.view.folding, before = f.model.document(f.source.id).buffer;
         folds.setRanges(folds.getSnapshot(), [{ id: "block", from: 0, to: before.offsetAt(3), collapsed: true }]);
-        f.model.edit({ documentId: f.source.documentId, expectedRevision: 0, origin: "host", edits: [{ from: before.offsetAt(1) + 2, to: before.offsetAt(1) + 2, insert: "new\r\n" }] });
+        f.model.edit({ documentId: f.source.id, expectedRevision: 0, origin: "host", edits: [{ from: before.offsetAt(1) + 2, to: before.offsetAt(1) + 2, insert: "new\r\n" }] });
         let state = folds.getSnapshot(); assert.equal(state.revision, 1); assert.equal(state.regions[0]!.collapsed, true); assert.equal(state.regions[0]!.lineTo, 4);
-        f.model.undo({ documentId: f.source.documentId, expectedRevision: 1 }); state = folds.getSnapshot(); assert.equal(state.regions[0]!.to, before.offsetAt(3)); assert.equal(state.regions[0]!.collapsed, true);
-        f.model.redo({ documentId: f.source.documentId, expectedRevision: 2 }); assert.equal(folds.getSnapshot().regions[0]!.lineTo, 4);
-        const doc = f.model.document(f.source.documentId), history = f.model.observeHistory(f.source.documentId).getSnapshot();
-        f.model.edit({ documentId: f.source.documentId, expectedRevision: doc.revision, origin: "human", edits: [], view: f.view, selection: { anchor: doc.buffer.offsetAt(2), head: doc.buffer.offsetAt(2) } });
-        assert.equal(folds.getSnapshot().regions[0]!.collapsed, false); assert.equal(f.model.document(f.source.documentId).revision, doc.revision); assert.deepEqual(f.model.observeHistory(f.source.documentId).getSnapshot(), history);
+        f.model.undo({ documentId: f.source.id, expectedRevision: 1 }); state = folds.getSnapshot(); assert.equal(state.regions[0]!.to, before.offsetAt(3)); assert.equal(state.regions[0]!.collapsed, true);
+        f.model.redo({ documentId: f.source.id, expectedRevision: 2 }); assert.equal(folds.getSnapshot().regions[0]!.lineTo, 4);
+        const doc = f.model.document(f.source.id), history = f.model.observeHistory(f.source.id).getSnapshot();
+        f.model.edit({ documentId: f.source.id, expectedRevision: doc.revision, origin: "human", edits: [], view: f.view, selection: { anchor: doc.buffer.offsetAt(2), head: doc.buffer.offsetAt(2) } });
+        assert.equal(folds.getSnapshot().regions[0]!.collapsed, false); assert.equal(f.model.document(f.source.id).revision, doc.revision); assert.deepEqual(f.model.observeHistory(f.source.id).getSnapshot(), history);
     } finally { f.finish(); }
 });
 
@@ -264,16 +264,16 @@ for (const origin of ["edit", "proposal", "canonical"] as const) test(`${origin}
     const errors: unknown[] = [], model = new Workspace({ onListenerError: error => errors.push(error) });
     const original = "head\none\ntwo\nend", updated = "head\none\nnew\ntwo\nend";
     const source = model.createTextResource({ scope: "fold", resource: origin, variant: "working" }, "Source", { value: original });
-    const view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
+    const view = model.createDocumentView(source.id), peer = model.createDocumentView(source.id);
     view.setSelection(0, { anchor: 9, head: 9 }); peer.setSelection(0, { anchor: original.length, head: original.length });
     for (const target of [view, peer]) target.folding.setRanges(target.folding.getSnapshot(), [{ id: "block", from: 0, to: 13, collapsed: true }]);
     const ticket = origin === "canonical" ? model.captureSave(source) : undefined; ticket?.start();
     let notifications = 0, expectedRevision = 1;
     const inspect = () => {
         notifications++;
-        const document = model.document(source.documentId), undone = expectedRevision === 2;
+        const document = model.document(source.id), undone = expectedRevision === 2;
         assert.equal(document.revision, expectedRevision); assert.equal(document.text(), undone ? original : updated);
-        assert.deepEqual(model.observeHistory(source.documentId).getSnapshot(), { undoDepth: undone ? 0 : 1, redoDepth: undone ? 1 : 0 });
+        assert.deepEqual(model.observeHistory(source.id).getSnapshot(), { undoDepth: undone ? 0 : 1, redoDepth: undone ? 1 : 0 });
         for (const target of [view, peer]) {
             assert.equal(target.getSnapshot().revision, expectedRevision); assert.equal(target.folding.getSnapshot().revision, expectedRevision);
             assert.equal(target.folding.getSnapshot().index.lineCount, document.buffer.lineCount);
@@ -283,15 +283,15 @@ for (const origin of ["edit", "proposal", "canonical"] as const) test(`${origin}
         assert.equal(view.folding.getSnapshot().regions[0]!.collapsed, false); assert.equal(peer.folding.getSnapshot().regions[0]!.collapsed, true);
         assert.equal(source.metadata.getSnapshot().dirty, origin === "canonical" ? undone : !undone);
     };
-    const subscriptions = [source, model.observeDocument(source.documentId), model.observeHistory(source.documentId), view, view.folding, peer, peer.folding]
+    const subscriptions = [source, model.observeDocument(source.id), model.observeHistory(source.id), view, view.folding, peer, peer.folding]
         .map(observable => observable.subscribe(inspect));
     try {
         const edits = [{ from: 9, to: 9, insert: "new\n" }];
         if (ticket) assert.equal(ticket.accept({ serverVersion: "saved", canonical: updated }).canonicalApplied, true);
-        else if (origin === "proposal") assert.equal(model.edit({ documentId: source.documentId, expectedRevision: source.getSnapshot().revision, origin: "agent", history: { kind: "proposal" }, edits }).applied, true);
-        else assert.equal(model.edit({ documentId: source.documentId, expectedRevision: 0, origin: "host", edits }).applied, true);
-        expectedRevision = 2; assert.equal(model.undo({ documentId: source.documentId, expectedRevision: 1 }).applied, true);
-        expectedRevision = 3; assert.equal(model.redo({ documentId: source.documentId, expectedRevision: 2 }).applied, true);
+        else if (origin === "proposal") assert.equal(model.edit({ documentId: source.id, expectedRevision: source.getSnapshot().revision, origin: "agent", history: { kind: "proposal" }, edits }).applied, true);
+        else assert.equal(model.edit({ documentId: source.id, expectedRevision: 0, origin: "host", edits }).applied, true);
+        expectedRevision = 2; assert.equal(model.undo({ documentId: source.id, expectedRevision: 1 }).applied, true);
+        expectedRevision = 3; assert.equal(model.redo({ documentId: source.id, expectedRevision: 2 }).applied, true);
         assert.equal(notifications, 3); assert.deepEqual(errors, []);
     } finally {
         subscriptions.forEach(unsubscribe => unsubscribe()); ticket?.finish(); view.dispose(); peer.dispose();
@@ -302,21 +302,21 @@ for (const origin of ["edit", "proposal", "canonical"] as const) test(`${origin}
 
 test("boundary newline removal cannot publish crossing folds or interrupt an atomic text transaction", () => {
     const f = fixture(); try {
-        const b = f.model.document(f.source.documentId).buffer;
+        const b = f.model.document(f.source.id).buffer;
         f.view.folding.setRanges(f.view.folding.getSnapshot(), [{ id: "left", from: 0, to: b.offsetAt(2), collapsed: true }, { id: "right", from: b.offsetAt(2), to: b.length, collapsed: true }]);
-        const at = b.offsetAt(2); assert.equal(f.model.edit({ documentId: f.source.documentId, expectedRevision: 0, origin: "host", edits: [{ from: at - 2, to: at, insert: "" }] }).applied, true);
+        const at = b.offsetAt(2); assert.equal(f.model.edit({ documentId: f.source.id, expectedRevision: 0, origin: "host", edits: [{ from: at - 2, to: at, insert: "" }] }).applied, true);
         assert.equal(f.text(), "header\r\nbody onebody two\r\nend"); assert.equal(f.view.getSnapshot().revision, 1); assert.equal(f.view.folding.getSnapshot().revision, 1);
         assert.equal(f.view.folding.getSnapshot().regions.length, 1); assert.equal(f.view.folding.getSnapshot().regions[0]!.collapsed, false);
-        f.model.undo({ documentId: f.source.documentId, expectedRevision: 1 }); assert.equal(f.text(), "header\r\nbody one\r\nbody two\r\nend");
+        f.model.undo({ documentId: f.source.id, expectedRevision: 1 }); assert.equal(f.text(), "header\r\nbody one\r\nbody two\r\nend");
     } finally { f.finish(); }
 });
 
 test("mapped sparse folds agree with a naive row oracle across bounded structural edits and undo", () => {
     const model = new Workspace(), source = model.createTextResource({ scope: "fold", resource: "structural", variant: "working" }, "Source", { value: "header\r\nbody\n".repeat(60) + "end" });
-    const view = model.createDocumentView(source.documentId); let seed = 5321;
+    const view = model.createDocumentView(source.id); let seed = 5321;
     const next = (limit: number) => { seed = nextSeed(seed); return seed % limit; };
     const verify = () => {
-        const document = model.document(source.documentId), snapshot = view.folding.getSnapshot(), index = snapshot.index;
+        const document = model.document(source.id), snapshot = view.folding.getSnapshot(), index = snapshot.index;
         assert.equal(snapshot.revision, document.revision);
         for (const r of snapshot.regions) {
             assert.equal(r.lineFrom, document.buffer.lineAt(r.from)); assert.equal(r.lineTo, document.buffer.lineAt(r.to - 1) + 1);
@@ -333,7 +333,7 @@ test("mapped sparse folds agree with a naive row oracle across bounded structura
     };
     try {
         for (let step = 0; step < 160; step++) {
-            const before = model.document(source.documentId), b = before.buffer;
+            const before = model.document(source.id), b = before.buffer;
             if (step % 10 === 0) {
                 const ranges = [];
                 for (let line = 0; line + 8 < b.lineCount; line += 10) {
@@ -344,16 +344,16 @@ test("mapped sparse folds agree with a naive row oracle across bounded structura
             }
             const from = next(b.length + 1), to = Math.min(b.length, from + next(21)), insert = ["", "x", "\r\n", "a\nb\r\nc"][next(4)]!;
             const prior = view.folding.getSnapshot().regions;
-            model.edit({ documentId: source.documentId, expectedRevision: before.revision, origin: "host", edits: [{ from, to, insert }] }); verify();
-            if (model.document(source.documentId).revision !== before.revision) {
-                const after = model.document(source.documentId);
+            model.edit({ documentId: source.id, expectedRevision: before.revision, origin: "host", edits: [{ from, to, insert }] }); verify();
+            if (model.document(source.id).revision !== before.revision) {
+                const after = model.document(source.id);
                 // A fresh array exercises full remapping without the retained range metadata.
                 const expected = revealSelectionFolds(after.buffer, mapFoldRegions(after.buffer, after.change!.mapping, [...prior], before.buffer), view.getSnapshot().selectionSet);
                 assert.deepEqual(view.folding.getSnapshot().regions, expected, `full row-resolution oracle at step ${step}`);
             }
-            if (step % 7 === 0 && model.document(source.documentId).revision !== before.revision) {
-                model.undo({ documentId: source.documentId, expectedRevision: model.document(source.documentId).revision }); verify();
-                const current = model.document(source.documentId).buffer; assert.equal(current.length, b.length); assert.equal(current.slice(0, current.length), b.slice(0, b.length));
+            if (step % 7 === 0 && model.document(source.id).revision !== before.revision) {
+                model.undo({ documentId: source.id, expectedRevision: model.document(source.id).revision }); verify();
+                const current = model.document(source.id).buffer; assert.equal(current.length, b.length); assert.equal(current.slice(0, current.length), b.slice(0, b.length));
             }
         }
     } finally { view.dispose(); model.releaseResource(source.id, true); }
@@ -361,25 +361,25 @@ test("mapped sparse folds agree with a naive row oracle across bounded structura
 
 test("fold updates reuse unchanged metadata and bound line lookups to changed endpoints", () => {
     const model = new Workspace(), source = model.createTextResource({ scope: "fold", resource: "reuse", variant: "working" }, "Source", { value: "header\nbody\n".repeat(2000) + "tail" });
-    const view = model.createDocumentView(source.documentId), peer = model.createDocumentView(source.documentId);
+    const view = model.createDocumentView(source.id), peer = model.createDocumentView(source.id);
     const lineAt = TextBuffer.prototype.lineAt; let reads = 0;
     const edit = (from: number, to: number, insert: string, grouped = false) => {
-        const before = model.document(source.documentId); reads = 0;
-        model.edit({ documentId: source.documentId, expectedRevision: before.revision, origin: "human", view,
+        const before = model.document(source.id); reads = 0;
+        model.edit({ documentId: source.id, expectedRevision: before.revision, origin: "human", view,
             edits: [{ from, to, insert }], selection: { anchor: from + insert.length, head: from + insert.length },
             ...(grouped ? { history: { kind: "typing" as const, group: "fold-edges" } } : {}) });
         assert.ok(reads < 20, `line lookups must not scale with 2000 untouched regions: ${reads}`);
     };
     try {
-        const original = model.document(source.documentId).buffer;
+        const original = model.document(source.id).buffer;
         const ranges = Array.from({ length: 2000 }, (_, i) => ({ id: `fold-${i}`, from: original.offsetAt(i * 2), to: original.offsetAt(i * 2 + 2), collapsed: true }));
         view.folding.setRanges(view.folding.getSnapshot(), ranges); peer.folding.setRanges(peer.folding.getSnapshot(), ranges);
         const first = view.folding.getSnapshot();
         TextBuffer.prototype.lineAt = function(offset) { reads++; return lineAt.call(this, offset); };
         edit(original.length, original.length, "x", true); edit(original.length + 1, original.length + 1, "y", true);
         assert.equal(view.folding.getSnapshot().regions, first.regions); assert.equal(view.folding.getSnapshot().index, first.index);
-        reads = 0; model.undo({ documentId: source.documentId, expectedRevision: 2 }); assert.ok(reads < 20);
-        assert.equal(view.folding.getSnapshot().regions, first.regions); assert.equal(model.document(source.documentId).buffer, original);
+        reads = 0; model.undo({ documentId: source.id, expectedRevision: 2 }); assert.ok(reads < 20);
+        assert.equal(view.folding.getSnapshot().regions, first.regions); assert.equal(model.document(source.id).buffer, original);
         edit(original.length, original.length, "\n"); assert.equal(view.folding.getSnapshot().regions, first.regions);
         assert.equal(view.folding.getSnapshot().index.regions, first.regions); assert.equal(view.folding.getSnapshot().index.lineCount, original.lineCount + 1);
         // Same-length replacements change row metadata even when every suffix offset stays fixed.

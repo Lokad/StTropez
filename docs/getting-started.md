@@ -27,7 +27,7 @@ const file = workspace.createTextResource(
 
 const primary = document.querySelector("main");
 if (!primary) throw new Error("Missing <main>.");
-const editor = mountTextEditor(primary, workspace, file.documentId, { ariaLabel: name });
+const editor = mountTextEditor(primary, workspace, file.id, { ariaLabel: name });
 editor.focus();
 ```
 
@@ -105,7 +105,7 @@ const notes = workspace.createTextResource(
 const notesHost = document.querySelector("aside");
 if (!notesHost) throw new Error("Missing notes pane.");
 const openNotes = () => {
-    return { pane: "main", editor: mountTextEditor(notesHost, workspace, notes.documentId, { ariaLabel: "notes.md" }) };
+    return { pane: "main", editor: mountTextEditor(notesHost, workspace, notes.id, { ariaLabel: "notes.md" }) };
 };
 /** @type {ReturnType<typeof openNotes> | undefined} */
 let notesTab;
@@ -166,7 +166,7 @@ button("Close notes", () => {
 let proposal;
 button("Propose task", () => {
     if (!checklistReady()) return;
-    const before = workspace.document(file.documentId);
+    const before = workspace.document(file.id);
     const end = before.buffer.length;
     const newline = end > 0 && before.buffer.slice(end - 1, end) !== "\n" ? "\n" : "";
     proposal = () => workspace.edit({ documentId: before.id, expectedRevision: before.revision,
@@ -180,7 +180,7 @@ button("Apply task", () => {
 });
 button("Undo", () => {
     if (!checklistReady()) return;
-    workspace.undo({ documentId: file.documentId, expectedRevision: workspace.document(file.documentId).revision });
+    workspace.undo({ documentId: file.id, expectedRevision: workspace.document(file.id).revision });
 });
 ```
 
@@ -207,7 +207,7 @@ import { tokens } from "./checklist.js";
 const second = document.createElement("section");
 second.id = "split";
 document.getElementById("panes")?.after(second);
-const split = mountTextEditor(second, workspace, file.documentId, {
+const split = mountTextEditor(second, workspace, file.id, {
     ariaLabel: "Checklist split", settings: { minimap: true,
         language: { tabSize: 2, insertSpaces: true, blockComment: { open: "<!--", close: "-->" } } }
 });
@@ -262,7 +262,7 @@ import { TextBuffer } from "sttropez";
 
 /** @type {import("sttropez/browser").TextComparison | undefined} */
 let review;
-let baseline = { buffer: workspace.document(file.documentId).buffer, version: "opened" };
+let baseline = { buffer: workspace.document(file.id).buffer, version: "opened" };
 /** @param {import("sttropez").ComparisonBaseline} next */
 function showSaved(next) {
     if (baseline.buffer.equals(next.buffer)) return;
@@ -283,7 +283,7 @@ button("Save", () => {
         }
         sessionStorage.setItem(name, submission.value);
         ticket.accept({ serverVersion: submission.value });
-        showSaved({ buffer: workspace.document(file.documentId).buffer, version: String(ticket.revision) });
+        showSaved({ buffer: workspace.document(file.id).buffer, version: String(ticket.revision) });
         output.textContent = "Saved";
     } catch (error) {
         ticket.fail();
@@ -324,7 +324,7 @@ if (!reviewHost) throw new Error("Missing review container.");
 button("Compare saved", () => {
     if (!checklistReady()) return;
     if (!review) {
-        review = mountTextComparison(reviewHost, workspace, file.documentId, baseline);
+        review = mountTextComparison(reviewHost, workspace, file.id, baseline);
         checklistPanes.push(review.panes.working);
     }
     review.activePane().focus();
@@ -417,7 +417,7 @@ export function EditorPane({ bind }: { bind: ReturnType<typeof createEditorRef> 
 }
 ```
 
-Create the view with `workspace.createDocumentView(file.documentId)`. Pass the same ref to `EditorPane`
+Create the view with `workspace.createDocumentView(file.id)`. Pass the same ref to `EditorPane`
 across renders and dispose the view when retiring the pane.
 [React fixture](../tests/fixtures/hosts/react-main.tsx)
 

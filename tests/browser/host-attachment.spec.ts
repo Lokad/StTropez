@@ -97,7 +97,7 @@ test("language shortcuts follow their panel and editor through attachment failur
         const { ViewBindings } = await import(path + "bindings.js") as typeof import("../fixtures/hosts/bindings.ts");
         const { mountTextEditor } = await import(path + "editor.js") as typeof import("../../src/browser/index.ts");
         const controller = new HostController(), bindings = new ViewBindings(controller);
-        const host = document.querySelector<HTMLDivElement>("#host")!, documentId = controller.source.documentId;
+        const host = document.querySelector<HTMLDivElement>("#host")!, documentId = controller.source.id;
         const results = [];
         try {
             for (const [feature, discover, shortcut] of [

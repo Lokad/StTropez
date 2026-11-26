@@ -23,7 +23,7 @@ test("decorated viewport bounds endpoint reads and preserves overlap order, sele
         let reads = 0, overlap = false;
         const disjoint = Array.from({ length: 256 }, (_, i) => ({ get from() { reads++; return i * 2; }, get to() { reads++; return i * 2 + 1; }, className: "paint-first" }));
         const combined = [{ from: 4, to: 8, className: "paint-first" }, { from: 0, to: 6, className: "paint-second" }, { from: 4, to: 5, className: "paint-first" }, { from: 0, to: 512, className: "invalid .class" }];
-        const viewport = mountTextViewport(host, workspace, source.documentId);
+        const viewport = mountTextViewport(host, workspace, source.id);
         const tokens = viewport.decorations.addProvider({ order: 0, provide: () => overlap ? combined : disjoint });
         try {
             reads = 0; viewport.flush(); const endpointReads = reads, row = host.querySelector<HTMLElement>('.st-viewport-row[data-line="0"]')!;

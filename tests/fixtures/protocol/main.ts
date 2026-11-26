@@ -44,7 +44,7 @@ function openingSession(endpoint: string) {
         transportCancelled = opening.then(() => false, error => error instanceof DOMException && error.name === "AbortError");
         return opening.finally(stop);
     } });
-    session.bindDocument({ uri: "fixture:opening", languageId: "fixture", resourceId: "opening", documentId: "working", revision: 0, buffer: TextBuffer.from("local text") });
+    session.bindDocument({ uri: "fixture:opening", languageId: "fixture", documentId: "working", revision: 0, buffer: TextBuffer.from("local text") });
     session.subscribe(() => {});
     const cancelled = session.connect().then(() => false, error => error instanceof RpcError && error.code === -32097);
     const snapshot = () => ({ phase: session.getSnapshot().phase, ownership: session.snapshotOwnership(), timers: timers.size });
@@ -78,7 +78,7 @@ async function sessionJourney(large: boolean) {
         } }));
     }, features: ["textDocument/hover"], initializationOptions: { fixtureDynamic: true } });
     const uri = "host+fixture://project/scope/Δ%20😀.ts", text = large ? "sample 😀 raw text row\r\n".repeat(3000) : "a😀\r\nb\rc\n";
-    const buffer = TextBuffer.from(text), document = session.bindDocument({ uri, languageId: "fixture", resourceId: "fixture:resource", documentId: "fixture:working", revision: 100, buffer });
+    const buffer = TextBuffer.from(text), document = session.bindDocument({ uri, languageId: "fixture", documentId: "fixture:working", revision: 100, buffer });
     session.onRequest("host/echo", params => params);
     const register = () => session.request("fixture/register", { registrations: [{ id: "hover", method: "textDocument/hover", registerOptions: { documentSelector: [{ scheme: "host+fixture", pattern: "**/*.ts" }] } }] }).result;
     try {

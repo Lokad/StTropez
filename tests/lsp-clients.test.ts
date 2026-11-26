@@ -17,12 +17,12 @@ const cancelled = (error: unknown) => error instanceof RpcError && error.code ==
 
 test("features sharing a mounted scope cancel independently and capture only their own project", { timeout: 5000 }, async t => {
     const f = clientFixture(t);
-    const owner = retainLspDocument(f.provider, f.source.documentId);
+    const owner = retainLspDocument(f.provider, f.source.id);
     const hover = createLspClient(owner, "textDocument/hover");
     const navigation = createLspClient(owner, "textDocument/definition");
     t.after(() => { hover.dispose(); navigation.dispose(); owner.dispose(); });
     const document = f.document();
-    const project = [document, f.workspace.document(f.other.documentId)];
+    const project = [document, f.workspace.document(f.other.id)];
     const params = () => ({ position: { line: 0, character: 0 } });
     const runHover = (prepare?: LspPrepare) =>
         hover.request({ document, prepare }, "textDocument/hover", params, reply => reply);
@@ -98,7 +98,7 @@ test("public feature handles share read-only options, busy state and disposal", 
         assert.deepEqual(f.provider.snapshot(), before); assert.equal(f.workspace.diagnostics().leases, 0);
         f.peer.onRequest(`textDocument/${name}`, () => { entered.resolve(); return answer.promise; });
         const pending = run(); void pending.catch(() => {}); assert.equal(client.isBusy(), true); await entered.promise;
-        const busy = f.provider.snapshot(); assert.equal(client.options(f.workspace.document(f.other.documentId)).length, 1);
+        const busy = f.provider.snapshot(); assert.equal(client.options(f.workspace.document(f.other.id)).length, 1);
         assert.equal(client.isBusy(), true); assert.deepEqual(f.provider.snapshot(), busy);
         answer.resolve(name === "documentColor" ? [] : null); await pending; assert.equal(client.isBusy(), false); assert.ok(notifications > 0);
         client.cancel(); client.dispose(); client.dispose(); assert.equal(client.isBusy(), false); assert.equal(client.snapshot().disposed, true);
@@ -154,23 +154,23 @@ test("a held project reply cannot rebind a source whose URI changed", async t =>
         client = navigationClient(f.provider); t.after(client.dispose);
     const resources = [f.source, f.other, ...Array.from({ length: 48 }, (_, i) => f.workspace.createTextResource(
         { scope: "project", resource: `${i}`, variant: "working" }, `Source ${i}`, { value: "source" }, undefined, { language: { uri: `generic:extra/${i}`, languageId: "generic" } }))];
-    const snapshots = () => resources.map(resource => f.workspace.document(resource.documentId));
+    const snapshots = () => resources.map(resource => f.workspace.document(resource.id));
     const run = () => client.run({ document: f.document(), project: snapshots(), offset: 0, kind: "references" }).result;
     f.peer.onRequest("textDocument/references", () => []);
     const result = await run(); assert.equal(result.isCurrent(), true);
     const entered = latch<void>(), reply = latch<unknown>(); t.after(() => reply.resolve([]));
     f.peer.onRequest("textDocument/references", () => { entered.resolve(); return reply.promise; });
     const pending = run(), rejected = assert.rejects(pending, error => stale(error) || cancelled(error)); await entered.promise;
-    f.workspace.setDocumentLanguage(f.source.documentId, { uri: "generic:renamed", languageId: "generic" });
+    f.workspace.setDocumentLanguage(f.source.id, { uri: "generic:renamed", languageId: "generic" });
     const replacement = f.provider.createScope(); t.after(replacement.dispose);
-    const binding = replacement.attachDocument(f.source.documentId); await replacement.flush([binding]); reply.resolve([]); await rejected;
+    const binding = replacement.attachDocument(f.source.id); await replacement.flush([binding]); reply.resolve([]); await rejected;
     assert.equal(result.isCurrent(), false); assert.equal(binding.getSnapshot().uri, "generic:renamed");
     assert.equal(f.provider.snapshot().documents, 1, "Validation must not reattach the expired captured project.");
 });
 
 test("actions forward immutable diagnostic metadata only for matching current versions and placed overlapping ranges", async t => {
     const f = clientFixture(t), control = f.provider.createScope(); t.after(control.dispose);
-    const binding = control.attachDocument(f.source.documentId); await control.ensureConnected();
+    const binding = control.attachDocument(f.source.id); await control.ensureConnected();
     const client = actionClient(f.provider); t.after(client.dispose);
     const diagnostics = control.observeDiagnostics(binding);
     assert.deepEqual((f.sent("initialize")[0]!.params as { capabilities: { textDocument: { publishDiagnostics: unknown } } }).capabilities.textDocument.publishDiagnostics,
@@ -219,13 +219,13 @@ test("hover supersession cancels obsolete wire work promptly and old cancellatio
 test("cancelling delayed connection settles the feature without disconnecting another scope", async t => {
     const opening = latch<void>(), f = clientFixture(t, () => opening.promise), client = hoverClient(f.provider);
     t.after(() => { opening.resolve(); client.dispose(); });
-    const control = f.provider.createScope(); control.attachDocument(f.source.documentId); t.after(control.dispose);
+    const control = f.provider.createScope(); control.attachDocument(f.source.id); t.after(control.dispose);
     const call = client.run({ document: f.document(), offset: 6 }); let result: unknown;
     const observed = call.result.catch(error => { result = error; });
     call.cancel(); await settled(); assert.ok(cancelled(result)); assert.equal(f.provider.snapshot().documentParticipants, 2);
     client.dispose(); assert.equal(f.provider.snapshot().documentParticipants, 1);
     opening.resolve(); await control.ensureConnected(); await observed;
-    assert.equal(control.synchronized(control.attachDocument(f.source.documentId))!.isCurrent(), true);
+    assert.equal(control.synchronized(control.attachDocument(f.source.id))!.isCurrent(), true);
 });
 test("a document edit during delayed connection rejects the original position before dispatch", async t => {
     const opening = latch<void>(), f = clientFixture(t, () => opening.promise), client = hoverClient(f.provider); t.after(() => { opening.resolve(); client.dispose(); });
@@ -235,7 +235,7 @@ test("a document edit during delayed connection rejects the original position be
 test("superseding delayed preparation and switching documents leaves only the new capture current", async t => {
     const f = clientFixture(t), client = hoverClient(f.provider), entered = latch<void>(), prepared = latch<void>(); t.after(() => { prepared.resolve(); client.dispose(); });
     const call = client.run({ document: f.document(), offset: 6, prepare: async () => { entered.resolve(); await prepared.promise; } }), rejected = assert.rejects(call.result, cancelled); await entered.promise;
-    const next = await client.run({ document: f.workspace.document(f.other.documentId), offset: 0 }).result; await rejected;
+    const next = await client.run({ document: f.workspace.document(f.other.id), offset: 0 }).result; await rejected;
     assert.equal(next!.isCurrent(), true); assert.equal(f.provider.snapshot().documents, 1); assert.equal(f.sent("textDocument/hover").length, 1);
     prepared.resolve(); await settled(); assert.equal(f.sent("textDocument/hover").length, 1);
 });
@@ -255,7 +255,7 @@ for (const feature of ["hover", "navigation", "rename", "actions"] as const) tes
 });
 test("a changed project target is rejected even when the origin and its position are unchanged", async t => {
     const f = clientFixture(t), client = navigationClient(f.provider); t.after(client.dispose);
-    const source = f.document(), target = f.workspace.document(f.other.documentId);
+    const source = f.document(), target = f.workspace.document(f.other.id);
     await assert.rejects(client.run({ document: source, project: [source, target], offset: 6, kind: "definition", includeDeclaration: true, prepare: async () => {
         f.workspace.edit({ documentId: target.id, expectedRevision: target.revision, edits: [{ from: 0, to: 0, insert: "changed " }], origin: "human" });
     } }).result, stale);

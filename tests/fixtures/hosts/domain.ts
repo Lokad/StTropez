@@ -37,10 +37,10 @@ export class HostDomainTools {
         const { editor } = session;
         return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.activity().disposed
             && this.workspace.ownsDocumentView(editor.view)
-            && this.workspace.resourceForDocument(editor.view.documentId).getSnapshot().state === "ready";
+            && this.workspace.resource(editor.view.documentId).getSnapshot().state === "ready";
     }
     private authority(session: Session): string {
-        const state = this.workspace.resourceForDocument(session.editor.view.documentId).getSnapshot();
+        const state = this.workspace.resource(session.editor.view.documentId).getSnapshot();
         return JSON.stringify([state.state, state.metadata.capabilities.edit.includes("human")]);
     }
     private editable(session: Session): boolean {
@@ -71,7 +71,7 @@ export class HostDomainTools {
         const layer = editor.decorations.add({ order: 30 });
         this.data.set(editor.view, data); const session = { token, id, editor, layer, data }, listeners = new AbortController(); this.sessions.set(token, session);
         const changed = () => { this.sync(session); if (this.job?.session === session && !this.current(this.job)) this.invalidate(this.job); };
-        const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.folding.subscribe(changed), this.workspace.resourceForDocument(editor.view.documentId).metadata.subscribe(changed)];
+        const stops = [this.workspace.observeDocument(editor.view.documentId).subscribe(changed), editor.view.folding.subscribe(changed), this.workspace.resource(editor.view.documentId).metadata.subscribe(changed)];
         onSourceFocus(editor, listeners.signal, () => { this.active = session; this.sync(session); });
         editor.onEditIntent(() => {
             if (this.job?.session.editor.view.documentId === editor.view.documentId) this.cancel();
@@ -120,7 +120,7 @@ export class HostDomainTools {
         this.cancel(); this.sync(session);
         const document = this.workspace.document(session.editor.view.documentId), win = session.editor.element.ownerDocument.defaultView!;
         const analysis = kind === "analyze" ? { folds: session.editor.view.folding.getSnapshot(), authority: this.authority(session),
-            lease: this.workspace.acquire(document.resourceId) } : undefined;
+            lease: this.workspace.acquire(document.id) } : undefined;
         const input: DomainInput = { id: this.workspace.allocateIdentity(), revision: document.revision, buffer: document.buffer, kind, module: "catalogue" };
         const job: Job = { session, input, ...(analysis ? { analysis } : {}), abort: new AbortController(), timeout: 0, invalid: false };
         this.job = job; this.metrics.requested++;

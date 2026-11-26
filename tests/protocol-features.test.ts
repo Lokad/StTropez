@@ -19,7 +19,7 @@ import type { JsonValue, LspDocumentCapture, RpcTransport } from "../src/protoco
 import { ProtocolDecodeError, LspLineIndex, lspRangeOffsets, RpcError } from "../src/protocol/index.ts";
 async function captured(text = "// header\r\nconst saMORE = 1; // TODO\rb\n") {
     const buffer = TextBuffer.from(text), index = await LspLineIndex.create(buffer, async () => {}); let active = true;
-    const capture: LspDocumentCapture = Object.freeze({ document: Object.freeze({ uri: "host+fixture:source", languageId: "fixture", resourceId: "resource", documentId: "working", revision: 70, buffer }), index, version: 3, epoch: 2, registrationGeneration: 4, isCurrent: () => active });
+    const capture: LspDocumentCapture = Object.freeze({ document: Object.freeze({ uri: "host+fixture:source", languageId: "fixture", documentId: "working", revision: 70, buffer }), index, version: 3, epoch: 2, registrationGeneration: 4, isCurrent: () => active });
     return { capture, expire: () => { active = false; } };
 }
 
@@ -307,7 +307,7 @@ test("contextual choices retain their captured first-line placement when indenta
 test("several-caret completion formats each context and restores the full transaction and primary selection through undo", async t => {
     const initial = "// header\r\n    saMORE\r\n\t\tsaMORE\r\n        saMORE\r\n", { capture } = await captured(initial);
     const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "completion", resource: "source", variant: "working" }, "Source", { value: initial, serverVersion: "v0" });
-    const document = () => workspace.document(resource.documentId), view = workspace.createDocumentView(resource.documentId); t.after(() => view.dispose());
+    const document = () => workspace.document(resource.id), view = workspace.createDocumentView(resource.id); t.after(() => view.dispose());
     const offsets = [capture.index.offsetAt({ line: 1, character: 6 }), capture.index.offsetAt({ line: 2, character: 4 }), capture.index.offsetAt({ line: 3, character: 10 })];
     assert.ok(view.setSelections(0, offsets.map(head => ({ anchor: head, head })), 1)); const before = view.getSnapshot().selectionSet;
     const wire = { label: "snippet", insertTextMode: 2, insertTextFormat: 2,
@@ -321,21 +321,21 @@ test("several-caret completion formats each context and restores the full transa
     }).join("");
     assert.equal(plan.edits.length, 4); assert.equal(plan.edits.filter(edit => edit.insert === "// extra\n").length, 1);
     assert.equal(plan.selectionSet.ranges.length, 6); assert.equal(plan.selectionSet.primary, 2);
-    let publications = 0; const stop = workspace.observeDocument(resource.documentId).subscribe(() => publications++); t.after(stop);
+    let publications = 0; const stop = workspace.observeDocument(resource.id).subscribe(() => publications++); t.after(stop);
     const root = document().buffer;
-    assert.ok(workspace.edit({ documentId: resource.documentId, expectedRevision: 0, origin: "human", edits: plan.edits,
+    assert.ok(workspace.edit({ documentId: resource.id, expectedRevision: 0, origin: "human", edits: plan.edits,
         selectionSet: plan.selectionSet, view, history: { kind: "replace" } }).applied);
     assert.equal(publications, 1); assert.equal(document().buffer.text(), expected);
-    assert.equal(workspace.observeHistory(resource.documentId).getSnapshot().undoDepth, 1);
+    assert.equal(workspace.observeHistory(resource.id).getSnapshot().undoDepth, 1);
     assert.deepEqual(plan.snippet![0]!.ranges.map(range => document().buffer.slice(range.from, range.to)), Array(6).fill("ok"));
     assert.deepEqual(plan.snippet![1]!.ranges.map(range => document().buffer.slice(range.from, range.to)), Array(3).fill("first"));
     assert.equal(plan.head, plan.snippet![2]!.ranges[1]!.from);
     const ordered = plan.snippet!.flatMap(stop => stop.ranges).sort((a, b) => a.order - b.order);
     assert.equal(new Set(ordered.map(range => range.order)).size, ordered.length);
     assert.ok(ordered.every((range, index) => !index || range.from >= ordered[index - 1]!.to));
-    assert.ok(workspace.undo({ documentId: resource.documentId, expectedRevision: 1 }).applied);
+    assert.ok(workspace.undo({ documentId: resource.id, expectedRevision: 1 }).applied);
     assert.equal(document().buffer, root); assert.deepEqual(view.getSnapshot().selectionSet, before);
-    assert.ok(workspace.redo({ documentId: resource.documentId, expectedRevision: 2 }).applied);
+    assert.ok(workspace.redo({ documentId: resource.id, expectedRevision: 2 }).applied);
     assert.equal(document().buffer.text(), expected); assert.deepEqual(view.getSnapshot().selectionSet, plan.selectionSet);
     const at = plan.snippet![0]!.ranges[2]!.from + 1, mirrored = planSnippetEdit(document().buffer, plan.snippet!, 0, [{ from: at, to: at, insert: "!" }],
         createSelectionSet(document().buffer.length, [{ anchor: at, head: at }]), createSelectionSet(document().buffer.length + 1, [{ anchor: at + 1, head: at + 1 }]))!;
@@ -566,7 +566,7 @@ test("hover accepts standard content shapes and optional ranges as bounded liter
 
 test("definition links/references resolve exact host URI captures and reject whole malformed/stale batches", async t => {
     const origin = await captured("use 😀\r\n"), destination = await captured("// 😀\r\nconst target = 1;\r\n");
-    const target = { ...destination.capture, document: Object.freeze({ ...destination.capture.document, uri: "custom+host:project/%E2%88%86 target", documentId: "destination", resourceId: "target" }) };
+    const target = { ...destination.capture, document: Object.freeze({ ...destination.capture.document, uri: "custom+host:project/%E2%88%86 target", documentId: "destination" }) };
     const resolve = (uri: string) => uri === target.document.uri ? target : undefined;
     const location = { uri: target.document.uri, range: range(1, 6, 12) }, link = { targetUri: target.document.uri, targetRange: range(1, 0, 17), targetSelectionRange: range(1, 6, 12), originSelectionRange: range(0, 0, 3) };
     assert.equal(decodeLspLocations(location, "definition", origin.capture, resolve)[0]!.target, target);

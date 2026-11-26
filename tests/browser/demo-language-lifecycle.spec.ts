@@ -27,7 +27,7 @@ test("a host focus change during language startup cannot dispatch from the old p
         const { mountLanguageCommands } = await import(path + "commands.js") as typeof import("../../examples/demo/language-commands.ts");
         const { CleanupScope } = await import(path + "cleanup.js") as typeof import("../../examples/shared/cleanup-scope.ts");
         const ws = new Workspace(), file = ws.createTextResource({ scope: "demo", resource: "file", variant: "working" }, "Source", { value: "code" });
-        const editor = mountTextEditor(document.querySelector<HTMLElement>("#mount")!, ws, file.documentId);
+        const editor = mountTextEditor(document.querySelector<HTMLElement>("#mount")!, ws, file.id);
         const field = document.createElement("button"); document.body.append(field);
         const focused: boolean[] = [];
         try {
@@ -66,7 +66,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
         if (project.language.state.getSnapshot().checking) await new Promise<void>(resolve => {
             const stop = project.language.state.subscribe(() => { if (!project.language.state.getSnapshot().checking) { stop(); resolve(); } });
         });
-        const file = project.files[0]!, editor = mountTextEditor(document.querySelector<HTMLDivElement>("#mount")!, project.workspace, file.resource.documentId, { view: file.view });
+        const file = project.files[0]!, editor = mountTextEditor(document.querySelector<HTMLDivElement>("#mount")!, project.workspace, file.resource.id, { view: file.view });
         const frames = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         const ownership = () => {
             const { resources, documents, views, leases, subscriptions } = project.workspace.diagnostics();

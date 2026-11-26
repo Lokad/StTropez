@@ -8,7 +8,7 @@ import { clientFixture, settled } from "./helpers/lsp-client.ts";
 test("definition and reference choices expire with their request, authority and originating view", { timeout: 5000 }, async t => {
     const f = clientFixture(t);
     const mount = () => {
-        const { editor, dispose } = controllerEditor(f.workspace, f.source.documentId);
+        const { editor, dispose } = controllerEditor(f.workspace, f.source.id);
         const { navigation } = attachEditorLanguage(editor, f.provider, { navigation: { resultLifetime: "view" } });
         return { editor, navigation, dispose };
     };
@@ -24,7 +24,7 @@ test("definition and reference choices expire with their request, authority and 
     const found = await first.navigation.request();
     assert.equal(found.status, "done");
     const target = found.value.locationAt(0)!;
-    assert.ok(target.open(at => assert.deepEqual([at.document.documentId, at.from, at.to], [f.source.documentId, 0, 5])));
+    assert.ok(target.open(at => assert.deepEqual([at.document.documentId, at.from, at.to], [f.source.id, 0, 5])));
     f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: true });
     assert.equal(target.open(() => assert.fail("Expired navigation target opened")), false);
     await settled();

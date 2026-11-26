@@ -4,7 +4,7 @@ import { HostController } from "./fixtures/hosts/controller.ts";
 import { saveConflictPanelModel } from "./fixtures/hosts/operation-panels.ts";
 const settled = () => new Promise<void>(resolve => setImmediate(resolve));
 function edit(host: HostController, text: string): void {
-    const current = host.workspace.document(host.source.documentId);
+    const current = host.workspace.document(host.source.id);
     assert.equal(host.workspace.edit({ documentId: current.id, expectedRevision: current.revision, origin: "human", edits: [{ from: 0, to: current.buffer.length, insert: text }] }).applied, true);
 }
 async function conflict(host: HostController): Promise<void> {
@@ -53,10 +53,10 @@ test("host conflict review captures remote data while later edits and another ex
         host.finishSave(); await settled(); assert.equal(host.debug().source.serverVersion, "v0"); assert.equal(host.debug().saveConflict!.observedVersion, "v2");
         assert.equal(host.debug().activity.writes, 0); host.reviewSaveConflict(); assert.equal(host.finishConflictReview(), true);
         edit(host, "merged"); host.saveReviewedSource(); await settled(); edit(host, "merged later"); host.finishSave(); await settled();
-        assert.equal(host.workspace.document(host.source.documentId).text(), "merged later");
+        assert.equal(host.workspace.document(host.source.id).text(), "merged later");
         assert.equal(host.debug().saveConflict, null); assert.equal(host.debug().source.serverVersion, "v3"); assert.equal(host.debug().source.dirty, true);
-        host.workspace.undo({ documentId: host.source.documentId, expectedRevision: host.debug().source.revision });
-        assert.equal(host.workspace.document(host.source.documentId).text(), "merged"); assert.equal(host.debug().source.dirty, false);
+        host.workspace.undo({ documentId: host.source.id, expectedRevision: host.debug().source.revision });
+        assert.equal(host.workspace.document(host.source.id).text(), "merged"); assert.equal(host.debug().source.dirty, false);
         assert.equal(host.comparisonReference.getSnapshot().baseline.version, "reference:conflict-v2");
     } finally { await host.dispose(); }
     assert.equal(host.debug().diagnostics.leases, 0);
@@ -102,7 +102,7 @@ for (const action of ["loading", "completed", "cancelled", "failed", "reference"
             assert.equal(host.finishConflictReview(), false, action);
             assert.equal(host.comparisonReference.getSnapshot(), reference, action);
             assert.equal(host.canSaveReviewedSource(), false); assert.equal(host.debug().saveConflict!.review, "expired");
-            assert.equal(host.workspace.document(host.source.documentId).text(), "later human correction");
+            assert.equal(host.workspace.document(host.source.id).text(), "later human correction");
             assert.deepEqual(host.debug().history, laterHistory); assert.notDeepEqual(laterHistory, history);
             if (action === "loading") assert.equal(host.variants.finishNext(), true);
             assert.equal(host.debug().diagnostics.leases, 0);
@@ -117,7 +117,7 @@ test("a newer remote review expires an older version load before either response
         assert.equal(host.variants.finishNext(), false); assert.equal(host.comparisonReference.getSnapshot(), reference);
         assert.equal(host.finishConflictReview(), true); assert.equal(host.canSaveReviewedSource(), true);
         assert.equal(host.comparisonReference.getSnapshot().baseline.version, "reference:conflict-v1");
-        assert.equal(host.workspace.document(host.source.documentId).text(), "local"); assert.deepEqual(host.debug().history, history);
+        assert.equal(host.workspace.document(host.source.id).text(), "local"); assert.deepEqual(host.debug().history, history);
         assert.equal(host.debug().diagnostics.leases, 0);
         assert.equal(host.variants.review("draft"), true); assert.equal(host.canSaveReviewedSource(), false);
         host.variants.cancel(); host.saveReviewedSource(); await settled();
@@ -137,7 +137,7 @@ for (const kind of ["remote", "variant"] as const) for (const reopen of [false, 
             edit(host, "human after dismissal"); const history = host.debug().history;
             assert.equal(kind === "remote" ? host.finishConflictReview() : host.variants.finishNext(), false, `${kind}/${reopen}`);
             assert.equal(host.comparisonReference.getSnapshot(), reference); assert.equal(host.layout.getSnapshot().navigation, navigation);
-            assert.equal(host.workspace.document(host.source.documentId).text(), "human after dismissal"); assert.deepEqual(host.debug().history, history);
+            assert.equal(host.workspace.document(host.source.id).text(), "human after dismissal"); assert.deepEqual(host.debug().history, history);
             assert.equal(host.canSaveReviewedSource(), false); assert.equal(host.debug().diagnostics.leases, 0);
             host.reviewSaveConflict(); assert.equal(host.finishConflictReview(), true); assert.equal(host.canSaveReviewedSource(), true);
             host.closeReview(); assert.equal(host.canSaveReviewedSource(), true);

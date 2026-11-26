@@ -7,7 +7,7 @@ import { clientFixture, settled } from "./helpers/lsp-client.ts";
 
 test("moving inside a completion word retires queued acceptance and overlapping requests", { timeout: 5000 }, async t => {
     const f = clientFixture(t);
-    const { editor, dispose } = controllerEditor(f.workspace, f.source.documentId);
+    const { editor, dispose } = controllerEditor(f.workspace, f.source.id);
     t.after(dispose);
     const { view, commands } = editor;
     const { completion } = attachEditorLanguage(editor, f.provider, { completion: { automatic: false } });
@@ -77,7 +77,7 @@ test("moving inside a completion word retires queued acceptance and overlapping 
 
 test("completion distinguishes preparation failures from malformed replies and accepts a fresh request", async t => {
     const f = clientFixture(t);
-    const { editor, dispose } = controllerEditor(f.workspace, f.source.documentId);
+    const { editor, dispose } = controllerEditor(f.workspace, f.source.id);
     t.after(dispose);
     let preparationError: Error | undefined;
     const { completion } = attachEditorLanguage(editor, f.provider, { completion: {

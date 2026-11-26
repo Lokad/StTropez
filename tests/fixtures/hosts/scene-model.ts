@@ -20,5 +20,5 @@ export function hostSceneModel(layout: Layout, pane: HostPane | undefined, docum
 export function readHostScene(controller: HostController, layout: Layout) {
     const pane = controller.panes.primary.getSnapshot();
     const ready = !!pane.documentId && !!controller.workspace.observeDocument(pane.documentId).getSnapshot();
-    return hostSceneModel(layout, pane, ready, controller.source.documentId);
+    return hostSceneModel(layout, pane, ready, controller.source.id);
 }

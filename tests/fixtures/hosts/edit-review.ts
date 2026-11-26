@@ -25,7 +25,7 @@ export function changedFiles(label: string, buttonPrefix: string, files: readonl
     };
 }
 
-export const formatEditNote = (at: LspWorkspaceEditNote): string => `${at.title} · ${at.resource} · ${at.document} @ revision ${at.revision} · [${at.from},${at.to})\nInsert ${JSON.stringify(at.insert)}${at.insertUnits > at.insert.length ? `… (${at.insertUnits} UTF-16 units)` : ""}\nContext: ${at.context}`;
+export const formatEditNote = (at: LspWorkspaceEditNote): string => `${at.title} · ${at.document} @ revision ${at.revision} · [${at.from},${at.to})\nInsert ${JSON.stringify(at.insert)}${at.insertUnits > at.insert.length ? `… (${at.insertUnits} UTF-16 units)` : ""}\nContext: ${at.context}`;
 
 export type EditNotes = Readonly<{ label: string; page: number; notes: readonly LspWorkspaceEditNote[] | undefined }>;
 

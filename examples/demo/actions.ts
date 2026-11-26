@@ -12,15 +12,15 @@ export function demoActionPolicy(workspace: Workspace, file: DemoFile, language:
         popup: { beforeOpen: valid, quickApply(choice, preview) {
             if (preview.command || choice.kind !== "quickfix" && !choice.kind?.startsWith("quickfix.")) return false;
             const edits = preview.readEdits(0, 4);
-            return !!edits && edits.total > 0 && edits.total <= 4 && edits.notes.every(edit => edit.document === file.resource.documentId)
+            return !!edits && edits.total > 0 && edits.total <= 4 && edits.notes.every(edit => edit.document === file.resource.id)
                 && edits.notes.reduce((units, edit) => units + edit.to - edit.from + edit.insertUnits, 0) <= 256;
         } },
         documents: () => workspace.getSnapshot().documents.filter(doc => doc.language !== null), canCapture: valid,
-        commandPolicy: demoCommandPolicy(file, () => workspace.document(file.resource.documentId).language?.uri, valid),
+        commandPolicy: demoCommandPolicy(file, () => workspace.document(file.resource.id).language?.uri, valid),
         prepareRequest: session => language.prepareActions(session, file),
         reviewCommandEdit: ({ edit }) => {
             const part = edit.documents[0];
-            if (edit.documents.length !== 1 || part?.target.document.documentId !== file.resource.documentId) return false;
+            if (edit.documents.length !== 1 || part?.target.document.documentId !== file.resource.id) return false;
             const note = part.edits[0];
             return part.edits.length === 1 && note?.insert === projectReviewNote
                 && note.from === note.to && note.from === part.target.document.buffer.length;

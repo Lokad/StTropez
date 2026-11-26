@@ -9,7 +9,7 @@ import { editorState } from "./helpers/editor-state.ts";
 test("typing keeps a chosen overload across provider reordering until the call needs a different parameter", { timeout: 5000 }, async t => {
     const f = clientFixture(t);
     const { workspace, provider } = f;
-    const view = workspace.createDocumentView(f.source.documentId);
+    const view = workspace.createDocumentView(f.source.id);
     const timers = new Map<number, { run: () => void; ms: number }>();
     let serial = 0;
     const clock = { performance, clearTimeout: (id: number) => timers.delete(id), setTimeout(run: () => void, ms: number) {

@@ -65,23 +65,23 @@ test("single-store publication preserves snapshot identity and SameValue suppres
 test("one shared observer sees the complete atomic edit and each history publication once", () => {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
     const sources = ["a", "b"].map(name => workspace.createTextResource({ scope: "test", resource: name, variant: "text" }, name, { value: name }));
-    const views = sources.map(source => workspace.createDocumentView(source.documentId, { anchor: 1, head: 1 }));
-    const channels = sources.flatMap((source, i) => [source, source.metadata, workspace.observeDocument(source.documentId),
-        workspace.observeHistory(source.documentId), views[i]!, views[i]!.folding]);
+    const views = sources.map(source => workspace.createDocumentView(source.id, { anchor: 1, head: 1 }));
+    const channels = sources.flatMap((source, i) => [source, source.metadata, workspace.observeDocument(source.id),
+        workspace.observeHistory(source.id), views[i]!, views[i]!.folding]);
     const observations: { text: string[]; revisions: number[]; heads: number[]; viewRevisions: number[] }[] = [];
-    const observe = () => observations.push({ text: sources.map(source => { const buffer = workspace.document(source.documentId).buffer; return buffer.slice(0, buffer.length); }),
-        revisions: sources.map(source => workspace.document(source.documentId).revision), heads: views.map(view => view.getSnapshot().selection.head),
+    const observe = () => observations.push({ text: sources.map(source => { const buffer = workspace.document(source.id).buffer; return buffer.slice(0, buffer.length); }),
+        revisions: sources.map(source => workspace.document(source.id).revision), heads: views.map(view => view.getSnapshot().selection.head),
         viewRevisions: views.map(view => view.getSnapshot().revision) });
     let published = 0;
     const stops = [...channels, workspace].flatMap(channel => [channel.subscribe(observe), channel.subscribe(() => { published++; })]);
     try {
-        assert.equal(workspace.editDocuments(sources.map(source => ({ documentId: source.documentId, expectedRevision: 0,
+        assert.equal(workspace.editDocuments(sources.map(source => ({ documentId: source.id, expectedRevision: 0,
             origin: "human" as const, edits: [{ from: 0, to: 0, insert: "+" }] }))).applied, true);
         assert.equal(published, channels.length + 1);
         assert.deepEqual(observations, [{ text: ["+a", "+b"], revisions: [1, 1], heads: [2, 2], viewRevisions: [1, 1] }]);
-        assert.equal(workspace.undo({ documentId: sources[0]!.documentId, expectedRevision: 1 }).applied, true);
+        assert.equal(workspace.undo({ documentId: sources[0]!.id, expectedRevision: 1 }).applied, true);
         assert.equal(observations.length, 2); assert.deepEqual(observations[1], { text: ["a", "b"], revisions: [2, 2], heads: [1, 1], viewRevisions: [2, 2] });
-        assert.equal(workspace.redo({ documentId: sources[1]!.documentId, expectedRevision: 2 }).applied, true);
+        assert.equal(workspace.redo({ documentId: sources[1]!.id, expectedRevision: 2 }).applied, true);
         assert.equal(observations.length, 3); assert.deepEqual(observations[2], { text: ["+a", "+b"], revisions: [3, 3], heads: [2, 2], viewRevisions: [3, 3] });
         assert.deepEqual(errors, []);
     } finally { stops.forEach(stop => stop()); views.forEach(view => view.dispose()); sources.forEach(source => workspace.releaseResource(source.id, true)); }
@@ -166,10 +166,10 @@ test("a failed synchronous batch publishes committed workspace changes and relea
     const source = workspace.createTextResource({ scope: "batch", resource: "source", variant: "working" }, "Source", { value: "a" });
     const seen: string[] = [], failure = new Error("command");
     const stop = source.subscribe(() => {
-        seen.push(workspace.document(source.documentId).text());
+        seen.push(workspace.document(source.id).text());
         assert.throws(() => scope.batch(() => workspace.setCapabilities(source.id, { edit: [], save: false })), /Reentrant/);
     });
-    const edit = (revision: number, insert: string) => workspace.edit({ documentId: source.documentId, expectedRevision: revision,
+    const edit = (revision: number, insert: string) => workspace.edit({ documentId: source.id, expectedRevision: revision,
         origin: "human", edits: [{ from: 0, to: 1, insert }] });
     try {
         assert.throws(() => scope.batch(() => { edit(0, "b"); assert.deepEqual(seen, []); throw failure; }), error => error === failure);

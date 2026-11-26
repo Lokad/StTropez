@@ -32,7 +32,7 @@ export type LspDocumentFeature = Exclude<LspFeature, "workspace/executeCommand">
 export type LspCommandCall<T> = RpcCall<T> & Readonly<{ isCurrent: () => boolean }>;
 /** Host grant for one invocation, including opaque arguments; never inferred from a server response. */
 export type LspCommandAuthorization = Readonly<{ command: string; arguments: readonly JsonValue[]; isCurrent: () => boolean }>;
-export type LspDocumentSnapshot = Readonly<{ uri: string; languageId: string; resourceId: string; documentId: string; revision: number; buffer: TextBuffer }>;
+export type LspDocumentSnapshot = Readonly<{ uri: string; languageId: string; documentId: string; revision: number; buffer: TextBuffer }>;
 export type LspDocument = Readonly<{ getSnapshot: () => LspDocumentSnapshot;
     update: (expectedRevision: number, revision: number, buffer: TextBuffer, edits?: readonly TextEdit[]) => void; dispose: () => void }>;
 export type LspCall<T> = Readonly<{ result: Promise<T>; cancel: () => void }>;
@@ -408,10 +408,10 @@ export class LspSession {
         if (!isNonNegativeInteger(length) || length > this.#maxDocumentUnits || this.#totalUnits - previous + length > this.#maxTotalUnits) throw new RangeError("LSP document size limit exceeded.");
     }
     bindDocument(snapshot: LspDocumentSnapshot): LspDocument {
-        this.#writable(); const { uri, languageId, resourceId, documentId, revision, buffer } = snapshot;
-        if (!isLspUri(uri) || ![languageId, resourceId, documentId].every(isLspIdentityPart) || !isNonNegativeInteger(revision)) throw new TypeError("Invalid LSP document identity.");
+        this.#writable(); const { uri, languageId, documentId, revision, buffer } = snapshot;
+        if (!isLspUri(uri) || ![languageId, documentId].every(isLspIdentityPart) || !isNonNegativeInteger(revision)) throw new TypeError("Invalid LSP document identity.");
         if (this.#documents.has(uri) || this.#documents.size >= this.#maxDocuments) throw new Error("LSP URI is already bound or document limit exceeded."); this.#size(buffer.length, 0);
-        const entry: Entry = { snapshot: Object.freeze({ uri, languageId, resourceId, documentId, revision, buffer }) };
+        const entry: Entry = { snapshot: Object.freeze({ uri, languageId, documentId, revision, buffer }) };
         const handle: LspDocument = Object.freeze({ getSnapshot: () => entry.snapshot,
             update: (previous, revision, buffer, edits) => this[updateBinding](handle, previous, revision, buffer,
                 before => edits && { before, edits: edits.map(({ from, to, insert }) => ({ from, to, insert })) }),

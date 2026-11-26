@@ -20,11 +20,11 @@ test("fixture diagnostics address the requested URI and reject missing, unknown 
     defer(() => owner.dispose());
     const scope = owner.createScope(), pushes: { uri: string; version?: number; diagnostics: { range: unknown; message: string }[] }[] = [];
     scope.onNotification("textDocument/publishDiagnostics", value => { pushes.push(value as typeof pushes[number]); });
-    scope.setDocuments([workspace.document(first.documentId), workspace.document(second.documentId)]); await scope.ensureConnected(); await scope.flush();
-    assert.ok(workspace.edit({ documentId: second.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "// " }] }).applied);
+    scope.setDocuments([workspace.document(first.id), workspace.document(second.id)]); await scope.ensureConnected(); await scope.flush();
+    assert.ok(workspace.edit({ documentId: second.id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "// " }] }).applied);
     await scope.flush(); const secondVersion = scope.captureProject().get(uri)!.version;
     await scope.request("fixture/state").result; pushes.length = 0;
-    const firstDiagnostics = scope.observeDiagnostics(scope.attachDocument(first.documentId)), untouched = firstDiagnostics.getSnapshot();
+    const firstDiagnostics = scope.observeDiagnostics(scope.attachDocument(first.id)), untouched = firstDiagnostics.getSnapshot();
     for (const mode of ["normal", "clear", "stale", "unversioned", "html", "malformed", "out-of-bounds"] as const) {
         const before = pushes.length;
         assert.deepEqual(await scope.request("fixture/diagnostics", { uri, mode }).result, { version: secondVersion });
@@ -40,7 +40,7 @@ test("fixture diagnostics address the requested URI and reject missing, unknown 
         await assert.rejects(scope.request("fixture/diagnostics", params).result, error => error instanceof RpcError && error.code === -32602);
     }
     assert.equal(pushes.length, beforeInvalid);
-    scope.setDocuments([workspace.document(first.documentId)]); await scope.flush();
+    scope.setDocuments([workspace.document(first.id)]); await scope.flush();
     await assert.rejects(scope.request("fixture/diagnostics", { uri, mode: "clear" }).result, error => error instanceof RpcError && error.code === -32602);
     assert.equal(pushes.length, beforeInvalid);
     await scope.request("fixture/diagnostics", { uri: firstUri, mode: "clear" }).result;
@@ -52,7 +52,7 @@ test("generic host profile joins selector registration, space-triggered lazy sni
     const source = workspace.createTextResource({ scope: "profile", resource: "source", variant: "working" }, "Source", { value: initial }, undefined, { language: { uri: "host+fixture:source", languageId: "fixture" } });
     const other = workspace.createTextResource({ scope: "profile", resource: "other", variant: "working" }, "Other", { value: "sample" }, undefined, { language: { uri: "host+fixture:other", languageId: "other" } });
     defer(() => assert.equal(workspace.diagnostics().leases, 0));
-    const document = () => workspace.document(source.documentId), snapshots = () => [document()];
+    const document = () => workspace.document(source.id), snapshots = () => [document()];
     const owner = new LspWorkspace(workspace, {
         connect: () => openWebSocketTransport(url), initializationOptions: { fixtureHostProfile: true },
         features: ["textDocument/completion", "textDocument/documentHighlight", "textDocument/codeAction", "workspace/executeCommand"], applyEdit: true,
@@ -64,11 +64,11 @@ test("generic host profile joins selector registration, space-triggered lazy sni
     const actions = actionClient(owner, { commandPolicy: invocation => invocation.command === "fixture.unadvertised" ? { kind: "server" } : null });
     defer(() => actions.dispose());
     const apply = (edit: LspWorkspaceEdit) => workspace.editDocuments(edit.documents.map(change => {
-        assert.equal(change.target.document.documentId, source.documentId);
-        return { documentId: source.documentId, expectedRevision: change.target.document.revision, origin: "host", edits: change.edits, history: { kind: "refactor" } };
+        assert.equal(change.target.document.documentId, source.id);
+        return { documentId: source.id, expectedRevision: change.target.document.revision, origin: "host", edits: change.edits, history: { kind: "refactor" } };
     }));
-    scope.setDocuments([document(), workspace.document(other.documentId)]); await scope.ensureConnected();
-    const binding = scope.attachDocument(source.documentId), nonmatching = scope.attachDocument(other.documentId);
+    scope.setDocuments([document(), workspace.document(other.id)]); await scope.ensureConnected();
+    const binding = scope.attachDocument(source.id), nonmatching = scope.attachDocument(other.id);
     assert.equal(scope.canRequest("textDocument/completion", binding), false);
     await scope.request("fixture/completionStyle", { style: "interactive" }).result;
     assert.equal(scope.canRequest("textDocument/completion", binding), true);

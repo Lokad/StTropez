@@ -15,7 +15,7 @@ const resource = workspace.createTextResourceFromBuffer({ scope: "fixture", reso
     fixedRevisions ? { edit: [], save: false } : undefined);
 const customControls = options.get("controls") === "host";
 function mount() {
-    return mountTextComparison(document.querySelector<HTMLElement>("#comparison")!, workspace, resource.documentId,
+    return mountTextComparison(document.querySelector<HTMLElement>("#comparison")!, workspace, resource.id,
         { buffer: TextBuffer.from("const title = 'Baseline';\r\n// shared separator\r\nconst count = 1;\r\n// shared boundary\r\n  return title;\r\n"),
             version: fixedRevisions ? "saved-1" : "reference-1" }, { controls: !customControls });
 }
@@ -34,7 +34,7 @@ function finish(kind: "refresh" | "accept", newest = false) {
     const reference = { buffer: kind === "refresh" ? TextBuffer.from(`// refreshed reference ${++serial}\r\nconst count = 9;\r\n`) : ticket.capture.working.buffer, version: `reference-${++serial}` };
     const applied = ticket.complete(reference); result = `${kind} ${applied ? "applied" : "stale"}`; status(); return applied;
 }
-function history(direction: "undo" | "redo") { const current = workspace.document(resource.documentId); workspace[direction]({ documentId: current.id, expectedRevision: current.revision }); }
+function history(direction: "undo" | "redo") { const current = workspace.document(resource.id); workspace[direction]({ documentId: current.id, expectedRevision: current.revision }); }
 function dispose() {
     if (disposed) return; comparison.dispose(); stopControls?.(); disposed = true;
     if (fixedRevisions) workspace.releaseResource(resource.id);
@@ -49,18 +49,18 @@ document.querySelector("#accept")!.addEventListener("click", () => begin("accept
 document.querySelector("#finish-accept")!.addEventListener("click", () => finish("accept"));
 document.querySelector("#undo")!.addEventListener("click", () => history("undo")); document.querySelector("#redo")!.addEventListener("click", () => history("redo"));
 document.querySelector("#dispose")!.addEventListener("click", dispose);
-function setText(value: string) { const current = workspace.document(resource.documentId); return workspace.edit({ documentId: current.id, expectedRevision: current.revision, origin: "host", history: { kind: "replace" }, edits: [{ from: 0, to: current.buffer.length, insert: value }] }); }
+function setText(value: string) { const current = workspace.document(resource.id); return workspace.edit({ documentId: current.id, expectedRevision: current.revision, origin: "host", history: { kind: "replace" }, edits: [{ from: 0, to: current.buffer.length, insert: value }] }); }
 function snapshot() {
-    const state = comparison.controller.getSnapshot(), current = workspace.document(resource.documentId);
+    const state = comparison.controller.getSnapshot(), current = workspace.document(resource.id);
     return { status: state.status, generation: state.generation, selection: comparison.controller.view.getSnapshot().selection, baseline: state.baseline && { epoch: state.baseline.epoch, version: state.baseline.version, length: state.baseline.buffer.length },
-        working: { id: current.id, resourceId: current.resourceId, revision: current.revision, length: current.buffer.length, metadata: resource.metadata.getSnapshot() },
+        working: { id: current.id, revision: current.revision, length: current.buffer.length, metadata: resource.metadata.getSnapshot() },
         hunks: state.hunks, history: workspace.observeHistory(current.id).getSnapshot(), viewId: comparison.panes.working.view.id, editor: { ...comparison.panes.working.getDiagnostics(), viewport: comparison.panes.working.viewport.getDiagnostics() }, reference: comparison.panes.reference.viewport.getDiagnostics(),
         pending: { refreshes: refreshes.length, acceptances: acceptances.length }, comparison: comparison.getDiagnostics(), diagnostics: workspace.diagnostics(), result, disposed };
 }
 const fixture = Object.freeze({ snapshot, setText, begin, finish, dispose, review: comparison, focus: () => comparison.panes.working.focus(),
     get settled() { return !disposed && comparisonSettled(comparison); },
-    select: (selection: Selection) => comparison.controller.view.setSelection(workspace.document(resource.documentId).revision, selection),
-    range: (from: number, to: number) => workspace.document(resource.documentId).buffer.slice(from, to),
+    select: (selection: Selection) => comparison.controller.view.setSelection(workspace.document(resource.id).revision, selection),
+    range: (from: number, to: number) => workspace.document(resource.id).buffer.slice(from, to),
     baselineRange: (from: number, to: number) => comparison.controller.getSnapshot().baseline?.buffer.slice(from, to),
     readOnly: (value: boolean) => workspace.setCapabilities(resource.id, { edit: value ? [] : ["human", "agent", "host"], save: true }),
     mount, history });

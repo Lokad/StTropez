@@ -10,7 +10,7 @@ import type { LspWorkspaceEdit } from "../src/protocol/index.ts";
 function fixture(t: TestContext, text = "alpha\nbeta") {
     const workspace = new Workspace(), resources = ["Source", "Unmounted"].map(name => workspace.createTextResource(
         { scope: "edit", resource: name, variant: "working" }, name, { value: text }));
-    const documents = resources.map(resource => workspace.document(resource.documentId));
+    const documents = resources.map(resource => workspace.document(resource.id));
     const leases = resources.map(resource => workspace.acquire(resource.id));
     t.after(() => {
         leases.forEach(lease => lease.release()); resources.forEach(resource => workspace.releaseResource(resource.id, true));
@@ -20,7 +20,7 @@ function fixture(t: TestContext, text = "alpha\nbeta") {
 }
 async function capture(documents: readonly DocumentSnapshot[], edits: readonly (readonly TextEdit[])[]): Promise<LspWorkspaceEdit> {
     return Object.freeze({ isCurrent: () => true, documents: Object.freeze(await Promise.all(documents.map(async (doc, i) => Object.freeze({
-        target: Object.freeze({ document: Object.freeze({ documentId: doc.id, resourceId: doc.resourceId, revision: doc.revision, buffer: doc.buffer,
+        target: Object.freeze({ document: Object.freeze({ documentId: doc.id, revision: doc.revision, buffer: doc.buffer,
             uri: `host+opaque:${doc.id}`, languageId: "generic" }), index: await LspLineIndex.create(doc.buffer, async () => {}), version: null, isCurrent: () => true }),
         edits: Object.freeze(edits[i]!.map(edit => Object.freeze(edit))),
     })))) });
@@ -72,7 +72,7 @@ test("workspace-edit preflight and core validation refuse a bad last target with
     reject({ ...plan, isCurrent: () => false }, stale);
     reject(withLast({ ...last!, target: { ...last!.target, isCurrent: () => false } }), stale);
     reject(withLast({ ...last!, target: { ...last!.target, index: first!.target.index } }), stale);
-    for (const patch of [{ resourceId: first!.target.document.resourceId }, { revision: 1 }, { buffer: TextBuffer.from("alpha\nbeta") }]) {
+    for (const patch of [{ documentId: first!.target.document.documentId }, { revision: 1 }, { buffer: TextBuffer.from("alpha\nbeta") }]) {
         reject(withLast({ ...last!, target: { ...last!.target, document: { ...last!.target.document, ...patch } } }), stale);
     }
     reject(withLast({ ...last!, edits: [{ from: 0, to: 1000, insert: "invalid" }] }), /range|bound|length/i);

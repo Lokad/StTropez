@@ -79,12 +79,12 @@ export class DemoProject {
     private readonly noteModels = new Map<DemoFile, HostSourceNotes>();
     notesFor(file: DemoFile): HostSourceNotes {
         let model = this.noteModels.get(file);
-        if (!model) { model = new HostSourceNotes(this.workspace, file.resource.documentId); this.noteModels.set(file, model); this.seedNotes(file, model); }
+        if (!model) { model = new HostSourceNotes(this.workspace, file.resource.id); this.noteModels.set(file, model); this.seedNotes(file, model); }
         return model;
     }
     private seedNotes(file: DemoFile, model: HostSourceNotes): void {
         if (file.name !== "workflow.rules") return;
-        const doc = this.workspace.document(file.resource.documentId), prefix = doc.buffer.slice(0, Math.min(doc.buffer.length, 16384));
+        const doc = this.workspace.document(file.resource.id), prefix = doc.buffer.slice(0, Math.min(doc.buffer.length, 16384));
         for (const [token, text] of [["columns sku", "Inventory source"], ["when quantity", "Review policy"]]) {
             const from = prefix.indexOf(token!); if (from >= 0) model.add(doc.revision, from, from + token!.length, text!);
         }
@@ -101,7 +101,7 @@ export class DemoProject {
         if (this.disposed) throw new Error("The sample is closed.");
         const existing = this.files.find(file => file.name === name);
         if (existing) {
-            if (text !== undefined && this.workspace.document(existing.resource.documentId).text() !== text) throw new Error("The file changed while loading.");
+            if (text !== undefined && this.workspace.document(existing.resource.id).text() !== text) throw new Error("The file changed while loading.");
             return existing;
         }
         const readOnly = Object.hasOwn(this.sample.declarations ?? {}, name);
@@ -114,13 +114,13 @@ export class DemoProject {
                 { value, serverVersion: this.token }, readOnly ? { edit: [], save: false } : undefined,
                 { language: this.services?.language.languageFor(name) ?? null });
             owners.defer(() => { this.workspace.releaseResource(resource.id, true); });
-            const view = this.workspace.createDocumentView(resource.documentId); owners.defer(() => view.dispose());
-            owners.defer(this.workspace.onDocumentChange(resource.documentId, () => {
+            const view = this.workspace.createDocumentView(resource.id); owners.defer(() => view.dispose());
+            owners.defer(this.workspace.onDocumentChange(resource.id, () => {
                 if (this.notice.keepOnEdit) this.setEditRefusal();
                 else this.notice = {};
             }));
             file = Object.freeze({ name, resource, view, readOnly });
-            this.baselines.set(name, { buffer: this.workspace.document(resource.documentId).buffer, version: this.token ?? "sample" });
+            this.baselines.set(name, { buffer: this.workspace.document(resource.id).buffer, version: this.token ?? "sample" });
             this.loaded = Object.freeze([...this.loaded, file]); if (!readOnly) delete this.unloaded[name];
             this.fileOwners.defer(owners.dispose);
         } catch (error) { return owners.rollback(error); }
@@ -186,19 +186,19 @@ export class DemoProject {
         if (this.disposed || this.saving || !this.conflict) return false;
         this.prepareEditable();
         this.review = { copy: this.conflict, revisions: new Map(this.editable.map(file =>
-            [file, this.workspace.document(file.resource.documentId).revision])) };
+            [file, this.workspace.document(file.resource.id).revision])) };
         this.notice = {};
         return true;
     }
     canSaveReviewed(): boolean {
         const review = this.review;
         return !this.disposed && !this.saving && !!review && review.copy === this.conflict
-            && this.editable.every(file => this.workspace.document(file.resource.documentId).revision === review.revisions.get(file));
+            && this.editable.every(file => this.workspace.document(file.resource.id).revision === review.revisions.get(file));
     }
     private matchesFiles(files: StoredProject["files"], side: "working" | "saved"): boolean {
         return Object.entries(this.unloaded).every(([name, text]) => text === files[name])
             && this.editable.every(file => {
-                const buffer = side === "working" ? this.workspace.document(file.resource.documentId).buffer
+                const buffer = side === "working" ? this.workspace.document(file.resource.id).buffer
                     : this.baselines.get(file.name)!.buffer;
                 return matchesText(buffer, files[file.name]!);
             });
@@ -237,7 +237,7 @@ export class DemoProject {
     private adoptMatchingWorkingCopy(files: StoredProject["files"], token: string): boolean {
         if (!this.matchesFiles(files, "working")) return false;
         const versions = this.editable.map(file => ({
-            resourceId: file.resource.id, text: this.workspace.document(file.resource.documentId).buffer,
+            documentId: file.resource.id, text: this.workspace.document(file.resource.id).buffer,
             serverVersion: token, name: file.name,
         }));
         if (!this.workspace.adoptSavedDocuments(versions, { history: "record" }).applied) return false;
@@ -289,7 +289,7 @@ export class DemoProject {
                 return;
             }
             const versions = Array.from(review.revisions, ([file, expectedRevision]) => ({
-                resourceId: file.resource.id, expectedRevision, text: conflict.baselines.get(file.name)!.buffer, serverVersion: conflict.token,
+                documentId: file.resource.id, expectedRevision, text: conflict.baselines.get(file.name)!.buffer, serverVersion: conflict.token,
             }));
             if (!this.inputIdle() || !this.workspace.adoptSavedDocuments(versions, { history: "record" }).applied) {
                 this.review = undefined; this.message = "Your files changed or are busy. Review the saved copy again.";
@@ -305,7 +305,7 @@ export class DemoProject {
         } finally { this.finishStorage(changed); }
     }
     download(): string {
-        return JSON.stringify({ version: 1, files: { ...this.unloaded, ...Object.fromEntries(this.editable.map(file => [file.name, this.workspace.document(file.resource.documentId).text()])) } }, null, 2);
+        return JSON.stringify({ version: 1, files: { ...this.unloaded, ...Object.fromEntries(this.editable.map(file => [file.name, this.workspace.document(file.resource.id).text()])) } }, null, 2);
     }
     /** On a missed peer notification, retry once against an identical baseline. Every write checks its token. */
     private async writeFiles(files: StoredProject["files"], expected: string | null, reviewed: boolean):
@@ -337,7 +337,7 @@ export class DemoProject {
         if (this.disposed) return false;
         if (!this.saving) return true;
         const last = this.lastSave;
-        return !!last && this.editable.some(file => this.workspace.document(file.resource.documentId).revision
+        return !!last && this.editable.some(file => this.workspace.document(file.resource.id).revision
             !== (last.captured.get(file)?.ticket.revision ?? 0));
     }
     async save(changed: () => void, reviewed = false): Promise<void> {
@@ -358,7 +358,7 @@ export class DemoProject {
         const files = { ...this.unloaded };
         let started = false;
         const capture = (file: DemoFile) => {
-            const document = this.workspace.document(file.resource.documentId);
+            const document = this.workspace.document(file.resource.id);
             const ticket = this.workspace.captureSave(file.resource, reviewedToken === undefined ? undefined
                 : { target: this.workspace.captureResource(file.resource.id), expectedRevision: document.revision,
                     expectedServerVersion: reviewedToken } satisfies SaveReview);
@@ -453,7 +453,7 @@ export class DemoProject {
     reset(): void {
         this.prepareEditable();
         const result = this.workspace.editDocuments(this.editable.map(file => {
-            const document = this.workspace.document(file.resource.documentId);
+            const document = this.workspace.document(file.resource.id);
             return { documentId: document.id, expectedRevision: document.revision, origin: "host" as const,
                 text: this.sample.files[file.name]! };
         }));

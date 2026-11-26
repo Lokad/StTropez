@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { HostController } from "./fixtures/hosts/controller.ts";
 import { TextBuffer } from "../src/index.ts";
-const text = (host: HostController) => { const buffer = host.workspace.document(host.source.documentId).buffer; return buffer.slice(0, buffer.length); };
+const text = (host: HostController) => { const buffer = host.workspace.document(host.source.id).buffer; return buffer.slice(0, buffer.length); };
 function edit(host: HostController, value: string): void {
-    const current = host.workspace.document(host.source.documentId);
-    assert.equal(host.workspace.edit({ documentId: host.source.documentId, expectedRevision: current.revision, origin: "human", edits: [{ from: 0, to: current.buffer.length, insert: value }] }).applied, true);
+    const current = host.workspace.document(host.source.id);
+    assert.equal(host.workspace.edit({ documentId: host.source.id, expectedRevision: current.revision, origin: "human", edits: [{ from: 0, to: current.buffer.length, insert: value }] }).applied, true);
 }
 const reference = (host: HostController) => { const buffer = host.comparisonReference.getSnapshot().baseline.buffer; return buffer.slice(0, buffer.length); };
 
@@ -96,9 +96,9 @@ test("failed/cancelled retrieval and bounded historical eviction preserve immuta
 test("large draft variants reuse the captured buffer when opened read-only", async () => {
     const host = new HostController();
     try {
-        const value = "line value\r\n".repeat(10_000) + "tail\r"; edit(host, value); const buffer = host.workspace.document(host.source.documentId).buffer;
+        const value = "line value\r\n".repeat(10_000) + "tail\r"; edit(host, value); const buffer = host.workspace.document(host.source.id).buffer;
         host.variants.keepDraft(); host.workspace.setCapabilities(host.source.id, { edit: ["host"], save: true });
         host.variants.review("draft"); assert.equal(host.variants.finishNext(), true); assert.equal(host.comparisonReference.getSnapshot().baseline.buffer, buffer);
-        assert.equal(host.workspace.document(host.source.documentId).buffer, buffer);
+        assert.equal(host.workspace.document(host.source.id).buffer, buffer);
     } finally { await host.dispose(); }
 });

@@ -44,7 +44,7 @@ function baseline(value: ComparisonBaseline, epoch: number): ComparisonBaseline 
 export function compareText(workspace: Workspace, documentId: DocumentId, initial: ComparisonBaseline | DocumentId,
     options: Readonly<{ view?: DocumentView; onListenerError?: (error: unknown) => void }> = {},
     projectReference?: (next: ComparisonBaseline) => boolean): ComparisonController {
-    const resource = workspace.resourceForDocument(documentId);
+    const resource = workspace.resource(documentId);
     const document = workspace.document(documentId);
     const referenceDocument = typeof initial === "string" ? workspace.observeDocument(initial) : undefined;
     const fromDocument = (value: DocumentSnapshot, epoch: number) => baseline({ buffer: value.buffer, version: String(value.revision) }, epoch);
@@ -53,7 +53,7 @@ export function compareText(workspace: Workspace, documentId: DocumentId, initia
     const retention = workspace.acquire(resource.id);
     let view: DocumentView;
     try { view = options.view ?? workspace.createDocumentView(documentId); } catch (error) { retention.release(); throw error; }
-    const referenceLease = referenceDocument && workspace.acquire(referenceDocument.getSnapshot()!.resourceId);
+    const referenceLease = referenceDocument && workspace.acquire(referenceDocument.getSnapshot()!.id);
     const scope = workspace.createNotificationScope(options.onListenerError);
     const state = new Store<ComparisonSnapshot>(Object.freeze({ status: "running", generation: 0, baseline: initialBaseline,
         working: document, hunks: emptyList, progress: null, failure: null }), scope);

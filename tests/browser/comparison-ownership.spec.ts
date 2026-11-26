@@ -21,20 +21,20 @@ test("independent comparison modules share workspace identity and release retain
         const first = await import(path + "comparison.js?one") as typeof import("../../src/browser/comparison.ts");
         const second = await import(path + "comparison.js?two") as typeof first;
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "source", variant: "working" }, "Working", { value: "working" });
-        const view = workspace.createDocumentView(source.documentId);
+        const view = workspace.createDocumentView(source.id);
         const host = document.createElement("section"); document.body.append(host);
         const baseline = { buffer: TextBuffer.from("head\n  needle\nend"), version: "one" };
         let hiddenThroughout = true;
         const stopInventory = workspace.subscribe(() => {
             const state = workspace.getSnapshot();
             hiddenThroughout &&= state.resources.length === 1 && state.resources[0]!.id === source.id
-                && state.documents.length === 1 && state.documents[0]!.id === source.documentId;
+                && state.documents.length === 1 && state.documents[0]!.id === source.id;
         });
-        const one = first.mountTextComparison(host, workspace, source.documentId, baseline, { view, workBudget: 256 });
-        const two = second.mountTextComparison(host, workspace, source.documentId, baseline, { view, controls: false });
+        const one = first.mountTextComparison(host, workspace, source.id, baseline, { view, workBudget: 256 });
+        const two = second.mountTextComparison(host, workspace, source.id, baseline, { view, controls: false });
         const { createFindController, createFoldingController } = await import(path + "tools.js") as typeof import("../../src/browser/index.ts");
-        const editor = one.panes.reference, old = workspace.resourceForDocument(editor.view.documentId), oldLease = workspace.acquire(old.id);
-        const distinct = old.id !== workspace.resourceForDocument(two.panes.reference.view.documentId).id;
+        const editor = one.panes.reference, old = workspace.resource(editor.view.documentId), oldLease = workspace.acquire(old.id);
+        const distinct = old.id !== two.panes.reference.view.documentId;
         const internal = old.metadata.getSnapshot().visibility === "internal";
         const initial = workspace.document(editor.view.documentId), find = createFindController(editor);
         const folds = createFoldingController(editor, document => [{ from: 0, to: document.buffer.offsetAt(2) - 1 }], { delayMs: 0 });
@@ -60,7 +60,7 @@ test("independent comparison modules share workspace identity and release retain
         const afterRefresh = { stable: one.panes.reference === editor, oldText: initial.text(), text: workspace.document(editor.view.documentId).text(),
             retiredRejected: !retired.select(), rulers: editor.settings().columnRulers, query: find.getSnapshot().query,
             folded, collapsed: folds.getSnapshot().collapsed, defaultWorking, activeReference };
-        const current = workspace.resourceForDocument(one.panes.reference.view.documentId), currentLease = workspace.acquire(current.id);
+        const current = workspace.resource(one.panes.reference.view.documentId), currentLease = workspace.acquire(current.id);
         one.dispose(); one.dispose(); two.dispose(); stopInventory();
         const afterDestroy = { children: host.childElementCount, controllers: [one.controller.getSnapshot().status, two.controller.getSnapshot().status],
             leases: workspace.diagnostics().leases, views: workspace.diagnostics().views, subscriptions: workspace.diagnostics().subscriptions,
@@ -206,10 +206,10 @@ test("browser comparison work yields with large requested budgets and cancels it
                 const baseline = { buffer: TextBuffer.from("baseline"), version: "one" }, before = workspace.diagnostics();
                 // Clamping must not make invalid public input acceptable or leak a mount.
                 for (const invalid of [255, 256.5, Infinity, NaN]) {
-                    let rejected = false; try { mountTextComparison(host, workspace, source.documentId, baseline, { workBudget: invalid }); } catch (error) { rejected = error instanceof RangeError; }
+                    let rejected = false; try { mountTextComparison(host, workspace, source.id, baseline, { workBudget: invalid }); } catch (error) { rejected = error instanceof RangeError; }
                     if (!rejected || host.childElementCount || workspace.diagnostics().leases !== before.leases) throw new Error("Invalid mount budget was accepted or leaked ownership.");
                 }
-                const mounted = mountTextComparison(host, workspace, source.documentId, baseline, requested === undefined ? {} : { workBudget: requested });
+                const mounted = mountTextComparison(host, workspace, source.id, baseline, requested === undefined ? {} : { workBudget: requested });
                 try {
                     now = calls = work = 0;
                     const queued = tasks.entries().next().value; if (!queued) throw new Error("Missing comparison work.");
@@ -249,7 +249,7 @@ test("typing below an aligned gap keeps the scrolled row in place on every paint
         const host = document.createElement("section");
         host.style.cssText = "height:300px;width:800px;position:fixed;inset:0";
         document.body.append(host);
-        const comparison = mountTextComparison(host, workspace, source.documentId,
+        const comparison = mountTextComparison(host, workspace, source.id,
             { buffer: TextBuffer.from(rows.join("\n")), version: "saved" }, { rowsAligned: true, controls: false });
         const editor = comparison.panes.working, viewport = editor.viewport, line = 40;
         const settle = async () => {
@@ -282,11 +282,11 @@ test("typing below an aligned gap keeps the scrolled row in place on every paint
                 editor.commands.run(command);
                 viewport.flush();
                 await settle();
-                lengths.push(workspace.document(source.documentId).buffer.lineCount);
+                lengths.push(workspace.document(source.id).buffer.lineCount);
             }
             stop();
             stopReference();
-            return { before, frames, lengths, text: workspace.document(source.documentId).buffer.line(line).text };
+            return { before, frames, lengths, text: workspace.document(source.id).buffer.line(line).text };
         } finally {
             comparison.dispose();
             workspace.releaseResource(source.id, true);
@@ -310,7 +310,7 @@ test("review highlights survive every typing paint while exact comparison work i
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "paint", variant: "working" }, "Working", { value: "old\n" + "unchanged\n".repeat(4000) });
         const host = document.createElement("section");
         host.id = "held-comparison"; host.style.height = "540px"; document.body.append(host);
-        const mounted = mountTextComparison(host, workspace, source.documentId, { buffer: TextBuffer.from("new\n" + "unchanged\n".repeat(4000)), version: "one" });
+        const mounted = mountTextComparison(host, workspace, source.id, { buffer: TextBuffer.from("new\n" + "unchanged\n".repeat(4000)), version: "one" });
         await new Promise<void>(resolve => { const stop = mounted.controller.subscribe(() => { if (mounted.controller.getSnapshot().status === "ready") { stop(); resolve(); } }); });
         const exact = mounted.hunkAt(0)!; exact.select();
         mounted.panes.working.view.setSelection(0, { anchor: 1, head: 1 }); mounted.panes.working.focus();
@@ -318,7 +318,7 @@ test("review highlights survive every typing paint while exact comparison work i
         TextDiff.prototype.next = function() { return Object.freeze({ status: "running", work: 0, readUnits: 0, lineEdits: 0, hunks: Object.freeze([]), failure: null }); };
         const paints: { revision: number; text: string; color: string }[] = [];
         mounted.panes.working.viewport.onRender(() => {
-            const revision = workspace.document(source.documentId).revision; if (!revision) return;
+            const revision = workspace.document(source.id).revision; if (!revision) return;
             const marked = mounted.panes.working.viewport.element.querySelector(".st-comparison-added");
             paints.push({ revision, text: marked?.textContent ?? "", color: marked ? getComputedStyle(marked).backgroundColor : "" });
         });

@@ -21,14 +21,14 @@ async function fixture(page: Page, text = "a\u00a0b\u200bc", enabled = false) {
         const host = document.createElement("section");
         host.style.cssText = "height:240px;width:600px"; document.body.append(host);
         const before = workspace.diagnostics();
-        try { mountTextEditor(host, workspace, resource.documentId, { settings: { characterWarnings: { allow: ["two"] } } }); throw new Error("Invalid allow-list accepted."); }
+        try { mountTextEditor(host, workspace, resource.id, { settings: { characterWarnings: { allow: ["two"] } } }); throw new Error("Invalid allow-list accepted."); }
         catch (error) { if (!(error instanceof TypeError)) throw error; }
         if (workspace.diagnostics().views !== before.views || host.childNodes.length) throw new Error("Invalid mount leaked a view or DOM.");
-        const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Warning source", settings: { characterWarnings: enabled } });
+        const editor = mountTextEditor(host, workspace, resource.id, { ariaLabel: "Warning source", settings: { characterWarnings: enabled } });
         editor.decorations.addProvider({ order: 0, provide: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
         window.warningFixture = { workspace, editor, resource: resource.id, host,
-            set: (text, caret = 0) => { const document = workspace.document(resource.documentId);
-                const result = workspace.edit({ documentId: resource.documentId, expectedRevision: document.revision, origin: "host", view: editor.view,
+            set: (text, caret = 0) => { const document = workspace.document(resource.id);
+                const result = workspace.edit({ documentId: resource.id, expectedRevision: document.revision, origin: "host", view: editor.view,
                     edits: [{ from: 0, to: document.buffer.length, insert: text }], selection: { anchor: caret, head: caret } });
                 if (!result.applied) throw new Error("Fixture edit rejected."); } };
         editor.viewport.flush();

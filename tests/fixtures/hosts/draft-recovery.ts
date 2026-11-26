@@ -86,7 +86,7 @@ export class HostDraftRecovery {
         this.controller = controller; this.store = store;
         const authority = (kind: "source" | "configuration" | "transfer") => { const m = (kind === "source" ? controller.source : kind === "configuration" ? controller.connection : controller.transfer.resource).metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit]); };
         let source = authority("source"), configuration = authority("configuration"), transfer = authority("transfer");
-        this.stops.push(controller.workspace.observeDocument(controller.source.documentId).subscribe(() => this.publish()),
+        this.stops.push(controller.workspace.observeDocument(controller.source.id).subscribe(() => this.publish()),
             controller.source.metadata.subscribe(() => { const next = authority("source"); if (next !== source) { source = next; this.sourceAuthority++; } this.publish(); }),
             controller.connection.subscribe(() => { const next = authority("configuration"); if (next !== configuration) { configuration = next; this.configurationAuthority++; } this.publish(); }),
             controller.transfer.resource.subscribe(() => { const next = authority("transfer"); if (next !== transfer) { transfer = next; this.transferAuthority++; } this.publish(); }),
@@ -97,7 +97,7 @@ export class HostDraftRecovery {
             if (resource) {
                 const authority = () => { const m = resource.metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit]); };
                 let previous = authority();
-                this.loadedStops.push(controller.workspace.observeDocument(resource.documentId).subscribe(() => this.publish()),
+                this.loadedStops.push(controller.workspace.observeDocument(resource.id).subscribe(() => this.publish()),
                     resource.metadata.subscribe(() => { const next = authority(); if (next !== previous) { previous = next; this.loadedAuthority++; } this.publish(); }));
             }
             this.publish();
@@ -107,11 +107,11 @@ export class HostDraftRecovery {
     }
     private needsProtection(): boolean {
         const c = this.controller, source = c.source.metadata.getSnapshot(), configuration = c.connection.getSnapshot(), transfer = c.transfer.resource.getSnapshot(), loaded = c.loadedSource.getSnapshot().resource;
-        return source.dirty && (source.state !== "ready" || c.workspace.document(c.source.documentId).buffer !== this.protectedSource)
+        return source.dirty && (source.state !== "ready" || c.workspace.document(c.source.id).buffer !== this.protectedSource)
             || configuration.metadata.dirty && (configuration.state !== "ready" || configuration.value() !== this.protectedConfiguration)
             || transfer.metadata.dirty && (transfer.state !== "ready" || transfer.value() !== this.protectedTransfer)
             || c.recovery.getSnapshot().items.length > 0 && c.recovery.getSnapshot().items !== this.protectedInput
-            || !!loaded?.metadata.getSnapshot().dirty && (loaded.getSnapshot().state !== "ready" || loaded !== this.protectedLoaded?.resource || c.workspace.document(loaded.documentId).buffer !== this.protectedLoaded.buffer);
+            || !!loaded?.metadata.getSnapshot().dirty && (loaded.getSnapshot().state !== "ready" || loaded !== this.protectedLoaded?.resource || c.workspace.document(loaded.id).buffer !== this.protectedLoaded.buffer);
     }
     private publish(message = this.cell.get().message, preview = this.cell.get().preview): void {
         if (this.disposed) return;
@@ -133,22 +133,22 @@ export class HostDraftRecovery {
     private capture(kind: Kind): Capture {
         const c = this.controller, source = c.source.metadata.getSnapshot(), configuration = c.connection.getSnapshot(), loaded = c.loadedSource.getSnapshot(), metadata = loaded.resource?.metadata.getSnapshot();
         return Object.freeze({ kind, confirmationToken: token(), token: this.envelope?.token ?? null, source: c.workspace.captureResource(c.source.id), configuration: c.workspace.captureResource(c.connection.id),
-            sourceRevision: c.workspace.document(c.source.documentId).revision, configurationRevision: configuration.revision,
+            sourceRevision: c.workspace.document(c.source.id).revision, configurationRevision: configuration.revision,
             sourceVersion: source.serverVersion, configurationVersion: configuration.metadata.serverVersion,
             sourceAuthority: this.sourceAuthority, configurationAuthority: this.configurationAuthority,
             transfer: c.workspace.captureResource(c.transfer.resource.id), transferRevision: c.transfer.resource.getSnapshot().revision,
             transferVersion: c.transfer.resource.metadata.getSnapshot().serverVersion, transferAuthority: this.transferAuthority,
             loaded: loaded.resource ? c.workspace.captureResource(loaded.resource.id) : null, loadedGeneration: loaded.generation,
-            loadedRevision: loaded.resource && metadata?.state === "ready" ? c.workspace.document(loaded.resource.documentId).revision : null,
+            loadedRevision: loaded.resource && metadata?.state === "ready" ? c.workspace.document(loaded.resource.id).revision : null,
             loadedVersion: metadata?.serverVersion ?? null, loadedAuthority: this.loadedAuthority,
-            view: kind === "source" ? c.captureRecoveryView(c.source.documentId) ?? null : kind === "loaded" && loaded.resource ? c.captureRecoveryView(loaded.resource.documentId) ?? null : null });
+            view: kind === "source" ? c.captureRecoveryView(c.source.id) ?? null : kind === "loaded" && loaded.resource ? c.captureRecoveryView(loaded.resource.id) ?? null : null });
     }
     private currentLoaded(capture: Capture, editing: boolean): boolean {
         const c = this.controller, slot = c.loadedSource.getSnapshot(), resource = slot.resource, metadata = resource?.metadata.getSnapshot();
         if (slot.generation !== capture.loadedGeneration || editing && capture.loadedAuthority !== this.loadedAuthority) return false;
         if (capture.loaded === null) return resource === null;
         return !!resource && !!c.workspace.resolveResource(capture.loaded) && metadata?.state === "ready"
-            && c.workspace.document(resource.documentId).revision === capture.loadedRevision && metadata.serverVersion === capture.loadedVersion
+            && c.workspace.document(resource.id).revision === capture.loadedRevision && metadata.serverVersion === capture.loadedVersion
             && (!editing || metadata.capabilities.edit.includes("human"));
     }
     private current(capture: Capture): boolean {
@@ -156,7 +156,7 @@ export class HostDraftRecovery {
         if (this.disposed || !c.workspace.resolveResource(capture.source) || !c.workspace.resolveResource(capture.configuration) || !c.workspace.resolveResource(capture.transfer)) return false;
         if (capture.kind === "discard") return true;
         if (capture.view && !c.workspace.ownsDocumentView(capture.view)) return false;
-        const sourceCurrent = source.state === "ready" && c.workspace.document(c.source.documentId).revision === capture.sourceRevision && source.serverVersion === capture.sourceVersion;
+        const sourceCurrent = source.state === "ready" && c.workspace.document(c.source.id).revision === capture.sourceRevision && source.serverVersion === capture.sourceVersion;
         const configurationCurrent = configuration.state === "ready" && configuration.revision === capture.configurationRevision && configuration.metadata.serverVersion === capture.configurationVersion;
         const transfer = c.transfer.resource.getSnapshot(), transferCurrent = transfer.state === "ready" && transfer.revision === capture.transferRevision && transfer.metadata.serverVersion === capture.transferVersion;
         if (capture.kind === "keep") return sourceCurrent && configurationCurrent && transferCurrent && this.currentLoaded(capture, false) && c.canCaptureRecovery() && !this.hasComposition();
@@ -187,9 +187,9 @@ export class HostDraftRecovery {
     readonly confirm = (expected: string | null = this.confirmation?.confirmationToken ?? null): void => {
         if (this.disposed || this.busy || expected !== (this.confirmation?.confirmationToken ?? null)) return;
         const capture = this.confirmation; if (!capture || !this.current(capture)) { this.confirmation = undefined; this.publish("Inputs changed. Choose the draft action again."); return; }
-        const c = this.controller, document = c.workspace.document(c.source.documentId), configuration = c.connection.getSnapshot(), input = c.recovery.getSnapshot().items;
+        const c = this.controller, document = c.workspace.document(c.source.id), configuration = c.connection.getSnapshot(), input = c.recovery.getSnapshot().items;
         const transfer = c.transfer.resource.getSnapshot(); if (configuration.state !== "ready" || transfer.state !== "ready") return;
-        const loaded = c.loadedSource.getSnapshot().resource, loadedState = loaded?.getSnapshot(), loadedDocument = loadedState?.state === "ready" ? c.workspace.document(loaded!.documentId) : undefined;
+        const loaded = c.loadedSource.getSnapshot().resource, loadedState = loaded?.getSnapshot(), loadedDocument = loadedState?.state === "ready" ? c.workspace.document(loaded!.id) : undefined;
         const serial = ++this.serial; this.busy = true; this.mutations++; this.confirmation = undefined; this.publish("Completing draft action…", null);
         this.track((async () => { try {
             // Yield before the explicit full transfer; ordinary edits only retained immutable captures.
@@ -218,15 +218,15 @@ export class HostDraftRecovery {
                 if (capture.kind === "loaded") {
                     const resource = c.restoreLoadedDraft(draft.loaded!.text, capture.loadedGeneration, capture.view ?? undefined);
                     if (!resource) throw new Error("Loaded-source restore unavailable.");
-                    this.protectedLoaded = { resource, buffer: c.workspace.document(resource.documentId).buffer };
+                    this.protectedLoaded = { resource, buffer: c.workspace.document(resource.id).buffer };
                     this.publish("Loaded-source draft restored. Reopen loaded source to inspect; undo returns to its current base."); return;
                 }
-                const result = capture.kind === "source" ? c.workspace.replaceText(c.source.documentId, draft.source.text,
+                const result = capture.kind === "source" ? c.workspace.replaceText(c.source.id, draft.source.text,
                     { expectedRevision: capture.sourceRevision, origin: "human", history: "record", ...(capture.view ? { view: capture.view } : {}) })
                     : capture.kind === "configuration" ? c.workspace.updateResource(c.connection, { expectedRevision: capture.configurationRevision, origin: "human", value: draft.configuration.value })
                     : c.workspace.updateResource(c.transfer.resource, { expectedRevision: capture.transferRevision, origin: "human", value: draft.transfer.value });
                 if (!result.applied) throw new Error("Restore unavailable.");
-                if (capture.kind === "source") this.protectedSource = c.workspace.document(c.source.documentId).buffer;
+                if (capture.kind === "source") this.protectedSource = c.workspace.document(c.source.id).buffer;
                 else if (capture.kind === "configuration") { const restored = c.connection.getSnapshot(); this.protectedConfiguration = restored.state === "ready" ? restored.value() : undefined; }
                 else { const restored = c.transfer.resource.getSnapshot(); this.protectedTransfer = restored.state === "ready" ? restored.value() : undefined; }
                 this.publish(capture.kind === "source" ? "Source draft restored. Undo returns to the loaded source." : capture.kind === "configuration" ? "Configuration draft restored independently." : "Transfer draft restored independently.");

@@ -25,17 +25,17 @@ async function fixture(page: Page, shadow = false) {
         const root = shadow ? container.attachShadow({ mode: "open" }) : container, style = document.createElement("style"), host = document.createElement("section");
         style.textContent = css + ".fixture-color { color: rgb(160, 30, 120) }"; host.style.cssText = "height:240px;width:600px"; root.append(style, host);
         const before = workspace.diagnostics();
-        try { mountTextEditor(host, workspace, resource.documentId, { settings: { bracketMatching: { maxWorkUnits: 0 } } }); throw new Error("Invalid matching limits accepted."); }
+        try { mountTextEditor(host, workspace, resource.id, { settings: { bracketMatching: { maxWorkUnits: 0 } } }); throw new Error("Invalid matching limits accepted."); }
         catch (error) { if (!(error instanceof RangeError)) throw error; }
         if (workspace.diagnostics().views !== before.views || host.childNodes.length) throw new Error("Invalid mount leaked a view or DOM.");
-        const editor = mountTextEditor(host, workspace, resource.documentId, { ariaLabel: "Bracket source" });
+        const editor = mountTextEditor(host, workspace, resource.id, { ariaLabel: "Bracket source" });
         editor.decorations.addProvider({ order: 0, provide: line => [{ from: line.from, to: line.to, className: "fixture-color" }] });
         const f: Fixture = { workspace, editor, resource: resource.id, host, calls: 0, allowed: false, states: [],
-            set: (text, caret) => { const document = workspace.document(resource.documentId);
-                const result = workspace.edit({ documentId: resource.documentId, expectedRevision: document.revision, origin: "host", view: editor.view,
+            set: (text, caret) => { const document = workspace.document(resource.id);
+                const result = workspace.edit({ documentId: resource.id, expectedRevision: document.revision, origin: "host", view: editor.view,
                     edits: [{ from: 0, to: document.buffer.length, insert: text }], selection: { anchor: caret, head: caret } });
                 if (!result.applied) throw new Error("Fixture edit rejected."); },
-            select: caret => { if (!editor.view.setSelection(workspace.document(resource.documentId).revision, { anchor: caret, head: caret })) throw new Error("Fixture selection rejected."); } };
+            select: caret => { if (!editor.view.setSelection(workspace.document(resource.id).revision, { anchor: caret, head: caret })) throw new Error("Fixture selection rejected."); } };
         window.bracketFixture = f;
     }, { shadow, css });
 }

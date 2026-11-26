@@ -4,8 +4,8 @@ import { applyTextEdits } from "../src/core/changes.ts";
 import { HostController } from "./fixtures/hosts/controller.ts";
 import { instructionEdit, parseInstruction } from "./fixtures/hosts/instruction-syntax.ts";
 
-const text = (h: HostController) => { const b = h.workspace.document(h.source.documentId).buffer; return b.slice(0, b.length); };
-function edit(h: HostController, from: number, to: number, insert: string) { const d = h.workspace.document(h.source.documentId); assert.equal(h.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from, to, insert }], history: { kind: "replace" } }).applied, true); }
+const text = (h: HostController) => { const b = h.workspace.document(h.source.id).buffer; return b.slice(0, b.length); };
+function edit(h: HostController, from: number, to: number, insert: string) { const d = h.workspace.document(h.source.id); assert.equal(h.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from, to, insert }], history: { kind: "replace" } }).applied, true); }
 function setup(value: string) { const h = new HostController(); edit(h, 0, 5, value); h.instruction.anchor(value.indexOf("// @transfer")); return h; }
 
 test("instruction edits preserve unknown tokens, known escapes, whitespace, Unicode and CRLF string spelling", () => {
@@ -23,12 +23,12 @@ test("anchored source fields map through edits and undo and retain invalid synta
     try {
         const c = h.instruction.capture("destination")!; edit(h, 0, 0, "prefix\r\n"); assert.equal(h.instruction.state.getSnapshot().from, 16);
         assert.equal(h.instruction.edit(c, "two.csv"), true); assert.equal(text(h), "prefix\r\nbefore\r\n" + line.replace("one.csv", "two.csv") + "\r\nafter");
-        const d = h.workspace.document(h.source.documentId); h.workspace.undo({ documentId: d.id, expectedRevision: d.revision }); assert.equal(h.instruction.state.getSnapshot().values.destination, "one.csv");
+        const d = h.workspace.document(h.source.id); h.workspace.undo({ documentId: d.id, expectedRevision: d.revision }); assert.equal(h.instruction.state.getSnapshot().values.destination, "one.csv");
         const s = h.instruction.state.getSnapshot(); edit(h, s.from, s.to, '// @transfer {"destination":'); assert.equal(h.instruction.state.getSnapshot().canEdit, false); assert.match(h.instruction.state.getSnapshot().validation!, /invalid/);
         const invalid = text(h); assert.equal(h.instruction.edit(c, "retained.csv"), false); assert.equal(text(h), invalid); assert.equal(h.recoveryText(), "retained.csv");
-        const now = h.workspace.document(h.source.documentId); h.workspace.undo({ documentId: now.id, expectedRevision: now.revision }); assert.equal(h.instruction.state.getSnapshot().values.destination, "one.csv");
+        const now = h.workspace.document(h.source.id); h.workspace.undo({ documentId: now.id, expectedRevision: now.revision }); assert.equal(h.instruction.state.getSnapshot().values.destination, "one.csv");
         const from = h.instruction.state.getSnapshot().from, to = h.instruction.state.getSnapshot().to; edit(h, from, to + 2, ""); assert.equal(h.instruction.state.getSnapshot().located, false);
-        const gone = h.workspace.document(h.source.documentId); h.workspace.undo({ documentId: gone.id, expectedRevision: gone.revision }); assert.equal(h.instruction.state.getSnapshot().located, true); assert.equal(h.instruction.state.getSnapshot().values.destination, "one.csv");
+        const gone = h.workspace.document(h.source.id); h.workspace.undo({ documentId: gone.id, expectedRevision: gone.revision }); assert.equal(h.instruction.state.getSnapshot().located, true); assert.equal(h.instruction.state.getSnapshot().values.destination, "one.csv");
     } finally { await h.dispose(); assert.equal(h.workspace.diagnostics().subscriptions, 0); }
 });
 
@@ -57,6 +57,6 @@ test("oversized instruction lines retain source without whole-line reads or an e
     const raw = '// @transfer {"destination":"' + "x".repeat(24_000) + '","batchSize":"1000"}', h = setup(raw);
     try { assert.equal(h.instruction.state.getSnapshot().canEdit, false); assert.match(h.instruction.state.getSnapshot().validation!, /4,096/);
         assert.equal(h.instruction.capture("destination"), null); assert.ok(h.instruction.debug().lineReadUnits <= 2);
-        h.instruction.captureCopy(); assert.equal(h.instruction.debug().pendingCopy, false); assert.equal(h.workspace.document(h.source.documentId).buffer.length, raw.length);
+        h.instruction.captureCopy(); assert.equal(h.instruction.debug().pendingCopy, false); assert.equal(h.workspace.document(h.source.id).buffer.length, raw.length);
     } finally { await h.dispose(); }
 });

@@ -73,23 +73,23 @@ test("selection replacement plans preserve original coordinates, per-range text 
 
 test("atomic multi-range typing groups shared undo and maps independent retained views", () => {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "multi", resource: "source", variant: "working" }, "Source", { value: "alpha beta gamma" });
-    const document = () => workspace.document(source.documentId), primary = workspace.createDocumentView(source.documentId,
+    const document = () => workspace.document(source.id), primary = workspace.createDocumentView(source.id,
         createSelectionSet(16, [{ anchor: 0, head: 5 }, { anchor: 16, head: 11 }], 1));
-    const secondary = workspace.createDocumentView(source.documentId, createSelectionSet(16, [{ anchor: 6, head: 10 }, { anchor: 5, head: 5 }], 0));
+    const secondary = workspace.createDocumentView(source.id, createSelectionSet(16, [{ anchor: 6, head: 10 }, { anchor: 5, head: 5 }], 0));
     const before = primary.getSnapshot().selectionSet, otherBefore = secondary.getSnapshot().selectionSet;
     const deliveries: { state: ReturnType<typeof primary.getSnapshot>; revision: number; length: number }[] = [];
     const stop = primary.subscribe(() => { deliveries.push({ state: primary.getSnapshot(), revision: document().revision, length: document().buffer.length }); });
     const edit = (insert: string) => { const current = document(), plan = planSelectionEdits(current.buffer.length, primary.getSnapshot().selectionSet, insert);
-        return workspace.edit({ documentId: source.documentId, expectedRevision: current.revision, origin: "human", view: primary, ...plan, history: { kind: "typing", group: "continuous" } }); };
+        return workspace.edit({ documentId: source.id, expectedRevision: current.revision, origin: "human", view: primary, ...plan, history: { kind: "typing", group: "continuous" } }); };
     assert.equal(edit("X").applied, true); assert.deepEqual(endpoints(secondary.getSnapshot().selectionSet), [[1, 1], [2, 6]]);
     assert.equal(edit("Y").applied, true); assert.equal(deliveries.length, 2);
     assert.equal(document().buffer.slice(0, document().buffer.length), "XY beta XY"); assert.deepEqual(endpoints(primary.getSnapshot().selectionSet), [[2, 2], [10, 10]]);
-    assert.equal(primary.getSnapshot().selectionSet.primary, 1); assert.equal(workspace.observeHistory(source.documentId).getSnapshot().undoDepth, 1);
+    assert.equal(primary.getSnapshot().selectionSet.primary, 1); assert.equal(workspace.observeHistory(source.id).getSnapshot().undoDepth, 1);
     assert.equal(source.metadata.getSnapshot().dirty, true);
-    assert.equal(workspace.undo({ documentId: source.documentId, expectedRevision: document().revision }).applied, true);
+    assert.equal(workspace.undo({ documentId: source.id, expectedRevision: document().revision }).applied, true);
     assert.equal(document().buffer.slice(0, 16), "alpha beta gamma"); assert.deepEqual(primary.getSnapshot().selectionSet, before); assert.deepEqual(secondary.getSnapshot().selectionSet, otherBefore);
     assert.equal(source.metadata.getSnapshot().dirty, false);
-    assert.equal(workspace.redo({ documentId: source.documentId, expectedRevision: document().revision }).applied, true);
+    assert.equal(workspace.redo({ documentId: source.id, expectedRevision: document().revision }).applied, true);
     assert.deepEqual(endpoints(primary.getSnapshot().selectionSet), [[2, 2], [10, 10]]);
     assert.equal(primary.setSelections(0, [{ anchor: 0, head: 0 }]), false);
     for (const { state, revision, length } of deliveries) {
@@ -104,11 +104,11 @@ test("atomic multi-range typing groups shared undo and maps independent retained
 test("invalid, stale and unauthorized multi-range results cannot partially publish a document batch", () => {
     const workspace = new Workspace(), first = workspace.createTextResource({ scope: "multi", resource: "a", variant: "working" }, "A", { value: "abcd" }),
         second = workspace.createTextResource({ scope: "multi", resource: "b", variant: "working" }, "B", { value: "wxyz" });
-    const a = workspace.createDocumentView(first.documentId), b = workspace.createDocumentView(second.documentId), snapshot = workspace.getSnapshot(), view = a.getSnapshot();
-    const request = { documentId: first.documentId, expectedRevision: 0, origin: "human" as const, view: a, edits: [{ from: 0, to: 1, insert: "A" }] };
-    assert.throws(() => workspace.editDocuments([request, { ...request, documentId: second.documentId, view: b, selectionSet: { ranges: [{ anchor: 8, head: 8 }], primary: 0 } }]), RangeError);
+    const a = workspace.createDocumentView(first.id), b = workspace.createDocumentView(second.id), snapshot = workspace.getSnapshot(), view = a.getSnapshot();
+    const request = { documentId: first.id, expectedRevision: 0, origin: "human" as const, view: a, edits: [{ from: 0, to: 1, insert: "A" }] };
+    assert.throws(() => workspace.editDocuments([request, { ...request, documentId: second.id, view: b, selectionSet: { ranges: [{ anchor: 8, head: 8 }], primary: 0 } }]), RangeError);
     assert.strictEqual(workspace.getSnapshot(), snapshot); assert.strictEqual(a.getSnapshot(), view);
-    assert.equal(workspace.observeHistory(first.documentId).getSnapshot().undoDepth, 0);
+    assert.equal(workspace.observeHistory(first.id).getSnapshot().undoDepth, 0);
     assert.throws(() => workspace.edit({ ...request, view: b, selectionSet: createSelectionSet(4, [{ anchor: 1, head: 1 }]) }));
     assert.throws(() => workspace.edit({ ...request, selection: { anchor: 0, head: 0 }, selectionSet: createSelectionSet(4, [{ anchor: 1, head: 1 }]) }));
     assert.deepEqual(workspace.edit({ ...request, expectedRevision: 1 }), { applied: false, reason: "stale-revision" });
@@ -120,65 +120,65 @@ test("invalid, stale and unauthorized multi-range results cannot partially publi
 test("selection-only changes seal their own typing group even when another batch participant changes text", () => {
     const workspace = new Workspace(), a = workspace.createTextResource({ scope: "multi", resource: "a", variant: "working" }, "A", { value: "abcd" }),
         b = workspace.createTextResource({ scope: "multi", resource: "b", variant: "working" }, "B", { value: "other" });
-    const view = workspace.createDocumentView(a.documentId, createSelectionSet(4, [{ anchor: 0, head: 0 }, { anchor: 4, head: 4 }], 1));
-    const type = (insert: string) => { const current = workspace.document(a.documentId), plan = planSelectionEdits(current.buffer.length, view.getSnapshot().selectionSet, insert);
-        workspace.edit({ documentId: a.documentId, expectedRevision: current.revision, origin: "human", view, ...plan, history: { kind: "typing", group: "same" } }); };
+    const view = workspace.createDocumentView(a.id, createSelectionSet(4, [{ anchor: 0, head: 0 }, { anchor: 4, head: 4 }], 1));
+    const type = (insert: string) => { const current = workspace.document(a.id), plan = planSelectionEdits(current.buffer.length, view.getSnapshot().selectionSet, insert);
+        workspace.edit({ documentId: a.id, expectedRevision: current.revision, origin: "human", view, ...plan, history: { kind: "typing", group: "same" } }); };
     type("X"); const unchanged = view.getSnapshot();
     assert.equal(view.setSelections(1, unchanged.selectionSet.ranges, unchanged.selectionSet.primary), true); assert.strictEqual(view.getSnapshot(), unchanged);
     const selections = createSelectionSet(6, [{ anchor: 1, head: 1 }, { anchor: 3, head: 3 }, { anchor: 6, head: 6 }], 2);
-    workspace.editDocuments([{ documentId: a.documentId, expectedRevision: 1, origin: "human", view, selectionSet: selections, edits: [] },
-        { documentId: b.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "!" }] }]);
-    type("Y"); assert.equal(workspace.observeHistory(a.documentId).getSnapshot().undoDepth, 2);
-    workspace.undo({ documentId: a.documentId, expectedRevision: 2 }); assert.deepEqual(view.getSnapshot().selectionSet, selections);
-    view.setSelection(workspace.document(a.documentId).revision, view.getSnapshot().selection);
+    workspace.editDocuments([{ documentId: a.id, expectedRevision: 1, origin: "human", view, selectionSet: selections, edits: [] },
+        { documentId: b.id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "!" }] }]);
+    type("Y"); assert.equal(workspace.observeHistory(a.id).getSnapshot().undoDepth, 2);
+    workspace.undo({ documentId: a.id, expectedRevision: 2 }); assert.deepEqual(view.getSnapshot().selectionSet, selections);
+    view.setSelection(workspace.document(a.id).revision, view.getSnapshot().selection);
     assert.equal(view.getSnapshot().selectionSet.ranges.length, 1);
     view.dispose(); workspace.releaseResource(a.id, true); workspace.releaseResource(b.id, true);
 });
 
 test("history bounds include captured selection ranges independently of changed text units", () => {
     const workspace = new Workspace({ history: { maxSelectionRanges: 4 } }), source = workspace.createTextResource({ scope: "multi", resource: "limited", variant: "working" }, "Source", { value: "abc" });
-    const view = workspace.createDocumentView(source.documentId, createSelectionSet(3, [{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]));
-    const type = () => { const current = workspace.document(source.documentId), plan = planSelectionEdits(current.buffer.length, view.getSnapshot().selectionSet, "x");
-        workspace.edit({ documentId: source.documentId, expectedRevision: current.revision, origin: "human", view, ...plan }); };
-    type(); assert.equal(workspace.observeHistory(source.documentId).getSnapshot().undoDepth, 1);
+    const view = workspace.createDocumentView(source.id, createSelectionSet(3, [{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]));
+    const type = () => { const current = workspace.document(source.id), plan = planSelectionEdits(current.buffer.length, view.getSnapshot().selectionSet, "x");
+        workspace.edit({ documentId: source.id, expectedRevision: current.revision, origin: "human", view, ...plan }); };
+    type(); assert.equal(workspace.observeHistory(source.id).getSnapshot().undoDepth, 1);
     view.setSelections(1, [{ anchor: 0, head: 0 }, { anchor: 2, head: 2 }, { anchor: 5, head: 5 }]);
-    type(); assert.equal(workspace.observeHistory(source.documentId).getSnapshot().undoDepth, 0);
+    type(); assert.equal(workspace.observeHistory(source.id).getSnapshot().undoDepth, 0);
     assert.throws(() => new Workspace({ history: { maxSelectionRanges: -1 } }), RangeError);
     view.dispose(); workspace.releaseResource(source.id, true);
     const bounded = new Workspace({ history: { maxSelectionRanges: 6 } }), other = bounded.createTextResource({ scope: "multi", resource: "trim", variant: "working" }, "Source", { value: "abc" });
-    const retained = bounded.createDocumentView(other.documentId, createSelectionSet(3, [{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]));
-    const append = (text: string) => { const d = bounded.document(other.documentId), plan = planSelectionEdits(d.buffer.length, retained.getSnapshot().selectionSet, text);
-        bounded.edit({ documentId: other.documentId, expectedRevision: d.revision, origin: "human", view: retained, ...plan }); };
+    const retained = bounded.createDocumentView(other.id, createSelectionSet(3, [{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]));
+    const append = (text: string) => { const d = bounded.document(other.id), plan = planSelectionEdits(d.buffer.length, retained.getSnapshot().selectionSet, text);
+        bounded.edit({ documentId: other.id, expectedRevision: d.revision, origin: "human", view: retained, ...plan }); };
     append("X"); retained.setSelection(1, retained.getSnapshot().selection); append("Y");
-    assert.equal(bounded.observeHistory(other.documentId).getSnapshot().undoDepth, 2);
-    append("Z"); assert.equal(bounded.observeHistory(other.documentId).getSnapshot().undoDepth, 2);
-    bounded.undo({ documentId: other.documentId, expectedRevision: 3 }); bounded.undo({ documentId: other.documentId, expectedRevision: 4 });
-    assert.equal(bounded.document(other.documentId).buffer.slice(0, 5), "XabcX");
+    assert.equal(bounded.observeHistory(other.id).getSnapshot().undoDepth, 2);
+    append("Z"); assert.equal(bounded.observeHistory(other.id).getSnapshot().undoDepth, 2);
+    bounded.undo({ documentId: other.id, expectedRevision: 3 }); bounded.undo({ documentId: other.id, expectedRevision: 4 });
+    assert.equal(bounded.document(other.id).buffer.slice(0, 5), "XabcX");
     retained.dispose(); bounded.releaseResource(other.id, true);
 });
 
 test("seeded selection replacements and shared history match an independent string oracle", () => {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "multi", resource: "oracle", variant: "working" }, "Source", { value: "a😀\r\nβcdef".repeat(4) });
-    const view = workspace.createDocumentView(source.documentId), states: { before: string; after: string; beforeSet: SelectionSet; afterSet: SelectionSet }[] = [];
+    const view = workspace.createDocumentView(source.id), states: { before: string; after: string; beforeSet: SelectionSet; afterSet: SelectionSet }[] = [];
     let text = "a😀\r\nβcdef".repeat(4), seed = 0x517ab;
     const next = () => (seed = nextSeed(seed));
     for (let step = 0; step < 40; step++) {
         const ranges: Selection[] = Array.from({ length: 1 + next() % 5 }, () => { const anchor = next() % (text.length + 1), head = Math.min(text.length, anchor + next() % 4);
             return next() % 2 ? { anchor, head } : { anchor: head, head: anchor }; });
-        const current = workspace.document(source.documentId); view.setSelections(current.revision, ranges, next() % ranges.length);
+        const current = workspace.document(source.id); view.setSelections(current.revision, ranges, next() % ranges.length);
         const beforeSet = view.getSnapshot().selectionSet, insert = String.fromCharCode(0xe000 + step), plan = planSelectionEdits(text.length, beforeSet, insert);
         let expected = text; for (const range of [...beforeSet.ranges].reverse()) { const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head); expected = expected.slice(0, from) + insert + expected.slice(to); }
-        assert.equal(workspace.edit({ documentId: source.documentId, expectedRevision: current.revision, origin: "human", view, ...plan }).applied, true);
-        assert.equal(workspace.document(source.documentId).buffer.slice(0, expected.length), expected);
+        assert.equal(workspace.edit({ documentId: source.id, expectedRevision: current.revision, origin: "human", view, ...plan }).applied, true);
+        assert.equal(workspace.document(source.id).buffer.slice(0, expected.length), expected);
         const afterSet = view.getSnapshot().selectionSet; states.push({ before: text, after: expected, beforeSet, afterSet }); text = expected;
     }
     for (const state of [...states].reverse()) {
-        workspace.undo({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision });
-        assert.equal(workspace.document(source.documentId).buffer.slice(0, state.before.length), state.before); assert.deepEqual(view.getSnapshot().selectionSet, state.beforeSet);
+        workspace.undo({ documentId: source.id, expectedRevision: workspace.document(source.id).revision });
+        assert.equal(workspace.document(source.id).buffer.slice(0, state.before.length), state.before); assert.deepEqual(view.getSnapshot().selectionSet, state.beforeSet);
     }
     for (const state of states) {
-        workspace.redo({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision });
-        assert.equal(workspace.document(source.documentId).buffer.slice(0, state.after.length), state.after); assert.deepEqual(view.getSnapshot().selectionSet, state.afterSet);
+        workspace.redo({ documentId: source.id, expectedRevision: workspace.document(source.id).revision });
+        assert.equal(workspace.document(source.id).buffer.slice(0, state.after.length), state.after); assert.deepEqual(view.getSnapshot().selectionSet, state.afterSet);
     }
     view.dispose(); workspace.releaseResource(source.id, true);
 });

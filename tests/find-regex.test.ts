@@ -55,7 +55,7 @@ test(`unchanged regex transfer steps preserve snapshot identity and accumulated 
 
 function fixture(text: string, supplied = true) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "find", resource: "regex", variant: "working" }, "Source", { value: text });
-    const view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
+    const view = workspace.createDocumentView(source.id), peer = workspace.createDocumentView(source.id);
     let serial = 0, focused = 0, composing = false, holdSecond = false, failPlan = false, backendDisposed = false;
     let badPlan: "range" | "empty" | undefined;
     const tasks = new Map<number, () => void>(), held: (() => void)[] = [], plans: { disposed: boolean; capture: FindQueryCapture }[] = [];
@@ -86,7 +86,7 @@ function fixture(text: string, supplied = true) {
     const tick = async () => { if (tasks.size) { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } await Promise.resolve(); await Promise.resolve(); };
     const drain = async () => { for (let turns = 0; turns < 100; turns++) { await tick(); if (!tasks.size) return; } throw new Error("Find did not yield."); };
     return { workspace, source, view, peer, owner, editor, find, plans, tick, drain,
-        text: () => { const b = workspace.document(source.documentId).buffer; return b.slice(0, b.length); },
+        text: () => { const b = workspace.document(source.id).buffer; return b.slice(0, b.length); },
         hold: () => { holdSecond = true; }, fail: () => { failPlan = true; }, focused: () => focused,
         tamper: (kind: "range" | "empty") => { badPlan = kind; },
         compose: () => { composing = true; editor.startComposition(); },
@@ -135,13 +135,13 @@ test("async regex find advances empty matches, accepts manual overlaps and prese
         assert.equal(f.find.replaceCurrent("<>"), true);
         await f.drain();
         assert.equal(f.text(), "<>" + original);
-        assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 1);
+        assert.equal(f.workspace.observeHistory(f.source.id).getSnapshot().undoDepth, 1);
         assert.equal(f.view.getSnapshot().selection.head, 4);
-        f.workspace.undo({ documentId: f.source.documentId, expectedRevision: f.workspace.document(f.source.documentId).revision });
+        f.workspace.undo({ documentId: f.source.id, expectedRevision: f.workspace.document(f.source.id).revision });
         await f.drain();
         assert.equal(f.text(), original);
         assert.deepEqual(f.view.getSnapshot().selectionSet, selected);
-        const before = f.workspace.observeHistory(f.source.documentId).getSnapshot(); f.find.replaceCurrent("$&"); await f.drain(); assert.deepEqual(f.workspace.observeHistory(f.source.documentId).getSnapshot(), before);
+        const before = f.workspace.observeHistory(f.source.id).getSnapshot(); f.find.replaceCurrent("$&"); await f.drain(); assert.deepEqual(f.workspace.observeHistory(f.source.id).getSnapshot(), before);
         assert.equal(f.view.getSnapshot().selection.head, 2);
         f.find.replaceCurrent("$&");
         await f.drain();
@@ -153,7 +153,7 @@ test("async regex find advances empty matches, accepts manual overlaps and prese
         overlap.find.setFlags({ regularExpression: true }); overlap.find.setQuery("aa"); await overlap.drain();
         overlap.view.setSelections(0, [{ anchor: 1, head: 3 }, { anchor: 0, head: 0 }]); const selected = overlap.view.getSnapshot().selectionSet;
         overlap.find.replaceCurrent("x"); await overlap.drain(); assert.equal(overlap.text(), "ax");
-        overlap.workspace.undo({ documentId: overlap.source.documentId, expectedRevision: overlap.workspace.document(overlap.source.documentId).revision }); await overlap.drain();
+        overlap.workspace.undo({ documentId: overlap.source.id, expectedRevision: overlap.workspace.document(overlap.source.id).revision }); await overlap.drain();
         assert.equal(overlap.text(), "aaa"); assert.deepEqual(overlap.view.getSnapshot().selectionSet, selected);
     } finally { overlap.finish(); }
 });
@@ -169,11 +169,11 @@ test("regex replacement keeps the configured flags and starts with the revealed 
         await f.drain();
         assert.equal(f.find.getSnapshot().reason, null);
         assert.equal(f.view.getSnapshot().selection.anchor, 17);
-        assert.equal(f.workspace.document(f.source.documentId).revision, 0);
+        assert.equal(f.workspace.document(f.source.id).revision, 0);
         f.view.setSelection(0, { anchor: 0, head: 5 });
         assert.equal(f.find.replaceCurrent("x"), true);
         assert.equal(f.view.getSnapshot().selection.anchor, 6);
-        assert.equal(f.workspace.document(f.source.documentId).revision, 0);
+        assert.equal(f.workspace.document(f.source.id).revision, 0);
         assert.equal(f.find.replaceCurrent("x"), true); await f.drain();
         assert.equal(f.text(), "alpha x beta_ BETA");
         const selected = f.view.getSnapshot().selection; assert.deepEqual([selected.anchor, selected.head], [14, 18]);
@@ -188,7 +188,7 @@ test("partial async regex plans respect selection, revision, composition, author
             f.find.setFlags({ regularExpression: true }); f.find.setQuery("cat"); await f.drain(); f.view.setSelections(0, [{ anchor: 0, head: 0 }, { anchor: 7, head: 7 }]);
             f.hold(); const beforeFocus = f.focused(); f.find.replaceAll("dog"); await f.tick(); await f.tick(); assert.equal(f.find.getSnapshot().status, "replacing"); assert.equal(f.text(), "cat cat");
             if (change === "selection") f.view.setSelections(0, [{ anchor: 0, head: 0 }, { anchor: 6, head: 6 }]);
-            if (change === "revision") f.workspace.edit({ documentId: f.source.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 7, to: 7, insert: " human" }] });
+            if (change === "revision") f.workspace.edit({ documentId: f.source.id, expectedRevision: 0, origin: "human", edits: [{ from: 7, to: 7, insert: " human" }] });
             if (change === "composition") f.compose();
             if (change === "authority") f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: true });
             if (change === "options") f.find.setFlags({ regularExpression: false });
@@ -196,7 +196,7 @@ test("partial async regex plans respect selection, revision, composition, author
             if (change === "focus") f.owner.dispatchEvent(new Event("focusin"));
             f.release(); await Promise.resolve(); await f.drain();
             assert.equal(f.text(), change === "revision" ? "cat cat human" : change === "focus" ? "dog dog" : "cat cat", change);
-            assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, change === "revision" || change === "focus" ? 1 : 0, change);
+            assert.equal(f.workspace.observeHistory(f.source.id).getSnapshot().undoDepth, change === "revision" || change === "focus" ? 1 : 0, change);
             assert.equal(f.focused(), beforeFocus, change); assert.equal(f.plans[0]!.disposed, true, change);
             assert.equal(f.find.getSnapshot().reason, { selection: "cancelled", revision: "cancelled", composition: "composition-active",
                 authority: "read-only", options: "cancelled", view: "view-unavailable", focus: "replaced" }[change], change);
@@ -211,7 +211,7 @@ test("partial async regex plans respect selection, revision, composition, author
 test("a held replacement reply cannot edit a replacement document in the same pane", async () => {
     const f = fixture("cat cat");
     const replacement = f.workspace.createTextResource({ scope: "find", resource: "replacement", variant: "working" }, "New source", { value: "cat cat" });
-    const view = f.workspace.createDocumentView(replacement.documentId);
+    const view = f.workspace.createDocumentView(replacement.id);
     try {
         f.find.setFlags({ regularExpression: true });
         f.find.setQuery("cat"); await f.drain();
@@ -221,14 +221,14 @@ test("a held replacement reply cannot edit a replacement document in the same pa
         const next = findForView(f.workspace, { ...f.editor, view });
         try {
             next.setQuery("cat"); await f.drain();
-            const ready = next.getSnapshot(), selected = view.getSnapshot(), original = f.workspace.document(replacement.documentId);
+            const ready = next.getSnapshot(), selected = view.getSnapshot(), original = f.workspace.document(replacement.id);
             assert.equal(ready.count, 2);
             f.release(); await f.drain();
             assert.equal(f.find.getSnapshot().status, "disposed");
             assert.equal(next.getSnapshot(), ready);
             assert.equal(view.getSnapshot(), selected);
-            assert.equal(f.workspace.document(replacement.documentId), original);
-            assert.equal(f.workspace.observeHistory(replacement.documentId).getSnapshot().undoDepth, 0);
+            assert.equal(f.workspace.document(replacement.id), original);
+            assert.equal(f.workspace.observeHistory(replacement.id).getSnapshot().undoDepth, 0);
             assert.equal(f.text(), "cat cat");
         } finally { next.dispose(); }
     } finally { view.dispose(); f.finish(); }
@@ -249,20 +249,20 @@ test("missing backend, syntax errors and failed or mismatched plans cannot publi
         assert.equal(f.find.getSnapshot().reason, "invalid-pattern");
         f.find.setQuery("cat"); await f.drain(); f.fail(); f.find.replaceAll("dog"); await f.drain(); assert.equal(f.text(), "cat cat"); assert.equal(f.find.getSnapshot().status, "ready"); assert.match(f.find.getSnapshot().message, /failure/);
         assert.equal(f.find.getSnapshot().reason, "replacement-failed");
-        assert.equal(f.workspace.observeHistory(f.source.documentId).getSnapshot().undoDepth, 0); assert.equal(f.plans[0]!.disposed, true);
+        assert.equal(f.workspace.observeHistory(f.source.id).getSnapshot().undoDepth, 0); assert.equal(f.plans[0]!.disposed, true);
         assert.ok(Object.isFrozen(f.find.matchesIn(0, 7)));
         assert.equal(f.find.next(), true); assert.equal(f.find.getSnapshot().reason, null); assert.equal(f.find.getSnapshot().message, "");
     } finally { f.finish(); }
     const wrong = fixture("cat cat");
     try {
         wrong.find.setFlags({ regularExpression: true }); wrong.find.setQuery("cat"); await wrong.drain(); wrong.tamper("range"); wrong.find.replaceAll("dog"); await wrong.drain();
-        assert.equal(wrong.text(), "cat cat"); assert.match(wrong.find.getSnapshot().message, /captured search/); assert.equal(wrong.workspace.observeHistory(wrong.source.documentId).getSnapshot().undoDepth, 0);
+        assert.equal(wrong.text(), "cat cat"); assert.match(wrong.find.getSnapshot().message, /captured search/); assert.equal(wrong.workspace.observeHistory(wrong.source.id).getSnapshot().undoDepth, 0);
         assert.equal(wrong.find.getSnapshot().reason, "replacement-failed");
         wrong.view.setSelection(0, { anchor: 0, head: 3 });
         wrong.tamper("empty");
         wrong.find.replaceCurrent("dog");
         await wrong.drain();
         assert.equal(wrong.find.getSnapshot().reason, "replacement-failed");
-        assert.equal(wrong.workspace.document(wrong.source.documentId).revision, 0);
+        assert.equal(wrong.workspace.document(wrong.source.id).revision, 0);
     } finally { wrong.finish(); }
 });

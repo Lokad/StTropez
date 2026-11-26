@@ -63,7 +63,7 @@ export function captureRequest({ workspace, view, signal }: CaptureOwner,
     const { editOrigin, available = () => true } = options;
     if (signal.aborted || !workspace.ownsDocumentView(view) || !available()) return;
     const document = workspace.observeDocument(view.documentId).getSnapshot(); if (!document) return;
-    const resource = workspace.resourceForDocument(document.id), permission = resource.metadata.getSnapshot();
+    const resource = workspace.resource(document.id), permission = resource.metadata.getSnapshot();
     if (permission.state !== "ready" || editOrigin !== undefined && !permission.capabilities.edit.includes(editOrigin)) return;
     const selectionSet = view.getSnapshot().selectionSet, folding = view.folding.getSnapshot();
     const lease = workspace.acquire(resource.id), abort = new AbortController();

@@ -25,7 +25,7 @@ export function signatureClient(provider: LspWorkspace | LspDocumentOwner): LspS
     const lane = createLspClient(provider, signatureHelpMethod);
     // Prior wire context is not fresh range/edit authority. Keep only its binding identities,
     // never the old buffer/capture, and compare them after the next request has synchronized.
-    let previous: Readonly<{ document: string; resource: string; uri: string; language: string; epoch: number; generation: number; wire: JsonValue }> | undefined;
+    let previous: Readonly<{ document: string; uri: string; language: string; epoch: number; generation: number; wire: JsonValue }> | undefined;
     const stop = lane.subscribe(() => { const state = lane.getSnapshot();
         if (state.phase !== "ready" || previous?.epoch !== state.epoch || previous.generation !== state.registrationVersion(signatureHelpMethod)) previous = undefined;
     });
@@ -40,7 +40,7 @@ export function signatureClient(provider: LspWorkspace | LspDocumentOwner): LspS
             if (!retrigger) previous = undefined;
             return lane.request(request, signatureHelpMethod, capture => {
                 const doc = capture.document; let active = wireContext;
-                if (previous && (previous.document !== doc.documentId || previous.resource !== doc.resourceId || previous.uri !== doc.uri || previous.language !== doc.languageId
+                if (previous && (previous.document !== doc.documentId || previous.uri !== doc.uri || previous.language !== doc.languageId
                     || previous.epoch !== capture.epoch || previous.generation !== capture.registrationGeneration)) previous = undefined;
                 if (retrigger && inherit && previous) {
                     const inherited = { ...wireContext as Record<string, JsonValue>, activeSignatureHelp: previous.wire };
@@ -50,7 +50,7 @@ export function signatureClient(provider: LspWorkspace | LspDocumentOwner): LspS
                 return { position: capture.index.at(offset), context: active };
             }, value => value.decode(() => {
                 const help = decodeLspSignatureHelp(value.response, value.capture), { document: doc, epoch, registrationGeneration } = value.capture;
-                const context = help?.signatures.length ? { document: doc.documentId, resource: doc.resourceId, uri: doc.uri, language: doc.languageId, epoch, generation: registrationGeneration, wire: help.wire } : undefined;
+                const context = help?.signatures.length ? { document: doc.documentId, uri: doc.uri, language: doc.languageId, epoch, generation: registrationGeneration, wire: help.wire } : undefined;
                 previous = context;
                 return help && Object.freeze({ ...help, isCurrent: value.isCurrent, selectOverload(signature: LspSignature) {
                     const index = help.signatures.indexOf(signature);
