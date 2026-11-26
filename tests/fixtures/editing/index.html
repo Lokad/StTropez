@@ -2,10 +2,6 @@
 <html lang="en"><head><meta charset="utf-8"><title>Bounded editing candidate</title><link rel="stylesheet" href="/editing.css"></head>
 <body><h1>Bounded editing candidate</h1><p>Edit the same document in two views to compare selection, caret placement and undo.</p>
 <div id="commands"><label>Workload <select id="workload"><option value="normal">Normal source</option><option value="lines-10000" selected>10,000 lines</option><option value="single-line">Long single line</option><option value="unicode">Unicode</option></select></label><button id="end">End</button><button id="undo">Undo</button><button id="redo">Redo</button><button id="after">After editor</button></div>
-<section aria-label="Find and replace"><label>Find <input id="find-query" type="text"></label><label>Replace with <input id="replacement" type="text"></label>
-<label><input id="find-whole-word" type="checkbox">Whole word</label>
-<label><input id="find-match-case" type="checkbox" checked>Match case</label>
-<label><input id="find-regex" type="checkbox">Regular expression</label>
-<button id="find-previous">Previous match</button><button id="find-next">Next match</button><button id="replace-current">Replace match</button><button id="replace-all">Replace all</button><button id="find-cancel">Cancel search</button><output id="find-status"></output></section>
+<div id="find"></div>
 <main><section><h2>Primary view</h2><div class="pane" id="primary"></div></section><section><h2>Independent view</h2><div class="pane" id="secondary"></div></section></main>
 <output id="status"></output><script type="module" src="/editing.js"></script></body></html>

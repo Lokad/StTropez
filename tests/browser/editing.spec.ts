@@ -353,12 +353,13 @@ test("a read-only view keeps bounded navigation and Find while its peer retains 
     expect((await state(page)).document).toEqual(initial.document); expect((await state(page)).history).toEqual(initial.history);
     expect((await state(page)).primary.viewport.rows).toBeLessThan(100);
     await page.evaluate(() => window.editingFixture.setText("alpha\r\nbeta alpha")); await ready(page);
-    await page.evaluate(() => { window.editingFixture.find("alpha"); });
-    await expect.poll(async () => (await state(page)).find.status).toBe("ready");
-    expect(await page.evaluate(() => window.editingFixture.findNext())).toBe(true);
+    await reader.press("ControlOrMeta+h");
+    const query = page.getByRole("textbox", { name: "Find text" });
+    await query.fill("alpha");
+    await expect(page.getByRole("button", { name: "Replace all", exact: true })).toBeDisabled();
+    await query.press("Enter");
+    await query.press("Escape");
     const before = await state(page);
-    expect(await page.evaluate(() => window.editingFixture.replaceCurrent("changed"))).toBe(false);
-    await page.evaluate(() => window.editingFixture.replaceAll("changed"));
     await reader.evaluate(node => {
         const input = node as HTMLTextAreaElement;
         for (const type of ["cut", "paste", "copy"]) {
@@ -711,7 +712,7 @@ test("popup bindings fall back in priority order and roll back conflicts without
     expect(await page.evaluate(() => {
         const { commands, keymap } = window.editingFixture, calls: string[] = [];
         const press = (key: string) => keymap.handle(new KeyboardEvent("keydown", { key, cancelable: true }));
-        const query = document.querySelector<HTMLInputElement>("#find-query")!;
+        const query = document.querySelector<HTMLTextAreaElement>(".st-find-query")!;
         const editor = document.querySelector("#primary textarea")!;
         let open = false;
         const higher = commands.register({ id: "test.popup", label: "Dismiss popup", run: () => { calls.push("popup"); return open; } },
@@ -720,9 +721,9 @@ test("popup bindings fall back in priority order and roll back conflicts without
         try { commands.register({ id: "test.rejected", label: "Duplicate", run: () => { calls.push("rejected"); } },
             { keys: ["F8", "Escape F8"], priority: 5, shared: true }); } catch { conflict = true; }
         const partial = commands.get("test.rejected") !== undefined || press("F8");
-        query.focus();
+        commands.run("find.open");
         const fellBack = press("Escape") && document.activeElement === editor;
-        open = true; query.focus();
+        open = true; commands.run("find.open");
         const dismissedPopup = press("Escape") && document.activeElement === query;
         higher.dispose();
         const dismissedFind = press("Escape") && document.activeElement === editor;

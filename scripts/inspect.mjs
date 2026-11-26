@@ -167,8 +167,9 @@ try {
     await harness.page.screenshot({ path: "artifacts/inspect/editing-lines.png", fullPage: true });
     await writeFile("artifacts/inspect/editing.json", JSON.stringify(await harness.page.evaluate(() => window.editingFixture.snapshot()), null, 2));
     await harness.page.evaluate(() => window.editingFixture.setText("😀 const sample = 123; // TODO"));
-    await harness.page.getByRole("textbox", { name: "Find", exact: true }).fill("sample");
-    await harness.page.waitForFunction(() => { const s = window.editingFixture.snapshot(); return s.find.status === "ready" && s.find.count === 1 && !s.primary.viewport.pending; });
+    await harness.page.getByRole("textbox", { name: "Primary source" }).press("ControlOrMeta+f");
+    await harness.page.getByRole("textbox", { name: "Find text", exact: true }).fill("sample");
+    await harness.page.waitForFunction(() => { const s = window.editingFixture.snapshot(); return s.find?.status === "ready" && s.find.count === 1 && !s.primary.viewport.pending; });
     if (await harness.page.locator("#primary .st-search-match").textContent() !== "sample") throw new Error("Inspection missed highlighted search result.");
     await harness.page.screenshot({ path: "artifacts/inspect/editing-find.png", fullPage: true });
     await writeFile("artifacts/inspect/editing-services.json", JSON.stringify(await harness.page.evaluate(() => window.editingFixture.snapshot()), null, 2));

@@ -1,12 +1,11 @@
 import { graphemeBoundaries } from "../../../src/kernels/index.ts";
 import { Workspace } from "../../../src/index.ts";
 import type { FoldRange, Selection, TextEdit } from "../../../src/index.ts";
-import { inputConflictEvent, mountAnchoredOverlay, mountTextEditor, observePointerDwell, createFoldingController } from "../../../src/browser/index.ts";
+import { inputConflictEvent, mountAnchoredOverlay, mountFindBar, mountTextEditor, observePointerDwell, createFoldingController } from "../../../src/browser/index.ts";
 import type { TextEditorCommand, TextEditorEditTransform, FoldDiscovery, FoldingController, InputConflictDetail, AnchoredOverlayOptions, PointerDwellPosition } from "../../../src/browser/index.ts";
 import { corpus, corpusIds } from "../workloads.ts";
 import { EditingPresentation } from "../language/presentation.ts";
 import { editorSettled } from "../readiness.ts";
-import { mountFindUI } from "./find-ui.ts";
 import type { CorpusId } from "../workloads.ts";
 import "./style.css";
 
@@ -22,7 +21,8 @@ const primarySyntax = editors.primary.decorations.addProvider({ order: 0, provid
     return presentation.primary.decorate(slice);
 } });
 editors.secondary.decorations.addProvider({ order: 0, provide: presentation.secondary.decorate });
-const findUI = mountFindUI(editors.primary);
+const find = mountFindBar(pane("find"), { createWorker: () => new Worker("/regex-worker.js", { type: "module" }) });
+find.attach(editors.primary);
 const listeners = new AbortController(); let disposed = false;
 let foldingController: FoldingController | undefined;
 const conflicts: InputConflictDetail[] = [];
@@ -60,7 +60,6 @@ const fixture = { ready: true, graphemeBoundaries, setText, edit, select, histor
     selections: (ranges: readonly Selection[], primary = 0) => editors.primary.view.setSelections(workspace.document(source.documentId).revision, ranges, primary),
     folds: (ranges: readonly FoldRange[], which: "primary" | "secondary" = "primary") => { const f = editors[which].view.folding; return f.setRanges(f.getSnapshot(), ranges); },
     folding: (which: "primary" | "secondary" = "primary") => editors[which].view.folding.getSnapshot(),
-    find: (query: string) => findUI.find.setQuery(query), findNext: () => findUI.find.next(), replaceCurrent: (text: string) => findUI.find.replaceCurrent(text), replaceAll: (text: string) => findUI.find.replaceAll(text), cancelFind: findUI.find.cancel,
     conflictText: (index = conflicts.length - 1) => conflicts[index]?.attemptedText,
     focus: (which: "primary" | "secondary") => editors[which].focus(),
     onRender: (which: "primary" | "secondary", listener: () => void) => editors[which].viewport.onRender(listener),
@@ -72,17 +71,18 @@ const fixture = { ready: true, graphemeBoundaries, setText, edit, select, histor
     closePrimary: editors.primary.dispose,
     snapshot: () => {
         const current = workspace.getSnapshot().documents.find(document => document.id === source.documentId);
+        const search = find.getSnapshot();
         return { document: current ? { revision: current.revision, length: current.buffer.length } : null,
             primary: { ...editors.primary.getDiagnostics(), viewport: editors.primary.viewport.getDiagnostics(), selection: editors.primary.view.getSnapshot().selection },
             secondary: { ...editors.secondary.getDiagnostics(), viewport: editors.secondary.viewport.getDiagnostics(), selection: editors.secondary.view.getSnapshot().selection },
             history: current ? workspace.observeHistory(source.documentId).getSnapshot() : null,
-            find: (() => { const state = findUI.find.getSnapshot(); return { wholeWord: state.wholeWord, matchCase: state.matchCase, regularExpression: state.regularExpression, revision: state.revision, status: state.status, count: state.count, scanned: state.scanned, current: state.current, matchesVersion: state.matchesVersion, reason: state.reason, message: state.message, ...findUI.find.getDiagnostics() }; })(),
+            find: search && { count: search.count, status: search.status },
             presentation: { primary: presentation.primary.snapshot(), secondary: presentation.secondary.snapshot() },
             conflicts: conflicts.map(item => ({ reason: item.reason, expectedRevision: item.expectedRevision, attemptedUnits: item.attemptedText.length,
                 ...(item.cause instanceof Error ? { error: item.cause.message } : {}) })), diagnostics: workspace.diagnostics(), disposed };
     },
     dispose: () => {
-        if (disposed) return; disposed = true; foldingController?.dispose(); listeners.abort(); unsubscribe(); findUI.dispose();
+        if (disposed) return; disposed = true; foldingController?.dispose(); listeners.abort(); unsubscribe(); find.dispose();
         Object.values(editors).forEach(editor => editor.dispose()); Object.values(presentation).forEach(value => value.clear());
         workspace.releaseResource(source.id, true);
     } };
