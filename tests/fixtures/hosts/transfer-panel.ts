@@ -6,11 +6,10 @@ import { formSavePanelModel, formSaveKey } from "./configuration-panel.ts";
 
 export function transferFormModel(transfer: Pick<HostTransfer, "update" | "save">, saved: FormSavePresentation<TransferSettings>) {
     const state = saved.resource;
-    const readOnly = state.state !== "ready" || !state.metadata.capabilities.edit.includes("human");
-    return { title: "Transfer workspace", available: state.state === "ready", status: state.state,
+    return { title: "Transfer workspace", available: true, status: "",
         save: formSavePanelModel(transfer.save, saved, "Transfer save status"),
         fields: ([['destination', 'Transfer destination', 'text'], ['batchSize', 'Transfer batch size', 'numeric']] as const).map(([key, label, inputMode]) => ({
-            key, label, inputMode, value: state.state === "ready" ? state.value()[key] : "", readOnly, invalid: saved.validation !== null,
+            key, label, inputMode, value: state.value[key], readOnly: false, invalid: saved.validation !== null,
             change: (value: string) => transfer.update(key, value),
         })),
     } as const;

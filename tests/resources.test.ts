@@ -1,4 +1,3 @@
-import { runWithResources, type RunSettings } from "./fixtures/hosts/run-command.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer, Workspace } from "../src/index.ts";
@@ -439,23 +438,6 @@ test("canonical saves apply only without later edits or a revoked edit capabilit
     workspace.setCapabilities(source.id, { edit: [], save: true });
     response.resolve({ kind: "saved", serverVersion: "v2", canonical: "RETRY" }); await pending;
     assert.equal(workspace.document(source.id).text(), "retry"); assert.equal(source.metadata.getSnapshot().dirty, true);
-});
-
-test("Run captures source/configuration/settings before awaiting and retains both resources without saving", async () => {
-    const { workspace, source, form, edit } = fixture();
-    const result = deferred<string>(), settings: { mode: RunSettings["mode"] } = { mode: "preview" };
-    let captured: unknown;
-    const run = runWithResources(workspace, source, form, settings, submission => { captured = submission; return result.promise; });
-    settings.mode = "inspect"; edit("after run");
-    workspace.updateResource(form, { expectedRevision: 0, origin: "human", value: { path: "new.csv", nested: { enabled: false } } });
-
-    assert.throws(() => workspace.releaseResource(source.id, true)); assert.throws(() => workspace.releaseResource(form.id, true));
-    assert.deepEqual(JSON.parse(JSON.stringify(captured)), { source: { target: { id: source.id }, key: source.metadata.getSnapshot().key,
-        revision: 0, value: "abc", serverVersion: "v0" }, configuration: { target: { id: form.id }, key: form.metadata.getSnapshot().key,
-        revision: 0, value: { path: "in.csv", nested: { enabled: true } }, serverVersion: "c0" }, settings: { mode: "preview" } });
-    result.resolve("run-id"); assert.equal(await run, "run-id");
-    assert.equal(source.metadata.getSnapshot().serverVersion, "v0"); assert.equal(form.metadata.getSnapshot().serverVersion, "c0");
-    assert.equal(workspace.ownership(source.id).leases, 0); assert.equal(workspace.ownership(form.id).leases, 0);
 });
 
 test("invalid host values publish nothing", () => {

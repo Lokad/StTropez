@@ -5,7 +5,7 @@ import type { RunSubmission } from "./run-command.ts";
 export type Connection = Readonly<{ path: string; format: "csv"; [key: string]: SnapshotValue }>;
 export type ServiceActivity = Readonly<{ writes: number }>;
 export class SourceSaveFailure extends Error {}
-export type SubmittedRun = RunSubmission<string, Connection>;
+export type SubmittedRun = RunSubmission;
 
 /** Deferred services for the host example. Captures, review and application remain in their owners. */
 export class HostFixtureServices {
@@ -54,8 +54,8 @@ export class HostFixtureServices {
     debug() {
         return { server: { version: this.version, length: this.buffer.length },
             pendingSaves: this.saves.map(({ submission }) => ({ revision: submission.revision, length: submission.value.length, expectedServerVersion: submission.expectedServerVersion })),
-            pendingRuns: this.runs.map(({ submission }) => ({ sourceId: submission.source.target.id, sourceRevision: submission.source.revision,
-                sourceLength: submission.source.value.length, sourceVersion: submission.source.serverVersion, configurationId: submission.configuration.target.id,
+            pendingRuns: this.runs.map(({ submission }) => ({ sourceId: submission.source.id, sourceRevision: submission.source.revision,
+                sourceLength: submission.source.value.length, sourceVersion: submission.source.serverVersion, configurationId: submission.configuration.id,
                 configurationRevision: submission.configuration.revision, configurationVersion: submission.configuration.serverVersion, mode: submission.settings.mode })) };
     }
     dispose(): void {

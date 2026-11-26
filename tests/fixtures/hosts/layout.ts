@@ -1,4 +1,4 @@
-import type { DocumentId, ResourceId, TextResourceHandle, Workspace } from "../../../src/index.ts";
+import type { DocumentId, Observable, TextResourceHandle, Workspace } from "../../../src/index.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 
 export type HostPane = Readonly<{ documentId: DocumentId | null; generation: number }>;
@@ -10,14 +10,14 @@ export type Layout = Readonly<{ position: "left" | "right"; visible: boolean; fo
 export class HostLayout {
     private readonly workspace: Workspace;
     private readonly source: TextResourceHandle;
-    private readonly configuration: ResourceId;
+    private readonly configuration: Observable<Readonly<{ revision: number }>>;
     private readonly primary: HostCell<HostPane>;
     private readonly secondary: HostCell<HostPane>;
     readonly panes;
     private readonly cell = new HostCell<Layout>({ position: "left", visible: true, formFault: false, primarySurface: "text", navigation: { kind: "workspace" }, modal: { kind: "none" } });
     readonly state = this.cell.observable;
     private closeIfCurrent: (() => boolean) | undefined;
-    constructor(workspace: Workspace, source: TextResourceHandle, configuration: ResourceId) {
+    constructor(workspace: Workspace, source: TextResourceHandle, configuration: Observable<Readonly<{ revision: number }>>) {
         this.workspace = workspace; this.source = source; this.configuration = configuration;
         this.primary = new HostCell<HostPane>({ documentId: source.id, generation: 0 });
         this.secondary = new HostCell<HostPane>({ documentId: source.id, generation: 0 });
@@ -46,7 +46,7 @@ export class HostLayout {
         const target = this.primary.get();
         if (this.cell.get().primarySurface === "closed") return;
         const resource = target.documentId ? this.workspace.resource(target.documentId)
-            : this.workspace.resource(this.configuration);
+            : this.configuration;
         const revision = resource.getSnapshot().revision;
         this.closeIfCurrent = () => {
             if (this.primary.get() !== target || resource.getSnapshot().revision !== revision) return false;

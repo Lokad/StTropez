@@ -1,5 +1,4 @@
-import type { SnapshotValue, Workspace } from "../../../src/index.ts";
-import type { HostSaveQueue } from "../save-queue.ts";
+import type { SnapshotValue } from "../../../src/index.ts";
 import { FormSave } from "./form-save.ts";
 
 export type TransferSettings = Readonly<{ destination: string; batchSize: string; [key: string]: SnapshotValue }>;
@@ -9,18 +8,13 @@ export function transferValidation(value: TransferSettings): string | null {
         ? "Batch size must be an integer from 1 to 100000." : null;
 }
 export class HostTransfer {
-    readonly resource;
-    readonly save;
-    private readonly workspace: Workspace;
-    constructor(workspace: Workspace, saves: HostSaveQueue, track: (task: Promise<unknown>) => void) {
-        this.workspace = workspace;
-        this.resource = workspace.createResource<TransferSettings>({ scope: "host-fixture", resource: "transfer", variant: "working" }, "Transfer settings", { value: { destination: "target.csv", batchSize: "1000" } });
-        this.save = new FormSave(workspace, saves, this.resource, track, { title: "Transfer settings", noun: "transfer settings", prefix: "transfer", validate: transferValidation,
+    readonly save: FormSave<TransferSettings>;
+    constructor(onError: (error: Error) => void) {
+        this.save = new FormSave<TransferSettings>({ destination: "target.csv", batchSize: "1000" }, { title: "Transfer settings", noun: "transfer settings", prefix: "transfer", validate: transferValidation,
             canonical: value => Object.freeze({ ...value, destination: value.destination.trim() }),
-            external: (value, destination = "remote-target.csv") => Object.freeze({ ...value, destination }) });
+            external: (value, destination = "remote-target.csv") => Object.freeze({ ...value, destination }) }, onError);
     }
     readonly update = (field: "destination" | "batchSize", value: string): void => {
-        if (this.save.debug().disposed) return; const s = this.resource.getSnapshot(); if (s.state !== "ready") return;
-        this.workspace.updateResource(this.resource, { expectedRevision: s.revision, origin: "human", value: { ...s.value(), [field]: value } });
+        this.save.updateValue({ ...this.save.values.getSnapshot().value, [field]: value });
     };
 }

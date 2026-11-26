@@ -1,107 +1,149 @@
 import { HostCell } from "../../../examples/shared/observable.ts";
-import type { Immutable, Observable, ObservableListener, ResourceHandle, ResourceSnapshot, ResourceTarget, SaveReview, SaveResponse, SaveSubmission, SnapshotValue, Workspace } from "../../../src/index.ts";
-import type { HostSaveQueue } from "../save-queue.ts";
+import { equalValue, snapshotValue, type Immutable, type SnapshotValue } from "../../../src/core/values.ts";
+import type { Observable } from "../../../src/index.ts";
 
-type State<T> = Readonly<{ pending: boolean; message: string; conflict: Readonly<{ version: string; value: Immutable<T> | null }> | null; preview: string | null }>;
-type Pending<T> = Readonly<{ submission: SaveSubmission<T>; resolve: (response: SaveResponse<T>) => void; reject: (error: Error) => void }>;
-type Reviewed = Readonly<{ target: ResourceTarget; version: string; baseline: string | null }>;
-export type FormSavePresentation<T> = Readonly<{ title: string; noun: string; resource: ResourceSnapshot<T>; status: string; validation: string | null; preview: string | null;
-    canSave: boolean; canReview: boolean; canSaveReviewed: boolean; capture: SaveSubmission<T> | null; review: Reviewed | null; disposed: boolean }>;
-export type FormPolicy<T> = Readonly<{ title: string; noun: string; prefix: string; validate: (value: Immutable<T>) => string | null;
-    canonical: (value: Immutable<T>) => Immutable<T>; external: (value: Immutable<T>, text?: string) => Immutable<T> }>;
+export type FormId = "configuration" | "transfer";
+export type FormSnapshot<T> = Readonly<{
+    value: Immutable<T>;
+    revision: number;
+    dirty: boolean;
+    serverVersion: string | null;
+    saveStatus: "idle" | "saving" | "failed" | "conflict";
+}>;
+type Capture<T> = Readonly<{ resourceId: FormId; revision: number; value: Immutable<T>; expectedServerVersion: string | null }>;
+type Reviewed = Readonly<{ version: string }>;
+type State<T> = Readonly<{ conflict: Readonly<{ version: string; value: Immutable<T> | null }> | null }>;
+export type FormSavePresentation<T> = Readonly<{
+    title: string; noun: string; resource: FormSnapshot<T>; status: string; validation: string | null;
+    preview: string | null; canSave: boolean; canReview: boolean; canSaveReviewed: boolean;
+    capture: Capture<T> | null; review: Reviewed | null; disposed: boolean;
+}>;
+export type FormPolicy<T> = Readonly<{
+    title: string; noun: string; prefix: FormId; validate: (value: Immutable<T>) => string | null;
+    canonical: (value: Immutable<T>) => Immutable<T>; external: (value: Immutable<T>, text?: string) => Immutable<T>;
+}>;
 
-/** Deferred host fixture; core owns immutable capture, serialized saves and guarded receipts. */
+/** These forms belong to the fixture. Their pending callbacks capture one immutable submission. */
 export class FormSave<T extends SnapshotValue> {
-    private readonly workspace: Workspace;
-    private readonly saves: HostSaveQueue;
-    private readonly resource: ResourceHandle<T>;
-    private readonly track: (task: Promise<unknown>) => void;
-    private readonly policy: FormPolicy<T>;
-    private readonly cell: HostCell<State<T>>;
-    readonly state;
+    readonly id: FormId;
+    readonly title: string;
+    readonly values: Observable<FormSnapshot<T>>;
     readonly presentation: Observable<FormSavePresentation<T>>;
-    private cached: { state: State<T>; resource: ResourceSnapshot<T>; request: Pending<T> | undefined; reviewed: Reviewed | undefined; reviewCurrent: boolean; disposed: boolean; value: FormSavePresentation<T> } | undefined;
-    private request: Pending<T> | undefined;
-    private reviewed: Reviewed | undefined;
-    private serverValue: Immutable<T>;
-    private serverVersion: string | null;
+    private readonly data: HostCell<FormSnapshot<T>>;
+    private readonly notices: HostCell<FormSavePresentation<T>>;
+    private readonly policy: FormPolicy<T>;
+    private readonly onError: (error: Error) => void;
+    private baseline: Immutable<T>;
+    private remote: Immutable<T>;
+    private remoteVersion: string | null = null;
     private serial = 0;
+    private request: Capture<T> | null = null;
+    private reviewed: Reviewed | null = null;
+    private conflict: State<T>["conflict"] = null;
+    private message = "";
     private disposed = false;
-    constructor(workspace: Workspace, saves: HostSaveQueue, resource: ResourceHandle<T>, track: (task: Promise<unknown>) => void, policy: FormPolicy<T>) {
-        this.workspace = workspace; this.saves = saves; this.resource = resource; this.track = track; this.policy = policy;
-        const initial = resource.getSnapshot(); if (initial.state !== "ready") throw new Error(`${policy.title} fixture must start ready.`);
-        this.serverValue = initial.value(); this.serverVersion = initial.metadata.serverVersion;
-        this.cell = new HostCell<State<T>>({ pending: false, message: `${policy.title} is saved independently of source and Run.`, conflict: null, preview: null }); this.state = this.cell.observable;
-        this.presentation = Object.freeze({ getSnapshot: () => this.presentationSnapshot(), subscribe: (listener: ObservableListener) => {
-            const stopState = this.state.subscribe(listener);
-            try { const stopResource = this.resource.subscribe(listener); return () => { stopResource(); stopState(); }; }
-            catch (error) { stopState(); throw error; }
-        } });
+
+    constructor(initial: T, policy: FormPolicy<T>, onError: (error: Error) => void) {
+        this.id = policy.prefix;
+        this.title = policy.title;
+        this.policy = policy;
+        this.onError = onError;
+        this.baseline = this.remote = snapshotValue(initial);
+        this.data = new HostCell<FormSnapshot<T>>({
+            value: this.baseline, revision: 0, dirty: false, serverVersion: null, saveStatus: "idle",
+        });
+        this.values = this.data.observable;
+        this.notices = new HostCell(this.describe());
+        this.presentation = this.notices.observable;
     }
-    private presentationSnapshot(): FormSavePresentation<T> {
-        const state = this.cell.get(), resource = this.resource.getSnapshot(), request = this.request, reviewed = this.reviewed, disposed = this.disposed, cached = this.cached;
-        const reviewCurrent = reviewed !== undefined && this.workspace.resolveResource(reviewed.target) === this.resource;
-        if (cached && cached.state === state && cached.resource === resource && cached.request === request && cached.reviewed === reviewed && cached.reviewCurrent === reviewCurrent && cached.disposed === disposed) return cached.value;
-        const validation = resource.state === "ready" ? this.policy.validate(resource.value()) : `${this.policy.title} is unavailable.`, metadata = resource.metadata;
-        const available = !disposed && !state.pending && resource.state === "ready" && metadata.capabilities.save && metadata.saveStatus !== "saving" && validation === null;
-        const value: FormSavePresentation<T> = Object.freeze({ title: this.policy.title, noun: this.policy.noun, resource, validation, preview: state.preview, disposed,
-            status: `${this.policy.title} ${metadata.dirty ? "Unsaved" : "Saved"} · Save status: ${state.pending ? "saving" : metadata.saveStatus} · ${validation ?? state.message}`,
-            canSave: available && (metadata.dirty || metadata.saveStatus === "failed") && state.conflict === null,
-            canReview: !disposed && !state.pending && state.conflict !== null && resource.state === "ready",
-            canSaveReviewed: available && reviewed !== undefined && state.conflict !== null && reviewCurrent && metadata.serverVersion === reviewed.baseline,
-            capture: request?.submission ?? null, review: reviewed ?? null });
-        this.cached = { state, resource, request, reviewed, reviewCurrent, disposed, value }; return value;
+    private describe(): FormSavePresentation<T> {
+        const resource = this.data.get();
+        const validation = this.policy.validate(resource.value);
+        const available = !this.disposed && !this.request && validation === null;
+        const text = this.conflict?.value && JSON.stringify(this.conflict.value, null, 2);
+        return {
+            title: this.title, noun: this.policy.noun, resource, validation, disposed: this.disposed,
+            status: `${this.title} ${resource.dirty ? "Unsaved" : "Saved"} · Save status: ${resource.saveStatus} · ${validation ?? this.message}`,
+            preview: text ? text.slice(0, 4096) + (text.length > 4096 ? "\n… Preview limited to 4,096 characters; full server value retained." : "") : null,
+            canSave: available && !this.conflict && (resource.dirty || resource.saveStatus === "failed"),
+            canReview: !this.disposed && !this.request && !!this.conflict,
+            canSaveReviewed: available && !!this.reviewed,
+            capture: this.request, review: this.reviewed,
+        };
     }
-    validation(): string | null { return this.presentation.getSnapshot().validation; }
-    canSave(): boolean { return this.presentation.getSnapshot().canSave; }
-    canReview(): boolean { return this.presentation.getSnapshot().canReview; }
-    canSaveReviewed(): boolean { return this.presentation.getSnapshot().canSaveReviewed; }
-    private publish(patch: Partial<State<T>>): void { if (!this.disposed) this.cell.set({ ...this.cell.get(), ...patch }); }
-    readonly save = (): void => {
-        if (this.disposed || this.cell.get().pending) return;
-        if (!this.canSave()) { this.publish({ message: this.validation() ?? (this.cell.get().conflict ? `Review the remote ${this.policy.noun} before saving.` : `${this.policy.title} is saved or saving is unavailable.`) }); return; }
-        this.submit();
+    private publish(message: string, patch?: Partial<FormSnapshot<T>>) {
+        this.message = message;
+        if (patch) this.data.set({ ...this.data.get(), ...patch });
+        this.notices.set(this.describe());
+    }
+    updateValue(value: T) {
+        if (this.disposed) return;
+        const current = this.data.get();
+        const next = snapshotValue(value);
+        if (!equalValue(current.value, next)) this.publish(this.message, {
+            value: next, revision: current.revision + 1, dirty: !equalValue(next, this.baseline),
+        });
+    }
+    validation() { return this.presentation.getSnapshot().validation; }
+    canSave() { return this.presentation.getSnapshot().canSave; }
+    canSaveReviewed() { return this.presentation.getSnapshot().canSaveReviewed; }
+    private submit(version: string | null) {
+        const { revision, value } = this.data.get();
+        this.request = Object.freeze({ resourceId: this.id, revision, value, expectedServerVersion: version });
+        this.publish(`Saving captured ${this.policy.noun}…`, { saveStatus: "saving" });
+    }
+    readonly save = () => {
+        if (this.canSave()) this.submit(this.data.get().serverVersion);
     };
-    private submit(review?: SaveReview): void {
-        this.publish({ pending: true, message: `Saving captured ${this.policy.noun}…` }); if (this.disposed) return;
-        try {
-            const task = this.saves.save(this.workspace.captureSave(this.resource, review), { save: submission => {
-                if (this.disposed) throw new Error(`${this.policy.title} save was interrupted.`);
-                return new Promise<SaveResponse<T>>((resolve, reject) => { this.request = { submission, resolve, reject }; this.publish({ message: `${this.policy.title} request captured. Editing and Run remain independent.` }); });
-            } }).then(result => {
-                if (this.disposed) return;
-                if (result.kind === "saved") { this.reviewed = undefined; this.publish({ pending: false, conflict: null, preview: null, message: `Captured ${this.policy.noun} saved. Later edits are retained.` }); }
-                else if (result.kind === "conflict") { this.reviewed = undefined; this.publish({ pending: false, conflict: { version: result.serverVersion, value: null }, preview: null, message: `${this.policy.title} save conflicted. Current values are retained; review the remote ${this.policy.noun}.` }); }
-                else this.publish({ pending: false, message: `${this.policy.title} save failed. Current values are retained; retry when ready.` });
-            }); this.track(task);
-        } catch { this.publish({ pending: false, message: `${this.policy.title} save is unavailable. Current values are retained.` }); }
-    }
-    readonly finish = (expected: SaveSubmission<T> | null = this.request?.submission ?? null): void => {
-        if (this.disposed) return; const request = this.request; if (!request || request.submission !== expected) return; this.request = undefined;
-        if (request.submission.expectedServerVersion !== this.serverVersion) request.resolve({ kind: "conflict", serverVersion: this.serverVersion ?? `${this.policy.prefix}-v0` });
-        else {
-            this.serverValue = this.policy.canonical(request.submission.value); this.serverVersion = `${this.policy.prefix}-v${++this.serial}`;
-            // SavePort accepts T; this fixture supplies its already immutable form snapshot. Core copies it again.
-            request.resolve({ kind: "saved", serverVersion: this.serverVersion, canonical: this.serverValue as T });
+    readonly finish = (expected = this.request) => {
+        if (!expected || expected !== this.request) return;
+        this.request = this.reviewed = null;
+        if (expected.expectedServerVersion !== this.remoteVersion) {
+            this.conflict = { version: this.remoteVersion!, value: null };
+            this.publish(`${this.title} save conflicted. Review the remote ${this.policy.noun}.`, { saveStatus: "conflict" });
+            return;
         }
-        this.publish({});
+        this.baseline = this.remote = this.policy.canonical(expected.value);
+        this.remoteVersion = `${this.id}-v${++this.serial}`;
+        this.conflict = null;
+        const current = this.data.get();
+        const value = current.revision === expected.revision ? this.baseline : current.value;
+        this.publish(`Captured ${this.policy.noun} saved. Later edits are retained.`, {
+            value, revision: current.revision + Number(!equalValue(value, current.value)),
+            saveStatus: "idle", serverVersion: this.remoteVersion, dirty: !equalValue(value, this.baseline),
+        });
     };
-    readonly fail = (expected: SaveSubmission<T> | null = this.request?.submission ?? null): void => { if (this.disposed) return; const request = this.request; if (!request || request.submission !== expected) return;
-        this.request = undefined; request.reject(new Error(`Synthetic ${this.policy.noun} save failure`)); this.publish({}); };
-    readonly externalWrite = (text?: string): void => { if (this.disposed) return; this.serverValue = this.policy.external(this.serverValue, text); this.serverVersion = `${this.policy.prefix}-v${++this.serial}`;
-        this.publish({ message: `Synthetic remote ${this.policy.noun} changed. Local values are retained.` }); };
-    readonly review = (): void => {
-        if (!this.canReview()) return; const current = this.resource.getSnapshot(); if (current.state !== "ready") return;
-        const version = this.serverVersion ?? `${this.policy.prefix}-v0`, text = JSON.stringify(this.serverValue, null, 2);
-        this.reviewed = Object.freeze({ target: this.workspace.captureResource(this.resource.id), version, baseline: current.metadata.serverVersion });
-        this.publish({ conflict: { version, value: this.serverValue }, preview: text.slice(0, 4096) + (text.length > 4096 ? "\n… Preview limited to 4,096 characters; full server value retained." : ""), message: `Remote ${this.policy.noun} captured. Correct local fields, then save the reviewed ${this.policy.noun}.` });
+    readonly fail = (expected = this.request) => {
+        if (!expected || expected !== this.request) return;
+        this.request = null;
+        this.publish(`${this.title} save failed. Current values are retained; retry when ready.`, { saveStatus: "failed" });
+        this.onError(new Error(this.message));
     };
-    readonly saveReviewed = (expected: Reviewed | null = this.reviewed ?? null): void => { if (this.disposed || this.cell.get().pending || expected !== (this.reviewed ?? null)) return;
-        if (!this.canSaveReviewed()) { this.publish({ message: this.validation() ?? `${this.policy.title} review expired or saving is unavailable. Review again.` }); return; }
-        this.submit({ target: this.reviewed!.target, expectedRevision: this.resource.getSnapshot().revision, expectedServerVersion: this.reviewed!.version }); };
-    statusText(): string { return this.presentation.getSnapshot().status; }
-    capture() { const s = this.request?.submission; return s ? Object.freeze({ resourceId: s.target.id, revision: s.revision, value: s.value, expectedServerVersion: s.expectedServerVersion }) : null; }
-    debug() { return Object.freeze({ pending: this.cell.get().pending, request: this.request ? { resourceId: this.request.submission.target.id, revision: this.request.submission.revision, expectedServerVersion: this.request.submission.expectedServerVersion } : null,
-        conflictVersion: this.cell.get().conflict?.version ?? null, reviewedVersion: this.reviewed?.version ?? null, reviewReady: this.canSaveReviewed(), subscriptions: this.cell.count(), disposed: this.disposed }); }
-    dispose(): void { if (this.disposed) return; this.disposed = true; const request = this.request; this.request = undefined; this.cell.set({ ...this.cell.get(), pending: false }); request?.reject(new Error(`${this.policy.title} save was interrupted.`)); }
+    readonly externalWrite = (text?: string) => {
+        if (this.disposed) return;
+        this.remote = this.policy.external(this.remote, text);
+        this.remoteVersion = `${this.id}-v${++this.serial}`;
+        this.publish(`Synthetic remote ${this.policy.noun} changed. Local values are retained.`);
+    };
+    readonly review = () => {
+        if (!this.describe().canReview || this.remoteVersion === null) return;
+        this.reviewed = Object.freeze({ version: this.remoteVersion });
+        this.conflict = { version: this.remoteVersion, value: this.remote };
+        this.publish(`Remote ${this.policy.noun} captured. Correct local fields, then save the reviewed ${this.policy.noun}.`);
+    };
+    readonly saveReviewed = (expected = this.reviewed) => {
+        if (expected && expected === this.reviewed && this.canSaveReviewed()) this.submit(expected.version);
+    };
+    capture() { return this.request; }
+    debug() {
+        return { pending: !!this.request, request: this.request, conflictVersion: this.conflict?.version ?? null,
+            reviewedVersion: this.reviewed?.version ?? null, reviewReady: this.canSaveReviewed(),
+            subscriptions: this.notices.count() + this.data.count(), disposed: this.disposed };
+    }
+    dispose() {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.request = null;
+        this.publish(this.message);
+    }
 }

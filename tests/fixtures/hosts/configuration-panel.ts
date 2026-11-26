@@ -1,8 +1,8 @@
 import { isSaveKey } from "../../../examples/shared/host-shortcuts.ts";
 import type { HostController, Connection } from "./controller.ts";
-import type { ResourceSnapshot, SnapshotValue } from "../../../src/index.ts";
+import type { SnapshotValue } from "../../../src/index.ts";
 import { configurationValidation } from "./configuration.ts";
-import type { FormSave, FormSavePresentation } from "./form-save.ts";
+import type { FormSave, FormSavePresentation, FormSnapshot } from "./form-save.ts";
 
 type SaveControls<T extends SnapshotValue> = Pick<FormSave<T>, "save" | "finish" | "fail" | "externalWrite" | "review" | "saveReviewed">;
 export function formSavePanelModel<T extends SnapshotValue>(save: SaveControls<T>, state: FormSavePresentation<T>, statusLabel = `${state.title} save status`) {
@@ -18,11 +18,10 @@ export function formSavePanelModel<T extends SnapshotValue>(save: SaveControls<T
     ] } as const;
 }
 
-export function configurationFormModel(controller: Pick<HostController, "setPath">, state: ResourceSnapshot<Connection>) {
-    const validation = state.state === "ready" ? configurationValidation(state.value()) : null;
-    return { available: state.state === "ready", status: state.state, validation: validation ?? "", field: {
-        label: "Configuration path", value: state.state === "ready" ? state.value().path : "",
-        readOnly: state.state !== "ready" || !state.metadata.capabilities.edit.includes("human"),
+export function configurationFormModel(controller: Pick<HostController, "setPath">, state: FormSnapshot<Connection>) {
+    const validation = configurationValidation(state.value);
+    return { available: true, status: "", validation: validation ?? "", field: {
+        label: "Configuration path", value: state.value.path, readOnly: false,
         invalid: validation !== null, change: controller.setPath,
     } } as const;
 }
