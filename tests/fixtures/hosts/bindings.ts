@@ -224,8 +224,7 @@ export class ViewBindings {
         this.tools = [this.language, this.signature, this.domain, this.navigation, this.project,
             this.rename, this.actions, this.links, this.colors];
         this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.tablePaste.hasPendingInput(controller.source.id) && this.review?.panes.working.activity().input !== "host-insertion"
-            && ![...this.mounted.values()].some(value => value.editor.activity().input === "host-insertion"),
-            documentId => this.selections.get("primary")?.get(documentId) ?? this.selections.get("comparison")?.get(documentId) ?? this.selections.get("secondary")?.get(documentId));
+            && ![...this.mounted.values()].some(value => value.editor.activity().input === "host-insertion"));
         this.stopDocumentCleanup = controller.registerDetachedDocumentCleanup(documentId => {
             if ([...this.mounted.values()].some(value => value.documentId === documentId) || this.review?.panes.working.view.documentId === documentId) return;
             for (const selections of this.selections.values()) { selections.get(documentId)?.dispose(); selections.delete(documentId); }

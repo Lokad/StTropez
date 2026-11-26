@@ -1,10 +1,9 @@
 import { CleanupScope } from "../../../examples/shared/cleanup-scope.ts";
 import type { HostController } from "./controller.ts";
 import type { ViewBindings } from "./bindings.ts";
-import type { HostDraftRecovery } from "./draft-recovery.ts";
 
 type HostOwners = Readonly<{ controller: Pick<HostController, "startBackground" | "recover" | "dispose">;
-    bindings: Pick<ViewBindings, "dispose">; draft?: Pick<HostDraftRecovery, "dispose">;
+    bindings: Pick<ViewBindings, "dispose">;
     mount: () => void; unmount: () => void; reportError?: (error: unknown) => void }>;
 
 /** Host startup, recovery and final ownership. Fixture installation never starts the application. */
@@ -21,9 +20,8 @@ export class HostLifecycle {
     private disposal: Promise<void> | undefined;
     constructor(page: EventTarget, recoveryButton: EventTarget, owners: HostOwners) {
         this.page = page; this.recoveryButton = recoveryButton; this.owners = owners;
-        // Start cleanup in reverse order: listeners, views, bindings, resources, drafts, commands.
+        // Start cleanup in reverse order: listeners, views, bindings, resources, commands.
         this.cleanup.defer(() => { this.pending.push(owners.controller.dispose()); });
-        this.cleanup.defer(() => { if (owners.draft) this.pending.push(owners.draft.dispose()); });
         this.cleanup.defer(this.fixtures.dispose);
         this.cleanup.defer(() => owners.bindings.dispose());
         this.cleanup.defer(() => owners.unmount());

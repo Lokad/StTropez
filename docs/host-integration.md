@@ -170,7 +170,7 @@ peer draft survives. Notify peer pages.
 Show the validated draft beside the loaded file. On confirmation recheck identity, revision, server version
 and permission. Restore in one Undo step against the saved baseline. Before close, check uncovered edits,
 pending input, composition and unfinished services. Store rejected input separately.
-[Draft example](examples.md#draft-checkpoints)
+[Playground recovery](examples.md#typescript-demo)
 
 ### Bounds and validation
 

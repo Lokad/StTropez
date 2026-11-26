@@ -1,6 +1,5 @@
 import { createWorkingSource } from "./working-source.ts";
 import type { Connection, HostController } from "./controller.ts";
-import type { HostDraftRecovery } from "./draft-recovery.ts";
 import type { ViewBindings } from "./bindings.ts";
 import type { HostLifecycle } from "./lifecycle.ts";
 import type { DocumentId, HistorySnapshot, ResourceId, Selection, TextEdit, TextResourceHandle } from "../../../src/index.ts";
@@ -9,7 +8,7 @@ import type { JsonValue } from "../../../src/protocol/index.ts";
 type TransferTargetSnapshot = Readonly<{ documentId: DocumentId; revision: number; text: string; history: HistorySnapshot }>;
 
 export function installHostHarness(controller: HostController, bindings: ViewBindings, mode: "plain" | "react",
-    lifecycle: HostLifecycle, commits: () => Readonly<{ form: number; metadata: number }>, draft?: HostDraftRecovery): void {
+    lifecycle: HostLifecycle, commits: () => Readonly<{ form: number; metadata: number }>): void {
     let transferTarget: TextResourceHandle | undefined;
     const inactive = new Set<TextResourceHandle>();
     const seedInactiveDocuments = () => {
@@ -36,7 +35,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
             history: controller.workspace.observeHistory(transferTarget.id).getSnapshot() };
     };
     const fixture = Object.freeze({ ready: true, get settled() { return !lifecycle.disposed && bindings.settled(); }, mode, snapshot: () => { const state = controller.debug(), views = bindings.debug();
-        return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions + views.navigation.subscriptions + views.project.subscriptions + views.signature.subscriptions + views.rename.subscriptions + views.actions.subscriptions + views.links.subscriptions + views.colors.subscriptions + (draft?.debug().subscriptions ?? 0), draft: draft?.debug() ?? null, bindings: views, commits: commits() }; },
+        return { ...state, hostSubscriptions: state.hostSubscriptions + views.language.subscriptions + views.tablePaste.subscriptions + views.domain.subscriptions + views.navigation.subscriptions + views.project.subscriptions + views.signature.subscriptions + views.rename.subscriptions + views.actions.subscriptions + views.links.subscriptions + views.colors.subscriptions, bindings: views, commits: commits() }; },
         editSource: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: controller.source.id,
             expectedRevision, edits, origin: "host", history: { kind: "live" } }),
         previewProposal: controller.previewProposalText, applyProposal: controller.applyProposal, runCapture: (index: number) => controller.runCapture(index), setPath: controller.setPath, recoveryText: () => controller.recoveryText(),
@@ -93,7 +92,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
     window.hostFixture = fixture;
 }
 declare global { interface Window { hostFixture: Readonly<{ ready: boolean; settled: boolean; mode: string; snapshot: () => ReturnType<HostController["debug"]> &
-    { bindings: ReturnType<ViewBindings["debug"]>; commits: Readonly<{ form: number; metadata: number }>; draft: ReturnType<HostDraftRecovery["debug"]> | null };
+    { bindings: ReturnType<ViewBindings["debug"]>; commits: Readonly<{ form: number; metadata: number }> };
     editSource: (expectedRevision: number, edits: readonly TextEdit[]) => ReturnType<HostController["workspace"]["edit"]>;
     seedInactiveDocuments: () => void;
     inactiveDocuments: () => readonly Readonly<{ id: ResourceId; revision: number; dirty: boolean }>[];

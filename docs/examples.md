@@ -58,11 +58,6 @@ To review a conflict, edit, choose **Simulate external source change**, save and
 **Review remote source** and **Finish remote review**. To keep your copy, choose **Save reviewed source**
 and **Finish save**.
 
-### Draft checkpoints
-
-Edit, choose **Keep recovery draft**, reload and select **Restore source draft** and
-**Confirm draft action**. Configuration and transfer form restore separately.
-
 ### Table conversion
 
 In **Host integrations · paste & notes**, choose **Code → Paste format → Insert example table**. Undo

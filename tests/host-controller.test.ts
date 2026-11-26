@@ -105,18 +105,18 @@ test("loaded drafts remain reachable until explicit discard and clean loads resp
         host.reopenPrimary(); assert.deepEqual(host.debug().diagnostics, before);
         host.beginDeferredLoad(); host.finishLoad(); const draft = loaded(), d = host.workspace.document(draft.id);
         host.workspace.edit({ documentId: d.id, expectedRevision: d.revision, origin: "human", edits: [{ from: d.buffer.length, to: d.buffer.length, insert: " unsaved café😀\r\n" }] });
-        const snapshot = host.workspace.document(d.id); host.reopenPrimary(); assert.equal(host.hasPendingRecoveryWork(), true);
+        const snapshot = host.workspace.document(d.id); host.reopenPrimary();
         host.beginDeferredLoad(); assert.equal(host.debug().loadPending, false); assert.equal(host.workspace.document(d.id), snapshot);
         host.reopenLoaded(); assert.equal(loaded(), draft); assert.equal(host.workspace.document(d.id), snapshot);
         host.openClosePrompt(); host.confirmClose(); host.reopenLoaded(); assert.equal(loaded(), draft);
         const pending = host.workspace.acquire(draft.id); host.discardLoadedSource(); assert.equal(draft.getSnapshot().state, "ready");
         host.workspace.edit({ documentId: d.id, expectedRevision: snapshot.revision, origin: "host", edits: [{ from: 0, to: 0, insert: "later correction " }] });
-        pending.release(); host.collectLoadedDocument(); assert.equal(draft.getSnapshot().state, "ready"); assert.equal(host.hasPendingRecoveryWork(), true);
+        pending.release(); host.collectLoadedDocument(); assert.equal(draft.getSnapshot().state, "ready");
         host.reopenLoaded(); assert.match(host.workspace.document(d.id).text(), /^later correction /);
         const stop = host.registerDetachedDocumentCleanup(id => { const current = host.workspace.document(id); host.workspace.edit({ documentId: id, expectedRevision: current.revision, origin: "host", edits: [{ from: 0, to: 0, insert: "cleanup correction " }] }); });
         try { host.discardLoadedSource(); assert.equal(draft.getSnapshot().state, "ready"); assert.match(host.workspace.document(d.id).text(), /^cleanup correction /); }
         finally { stop(); }
-        host.discardLoadedSource(); assert.equal(draft.getSnapshot().state, "released"); assert.equal(host.hasPendingRecoveryWork(), false);
+        host.discardLoadedSource(); assert.equal(draft.getSnapshot().state, "released");
         assert.deepEqual(host.debug().diagnostics, before); assert.equal(host.workspace.document(host.source.id).text(), "start");
         host.openClosePrompt(); host.confirmClose(); host.beginDeferredLoad(); assert.equal(host.debug().loadPending, true); host.finishLoad();
         host.openClosePrompt(); host.confirmClose(); host.reopenPrimary(); assert.deepEqual(host.debug().diagnostics, before);

@@ -2,7 +2,7 @@ import { createWorkingSource } from "./working-source.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 import { TextBuffer, Workspace } from "../../../src/index.ts";
 import { HostSaveQueue } from "../save-queue.ts";
-import type { ComparisonBaseline, DocumentId, DocumentView, ResourceId, TextEdit, TextResourceHandle } from "../../../src/index.ts";
+import type { ComparisonBaseline, DocumentId, ResourceId, TextEdit } from "../../../src/index.ts";
 import { HostSourceReview, type SaveConflict } from "./source-review.ts";
 import { HostLayout } from "./layout.ts";
 import { HostLoadedSource } from "./loaded-source.ts";
@@ -61,36 +61,25 @@ export class HostController {
     private readonly operations = new Set<Promise<unknown>>();
     private disposal: Promise<void> | undefined;
     private proposalTransactionMs = 0;
-    private readonly loadedSlot = new HostLoadedSource(this.workspace, this.presentation, {
-        canCaptureRecovery: () => this.canCaptureRecovery(), reopenPrimary: () => this.reopenPrimary(),
-    });
-    readonly loadedSource = this.loadedSlot.state;
+    private readonly loadedSlot = new HostLoadedSource(this.workspace, this.presentation);
     private timer: ReturnType<typeof setInterval> | undefined;
     private disposed = false;
     private reportedError: unknown;
     /** Original thrown value, including its cause/stack, for host diagnostics. Never frozen into UI state. */
     get lastError(): unknown { return this.reportedError; }
-    private readonly inputCaptureGuards = new Map<() => boolean, ((id: DocumentId) => DocumentView | undefined) | undefined>();
-    registerInputCaptureGuard(ready: () => boolean, view?: (id: DocumentId) => DocumentView | undefined): () => void {
+    private readonly inputCaptureGuards = new Set<() => boolean>();
+    registerInputCaptureGuard(ready: () => boolean): () => void {
         if (this.disposed) return () => {};
-        this.inputCaptureGuards.set(ready, view); return () => { this.inputCaptureGuards.delete(ready); };
-    }
-    captureRecoveryView(id: DocumentId): DocumentView | undefined {
-        for (const resolve of this.inputCaptureGuards.values()) { const view = resolve?.(id); if (view && this.workspace.ownsDocumentView(view)) return view; }
-        return undefined;
+        this.inputCaptureGuards.add(ready); return () => { this.inputCaptureGuards.delete(ready); };
     }
     registerDetachedDocumentCleanup(cleanup: (documentId: DocumentId) => void): () => void {
         return this.disposed ? () => {} : this.loadedSlot.registerDetachedCleanup(cleanup);
     }
     collectLoadedDocument(): void { if (!this.disposed) this.loadedSlot.collect(); }
     private sourceInputReady(): boolean {
-        if ([...this.inputCaptureGuards.keys()].every(ready => ready())) return true;
+        if ([...this.inputCaptureGuards].every(ready => ready())) return true;
         this.presentation.error("Wait for pending typing to finish, then try the source command again."); return false;
     }
-    canCaptureRecovery(): boolean { return !this.disposed && [...this.inputCaptureGuards.keys()].every(ready => ready()); }
-    hasPendingRecoveryWork(includeLoaded = true): boolean { return this.loadedSlot.hasPendingRecoveryWork(includeLoaded) || this.operations.size > 0; }
-    /** Recovery targets the host's temporary-source slot, never a surviving tab index. */
-    restoreLoadedDraft(text: string, generation: number, view?: DocumentView): TextResourceHandle | undefined { return this.loadedSlot.restoreDraft(text, generation, view); }
     setSecondary(documentId: DocumentId | null): void { this.presentation.setSecondary(documentId); }
     readonly openReview = (): void => this.safe(() => { this.presentation.navigate("review"); });
     readonly closeReview = (): void => this.safe(() => { this.proposal = undefined; this.sourceReview.dismiss(); this.presentation.navigate("workspace"); });
@@ -241,7 +230,7 @@ export class HostController {
             configuration: { id: this.connection.id, revision: form.revision, dirty: form.metadata.dirty, serverVersion: form.metadata.serverVersion, saveStatus: form.metadata.saveStatus }, configurationSave: this.configurationSave.debug(),
             proposalTransactionMs: this.proposalTransactionMs, pendingCommands: this.operations.size,
             inputRecovery: this.recoveryCell.get().items.map(item => ({ documentId: item.documentId, expectedRevision: item.expectedRevision, reason: item.reason, contextFrom: item.contextFrom, attemptedUnits: item.attemptedText.length })),
-            hostSubscriptions: this.presentation.subscriptions() + this.activityCell.count() + this.settingsCell.count() + this.loadedSlot.subscriptions() + this.recoveryCell.count() + this.sourceReview.subscriptions() + this.configurationSave.debug().subscriptions + this.transfer.save.debug().subscriptions + this.runResources.debug().subscriptions, inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.loadedSlot.pending, disposed: this.disposed };
+            hostSubscriptions: this.presentation.subscriptions() + this.activityCell.count() + this.settingsCell.count() + this.recoveryCell.count() + this.sourceReview.subscriptions() + this.configurationSave.debug().subscriptions + this.transfer.save.debug().subscriptions + this.runResources.debug().subscriptions, inputCaptureGuards: this.inputCaptureGuards.size, loadPending: this.loadedSlot.pending, disposed: this.disposed };
     }
     dispose(): Promise<void> {
         if (this.disposal) return this.disposal; this.disposed = true; this.proposal = undefined; this.sourceReview.dispose();

@@ -25,9 +25,6 @@ import { documentLinksPanelModel } from "./document-links-panel.ts";
 import { actionsPanelModel } from "./actions-panel.ts";
 import { renamePanelModel } from "./rename-panel.ts";
 import { signatureCommandsModel } from "./signature-panel.ts";
-import { HostDraftRecovery } from "./draft-recovery.ts";
-import { createBrowserDraftStore } from "../../../examples/shared/draft-store.ts";
-import { draftPanelModel } from "./draft-panel.ts";
 import { configurationFormModel, formSavePanelModel, formSaveKey } from "./configuration-panel.ts";
 import { transferFormModel, runPanelModel } from "./transfer-panel.ts";
 import "./style.css";
@@ -45,7 +42,6 @@ function LanguageField({ field }: { field: PanelTextField }) {
 
 export function startReactHost() {
 const controller = new HostController(), bindings = new ViewBindings(controller);
-const draft = new HostDraftRecovery(controller, createBrowserDraftStore(window)); draft.attachNavigation(window);
 const counters = { form: 0, metadata: 0 };
 const formCommitted = () => { counters.form++; };
 const metadataCommitted = () => { counters.metadata++; };
@@ -73,15 +69,6 @@ function SaveConflict() {
 function InputRecovery() {
     const model = inputRecoveryModel(useObserved(controller.recovery));
     return <section hidden={model.hidden} aria-label={model.label}><output>{model.status}</output>
-        <pre hidden={model.preview.hidden}>{model.preview.text}</pre></section>;
-}
-function DraftRecovery() {
-    const model = draftPanelModel(draft, useObserved(draft.state));
-    return <section className="host-language" aria-label={model.title}><h2>{model.title}</h2>
-        <output aria-label={model.status.label}>{model.status.text}</output>
-        <progress aria-label={model.progress.label} hidden={model.progress.hidden} />
-        <p>{model.protection}</p>
-        <div>{model.actions.map(action => <button key={action.label} disabled={action.disabled} onClick={action.invoke}>{action.label}</button>)}</div>
         <pre hidden={model.preview.hidden}>{model.preview.text}</pre></section>;
 }
 function ConfigurationSavePanel() {
@@ -176,7 +163,7 @@ function TablePasteTools() {
 function App() {
     return <><Commands /><Status /><Profiler id="metadata" onRender={metadataCommitted}><SourceMetadata /></Profiler><InputRecovery /><SaveConflict /><Scene /><SourceReview />
         <div ref={locationDockRef} className="host-locations" role="region" aria-label="Locations" /><NavigationTools /><DocumentLinksTools />
-        <ConfigurationSavePanel /><TransferWorkspace /><DraftRecovery /><LanguageTools /><TablePasteTools /><DomainTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentColorsTools /><SignatureTools /></>;
+        <ConfigurationSavePanel /><TransferWorkspace /><LanguageTools /><TablePasteTools /><DomainTools /><ProjectTools /><RenameTools /><ActionsTools /><DocumentColorsTools /><SignatureTools /></>;
 }
 const EditNoteList = memo(function EditNoteList({ label, page, notes }: EditNotes) {
     return <ol aria-label={label} start={page * editPageSize + 1}>{notes?.map((note, i) => <li key={i}><pre>{formatEditNote(note)}</pre></li>)}</ol>;
@@ -252,8 +239,8 @@ const mount = () => {
     // The explicit host lifecycle returns after refs and Strict Mode's replay are ready for input.
     flushSync(() => root!.render(<StrictMode><App /></StrictMode>));
 };
-const lifecycle = new HostLifecycle(window, document.getElementById("recover")!, { controller, bindings, draft, mount, unmount });
+const lifecycle = new HostLifecycle(window, document.getElementById("recover")!, { controller, bindings, mount, unmount });
 lifecycle.start();
-installHostHarness(controller, bindings, "react", lifecycle, () => ({ ...counters }), draft);
+installHostHarness(controller, bindings, "react", lifecycle, () => ({ ...counters }));
 
 }

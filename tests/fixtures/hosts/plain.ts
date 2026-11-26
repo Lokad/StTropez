@@ -15,12 +15,10 @@ import { mountDocumentLinksPanel } from "./document-links-panel.ts";
 import { mountActionsPanel } from "./actions-panel.ts";
 import { mountRenamePanel } from "./rename-panel.ts";
 import { mountSignaturePanel } from "./signature-panel.ts";
-import type { HostDraftRecovery } from "./draft-recovery.ts";
-import { mountDraftPanel } from "./draft-panel.ts";
 import { configurationFormModel, formSaveKey, mountConfigurationPanel } from "./configuration-panel.ts";
 import { mountTransferPanel } from "./transfer-panel.ts";
 
-export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings, draft: HostDraftRecovery): () => void {
+export function mountPlain(host: HTMLElement, controller: HostController, bindings: ViewBindings): () => void {
     const listeners = new AbortController(), subscriptions: (() => void)[] = [];
     const nav = document.createElement("nav"); nav.setAttribute("aria-label", "Host commands");
     for (const action of actions(controller, bindings)) {
@@ -46,17 +44,15 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     const codeActions = document.createElement("section"); codeActions.className = "host-language";
     const links = document.createElement("section"); links.className = "host-language";
     const colors = document.createElement("section"); colors.className = "host-language";
-    const draftPanel = document.createElement("section"); draftPanel.className = "host-language";
     const configuration = document.createElement("section"); configuration.className = "host-language";
     const transfer = document.createElement("section"); transfer.className = "host-language";
     const locations = document.createElement("div"); locations.className = "host-locations";
     locations.setAttribute("role", "region"); locations.setAttribute("aria-label", "Locations");
     subscriptions.push(mountLocationsDock(locations, bindings));
-    host.replaceChildren(nav, status, recovery, conflict, scene, review, locations, navigation, links, configuration, transfer, draftPanel, language, tablePaste, domain, project, rename, codeActions, colors, modal);
+    host.replaceChildren(nav, status, recovery, conflict, scene, review, locations, navigation, links, configuration, transfer, language, tablePaste, domain, project, rename, codeActions, colors, modal);
     const destroyConflict = mountSaveConflictPanel(conflict, controller);
     const destroyTransfer = mountTransferPanel(transfer, controller);
     const destroyConfiguration = mountConfigurationPanel(configuration, controller);
-    const destroyDraft = mountDraftPanel(draftPanel, draft);
     const destroyColors = mountDocumentColorsPanel(colors, bindings.colors);
     const destroyLinks = mountDocumentLinksPanel(links, bindings.links, false);
     const destroyActions = mountActionsPanel(codeActions, bindings.actions);
@@ -125,5 +121,5 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         controller.activity.subscribe(updateStatus), controller.recovery.subscribe(updateRecovery),
         controller.layout.subscribe(renderReview));
     renderScene(); renderReview(); updateStatus(); updateRecovery();
-    return () => { destroyConflict(); destroyTransfer(); destroyConfiguration(); destroyDraft(); destroyColors(); destroyLinks(); destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
+    return () => { destroyConflict(); destroyTransfer(); destroyConfiguration(); destroyColors(); destroyLinks(); destroyActions(); destroyRename(); destroySignature(); destroyProject(); destroyNavigation(); destroyDomain(); destroyTablePaste(); destroyLanguage(); destroyVariants?.(); unwatchForm?.(); subscriptions.forEach(unsubscribe => unsubscribe()); bindings.comparison(null); bindings.unmount(); sceneListeners?.abort(); listeners.abort(); host.replaceChildren(); };
 }
