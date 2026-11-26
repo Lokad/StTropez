@@ -22,7 +22,7 @@ const pageBudgets = {
     "docs/folding.md": 10_900,
     "docs/getting-started.md": 17_000,
     "docs/host-integration.md": 14_000,
-    "docs/language-features.md": 31_000,
+    "docs/language-features.md": 18_000,
     "docs/language-server.md": 19_000,
     "docs/packaging.md": 9_000,
     "docs/README.md": 11_000,
