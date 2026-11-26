@@ -729,9 +729,11 @@ test.describe("plain selected LSP features", () => {
         expect((await snapshot(page)).history).toEqual(before.history);
         await field(page).press("Escape"); await expect(popup).not.toBeVisible();
         await seed(page, "lookup(saMORE)", 9); await field(page).press("Control+Shift+Space"); await expect(popup).toBeVisible();
-        await field(page).press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
-        await field(page).press("Escape"); await expect(page.getByRole("option")).toHaveCount(0); await expect(popup).toBeVisible();
-        await field(page).press("Escape"); await expect(popup).not.toBeVisible();
+        await field(page).press("Control+Space");
+        await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
+        await expect(popup).toBeHidden();
+        await field(page).press("Escape");
+        await expect(page.getByRole("listbox", { name: "Completions" })).toBeHidden();
         replies.hold(); await field(page).press("Control+Shift+Space"); await expect.poll(replies.waiting).toBe(true); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(true);
         await field(page, "Configuration path").fill("while-signature.csv"); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(false);
         await expect.poll(replies.cancelled).toBe(true); await replies.release();

@@ -64,7 +64,6 @@ test(`plain reference Find preserves raw ranges, read-only controls and aligned 
     await expect(p.getByRole("textbox", { name: "Replacement", exact: true })).toBeDisabled();
     await expect(button(p, "Replace current")).toBeDisabled();
     await expect(button(p, "Replace all")).toBeDisabled();
-    await expect(button(p, "Request completion")).toBeDisabled();
     for (const name of ["Replace current", "Replace all"])
         await button(p, name).evaluate(node => node.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
     expect((await snapshot(p)).history).toEqual(before.history);

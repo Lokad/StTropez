@@ -85,28 +85,27 @@ test("domain annotation callbacks retain session and revision when another view 
     domainPanelModel(tools, { ...state, token: null, revision: null }).annotations.items()[0]!.invoke(); assert.equal(revealed.length, 2);
 });
 
-test("language result callbacks cannot follow a newer view or diagnostic batch while rendering stays snapshot-only", () => {
+test("diagnostic actions belong to the view and snapshot that rendered them", () => {
     type Snapshot = Parameters<typeof languagePanelModel>[1];
-    const chosen: number[] = [], inserted: string[] = [], diagnostics: number[] = [];
+    const diagnostics: number[] = [];
     const state: Snapshot = Object.freeze({ readOnlyReference: false, view: "primary", providerError: null, find: null, folds: null, foldMessage: "Captured folds", query: "sa", replacement: "sample", wholeWord: false, matchCase: true, regularExpression: false,
         provider: Object.freeze({ status: "ready" as const, reason: null, connected: true, pending: false, anchor: { revision: 0, from: 0, to: 2 }, choices: Object.freeze(["sample"]),
             choiceIndex: 0, completionDetail: "", completionIncomplete: false, resolving: false, snippet: null, omittedCompletions: [],
             diagnosticsPending: false, unversionedDiagnostics: [],
-            completionAt: (index: number) => ({ label: "sample", select: () => { chosen.push(index); return true; },
-                accept: (mode: "insert" | "replace") => { inserted.push(mode); return true; } }),
+            completionAt: () => undefined,
             diagnostics: Object.freeze([Object.freeze({ from: 5, to: 9, message: "First diagnostic", severity: null, source: null, select: () => { diagnostics.push(5); return true; } })]), diagnosticRevision: 1 }) });
     let current = state, reads = 0;
     const tools: Parameters<typeof languagePanelModel>[0] = { state: { getSnapshot: () => { reads++; return current; }, subscribe: () => noop }, toolsRef: noop, queryRef: noop, replacementRef: noop, keyFromTools: noop,
-        request: noop, cancel: noop, disconnect: noop, reconnect: noop, next: noop, previous: noop, replaceCurrent: noop, replaceAll: noop, cancelFind: noop, foldSelection: noop, expandFolds: noop, focusEditor: noop,
+        disconnect: noop, reconnect: noop, next: noop, previous: noop, replaceCurrent: noop, replaceAll: noop, cancelFind: noop, foldSelection: noop, expandFolds: noop, focusEditor: noop,
         setQuery: noop, setReplacement: noop, setWholeWord: noop, setMatchCase: noop, setRegularExpression: noop };
-    const first = languagePanelModel(tools, state), oldChoice = first.choices.items()[0]!, oldDiagnostic = first.diagnostics.items()[0]!;
+    const first = languagePanelModel(tools, state), oldDiagnostic = first.diagnostics.items()[0]!;
     assert.equal(reads, 0); assert.equal(first.folds.text, "Captured folds");
     current = { ...state, view: "secondary", provider: { ...state.provider!, diagnostics: [{ from: 10, to: 14, message: "Second diagnostic", severity: null, source: null, select: () => { diagnostics.push(10); return true; } }] } };
     const newer = languagePanelModel(tools, current);
-    oldChoice.invoke(); oldDiagnostic.invoke(); first.actions.find(action => action.label === "Insert completion")!.invoke();
-    assert.deepEqual(chosen, []); assert.deepEqual(diagnostics, []); assert.deepEqual(inserted, []);
-    newer.choices.items()[0]!.invoke(); newer.diagnostics.items()[0]!.invoke(); newer.actions.find(action => action.label === "Insert completion")!.invoke();
-    assert.deepEqual(chosen, [0]); assert.deepEqual(diagnostics, [10]); assert.deepEqual(inserted, ["insert"]);
+    oldDiagnostic.invoke();
+    assert.deepEqual(diagnostics, []);
+    newer.diagnostics.items()[0]!.invoke();
+    assert.deepEqual(diagnostics, [10]);
     const oldCurrentDiagnostic = newer.diagnostics.items()[0]!; current = { ...current, query: "changed" }; const status = languagePanelModel(tools, current);
     assert.equal(status.diagnostics.items()[0]!.key, oldCurrentDiagnostic.key); oldCurrentDiagnostic.invoke(); assert.deepEqual(diagnostics, [10]);
     status.diagnostics.items()[0]!.invoke(); assert.deepEqual(diagnostics, [10, 10], "retained rows renew their activation snapshot");

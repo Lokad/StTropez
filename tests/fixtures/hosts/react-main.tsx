@@ -15,7 +15,6 @@ import { variantPanelModel } from "./variant-panel.ts";
 import { installHostHarness } from "./harness.ts";
 import { HostLifecycle } from "./lifecycle.ts";
 import { languagePanelModel } from "./language-panel.ts";
-import { revealCompletionRow } from "../../../examples/shared/language/completion-list.ts";
 import { domainPanelModel } from "./domain-panel.ts";
 import { tablePastePanelModel } from "./table-panel.ts";
 import { navigationPanelModel } from "./navigation-panel.ts";
@@ -151,15 +150,14 @@ function LanguageTools() {
     const tools = bindings.language, model = languagePanelModel(tools, useObserved(tools.state));
     return <section ref={model.bind} onKeyDown={event => model.key(event.nativeEvent)} className="host-language" aria-label={model.label}><h2>{model.title}</h2>
         <p>{model.help}</p><output aria-label={model.status.label}>{model.status.text}</output>
-        <ul role="listbox" aria-label={model.choices.label} onPointerDown={event => event.preventDefault()}>{model.choices.items().map((row, index) => <li key={row.key} role="option" aria-selected={index === model.choices.selected} ref={index === model.choices.selected ? revealCompletionRow : undefined}><button onClick={row.invoke}>{row.label}</button></li>)}</ul>
-        <pre aria-label={model.detail.label}>{model.detail.text}</pre><output aria-label={model.diagnosticStatus.label}>{model.diagnosticStatus.text}</output>
+        <output aria-label={model.diagnosticStatus.label}>{model.diagnosticStatus.text}</output>
         <ul aria-label={model.diagnostics.label} onPointerDown={event => event.preventDefault()}>{model.diagnostics.items().map(row => <li key={row.key}><button onClick={row.invoke}>{row.label}</button></li>)}</ul>
         <ul aria-label={model.uncertain.label}>{model.uncertain.items().map((message, index) => <li key={index}>{message}</li>)}</ul>
         <label>{model.query.label}<input ref={model.query.bind} value={model.query.value} onChange={event => model.query.change(event.currentTarget.value)} /></label>
         <label>{model.replacement.label}<input ref={model.replacement.bind} disabled={model.replacement.disabled} value={model.replacement.value} onChange={event => model.replacement.change(event.currentTarget.value)} /></label>
         {model.options.map(option => <label key={option.label}><input type="checkbox" checked={option.checked} onChange={event => option.change(event.currentTarget.checked)} />{option.label}</label>)}
         <output aria-label={model.find.label}>{model.find.text}</output><output aria-label={model.folds.label}>{model.folds.text}</output>
-        <div>{model.actions.map(action => <button key={action.label} onPointerDown={action.keepEditorFocus ? event => event.preventDefault() : undefined} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
+        <div>{model.actions.map(action => <button key={action.label} onClick={action.invoke} disabled={action.disabled}>{action.label}</button>)}</div>
     </section>;
 }
 function SignatureTools() {

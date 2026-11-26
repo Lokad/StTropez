@@ -4,7 +4,6 @@ import { bindFindCommands, createFindController, createRegexFindBackend } from "
 import type { TextEditor, FindController, FindSnapshot } from "../../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../../src/index.ts";
 import type { LspProviderController, LspProviderFactory } from "../language/lsp-provider-controller.ts";
-import { completionPageSize } from "../../../examples/shared/language/completion-list.ts";
 import { EditingPresentation } from "../language/presentation.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 
@@ -71,8 +70,7 @@ export class HostLanguageTools {
     private attachProvider(session: Session): void {
         const { editor } = session;
         let provider: LspProviderController;
-        try { provider = this.providerFactory(editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId),
-            getPageSize: () => completionPageSize(this.toolsElement?.querySelector<HTMLElement>('[role="listbox"]')) }); }
+        try { provider = this.providerFactory(editor, { autoConnect: false, canCapture: () => this.canCapture(editor.view.documentId) }); }
         catch (error) {
             // Provider construction owns its partial cleanup. Local editing and Find keep their view.
             session.providerError = error instanceof Error ? error.message : String(error);
@@ -244,7 +242,6 @@ export class HostLanguageTools {
         return session.find;
     }
     readonly request = (): void => { if (this.active) { this.activate(this.active); this.active.provider?.request(); } };
-    readonly cancel = (): void => { this.active?.provider?.cancel(); };
     readonly disconnect = (): void => { this.active?.provider?.disconnect(); };
     readonly reconnect = (): void => {
         const session = this.active; if (!session || session.reference) return;

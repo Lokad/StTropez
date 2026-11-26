@@ -5,7 +5,6 @@ import { publishFixtureDiagnostics, sourceDiagnosticUri } from "./fixture-diagno
 const snapshot = (page: Page) => page.evaluate(() => window.hostFixture.snapshot());
 const source = (page: Page) => page.evaluate(() => window.hostFixture.range(0, window.hostFixture.snapshot().source.length));
 const field = (page: Page) => page.getByRole("textbox", { name: "Primary source", exact: true });
-const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const provider = async (page: Page) => (await snapshot(page)).bindings.language.sessions.find(session => session.id === "primary")!.provider;
 async function seed(page: Page, text: string) {
     await page.evaluate(text => { const f = window.hostFixture, s = f.snapshot(); f.editSource(s.source.revision, [{ from: 0, to: s.source.length, insert: text }]); }, text);
@@ -110,7 +109,7 @@ test("pending LSP diagnostics remain painted and navigable while server analysis
         });
     });
     await page.goto("/hosts/plain/?language=lsp"); await expect(field(page)).toBeVisible(); await ready(page);
-    const original = "const saMORE = 1; // TODO\r\n"; await seed(page, original); await offer(page); await button(page, "Cancel request").click();
+    const original = "const saMORE = 1; // TODO\r\n"; await seed(page, original); await offer(page); await field(page).press("Escape");
     const diagnostic = page.getByLabel("Source diagnostics", { exact: true }).getByRole("button"), status = page.getByLabel("Diagnostic status", { exact: true });
     await expect(diagnostic).toHaveText("21: Resolve this placeholder.");
     await expect(page.locator('[aria-label="Left host pane"] .st-diagnostic')).toHaveText("TODO");
@@ -180,7 +179,7 @@ test("unsupported completion commands preserve usable choices without issuing a 
     const original = "const saMORE = 1;"; await seed(page, original);
     await expect.poll(async () => (await provider(page)).connected).toBe(true); await offer(page);
     await expect(page.getByRole("option")).toHaveCount(1); await expect(page.getByRole("option", { name: "sampleWithCommand", exact: true })).toHaveCount(0);
-    await button(page, "Replace completion").click(); await ready(page); expect(await source(page)).toBe("const sample = 1;");
+    await page.getByRole("option", { name: "sample", exact: true }).click(); await ready(page); expect(await source(page)).toBe("const sample = 1;");
     await field(page).press("Control+z"); expect(await source(page)).toBe(original);
     onlyCommands = true; await seed(page, original); await field(page).press("Control+Space");
     await expect(page.getByLabel("Language status", { exact: true })).toHaveText("1 unsupported completion choices omitted.");

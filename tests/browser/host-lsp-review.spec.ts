@@ -23,7 +23,7 @@ test.describe(`plain LSP review host`, () => {
         const working = field(page, "Comparison working source"); await working.press("Control+End"); await working.pressSequentially("\nconst saMORE"); for (let i = 0; i < 4; i++) await working.press("ArrowLeft");
         await working.press("Control+Space"); await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible(); await working.press("Alt+Enter"); await ready(page);
         const corrected = original + "\nconst sample"; expect(await source(page)).toBe(corrected); expect(await page.evaluate(text => window.hostFixture.referenceRange(0, text.length), remote)).toBe(remote);
-        await field(page, "Comparison baseline source").focus(); await expect(button(page, "Request completion")).toBeDisabled(); await expect(field(page, "Comparison baseline source")).toHaveAttribute("readonly", "");
+        await field(page, "Comparison baseline source").focus(); await field(page, "Comparison baseline source").press("Control+Space"); await expect(page.getByRole("listbox", { name: "Completions" })).toBeHidden(); await expect(field(page, "Comparison baseline source")).toHaveAttribute("readonly", "");
         await working.focus(); const identity = (await snapshot(page)).source.id; await button(page, "Save reviewed source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
         await working.press("Control+End"); await working.pressSequentially(" later"); await button(page, "Finish save").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(0); expect((await snapshot(page)).source.dirty).toBe(true);
         await button(page, "Run captured inputs").click(); await expect.poll(async () => (await snapshot(page)).pendingRuns.length).toBe(1);
@@ -33,13 +33,12 @@ test.describe(`plain LSP review host`, () => {
         const original = "const saMORE = 1; // TODO";
         await seed(page, original);
         await offer(page);
-        const option = page.getByRole("option", { name: "sample", exact: true }).getByRole("button");
+        const option = page.getByRole("option", { name: "sample", exact: true });
         const stale = await option.elementHandle();
         expect(stale).not.toBeNull();
         const before = await snapshot(page);
         await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
         await expect(page.getByRole("option")).toHaveCount(0);
-        await expect(button(page, "Replace completion")).toBeDisabled();
 
         await stale!.evaluate(node => (node as HTMLButtonElement).click());
         await stale!.dispose();

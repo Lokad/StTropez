@@ -4,7 +4,7 @@ import type { CompletionControllerOptions, TextEditor } from "../../../src/brows
 import { HostCell } from "../../../examples/shared/observable.ts";
 import type { LspScopeAccess, LspWorkspace } from "../../../src/protocol/index.ts";
 
-type ProviderOptions = Pick<CompletionControllerOptions, "autoConnect" | "canCapture" | "getPageSize">;
+type ProviderOptions = Pick<CompletionControllerOptions, "autoConnect" | "canCapture">;
 export type LspProviderOptions = ProviderOptions & Readonly<{ provider: LspWorkspace;
     beforeRequest?: (session: LspScopeAccess, configuration: FixturePolicy<"malformed" | "failure">) => Promise<unknown> }>;
 export type LspProviderController = ReturnType<typeof createLspProviderController>;
@@ -15,7 +15,7 @@ export function createLspProviderController(editor: TextEditor, options: LspProv
     const fixture = fixtureRequests<"malformed" | "failure">("fixture");
     const language = attachEditorLanguage(editor, options.provider, {
         diagnostics: options,
-        completion: { ...options, prepareCompletion: async session => {
+        completion: { ...options, list: true, prepareCompletion: async session => {
             const policy = fixture.take();
             await options.beforeRequest?.(session, policy);
         } },
