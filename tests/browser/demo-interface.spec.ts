@@ -1048,7 +1048,13 @@ test("view controls survive file switches and saved-reference replacement in bot
     const source = page.locator("#editor .st-viewport"), input = source.getByRole("textbox");
     await expect(source.locator(".st-current-line")).toHaveCount(1);
     const mounted = await source.elementHandle(), initialHeight = await source.evaluate(element => element.scrollHeight);
-    await page.locator("#view-menu summary").click();
+    const code = page.locator("#code-menu");
+    await code.locator("summary").press("Enter");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Tab");
+    await expect(page.locator("#view-menu summary")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(code).not.toHaveAttribute("open", "");
     for (const id of ["view-rulers", "view-ligatures", "view-trailing-space", "view-minimap"]) await page.locator(`#${id}`).check();
     await expect(source.locator(".st-column-ruler").first()).toBeVisible();
     await expect(source.locator(".st-minimap-marker")).toBeVisible();

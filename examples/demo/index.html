@@ -14,7 +14,7 @@
     <header><a class="brand" href="./">STTROPEZ<span>TypeScript editor</span></a>
         <div class="toolbar"><label>Example <select id="sample" disabled></select></label>
             <button id="find-toggle" title="Find (Ctrl/Cmd+F)">Find</button>
-            <details id="code-menu" class="toolbar-menu"><summary>Code</summary><div>
+            <details id="code-menu" class="toolbar-menu" name="toolbar"><summary>Code</summary><div>
                 <button id="complete" data-command="demo.language.complete" disabled></button>
                 <button id="inspect-type" data-command="demo.language.inspect" disabled></button>
                 <button id="signature" data-command="demo.language.signature" disabled></button>
@@ -43,7 +43,7 @@
                     <button id="host-annotate">Add source note</button>
                 </div>
             </div></details>
-            <details id="view-menu" class="toolbar-menu"><summary>View</summary><div>
+            <details id="view-menu" class="toolbar-menu" name="toolbar"><summary>View</summary><div>
                 <label class="menu-check"><input id="view-rulers" type="checkbox"> Rulers at 80 and 120</label>
                 <label class="menu-check"><input id="view-current-line" type="checkbox" checked> Highlight current line</label>
                 <label class="menu-check"><input id="view-ligatures" type="checkbox" checked> Font ligatures</label>
