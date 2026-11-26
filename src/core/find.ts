@@ -9,7 +9,8 @@ export type FindSearchCursor = Readonly<{ next: () => SearchStep | PromiseLike<S
 export type FindPlanStep = Readonly<{ done: boolean; edits: readonly TextEdit[] }>;
 export type FindPlanCursor = Readonly<{ next: () => FindPlanStep | PromiseLike<FindPlanStep>; dispose: () => void }>;
 /** One controller owns the backend until expiry/destruction. Disposal must be idempotent.
- * The backend produces one edit per indexed match, including no-ops. Only the controller commits. */
+ * Return one edit per indexed match, including no-ops. For an unindexed selection that does not
+ * match in context, finish with no edits. Only the controller commits. */
 export type FindBackend = Readonly<{ search: (capture: FindQueryCapture) => FindSearchCursor;
     replace: (capture: FindQueryCapture, replacement: string, range?: SearchMatch) => FindPlanCursor; dispose: () => void }>;
 
@@ -17,9 +18,9 @@ const planStepEdits = 1024;
 
 /** Assemble one captured plan. The owner supplies steps, cancels failed/stale work and commits
  * only a complete result. Accepted edits are copied before the producer can reuse its buffers. */
-export function createFindReplacementPlan(positions: FindIndex, total: number, range?: SearchMatch): (step: FindPlanStep) => readonly TextEdit[] | undefined {
+export function createFindReplacementPlan(positions: FindIndex, total: number, range?: SearchMatch, allowMiss = false) {
     const edits: TextEdit[] = [];
-    return result => {
+    return (result: FindPlanStep) => {
         if (result.edits.length > planStepEdits) throw new Error("Invalid replacement plan step.");
         for (const edit of result.edits) {
             const index = edits.length;
@@ -29,7 +30,7 @@ export function createFindReplacementPlan(positions: FindIndex, total: number, r
             edits.push(Object.freeze({ from: edit.from, to: edit.to, insert: edit.insert }));
         }
         if (!result.done) return;
-        if (edits.length !== total) throw new Error("Incomplete replacement plan.");
+        if (edits.length !== total && !(allowMiss && !edits.length)) throw new Error("Incomplete replacement plan.");
         return Object.freeze(edits);
     };
 }

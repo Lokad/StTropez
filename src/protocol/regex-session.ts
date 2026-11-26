@@ -11,13 +11,13 @@ function run(request: RegexRequest, text: string): RegexResult {
         for (const at of regexRanges(text, pattern, matchCase, wholeWord)) offsets.push(at.from, at.to);
         return { operation: "regex-matches", offsets: Uint32Array.from(offsets) };
     }
-    if (range && (splitsSurrogatePair(text, range.from) || splitsSurrogatePair(text, range.to)))
-        throw new RangeError("Captured regex range splits a Unicode character.");
     const limit = request.maxOutputUnits ?? regexSourceLimit;
     const parts: string[] = [];
     let inserted = 0;
     let removed = 0;
-    for (const match of regexMatches(text, pattern, matchCase, wholeWord, range?.from)) {
+    const matches = range && splitsSurrogatePair(text, range.from) ? []
+        : regexMatches(text, pattern, matchCase, wholeWord, range?.from);
+    for (const match of matches) {
         if (range && (match.from !== range.from || match.to !== range.to)) break;
         const insert = regexReplacement(text, match, replacement, limit - inserted);
         inserted += insert.length;
@@ -26,7 +26,6 @@ function run(request: RegexRequest, text: string): RegexResult {
         if (insert) parts.push(insert);
         if (range) break;
     }
-    if (range && !offsets.length) throw new RangeError("Captured regex match no longer qualifies.");
     if (text.length - removed + inserted > regexSourceLimit) throw new RangeError("Regex result exceeds the supported document size.");
     return { operation: "regex-edits", offsets: Uint32Array.from(offsets), insertions: parts.join("") };
 }

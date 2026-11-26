@@ -27,8 +27,12 @@ test("replacement checks a captured range and bounds expansion before returning 
     const start = { ...query, text: "😀xx", length: 4, replacement: "$&!", pattern: "x" };
     assert.deepEqual(session.receive(start), { id: 1, revision: 7, version, operation: "regex-edits",
         offsets: Uint32Array.of(2, 3, 2, 3, 4, 4), insertions: "x!x!" });
-    for (const value of [{ maxOutputUnits: 3 }, { range: { from: 0, to: 1 } }, { range: { from: 0, to: 2 } }])
-        assert.equal(session.receive({ ...start, ...value })?.operation, "regex-error");
+    for (const range of [{ from: 0, to: 1 }, { from: 1, to: 2 }, { from: 0, to: 2 }]) {
+        assert.deepEqual(session.receive({ ...start, range }), {
+            id: 1, revision: 7, version, operation: "regex-edits", offsets: new Uint32Array(), insertions: ""
+        });
+    }
+    assert.equal(session.receive({ ...start, maxOutputUnits: 3 })?.operation, "regex-error");
     const text = "x".repeat(512000);
     assert.equal(session.receive({ ...query, text, length: text.length, pattern: "$", replacement: "!" })?.operation, "regex-error");
     const invalid = session.receive({ ...start, pattern: "x".repeat(4000) + "\n(" });

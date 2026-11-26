@@ -155,7 +155,7 @@ test("invalid or stale worker replies cannot publish a completed search or repla
         [{}, { operation: "regex-matches", offsets: Uint32Array.of(0, 2, 9).subarray(0, 2) }],
         [{ replacement: "x" }, matches([0, 2])], [{ replacement: "x" }, plan([0, 2, 2], "x")],
         [{ replacement: "x" }, plan([0, 2, 1], "xx")], [{ replacement: "x" }, plan([0, 2, 1, 2, 3, 0], "x")],
-        [{ replacement: "x", range: { from: 0, to: 2 } }, plan([], "")],
+        [{ replacement: "x", range: { from: 0, to: 2 } }, plan([], "x")],
         [{ replacement: "x", range: { from: 0, to: 2 } }, plan([2, 3, 1], "x")],
         [{ replacement: "x", maxOutputUnits: 0 }, plan([0, 2, 1], "x")],
     ] as const) {

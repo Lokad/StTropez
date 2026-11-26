@@ -2,7 +2,7 @@ import { isNonNegativeInteger, isOffsetRange, isPositiveInteger } from "../core/
 import type { SearchMatch } from "../core/search.ts";
 
 /** Private structured-clone messages shared by the worker and its owning browser client. */
-export const regexProtocolVersion = 3;
+export const regexProtocolVersion = 4;
 export const regexSourceLimit = 512_000;
 export const regexErrorLimit = 256;
 export type RegexOptions = Readonly<{ replacement?: string; range?: SearchMatch; maxOutputUnits?: number }>;

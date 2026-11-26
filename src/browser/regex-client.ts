@@ -131,7 +131,6 @@ export function createRegexClient(host: Readonly<{ clock: Pick<Window, "setTimeo
                     });
                     if (active !== job) throw failure ?? new Error("Regex search cancelled.");
                     result = reply;
-                    if (range && reply.offsets.length !== 3) throw new Error("Invalid captured regex replacement range.");
                 }
                 const stride = replacing ? 3 : 2;
                 const end = Math.min(result.offsets.length, position + stride * (replacing ? 1024 : 8192));

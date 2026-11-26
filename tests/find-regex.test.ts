@@ -56,7 +56,8 @@ test(`unchanged regex transfer steps preserve snapshot identity and accumulated 
 function fixture(text: string, supplied = true) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "find", resource: "regex", variant: "working" }, "Source", { value: text });
     const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
-    let serial = 0, focused = 0, composing = false, holdSecond = false, failPlan = false, badPlan = false, backendDisposed = false;
+    let serial = 0, focused = 0, composing = false, holdSecond = false, failPlan = false, backendDisposed = false;
+    let badPlan: "range" | "empty" | undefined;
     const tasks = new Map<number, () => void>(), held: (() => void)[] = [], plans: { disposed: boolean; capture: FindQueryCapture }[] = [];
     const owner = Object.assign(new EventTarget(), { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ disposed: false, composing }),
@@ -73,7 +74,8 @@ function fixture(text: string, supplied = true) {
             const job = { disposed: false, capture }; plans.push(job); let index = 0, calls = 0;
             return { next: () => {
                 const value: FindPlanStep = index < edits.length ? { done: false, edits: [edits[index++]!] } : { done: true, edits: [] }; calls++;
-                if (calls === 1 && badPlan && value.edits.length) return Promise.resolve({ done: false, edits: [{ ...value.edits[0]!, from: 1 }] });
+                if (badPlan === "empty") return Promise.resolve({ done: true, edits: [] });
+                if (calls === 1 && badPlan === "range" && value.edits.length) return Promise.resolve({ done: false, edits: [{ ...value.edits[0]!, from: 1 }] });
                 if (calls === 2 && failPlan) return Promise.reject(new Error("Synthetic plan failure."));
                 if (calls === 2 && holdSecond) return new Promise<FindPlanStep>(resolve => held.push(() => resolve(value)));
                 return Promise.resolve(value);
@@ -85,7 +87,8 @@ function fixture(text: string, supplied = true) {
     const drain = async () => { for (let turns = 0; turns < 100; turns++) { await tick(); if (!tasks.size) return; } throw new Error("Find did not yield."); };
     return { workspace, source, tab, view, peer, owner, editor, find, plans, tick, drain,
         text: () => { const b = workspace.document(source.documentId).buffer; return b.slice(0, b.length); },
-        hold: () => { holdSecond = true; }, fail: () => { failPlan = true; }, tamper: () => { badPlan = true; }, focused: () => focused,
+        hold: () => { holdSecond = true; }, fail: () => { failPlan = true; }, focused: () => focused,
+        tamper: (kind: "range" | "empty") => { badPlan = kind; },
         compose: () => { composing = true; editor.startComposition(); },
         release: () => { held.splice(0).forEach(resolve => resolve()); },
         finish: () => { find.dispose(); held.splice(0).forEach(resolve => resolve()); view.dispose(); peer.dispose(); workspace.tabs.close(tab);
@@ -124,11 +127,18 @@ test("regex replacement keeps the configured flags and starts with the revealed 
         f.find.setFlags({ wholeWord: true }); f.find.setFlags({ matchCase: false }); f.find.setFlags({ regularExpression: true });
         f.find.setQuery("beta"); await f.drain();
         const state = f.find.getSnapshot(); assert.equal(state.wholeWord, true); assert.equal(state.matchCase, false); assert.equal(state.regularExpression, true); assert.equal(state.count, 2);
+        f.view.setSelection(0, { anchor: 7, head: 8 }); // Only the "e" in the first match.
+        assert.equal(f.find.replaceCurrent("x"), true);
+        await f.drain();
+        assert.equal(f.find.getSnapshot().reason, null);
+        assert.equal(f.view.getSnapshot().selection.anchor, 17);
+        assert.equal(f.workspace.document(f.source.documentId).revision, 0);
         f.view.setSelection(0, { anchor: 0, head: 5 });
         assert.equal(f.find.replaceCurrent("x"), true);
-        assert.equal(f.plans.length, 0);
+        assert.equal(f.view.getSnapshot().selection.anchor, 6);
+        assert.equal(f.workspace.document(f.source.documentId).revision, 0);
         assert.equal(f.find.replaceCurrent("x"), true); await f.drain();
-        assert.equal(f.plans.length, 1); assert.equal(f.text(), "alpha x beta_ BETA");
+        assert.equal(f.text(), "alpha x beta_ BETA");
         const selected = f.view.getSnapshot().selection; assert.deepEqual([selected.anchor, selected.head], [14, 18]);
         assert.equal(f.find.replaceCurrent("x"), true); await f.drain(); assert.equal(f.text(), "alpha x beta_ x");
     } finally { f.finish(); }
@@ -208,8 +218,14 @@ test("missing backend, syntax errors and failed or mismatched plans cannot publi
     } finally { f.finish(); }
     const wrong = fixture("cat cat");
     try {
-        wrong.find.setFlags({ regularExpression: true }); wrong.find.setQuery("cat"); await wrong.drain(); wrong.tamper(); wrong.find.replaceAll("dog"); await wrong.drain();
+        wrong.find.setFlags({ regularExpression: true }); wrong.find.setQuery("cat"); await wrong.drain(); wrong.tamper("range"); wrong.find.replaceAll("dog"); await wrong.drain();
         assert.equal(wrong.text(), "cat cat"); assert.match(wrong.find.getSnapshot().message, /captured search/); assert.equal(wrong.workspace.observeHistory(wrong.source.documentId).getSnapshot().undoDepth, 0);
         assert.equal(wrong.find.getSnapshot().reason, "replacement-failed");
+        wrong.view.setSelection(0, { anchor: 0, head: 3 });
+        wrong.tamper("empty");
+        wrong.find.replaceCurrent("dog");
+        await wrong.drain();
+        assert.equal(wrong.find.getSnapshot().reason, "replacement-failed");
+        assert.equal(wrong.workspace.document(wrong.source.documentId).revision, 0);
     } finally { wrong.finish(); }
 });

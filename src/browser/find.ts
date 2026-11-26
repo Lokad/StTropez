@@ -344,9 +344,9 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         const index = indexAt(low);
         if (matchesRange(index, low, high) && !(low === high && replacedHere())) return { from: low, to: high };
         if (state.status !== "ready") return undefined;
-        // A manually selected overlapping regex range is validated by the captured backend plan.
-        if (state.regularExpression) return high > low && (index < count && offsetAt(index) < high && endAt(index) > low
-            || index > 0 && endAt(index - 1) > low) ? { from: low, to: high } : undefined;
+        // A global scan can skip a second match starting inside the previous one.
+        if (state.regularExpression) return high > low && index > 0 && endAt(index - 1) > low
+            ? { from: low, to: high } : undefined;
         if (state.wholeWord) return undefined;
         const buffer = readDocument().buffer;
         if (state.matchCase && !state.query.includes("\n")) return high - low === state.query.length && buffer.slice(low, high) === state.query ? { from: low, to: high } : undefined;
@@ -469,7 +469,9 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         advanceAfterReplace = undefined;
         const request = state.regularExpression ? capture(state) : undefined;
         const positions = matches, total = range ? 1 : count;
-        const selectionSet = currentSelection(), acceptPlan = createFindReplacementPlan(positions, total, range);
+        const selectionSet = currentSelection();
+        const unindexed = !!request && !!range && !matchesRange(indexAt(range.from), range.from, range.to);
+        const acceptPlan = createFindReplacementPlan(positions, total, range, unindexed);
         // A synchronous literal replacement must leave an in-progress repair alive on a no-op.
         // Yielding plans cancel scans and retain authority until their captured commit.
         if (!immediate) stop();
@@ -495,6 +497,14 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             const edits = acceptPlan(result);
             if (!edits) { later(step); return; }
             const finished = planCursor; planCursor = undefined; finished?.dispose(); if (!current()) return;
+            if (!edits.length) {
+                stop();
+                scope.batch(() => {
+                    publish({ status: "ready" });
+                    if (focusGeneration === focusToken) next(1);
+                });
+                return;
+            }
             const head = range ? range.from + edits[0]!.insert.length : undefined, started = win.performance.now();
             const applied = workspace.edit({ documentId, expectedRevision: state.revision, origin: "human", edits, view: editor.view,
                 ...(head === undefined ? {} : { selection: { anchor: head, head } }), history: { kind: "replace" } });

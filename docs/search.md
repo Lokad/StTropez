@@ -21,11 +21,10 @@ export function mountSearch(toolbar: HTMLElement, pane: TextEditor, workerUrl: U
 }
 ```
 
-The bar follows editor focus. `setTarget(editor)` selects an attached pane for a host action.
-Read-only panes support navigation. Replace All in a writable pane creates one undo step.
-Editor disposal detaches that pane. Call `bar.dispose()` to remove the controls and shortcuts.
-Omit `createWorker` for literal-only search. Use `text` for control labels and tooltips,
-`status` for result messages, and `targetLabel` for pane names.
+The bar follows focus among attached panes. Use `setTarget(editor)` to choose one from a toolbar.
+Omit `createWorker` for literal search only. Customize labels and tooltips with `text`, result
+messages with `status` and pane names with `targetLabel`. Disposing a pane detaches it.
+Call `bar.dispose()` when you remove the bar.
 
 For custom controls, attach one Find controller per editor.
 
@@ -47,27 +46,26 @@ export function attachFind(
 }
 ```
 
-Use `manifest.json`’s `entries.regexWorker` to locate `browser/regex-worker.js`. Serve the worker
-from the same package version as the client. Literal search starts no worker. See
-[packaging](packaging.md).
+Serve the worker named by `entries.regexWorker` in the package manifest alongside the matching
+client. Literal search runs on the main thread. [Package contents](packaging.md)
 
-Subscribe to progress, counts and errors. Set the query and flags from your controls, call `next()`
-to navigate and wait for `ready` before calling `replaceAll(replacement)`. Disposing the editor also disposes its Find controller.
+Subscribe to the controller, update its query and flags from your controls, and enable Replace All
+once the snapshot is `ready`. Disposing the editor disposes its controller.
 
 ## Contract
 
 ### Options, matches and commands
 
-Pass the mounted editor to `createFindController`. Its lease keeps the document available. Commands stay with the
-original view after focus moves. When mounted by tab, closing or replacing that tab expires Find.
+Find holds a lease on the original document. Closing or replacing its tab expires the controller.
+Moving focus leaves its command target intact.
 
-Pass the backend and delay in `FindControllerOptions`. Change `FindFlags` with `setFlags(flags)`.
-Call `setHighlightMatches(false)` when closing a Find bar to remove the marks and dismiss its
-preview. Next and Previous use the same query, flags and index. Call `setHighlightMatches(true)`
-to show the marks again. Pass `highlightMatches: false` at construction for a bar that starts closed.
-`getSnapshot()` and `subscribe()` expose an immutable `FindSnapshot` with the query, flags,
-revision, status, count, scan frontier, source length, current match index, navigation wrap, match version and
-notice. The snapshot’s `highlightMatches` flag reports whether Find can paint and preview matches.
+`FindControllerOptions` sets the backend and delay. `setFlags(flags)` changes the search.
+Set `highlightMatches: false` for a bar that starts closed. `setHighlightMatches(false)` removes
+marks and dismisses the preview. Next and Previous use the existing index.
+
+Read the immutable `FindSnapshot` with `getSnapshot()` and observe changes with `subscribe()`.
+It includes the query, flags, revision, status, count, scan frontier, document length, current
+match, wrap direction, match version, highlight visibility and notice.
 
 | Option or command | Behavior |
 | --- | --- |
@@ -84,26 +82,21 @@ notice. The snapshot’s `highlightMatches` flag reports whether Find can paint 
 | `cancel()` | Clears the index; later typing does not resume the cancelled search |
 | `dispose()` | Releases work, subscriptions, focus tracking, backend and resource lease |
 
-Find paints matches on its editor and outlines the current match. Style them with
-`--st-search-match`, `--st-search-border` and `--st-search-current-border`. A zero-width match
-has a short mark at its offset. A matched character with no visible width has a vertical edge.
-Next and Previous leave a visible match in place. An offscreen match scrolls into view and a
-match inside a fold opens that fold.
-Preview prefers highlights inside the viewport, starting at the selection and wrapping in document
-order. When the next match is inside a fold whose header is on screen, preview opens that fold.
-If only part of a highlight is visible, preview brings the match into view. If all matches
-are offscreen, it reveals the next one.
-Preview preserves the source selection. Once you navigate to a match, appending or removing
-characters at the end of the query adjusts that selection if the new match starts at the same offset.
-Call `acceptPreview()` when closing a Find panel to select the displayed match. It returns
-`false` if there is no completed preview for the current selection. Next and Previous advance
-from the highlighted preview. Losing focus, scrolling, starting a new query
-or changing the selection, document or visible folds abandons a pending preview. After explicit navigation,
-`wrappedTo` reports `"start"`, `"end"` or `null`. The `current` index starts at zero.
-Without a preview, Find reports the match containing the caret or exactly covering the selection.
-Moving elsewhere clears the index. Moving the selection also clears the wrap notice.
-These updates preserve the selection and scroll position.
-A match inside a line ending appears at the end of the row and keeps its original UTF-16 offsets.
+Find outlines the current match. Set `--st-search-match`, `--st-search-border` and
+`--st-search-current-border` to theme the marks. A point gets a short mark. A character with
+no visible width gets a vertical edge. A matched line ending appears at the row end.
+
+Preview keeps the editor selection. It prefers a visible match in search order from the selection,
+opens a containing fold if its header is visible, and scrolls to a match if necessary. Next and
+Previous advance from the preview, unfold the match and reveal it. A match already in view stays
+in place. On close, `acceptPreview()` selects the completed preview or returns `false`. Focus loss,
+scrolling or a change to the query, selection, revision or visible folds cancels a pending preview.
+
+After navigation, editing the end of the query adjusts the selected match if its start is unchanged.
+`current` is zero-based. Without a preview it identifies the match containing the caret or exactly
+covering the selection, or is `null`. `wrappedTo` reports `"start"`, `"end"` or `null`. Moving the
+selection clears the wrap notice.
+
 `matchesIn(from, to, capture?)` returns frozen, unclipped UTF-16 ranges intersecting `[from, to)`.
 Point matches count at `from` and are excluded at `to`. An empty interval returns a point match at
 that offset, including EOF. Use ordered, nonnegative safe integers within the document.
@@ -219,39 +212,34 @@ split a surrogate pair. Boundary checks can inspect context outside the requeste
 
 ### When a match can be replaced
 
-Literal replacement inserts its argument literally, including `$&`, `$1` and raw newlines.
-Replace Current uses a matching selection (an indexed match for whole-word search), or replaces
-the next match in one press. It selects the following match once the updated index is ready,
-provided the view, query, selections, visible folds and focus are current. Navigation and replacement refuse active
-composition. You can search a read-only view. Replacement also needs edit permission and an unlocked resource.
+Literal replacement inserts the supplied text verbatim, including `$&`, `$1` and raw newlines.
+Replace Current acts on a selected or previewed match. With no qualifying selection or preview,
+the first press selects the next match and leaves the text alone. A confirmed literal replacement
+commits synchronously, even during index repair. An unchanged replacement lets repair continue.
 
-Find leaves keyboard focus in the control that invoked it. Enter and Shift+Enter can therefore
-navigate without leaving the query field. Moving focus to another control and back cancels a
-waiting navigation, including between controls in one shadow root. Call the editor’s `focus()`
-when closing your Find bar.
+After a replacement, Find selects the following match when the index is ready and the captured view,
+selection, focus and visible folds are current. Enter and Shift+Enter work from the query field.
+Moving focus between controls cancels waiting navigation, including within a shadow root.
+Custom bars can call `editor.focus()` on close.
 
-Replacing one confirmed literal match runs synchronously, even during index repair. If the replacement
-leaves the text unchanged, repair continues. For a replacement plan, the planner reuses the captured
-index, copies each edit and checks its range against the indexed match. You get the immutable edit
-list only when the backend has supplied every match.
+Replace All captures the revision, selections and tab generation. It checks each edit against the
+index and yields every 1,024 edits. A selection, query, flag or target change cancels the plan.
+An edit restarts the search. Composition blocks navigation and replacement. A read-only pane,
+loss of edit permission or an edit lock blocks replacement, even if permission returns before the
+next step.
 
-Replace All captures the document revision, all selections and any tab generation. Planning yields
-every 1,024 edits and checks read-only and composition state at each step. Changing the selection or
-query, starting composition, replacing the tab or disposing the editor cancels the plan. Editing
-restarts the search. Losing edit permission or acquiring an edit lease cancels the command even if
-permission returns before the next step. Retry from the current state.
-
-The final transaction rechecks authority, applies all replacements synchronously and creates one
-shared undo step. Its cost grows with the changed ranges. If your Replace All button disables
-itself, pass `{ focusEditor: true }` to focus the editor after commit. A control the user focused
-while waiting keeps focus.
+The complete plan commits synchronously in one shared Undo step after a final authority check.
+Pass `{ focusEditor: true }` to return focus from a disabled Replace All button. A control the
+user focused while waiting keeps focus.
 
 ### Regular expressions and worker limits
 
 Import `FindBackend`, `FindQueryCapture`, `FindSearchCursor`, `FindPlanCursor` and `FindPlanStep`
 from `sttropez`. The browser entry supplies `createRegexFindBackend` for hosts that use a worker.
-Give each controller its own backend with an idempotent `dispose`. A custom backend searches the
-captured revision and returns one edit per indexed match, including no-ops. The controller commits the plan.
+Each controller owns a backend with an idempotent `dispose`. Return one edit per indexed match
+in the captured revision, including no-ops. For a manually selected overlap, return one edit if
+the entire range matches in context, or finish with zero edits if it misses. The controller
+handles navigation and commits replacements.
 
 Patterns use native Unicode, global, multiline matching (`gmu`, adding `i` when match-case is
 cleared). Supply the pattern without slash delimiters. Captures, lookarounds, Unicode properties
@@ -261,10 +249,9 @@ LF or a complete CRLF, or at EOF. Bare CR, U+2028 and U+2029 do not create row b
 Explicit patterns address raw text. Whole-word wrapping uses the same code-word constituents
 as literal search and validates the bare pattern first.
 
-To search for empty positions, enter `(?:)`. An empty query clears Find. Next visits distinct matches
-and wraps. Replace Current accepts an indexed match or a manually selected nonempty overlap that
-matches in full source context. After replacing a zero-width match, the next Replace Current skips
-that occurrence. Undo restores all selections.
+To search for empty positions, enter `(?:)`. An empty query clears Find. Next visits distinct
+matches and wraps. After replacing a zero-width match, Replace Current skips that occurrence.
+Undo restores all selections.
 
 | Limit or setting | Contract |
 | --- | --- |
