@@ -4,7 +4,7 @@ import type { Affinity, PositionMapping } from "./positions.ts";
 import { unchangedPositionEdges } from "./positions.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import type { TextStep } from "./text-transaction.ts";
-import { splitsTextPair } from "./utf16.ts";
+import { splitsTextPair, splitsTextPairAt } from "./utf16.ts";
 
 export type Selection = Readonly<{ anchor: number; head: number; anchorAffinity?: Affinity; headAffinity?: Affinity }>;
 export type SelectionSet = Readonly<{ ranges: readonly Selection[]; primary: number }>;
@@ -145,7 +145,7 @@ export function mapReplacementSelections(length: number, selections: SelectionSe
             if (offset < edit.from) break;
             if (offset < edit.to) {
                 let relative = Math.min(offset - edit.from, edit.insert.length);
-                if (relative > 0 && relative < edit.insert.length && /[\ud800-\udbff]/.test(edit.insert[relative - 1]!) && /[\udc00-\udfff]/.test(edit.insert[relative]!)) relative--;
+                if (splitsTextPairAt(edit.insert, relative)) relative--;
                 return edit.from + delta + relative;
             }
             delta += edit.insert.length - (edit.to - edit.from);

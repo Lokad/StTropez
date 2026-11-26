@@ -183,11 +183,15 @@ test("seeded selection replacements and shared history match an independent stri
     view.dispose(); workspace.releaseResource(source.id, true);
 });
 
-test("replacement selection mapping retains direction, complete sets and name-relative positions without splitting a surrogate", () => {
+test("replacement selection mapping retains direction and relative positions without splitting text pairs", () => {
     const before = createSelectionSet(30, [{ anchor: 11, head: 8 }, { anchor: 30, head: 30 }], 0), edits = [{ from: 6, to: 15, insert: "inventory" }];
     assert.deepEqual(mapReplacementSelections(30, before, edits), before);
     const short = mapReplacementSelections(30, before, [{ ...edits[0]!, insert: "x" }]); assert.deepEqual(short.ranges.map(r => [r.anchor, r.head]), [[7, 7], [22, 22]]); assert.equal(short.primary, 0);
     const astral = mapReplacementSelections(10, createSelectionSet(10, [{ anchor: 1, head: 3 }]), [{ from: 0, to: 5, insert: "𐐀name" }]); assert.deepEqual(astral.ranges.map(r => [r.anchor, r.head]), [[0, 3]]);
+    const color = mapReplacementSelections(7, createSelectionSet(7, [{ anchor: 5, head: 5 }]), [
+        { from: 0, to: 7, insert: "rgb(\r\n  95, 174, 153)" },
+    ]);
+    assert.deepEqual(endpoints(color), [[4, 4]]);
     const across = createSelectionSet(20, [{ anchor: 10, head: 2 }, { anchor: 13, head: 13 }], 1);
     const mapped = mapReplacementSelections(20, across, [
         { from: 0, to: 0, insert: "##" }, { from: 3, to: 6, insert: "" },
