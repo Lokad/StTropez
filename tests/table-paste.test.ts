@@ -7,7 +7,7 @@ import { captureInsertion } from "../src/browser/captured-insertion.ts";
 
 function fixture() {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "table", resource: "source", variant: "working" }, "Source", { value: "abc\r\nxyz" });
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
     const timers = new Map<number, () => void>(); let serial = 0, composing = false;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) }, activeElement: null };
     const editor = { workspace, tab: workspace.tabs.capture(tab), view, signal: new AbortController().signal,

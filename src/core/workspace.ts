@@ -25,7 +25,6 @@ export type ResourceId = string & { readonly resourceId: unique symbol };
 export type DocumentId = string & { readonly documentId: unique symbol };
 export type TabId = string & { readonly tabId: unique symbol };
 export type ViewId = string & { readonly viewId: unique symbol };
-export type PaneId = string;
 const documentIdPrefix = "document-";
 
 /** Resolve a mount once. Only a real tab contributes presentation-generation authority. */
@@ -77,7 +76,7 @@ export type Surface = Readonly<
     { kind: "text"; documentId: DocumentId }
     | { kind: "panel"; resourceId: ResourceId; panelType: string }
 >;
-export type TabSnapshot = Readonly<{ id: TabId; paneId: PaneId; generation: number; surface: Surface; visibility: ResourceVisibility }>;
+export type TabSnapshot = Readonly<{ id: TabId; generation: number; surface: Surface }>;
 export type WorkspaceSnapshot = Readonly<{
     revision: number; resources: readonly ResourceMetadata[];
     documents: readonly DocumentSnapshot[];

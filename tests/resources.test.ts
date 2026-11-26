@@ -16,7 +16,7 @@ function fixture() {
     const workspace = new Workspace();
     const source = workspace.createTextResource({ scope: "scope", resource: "source", variant: "working" }, "Same label", { value: "abc", serverVersion: "v0" });
     const form = workspace.createResource<{ path: string; nested: { enabled: boolean } }>({ scope: "scope", resource: "configuration", variant: "working" }, "Same label", { value: { path: "in.csv", nested: { enabled: true } }, serverVersion: "c0" });
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left");
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId });
     const edit = (text: string, origin: "human" | "agent" | "host" = "human") => workspace.edit({ documentId: source.documentId,
         expectedRevision: workspace.document(source.documentId).revision, origin,
         edits: [{ from: 0, to: workspace.document(source.documentId).text().length, insert: text }] });
@@ -25,7 +25,7 @@ function fixture() {
 
 test("typed resources need no document, isolate scopes/variants and expose immutable content", () => {
     const { workspace, form } = fixture();
-    workspace.tabs.open({ kind: "panel", resourceId: form.id, panelType: "configuration" }, "right");
+    workspace.tabs.open({ kind: "panel", resourceId: form.id, panelType: "configuration" });
     assert.equal(workspace.getSnapshot().documents.length, 1);
     const value = { path: "other.csv", nested: { enabled: false } };
     workspace.updateResource(form, { expectedRevision: 0, value, origin: "human" });
@@ -97,23 +97,20 @@ test("typed array snapshots reject accessors without invoking code or publishing
 });
 
 test("internal resources keep captured ownership while workspace inventories contain only host resources", async () => {
-    const { workspace, source, form, tab } = fixture(), before = workspace.getSnapshot(), tabs = workspace.tabs.getSnapshot();
+    const { workspace, source, form } = fixture(), before = workspace.getSnapshot();
     const options = { visibility: "internal" as const }, buffer = TextBuffer.from("immutable reference");
     const reference = workspace.createTextResourceFromBuffer({ scope: "test", resource: "reference", variant: "one" }, "Reference",
         { buffer }, { edit: [], save: false }, options);
     const scratch = workspace.createTextResource({ scope: "test", resource: "scratch", variant: "one" }, "Scratch", { value: "x" }, undefined, options);
     const panel = workspace.createResource({ scope: "test", resource: "panel", variant: "one" }, "Panel", { value: { count: 0 } }, undefined, options);
-    const referenceTab = workspace.tabs.open({ kind: "text", documentId: reference.documentId }, "reference");
-    const panelTab = workspace.tabs.open({ kind: "panel", resourceId: panel.id, panelType: "temporary" }, "temporary");
+    const referenceTab = workspace.tabs.open({ kind: "text", documentId: reference.documentId });
+    const panelTab = workspace.tabs.open({ kind: "panel", resourceId: panel.id, panelType: "temporary" });
     const target = workspace.tabs.capture(referenceTab), resourceTarget = workspace.captureResource(reference.id);
-    assert.equal(workspace.tabs.getSnapshot(), tabs);
     const inventory = workspace.getSnapshot();
     assert.deepEqual(inventory.resources.map(resource => resource.id), [source.id, form.id]);
     assert.deepEqual(inventory.documents.map(document => document.id), [source.documentId]);
-    assert.deepEqual(tabs.map(tab => tab.id), [tab]);
     assert.equal(before.resources.length, 2);
     assert.equal(reference.metadata.getSnapshot().visibility, "internal");
-    assert.equal(workspace.tabs.resolve(target)?.visibility, "internal");
     assert.equal(workspace.resolveResource(resourceTarget), reference);
     assert.equal(workspace.document(reference.documentId).buffer, buffer);
     assert.equal(workspace.edit({ documentId: reference.documentId, expectedRevision: 0, edits: [{ from: 0, to: 0, insert: "x" }], origin: "human" }).applied, false);
@@ -123,10 +120,10 @@ test("internal resources keep captured ownership while workspace inventories con
     assert.equal(panel.metadata.getSnapshot().visibility, "internal");
     const view = workspace.createDocumentView(reference.documentId), lease = workspace.acquire(reference.id);
     let calls = 0, current = true;
-    const stop = workspace.tabs.subscribe(() => { calls++; current = !!workspace.tabs.resolve(target); assert.equal(workspace.tabs.getSnapshot(), tabs); });
+    const stop = workspace.tabs.subscribe(() => { calls++; current = !!workspace.tabs.resolve(target); });
     workspace.releaseResourceWhenUnowned(reference.id);
-    workspace.tabs.move(referenceTab, "moved"); assert.equal(current, true);
-    workspace.tabs.close(referenceTab); assert.equal(current, false); assert.equal(calls, 2); stop();
+    assert.equal(current, true);
+    workspace.tabs.close(referenceTab); assert.equal(current, false); assert.equal(calls, 1); stop();
     await Promise.resolve(); assert.equal(reference.getSnapshot().state, "ready");
     lease.release(); await Promise.resolve(); assert.equal(reference.getSnapshot().state, "ready");
     view.dispose(); await Promise.resolve(); assert.equal(reference.getSnapshot().state, "released");
@@ -139,9 +136,9 @@ test("internal resources keep captured ownership while workspace inventories con
 test("a non-text panel traverses load failure, retry, ownership and release without allocating a buffer", () => {
     const workspace = new Workspace();
     const form = workspace.createResource<{ path: string }>({ scope: "probe", resource: "form", variant: "working" }, "Form");
-    const tab = workspace.tabs.open({ kind: "panel", resourceId: form.id, panelType: "form" }, "left");
+    const tab = workspace.tabs.open({ kind: "panel", resourceId: form.id, panelType: "form" });
     const first = workspace.beginLoad(form);
-    workspace.tabs.move(tab, "right"); assert.equal(first.fail("Temporary failure"), true);
+    assert.equal(first.fail("Temporary failure"), true);
     assert.equal(form.getSnapshot().state, "failed"); assert.equal(workspace.getSnapshot().documents.length, 0);
     workspace.beginLoad(form).dispose();
     assert.equal(form.metadata.getSnapshot().failure, "Temporary failure");
@@ -219,7 +216,7 @@ test("resource-key allocation and duplicate checks do not traverse the workspace
 test("loads distinguish readiness, ignore superseded responses and release ownership on disposal", () => {
     const workspace = new Workspace();
     const handle = workspace.createTextResource({ scope: "probe", resource: "loading", variant: "working" }, "Loading");
-    const tab = workspace.tabs.open({ kind: "text", documentId: handle.documentId }, "left");
+    const tab = workspace.tabs.open({ kind: "text", documentId: handle.documentId });
     assert.equal(handle.getSnapshot().state, "loading");
     assert.throws(() => workspace.document(handle.documentId));
     assert.equal(workspace.edit({ documentId: handle.documentId, expectedRevision: 0, origin: "human", edits: [] }).applied, false);
@@ -227,13 +224,13 @@ test("loads distinguish readiness, ignore superseded responses and release owner
     assert.equal(handle.getSnapshot().state, "failed"); assert.ok(handle.metadata.getSnapshot().failure);
     abandoned.dispose(); assert.equal(workspace.ownership(handle.id).leases, 0);
     const first = workspace.beginLoad(handle), second = workspace.beginLoad(handle);
-    workspace.tabs.move(tab, "right"); workspace.tabs.close(tab);
+    workspace.tabs.close(tab);
     assert.equal(workspace.ownership(handle.id).leases, 1);
     assert.throws(() => workspace.releaseResource(handle.id));
     assert.equal(second.fail("Synthetic failure"), true);
     assert.equal(handle.getSnapshot().state, "failed");
     const retry = workspace.beginLoad(handle);
-    const reopened = workspace.tabs.open({ kind: "text", documentId: handle.documentId }, "right");
+    const reopened = workspace.tabs.open({ kind: "text", documentId: handle.documentId });
     assert.equal(retry.accept({ value: "ready", serverVersion: "v1" }), true);
     assert.equal(first.accept({ value: "stale", serverVersion: "old" }), false);
     const interrupted = workspace.beginLoad(handle);
@@ -309,7 +306,7 @@ test("scoped subscriptions keep unrelated handles and metadata stable, deliver d
     const write = (insert: string) => workspace.edit({ documentId: source.documentId, expectedRevision: workspace.document(source.documentId).revision,
         origin: "human", edits: [{ from: 0, to: 1, insert }] });
     write("b"); // Make dirty before measuring unchanged metadata.
-    const meta = source.metadata.getSnapshot(), formSnapshot = form.getSnapshot(), tabs = workspace.tabs.getSnapshot();
+    const meta = source.metadata.getSnapshot(), formSnapshot = form.getSnapshot();
     let formCalls = 0, metadataCalls = 0, delivered = 0;
     form.subscribe(() => formCalls++); source.metadata.subscribe(() => metadataCalls++);
     const observations: string[] = [];
@@ -320,7 +317,7 @@ test("scoped subscriptions keep unrelated handles and metadata stable, deliver d
     assert.deepEqual(observations, ["c", "c"]);
     assert.equal(errors.length, 2);
     assert.equal(delivered, 1); assert.equal(formCalls, 0); assert.equal(metadataCalls, 0);
-    assert.equal(source.metadata.getSnapshot(), meta); assert.equal(form.getSnapshot(), formSnapshot); assert.equal(workspace.tabs.getSnapshot(), tabs);
+    assert.equal(source.metadata.getSnapshot(), meta); assert.equal(form.getSnapshot(), formSnapshot);
     unsubscribe(); write("d"); assert.equal(delivered, 1);
     assert.equal(workspace.document(source.documentId).text(), "d");
 });
@@ -329,7 +326,7 @@ test("deferred resource release follows final ownership and preserves later unsa
     const workspace = new Workspace(), keys = [workspace.createResourceKey("test", "display"), workspace.createResourceKey("test", "display")];
     assert.notDeepEqual(keys[0], keys[1]); assert.ok(Object.isFrozen(keys[0]));
     const source = workspace.createTextResource(keys[0]!, "Reference", { value: "base" }), target = workspace.captureResource(source.id);
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "reference"), view = workspace.createDocumentView(source.documentId), lease = workspace.acquire(source.id);
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }), view = workspace.createDocumentView(source.documentId), lease = workspace.acquire(source.id);
     workspace.releaseResourceWhenUnowned(source.id); view.dispose(); workspace.tabs.close(tab); await Promise.resolve();
     assert.equal(workspace.resolveResource(target), source); assert.equal(workspace.document(source.documentId).text(), "base");
     lease.release(); const replacementLease = workspace.acquire(source.id); await Promise.resolve();
@@ -388,7 +385,7 @@ test("two queued saves capture exact contents; canonical replies and close/reope
     const port = { save: (submission: SaveSubmission<string>) => { calls.push(submission); return responses[calls.length - 1]!.promise; } };
     edit("first"); const first = commands.save(workspace.captureSave(source), port);
     edit("second"); const second = commands.save(workspace.captureSave(source), port);
-    edit("human correction"); workspace.tabs.move(tab, "right"); workspace.tabs.close(tab);
+    edit("human correction"); workspace.tabs.close(tab);
     assert.throws(() => workspace.releaseResource(source.id, true));
     assert.throws(() => workspace.beginLoad(source));
     await Promise.resolve(); assert.equal(calls.length, 1); assert.equal(calls[0]!.value, "first");
@@ -398,7 +395,7 @@ test("two queued saves capture exact contents; canonical replies and close/reope
     if (receipt.kind === "saved") { assert.equal(receipt.receipt.submission.revision, 1); assert.equal(receipt.receipt.canonicalApplied, false); }
     await Promise.resolve();
     assert.equal(calls.length, 2); assert.equal(calls[1]!.value, "second"); assert.equal(calls[1]!.expectedServerVersion, "v1");
-    workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left");
+    workspace.tabs.open({ kind: "text", documentId: source.documentId });
     responses[1]!.resolve({ kind: "saved", serverVersion: "v2" }); await second;
     assert.equal(workspace.document(source.documentId).text(), "human correction");
     assert.equal(source.metadata.getSnapshot().dirty, true); assert.equal(source.metadata.getSnapshot().serverVersion, "v2");

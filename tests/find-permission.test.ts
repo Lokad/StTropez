@@ -7,7 +7,7 @@ import type { FindHost } from "../src/browser/find.ts";
 
 for (const change of ["permission", "read-only"] as const) test(`literal replacement respects ${change} changes and requires explicit retry`, () => {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "find", resource: "authority", variant: "working" }, "Source", { value: "cat cat" });
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId);
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }), view = workspace.createDocumentView(source.documentId);
     let serial = 0; const tasks = new Map<number, () => void>();
     const owner = Object.assign(new EventTarget(), { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ disposed: false, input: "idle" }),

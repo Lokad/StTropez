@@ -106,7 +106,7 @@ test("caseless repair cannot expose a clipped surrogate as a new literal match",
 function fixture(text: string, clock: Pick<Performance, "now"> = performance) {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
     const documentId = workspace.createDocument({ scope: "find", resource: "retention", variant: "working" }, "Source", text);
-    const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>(); let serial = 0;
+    const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>(); let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance: clock,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ input: "idle", disposed: false }), viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;

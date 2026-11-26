@@ -11,7 +11,7 @@ import { regexMatches, regexReplacement } from "../src/core/regex-search.ts";
 for (const terminal of ["ready", "failed", "cancelled"] as const)
 test(`unchanged regex transfer steps preserve snapshot identity and accumulated timing through ${terminal}`, async t => {
     const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "find", resource: "progress", variant: "working" }, "Source", "catcat");
-    const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>();
+    const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>();
     let serial = 0, now = 0, calls = 0, disposed = false, late: ((step: SearchStep) => void) | undefined;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance: { now: () => now },
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
@@ -55,7 +55,7 @@ test(`unchanged regex transfer steps preserve snapshot identity and accumulated 
 
 function fixture(text: string, supplied = true) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "find", resource: "regex", variant: "working" }, "Source", { value: text });
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
     let serial = 0, focused = 0, composing = false, holdSecond = false, failPlan = false, backendDisposed = false;
     let badPlan: "range" | "empty" | undefined;
     const tasks = new Map<number, () => void>(), held: (() => void)[] = [], plans: { disposed: boolean; capture: FindQueryCapture }[] = [];

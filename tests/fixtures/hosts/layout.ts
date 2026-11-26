@@ -18,9 +18,9 @@ export class HostLayout {
     private closeIfCurrent: (() => boolean) | undefined;
     constructor(workspace: Workspace, source: TextResourceHandle, configuration: ResourceId) {
         this.workspace = workspace; this.source = source; this.configuration = configuration;
-        this.primaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left");
-        this.secondaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "right");
-        this.formTab = workspace.tabs.open({ kind: "panel", resourceId: configuration, panelType: "configuration" }, "right");
+        this.primaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId });
+        this.secondaryTab = workspace.tabs.open({ kind: "text", documentId: source.documentId });
+        this.formTab = workspace.tabs.open({ kind: "panel", resourceId: configuration, panelType: "configuration" });
     }
     viewTab(id: "primary" | "secondary"): TabId { return id === "primary" ? this.primaryTab : this.secondaryTab; }
     presentation(): TabTarget { return this.workspace.tabs.capture(this.primaryTab); }
@@ -31,17 +31,17 @@ export class HostLayout {
     surface(primarySurface: "text" | "loading"): void { this.cell.set({ ...this.cell.get(), primarySurface }); }
     /** Select the captured tab before a caller begins its load; publish its surface afterwards. */
     targetText(documentId: DocumentId): TabTarget {
-        if (this.cell.get().primarySurface === "closed") this.primaryTab = this.workspace.tabs.open({ kind: "text", documentId }, this.cell.get().position);
+        if (this.cell.get().primarySurface === "closed") this.primaryTab = this.workspace.tabs.open({ kind: "text", documentId });
         else this.workspace.tabs.replace(this.primaryTab, { kind: "text", documentId });
         return this.presentation();
     }
     primaryContains(documentId: DocumentId): boolean {
-        const tab = this.workspace.tabs.getSnapshot().find(tab => tab.id === this.primaryTab);
+        if (this.cell.get().primarySurface === "closed") return false;
+        const tab = this.workspace.tabs.resolve(this.presentation());
         return tab?.surface.kind === "text" && tab.surface.documentId === documentId;
     }
     readonly move = (): void => {
         const position = this.cell.get().position === "left" ? "right" : "left";
-        if (this.cell.get().primarySurface !== "closed") this.workspace.tabs.move(this.primaryTab, position);
         this.cell.set({ ...this.cell.get(), position });
     };
     readonly toggleViews = (): void => { this.cell.set({ ...this.cell.get(), visible: !this.cell.get().visible }); };

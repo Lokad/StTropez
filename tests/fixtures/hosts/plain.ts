@@ -2,7 +2,7 @@ import { actions } from "./actions.ts";
 import { inputRecoveryModel, operationStatusModel, mountSaveConflictPanel } from "./operation-panels.ts";
 import type { HostController } from "./controller.ts";
 import type { ViewBindings } from "./bindings.ts";
-import { hostSceneModel } from "./scene-model.ts";
+import { readHostScene } from "./scene-model.ts";
 import { mountLanguagePanel } from "./language-panel.ts";
 import { mountVariantPanel } from "./variant-panel.ts";
 import { mountTablePastePanel } from "./table-panel.ts";
@@ -76,12 +76,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
     };
     let unwatchForm: (() => void) | undefined;
     let sceneListeners: AbortController | undefined;
-    const readScene = () => {
-        const layout = controller.layout.getSnapshot();
-        const tab = controller.workspace.tabs.getSnapshot().find(tab => tab.id === controller.viewTab("primary"));
-        const ready = tab?.surface.kind === "text" && controller.workspace.observeDocument(tab.surface.documentId).getSnapshot() !== undefined;
-        return hostSceneModel(layout, tab, ready, controller.source.documentId);
-    };
+    const readScene = () => readHostScene(controller, controller.layout.getSnapshot());
     let sceneKey: string | undefined;
     const renderScene = () => {
         const model = readScene(); modal.textContent = model.message;

@@ -9,7 +9,7 @@ import type { TextEditor } from "../src/browser/text-editor.ts";
 import { clientFixture } from "./helpers/lsp-client.ts";
 
 for (const kind of ["folding", "highlights"] as const) test(`${kind} commands reject listener reentry while internal revision refresh remains available`, async t => {
-    const f = clientFixture(t), tab = f.workspace.tabs.open({ kind: "text", documentId: f.source.documentId }, "source"), view = f.workspace.createDocumentView(f.source.documentId);
+    const f = clientFixture(t), tab = f.workspace.tabs.open({ kind: "text", documentId: f.source.documentId }), view = f.workspace.createDocumentView(f.source.documentId);
     const tasks = new Map<number, () => void>(); let serial = 0;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } };
     const registry = createCommandRegistry(false, () => true, () => () => true, () => editor);

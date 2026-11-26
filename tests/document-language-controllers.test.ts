@@ -14,7 +14,7 @@ async function fixture(t: TestContext) {
     const { workspace, provider } = f;
     const scope = provider.createScope();
     const binding = scope.attachDocument(f.source.documentId);
-    const tab = workspace.tabs.open({ kind: "text", documentId: f.source.documentId }, "source");
+    const tab = workspace.tabs.open({ kind: "text", documentId: f.source.documentId });
     const view = workspace.createDocumentView(f.source.documentId);
     const lifetime = new AbortController();
     const editor = {

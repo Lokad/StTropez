@@ -13,7 +13,7 @@ function fixture(t: TestContext) {
         uri === companion.language?.uri ? { document: companion } : undefined);
     const { workspace, provider, source, other } = f;
     companion = workspace.document(other.documentId);
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "source");
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId });
     const view = workspace.createDocumentView(source.documentId);
     const editor = { workspace, tab: workspace.tabs.capture(tab), view, ...editorState(), signal: new AbortController().signal,
         activity: () => ({ disposed: false, input: "idle" }), viewport: { revealOffset() {} }, focus() {},

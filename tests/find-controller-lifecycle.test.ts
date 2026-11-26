@@ -9,7 +9,7 @@ import type { FindHost } from "../src/browser/find.ts";
 test("controller and workspace notifications reject cross-owner writes through nested delivery", t => {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
     const documentId = workspace.createDocument({ scope: "find", resource: "notifications", variant: "working" }, "Source", "cat");
-    const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>();
+    const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>();
     let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
@@ -54,7 +54,7 @@ test("controller and workspace notifications reject cross-owner writes through n
 
 test("changing whole-word mode excludes selected substring matches", () => {
     const workspace = new Workspace(), original = "cat scatter cat_ cat", documentId = workspace.createDocument({ scope: "find", resource: "options", variant: "working" }, "Source", original);
-    const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId);
+    const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId);
     const tasks = new Map<number, () => void>(); let serial = 0, focused = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
@@ -92,7 +92,7 @@ test("changing whole-word mode excludes selected substring matches", () => {
 for (const lifetime of ["destroyed", "expired", "view-disposed"] as const) for (const composing of [false, true])
     test(`current replacement stays inert after ${lifetime} with composition ${composing}`, async t => {
         const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "find", resource: "source", variant: "working" }, "Source", "sample sample");
-        const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId, { anchor: 0, head: 6 });
+        const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId, { anchor: 0, head: 6 });
         const owner = Object.assign(new EventTarget(), { defaultView: { setTimeout: (work: () => void, delay: number) => Number(setTimeout(work, delay)), clearTimeout, performance } });
         // This headless facade exercises controller ownership and notifications. Real DOM/input remains browser coverage.
         let inactive = false;
@@ -124,7 +124,7 @@ for (const lifetime of ["destroyed", "expired", "view-disposed"] as const) for (
 
 test("case options retain raw Unicode matches and literal Replace All commits in one shared history entry", () => {
     const workspace = new Workspace(), original = "K k K_ 𐐀 𐐨 café café SS ß", documentId = workspace.createDocument({ scope: "find", resource: "case", variant: "working" }, "Source", original);
-    const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), peer = workspace.createDocumentView(documentId);
+    const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId), peer = workspace.createDocumentView(documentId);
     const tasks = new Map<number, () => void>(); let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });

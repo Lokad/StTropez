@@ -159,14 +159,14 @@ test("two view selections map independently and survive tab close/reopen and his
     const { workspace, source, document } = fixture("a😀bcdef");
     const primary = workspace.createDocumentView(source.documentId, { anchor: 3, head: 3 });
     const secondary = workspace.createDocumentView(source.documentId, { anchor: 7, head: 4 });
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left");
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId });
     const after: Selection = { anchor: 5, head: 5 };
     workspace.edit({ documentId: source.documentId, expectedRevision: 0, origin: "human", history: { kind: "typing", group: "one" }, view: primary,
         selection: after, edits: [{ from: 3, to: 3, insert: "XY" }] });
     assert.deepEqual([primary.getSnapshot().selection.anchor, primary.getSnapshot().selection.head], [5, 5]);
     assert.deepEqual([secondary.getSnapshot().selection.anchor, secondary.getSnapshot().selection.head], [9, 6]);
-    workspace.tabs.move(tab, "right"); workspace.tabs.close(tab); assert.throws(() => workspace.releaseResource(source.id, true));
-    const reopened = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left");
+    workspace.tabs.close(tab); assert.throws(() => workspace.releaseResource(source.id, true));
+    const reopened = workspace.tabs.open({ kind: "text", documentId: source.documentId });
     workspace.undo({ documentId: source.documentId, expectedRevision: document().revision });
     assert.equal(document().text(), "a😀bcdef"); assert.deepEqual([primary.getSnapshot().selection.anchor, primary.getSnapshot().selection.head], [3, 3]);
     assert.deepEqual([secondary.getSnapshot().selection.anchor, secondary.getSnapshot().selection.head], [7, 4]);

@@ -1,5 +1,5 @@
 import { HostCell } from "../../../examples/shared/observable.ts";
-import type { ResourceHandle, ResourceId, ResourceLease, TabId, TextResourceHandle, Workspace } from "../../../src/index.ts";
+import type { ResourceHandle, ResourceId, ResourceLease, TabTarget, TextResourceHandle, Workspace } from "../../../src/index.ts";
 import type { SubmittedRun } from "./fixture-services.ts";
 import type { Connection } from "./controller.ts";
 import type { TransferSettings } from "./transfers.ts";
@@ -25,7 +25,7 @@ export class RunResources {
     readonly state = this.cell.observable;
     private readonly resources = new Map<ResourceId, ResourceHandle<RunInput> | ResourceHandle<RunLog>>();
     private readonly pending = new Map<ResourceId, ResourceLease>();
-    private readonly tabs = new Map<ResourceId, TabId>();
+    private readonly tabs = new Map<ResourceId, TabTarget>();
     private serial = 0;
     private disposed = false;
     constructor(workspace: Workspace, source: TextResourceHandle, configuration: ResourceHandle<Connection>, transfer: ResourceHandle<TransferSettings>) {
@@ -61,7 +61,11 @@ export class RunResources {
     }
     readonly open = (id: ResourceId): void => {
         if (this.disposed || !this.resources.has(id) && ![this.source.id, this.configuration.id, this.transfer.id].includes(id)) return;
-        const tab = this.tabs.get(id); if (!tab || !this.workspace.tabs.getSnapshot().some(t => t.id === tab)) this.tabs.set(id, this.workspace.tabs.open({ kind: "panel", resourceId: id, panelType: "resource-inspection" }, "right"));
+        const target = this.tabs.get(id);
+        const tabs = this.workspace.tabs;
+        if (!target || !tabs.resolve(target)) {
+            this.tabs.set(id, tabs.capture(tabs.open({ kind: "panel", resourceId: id, panelType: "resource-inspection" })));
+        }
         this.cell.set({ ...this.cell.get(), selected: id, inspection: this.readInspection(id) });
     };
     capture(id: ResourceId): RunInput | null {
@@ -81,5 +85,5 @@ export class RunResources {
         return { id, title: current.metadata.title, text: `Current resource ${id} revision ${current.revision} at inspection. Refresh to inspect later edits; captured Run inputs remain separate.`, preview: current.state === "ready" ? JSON.stringify(current.value()).slice(0, 512) : null, links: [] };
     }
     debug() { return { runs: this.cell.get().runs, selected: this.cell.get().selected, pending: this.pending.size, subscriptions: this.cell.count(), disposed: this.disposed }; }
-    dispose(): void { if (this.disposed) return; this.disposed = true; for (const id of [...this.pending.keys()]) this.finish(id, "interrupted"); for (const tab of this.tabs.values()) this.workspace.tabs.close(tab); this.tabs.clear(); }
+    dispose(): void { if (this.disposed) return; this.disposed = true; for (const id of [...this.pending.keys()]) this.finish(id, "interrupted"); for (const tab of this.tabs.values()) if (this.workspace.tabs.resolve(tab)) this.workspace.tabs.close(tab.id); this.tabs.clear(); }
 }

@@ -6,7 +6,7 @@ import { mapComparisonHunks } from "../src/core/comparison-presentation.ts";
 import type { ComparisonController } from "../src/index.ts";
 function fixture(suffix = "") {
     const workspace = new Workspace(), resource = workspace.createTextResource({ scope: "test", resource: "working", variant: "source" }, "Working", { value: "first\nworking\nlast\n" + suffix, serverVersion: "saved-1" });
-    const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "main");
+    const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId });
     const reference = Object.freeze({ buffer: TextBuffer.from("first\nbaseline\nlast\n" + suffix), version: "reference-1" });
     const comparison = compareText(workspace, tab, reference);
     const edit = (insert: string) => workspace.edit({ documentId: resource.documentId, expectedRevision: workspace.document(resource.documentId).revision,
@@ -39,7 +39,7 @@ test("a comparison of two documents follows reference edits and rejects an older
 test("invalid comparison budgets preserve live work and the shared minimum can finish it", () => {
     const workspace = new Workspace(), prefix = "same\r\n".repeat(1000), reference = TextBuffer.from(prefix + "baseline\n");
     const resource = workspace.createTextResource({ scope: "test", resource: "budget", variant: "working" }, "Working", { value: prefix + "working\n" });
-    const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "main"), comparison = compareText(workspace, tab, { buffer: reference, version: "one" });
+    const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }), comparison = compareText(workspace, tab, { buffer: reference, version: "one" });
     let notifications = 0; const unsubscribe = comparison.subscribe(() => notifications++);
     const rejectInvalid = () => {
         const before = comparison.getSnapshot(), count = notifications;
@@ -63,12 +63,12 @@ test("invalid comparison budgets preserve live work and the shared minimum can f
 test("captured whole-review reversion preserves distant changes and complete shared history", () => {
     const workspace = new Workspace(), text = "first\r\n" + "unchanged value\r\n".repeat(10_000) + "last 😀\r", reference = TextBuffer.from(text);
     const resource = workspace.createTextResourceFromBuffer({ scope: "review", resource: "source", variant: "working" }, "Working", { buffer: reference, serverVersion: "saved-1" });
-    const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "main"), comparison = compareText(workspace, tab, { buffer: reference, version: "review-1" }), peer = workspace.createDocumentView(resource.documentId);
+    const tab = workspace.tabs.open({ kind: "text", documentId: resource.documentId }), comparison = compareText(workspace, tab, { buffer: reference, version: "review-1" }), peer = workspace.createDocumentView(resource.documentId);
     workspace.edit({ documentId: resource.documentId, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 5, insert: "different" }, { from: text.length - 8, to: text.length, insert: "tail" }] });
     ready(comparison); const buffer = workspace.document(resource.documentId).buffer;
     comparison.view.setSelections(1, [{ anchor: 8, head: 0 }, { anchor: 70_000, head: 70_003 }, { anchor: buffer.length, head: buffer.length }], 2);
     peer.setSelection(1, { anchor: 123456, head: 123460 }); const before = comparison.view.getSnapshot().selectionSet, peerBefore = peer.getSnapshot().selectionSet, history = workspace.observeHistory(resource.documentId).getSnapshot();
-    const ticket = comparison.beginReversion(); workspace.tabs.move(tab, "other"); assert.equal(ticket.isCurrent(), true); assert.equal(ticket.complete(), true);
+    const ticket = comparison.beginReversion(); assert.equal(ticket.isCurrent(), true); assert.equal(ticket.complete(), true);
     assert.equal(workspace.document(resource.documentId).buffer.equals(reference), true); assert.equal(workspace.observeHistory(resource.documentId).getSnapshot().undoDepth, history.undoDepth + 1);
 
     assert.equal(resource.metadata.getSnapshot().serverVersion, "saved-1"); assert.equal(resource.metadata.getSnapshot().dirty, false);
@@ -199,7 +199,7 @@ test("comparison observes its document, policy and tab rather than unrelated wor
     class ObservedWorkspace extends Workspace { reads = 0; override document(...args: Parameters<Workspace["document"]>) { this.reads++; return super.document(...args); } }
     const workspace = new ObservedWorkspace(), source = workspace.createTextResource({ scope: "review", resource: "own", variant: "source" }, "Own", { value: "working" });
     const other = workspace.createDocument({ scope: "review", resource: "other", variant: "source" }, "Other", "other");
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "main"), controller = compareText(workspace, tab, { buffer: TextBuffer.from("base"), version: "one" });
+    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }), controller = compareText(workspace, tab, { buffer: TextBuffer.from("base"), version: "one" });
     try {
         const captured = ready(controller), hunk = controller.hunkAt(0)!; workspace.reads = 0;
         workspace.edit({ documentId: other, expectedRevision: 0, origin: "host", edits: [{ from: 0, to: 0, insert: "x" }] });
@@ -238,9 +238,9 @@ test("same-lane and cross-lane races reject stale tickets, permission changes re
     comparison.dispose(); assert.equal(workspace.diagnostics().leases, 0);
 });
 
-test("captured presentation survives moves, expires on replacement, and disposal releases tickets", () => {
+test("captured presentation expires on replacement and disposal releases tickets", () => {
     const { workspace, resource, tab, comparison } = fixture(), ticket = comparison.beginAcceptance();
-    workspace.tabs.move(tab, "other"); assert.equal(ticket.isCurrent(), true);
+    assert.equal(ticket.isCurrent(), true);
     const other = workspace.createDocument({ scope: "test", resource: "other", variant: "source" }, "Other", "other");
     workspace.tabs.replace(tab, { kind: "text", documentId: other });
     assert.equal(comparison.getSnapshot().status, "expired"); assert.equal(comparison.getSnapshot().baseline, null);

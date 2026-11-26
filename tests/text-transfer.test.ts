@@ -6,7 +6,7 @@ import { applyTextDrop, captureTextTransfer } from "../src/browser/text-transfer
 function fixture(value: string, other = "target") {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "transfer", resource: "source", variant: "working" }, "Source", { value });
     const destination = workspace.createTextResource({ scope: "transfer", resource: "target", variant: "working" }, "Target", { value: other });
-    const sourceTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "source"), targetTab = workspace.tabs.open({ kind: "text", documentId: destination.documentId }, "target");
+    const sourceTab = workspace.tabs.open({ kind: "text", documentId: source.documentId }), targetTab = workspace.tabs.open({ kind: "text", documentId: destination.documentId });
     const sourceView = workspace.createDocumentView(source.documentId), targetView = workspace.createDocumentView(destination.documentId);
     return { workspace, source, destination, sourceTab, targetTab, sourceView, targetView,
         text: (id = source.documentId) => { const b = workspace.document(id).buffer; return b.slice(0, b.length); },

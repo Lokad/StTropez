@@ -10,7 +10,7 @@ import { clientFixture, settled } from "./helpers/lsp-client.ts";
 async function fixture(t: TestContext, text: string, diagnostics?: HoverDiagnostics) {
     const f = clientFixture(t), { workspace, provider } = f, documentId = f.source.documentId;
     workspace.edit({ documentId, expectedRevision: f.document().revision, origin: "human", edits: [{ from: 0, to: f.document().buffer.length, insert: text }] });
-    const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId);
+    const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId);
     const timers = new Map<number, () => void>(); let serial = 0;
     const owner = { defaultView: { setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) } };
     const editor = { workspace, tab: workspace.tabs.capture(tab), view, signal: new AbortController().signal,

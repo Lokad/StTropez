@@ -8,7 +8,7 @@ import type { DocumentChange } from "../src/index.ts";
 function fixture() {
     const workspace = new Workspace();
     const documentId = workspace.createDocument({ scope: "demo", resource: "sample", variant: "working" }, "Sample", "abc");
-    const tabId = workspace.tabs.open({ kind: "text", documentId }, "left");
+    const tabId = workspace.tabs.open({ kind: "text", documentId });
     return { workspace, documentId, tabId };
 }
 
@@ -209,21 +209,15 @@ test("follow-up writes run after listeners in order and expire with their subscr
     first(); last(); assert.equal(workspace.diagnostics().subscriptions, 0);
 });
 
-test("delayed actions follow a moved tab and expire after replacement or close", async () => {
+test("delayed actions expire after replacement or close", () => {
     const { workspace, documentId, tabId } = fixture();
     const view = workspace.createDocumentView(documentId);
     const target = workspace.tabs.capture(tabId);
-    const before = workspace.tabs.getSnapshot();
-    let observed = workspace.tabs.resolve(target);
+    const before = workspace.tabs.resolve(target);
+    let observed = before;
     const stop = workspace.tabs.subscribe(() => { observed = workspace.tabs.resolve(target); });
-    workspace.tabs.move(tabId, "right");
-    await Promise.resolve();
-    assert.equal(workspace.tabs.resolve(target)?.paneId, "right");
-    assert.equal(workspace.ownsDocumentView(view, target), true);
-    assert.equal(observed, workspace.tabs.resolve(target)); assert.equal(before[0]!.paneId, "left");
-    const moved = workspace.tabs.getSnapshot();
     assert.throws(() => workspace.tabs.replace(tabId, { kind: "text", documentId: "missing" as typeof documentId }));
-    assert.equal(workspace.tabs.getSnapshot(), moved); assert.equal(workspace.tabs.resolve(target), moved[0]);
+    assert.equal(workspace.tabs.resolve(target), before);
     workspace.tabs.replace(tabId, { kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" });
     assert.equal(workspace.tabs.resolve(target), undefined); assert.equal(observed, undefined);
     const replacement = workspace.tabs.capture(tabId);
@@ -231,45 +225,12 @@ test("delayed actions follow a moved tab and expire after replacement or close",
     assert.equal(workspace.ownsDocumentView(view, target), false);
     assert.equal(workspace.ownsDocumentView(view, replacement), false);
     workspace.tabs.close(tabId);
-    const reopened = workspace.tabs.capture(workspace.tabs.open({ kind: "text", documentId }, "right"));
+    const reopened = workspace.tabs.capture(workspace.tabs.open({ kind: "text", documentId }));
     assert.equal(workspace.tabs.resolve(replacement), undefined);
     assert.equal(workspace.ownsDocumentView(view, reopened), true);
     view.dispose();
     assert.equal(workspace.ownsDocumentView(view, reopened), false);
     assert.throws(() => workspace.tabs.capture(tabId), /Unknown tab/); stop();
-});
-
-test("tab replacement follows resource visibility without reviving captured generations", () => {
-    const { workspace, documentId, tabId } = fixture(), before = workspace.tabs.getSnapshot(), original = workspace.tabs.capture(tabId);
-    const internal = workspace.createResource({ scope: "test", resource: "preview", variant: "internal" }, "Preview", { value: 0 }, undefined, { visibility: "internal" });
-    let observed = workspace.tabs.getSnapshot();
-    const stop = workspace.tabs.subscribe(() => { observed = workspace.tabs.getSnapshot(); });
-    workspace.tabs.replace(tabId, { kind: "panel", resourceId: internal.id, panelType: "preview" });
-    assert.equal(workspace.tabs.resolve(original), undefined); assert.deepEqual(observed, []);
-    const privateTarget = workspace.tabs.capture(tabId), privateSnapshot = workspace.tabs.resolve(privateTarget)!;
-    assert.equal(privateSnapshot.visibility, "internal"); assert.equal(privateSnapshot.generation, original.generation + 1);
-    workspace.tabs.move(tabId, "right"); assert.equal(workspace.tabs.resolve(privateTarget)?.paneId, "right"); assert.deepEqual(observed, []);
-    workspace.tabs.replace(tabId, { kind: "text", documentId });
-    const visible = workspace.tabs.getSnapshot();
-    assert.equal(workspace.tabs.resolve(privateTarget), undefined); assert.equal(observed, visible); assert.equal(visible.length, 1);
-    assert.equal(visible[0]!.visibility, "workspace"); assert.equal(visible[0]!.generation, original.generation + 2);
-    assert.equal(before[0]!.visibility, "workspace"); assert.equal(privateSnapshot.visibility, "internal");
-    stop(); workspace.tabs.close(tabId); workspace.releaseResource(internal.id); workspace.releaseDocument(documentId);
-});
-
-test("repeated tab captures and resolution do not scan the tab inventory", t => {
-    const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "tabs", resource: "shared", variant: "working" }, "Document", "x");
-    const tabs = Array.from({ length: 1000 }, () => workspace.tabs.open({ kind: "text", documentId }, "main"));
-    const id = tabs.at(-1)!, target = workspace.tabs.capture(id), snapshot = workspace.tabs.getSnapshot().at(-1);
-    const find = Array.prototype.find; let visits = 0, valid = true;
-    Array.prototype.find = function<T>(this: T[], predicate: (value: T, index: number, values: T[]) => unknown, thisArg?: unknown) {
-        return find.call(this, (value, index, values) => { visits++; return predicate.call(thisArg, value, index, values); });
-    };
-    try {
-        for (let i = 0; i < 100; i++) valid &&= workspace.tabs.capture(id).generation === target.generation && workspace.tabs.resolve(target) === snapshot;
-    } finally { Array.prototype.find = find; }
-    t.diagnostic(JSON.stringify({ captures: 100, resolutions: 100, predicateVisits: visits }));
-    assert.equal(valid, true); assert.equal(visits, 0);
 });
 
 test("guards cannot target a different workspace with identical local IDs", () => {
@@ -295,7 +256,7 @@ test("late agent edits cannot overwrite a newer human revision", () => {
 
 test("all surfaces share one document while ownership prevents premature release", () => {
     const { workspace, documentId, tabId } = fixture();
-    const panel = workspace.tabs.open({ kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" }, "right");
+    const panel = workspace.tabs.open({ kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" });
     workspace.tabs.close(tabId);
     assert.throws(() => workspace.releaseDocument(documentId));
     workspace.tabs.close(panel);
@@ -318,7 +279,7 @@ test("snapshots are immutable, stable between changes and notify subscribers onc
     assert.equal(before.documents[0]?.text(), "abc");
     assert.ok(Object.isFrozen(workspace.getSnapshot().documents));
     unsubscribe(); stopDocument();
-    workspace.tabs.move(workspace.tabs.getSnapshot()[0]!.id, "other");
+    workspace.edit({ documentId, expectedRevision: 1, origin: "host", edits: [{ from: 0, to: 1, insert: "B" }] });
     assert.equal(calls, 1);
 });
 

@@ -4,30 +4,20 @@
 
 ## Use
 
-Open a file and a settings panel. Mount the text tab with the
-[editor](getting-started.md#open-the-first-editor). Change panel values with `updateResource`.
+Create a text resource and pass its document ID to the [editor](getting-started.md#open-the-first-editor).
+The host owns its panes and tab list. Retain the document view to restore a pane after remounting.
 
 ```ts
 import { Workspace } from "sttropez";
 
-export function createWorkset() {
+export function openFile() {
     const workspace = new Workspace();
     const source = workspace.createTextResource(
         { scope: "project", resource: "source.ts", variant: "working" },
         "Source", { value: "const value = 1;\n", serverVersion: "source-v1" }, undefined,
         { language: { uri: "project:source.ts", languageId: "typescript" } }
     );
-    const configuration = workspace.createResource(
-        { scope: "project", resource: "configuration", variant: "working" },
-        "Configuration", { value: { limit: 100 }, serverVersion: "config-v1" }
-    );
-    const sourceTab = workspace.tabs.open(
-        { kind: "text", documentId: source.documentId }, "main"
-    );
-    const configurationTab = workspace.tabs.open(
-        { kind: "panel", resourceId: configuration.id, panelType: "configuration" }, "side"
-    );
-    return { workspace, source, configuration, sourceTab, configurationTab };
+    return { workspace, source, view: workspace.createDocumentView(source.documentId) };
 }
 ```
 
@@ -39,8 +29,8 @@ A resource key groups scope, resource and variant. Reopening a released key give
 Across awaits, capture and resolve a `ResourceTarget`. Views of one `DocumentId` share text and history.
 Local revision tracks edits. Server version identifies the saved baseline.
 
-Use `tabs.capture(id)` before a delay and `tabs.resolve(target)` afterward. Moves preserve the target. Close
-or replacement expires it. `ownsDocumentView(view, target?)` checks workspace and optional tab.
+Use `tabs.capture(id)` before a delay and `tabs.resolve(target)` afterward. Closing or replacing the surface
+expires the target. `ownsDocumentView(view, target?)` checks workspace and optional tab.
 
 Read `getSnapshot()` or subscribe to `metadata`. `document(id)` requires ready text.
 `observeDocument(id).getSnapshot()` can return `undefined`. Read ranges through `buffer`.
@@ -63,7 +53,7 @@ it. `documentForUri(uri)` requires one exact, ready, visible match.
 
 ### Inventory visibility
 
-`"internal"` hides a resource and its tabs from public inventory. Captures, leases, lookup and diagnostics
+`"internal"` hides a resource from public inventory. Captures, leases, lookup and diagnostics
 can reach it. Its creator owns cleanup.
 
 ```ts

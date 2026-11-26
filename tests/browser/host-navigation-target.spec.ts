@@ -41,7 +41,7 @@ test("links and definitions retry a failed presentation and keep the requesting 
         const { mountDocumentLinksPanel } = await import(path + "linkPanel.js") as typeof import("../fixtures/hosts/document-links-panel.ts");
         const ws = new Workspace(), source = ws.createTextResource({ scope: "host", resource: "main", variant: "working" }, "Main",
             { value: "Currency" }, undefined, { language: { uri: "project:main", languageId: "generic" } });
-        const tab = ws.tabs.open({ kind: "text", documentId: source.documentId }, "Main");
+        const tab = ws.tabs.open({ kind: "text", documentId: source.documentId });
         const editor = mountTextEditor(document.getElementById("source")!, ws, tab, { ariaLabel: "Main" });
         const url = new URL("/lsp-fixture", location.href); url.protocol = "ws:";
         const provider = new BrowserLspWorkspace(ws, { connect: signal => openWebSocketTransport(url.href, { signal }),
@@ -57,7 +57,7 @@ test("links and definitions retry a failed presentation and keep the requesting 
             return destination = mountTextEditor(document.getElementById("destination")!, ws, id, { ariaLabel: label });
         } });
         const notes = ws.createTextResource({ scope: "host", resource: "notes", variant: "working" }, "Notes", { value: "Plain text" });
-        const notesTab = ws.tabs.open({ kind: "text", documentId: notes.documentId }, "Notes");
+        const notesTab = ws.tabs.open({ kind: "text", documentId: notes.documentId });
         const notesEditor = mountTextEditor(document.body.appendChild(document.createElement("div")), ws, notesTab, { ariaLabel: "Notes" });
         // The host closes an unrelated, non-language pane while the declaration lookup is in flight.
         const host = new HostNavigationTools(panes, { provider, prepare: () => async () => { notesEditor.dispose(); } });

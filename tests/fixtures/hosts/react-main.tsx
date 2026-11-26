@@ -10,7 +10,7 @@ import { HostController } from "./controller.ts";
 import { ViewBindings } from "./bindings.ts";
 import { actions } from "./actions.ts";
 import { inputRecoveryModel, operationStatusModel, saveConflictPanelModel } from "./operation-panels.ts";
-import { hostSceneModel } from "./scene-model.ts";
+import { readHostScene } from "./scene-model.ts";
 import { variantPanelModel } from "./variant-panel.ts";
 import { installHostHarness } from "./harness.ts";
 import { HostLifecycle } from "./lifecycle.ts";
@@ -122,10 +122,7 @@ function Form() {
         onChange={event => model.field.change(event.currentTarget.value)} /></label><p>{model.validation}</p></div> : <p>{model.status}</p>;
 }
 function useScene() {
-    const layout = useObserved(controller.layout), tabs = useObserved(controller.workspace.tabs);
-    const tab = tabs.find(candidate => candidate.id === controller.viewTab("primary"));
-    const ready = tab?.surface.kind === "text" && controller.workspace.observeDocument(tab.surface.documentId).getSnapshot() !== undefined;
-    return hostSceneModel(layout, tab, ready, controller.source.documentId);
+    return readHostScene(controller, useObserved(controller.layout));
 }
 function Scene() {
     const model = useScene();

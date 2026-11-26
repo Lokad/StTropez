@@ -25,7 +25,7 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
                 await Promise.resolve();
                 controller.workspace.releaseResource(resource.id);
             });
-            const id = controller.workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "inactive");
+            const id = controller.workspace.tabs.open({ kind: "text", documentId: resource.documentId });
             target = controller.workspace.tabs.capture(id); inactive.push({ resource, tab: target });
         }
     };
