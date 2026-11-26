@@ -6,6 +6,7 @@ import { expectAlignedEditorRows, typeAfterClick } from "../helpers/editor-asser
 
 export async function runDemoActions(page: Page, url = "/") {
     await page.goto(url);
+    await page.addStyleTag({ content: ":root { --st-background: #f7f8fa; --st-foreground: #242831; --st-selection: #bdd9ff; }" });
     // This journey qualifies project actions; finish provider setup before switching samples.
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await page.locator("#sample").selectOption("actions");
@@ -20,6 +21,8 @@ export async function runDemoActions(page: Page, url = "/") {
     await actions.getByRole("button", { name: "Demo refactor: rename exampleRate across files", exact: true }).click();
     const confirm = actions.getByRole("button", { name: "Apply fix", exact: true });
     await expect(confirm).toBeInViewport({ ratio: 1 });
+    await expect(actions).toHaveCSS("background-color", "rgb(247, 248, 250)");
+    await expect(confirm).toHaveCSS("color", "rgb(36, 40, 49)");
     await expect(actions.getByRole("button", { name: "Cancel fix" })).toBeInViewport({ ratio: 1 });
     await confirm.focus(); await viewport.evaluate(el => { el.scrollTop = el.scrollHeight / 2; });
     await expect(actions).toBeHidden(); await expect(source).toBeFocused();

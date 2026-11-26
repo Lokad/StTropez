@@ -1,6 +1,6 @@
 # StTropez documentation
 
-[Build a two-file editor](getting-started.md) or [look up a public import](api.md).
+[Build a two-file editor](getting-started.md) or [find an import](api.md).
 
 ## Choose a task
 
@@ -17,7 +17,7 @@
 | --- | --- |
 | Embedding | [Getting started](getting-started.md) · [Packaging](packaging.md) · [Examples](examples.md) · [Host integration](host-integration.md) |
 | Text and views | [Text model](text-model.md) · [Unicode](unicode.md) · [Editor](editor.md) · [Viewport](viewport.md) |
-| Editing and review | [Folding](folding.md) · [Search](search.md) · [Comparison](comparison.md) · [Workspace](workspace.md) |
+| Editing and review | [Controls](controls.md) · [Folding](folding.md) · [Search](search.md) · [Comparison](comparison.md) · [Workspace](workspace.md) |
 | Providers | [Language server](language-server.md) · [Language features](language-features.md) |
 | Contributing | [Architecture](architecture.md) · [Testing](testing.md) |
 
