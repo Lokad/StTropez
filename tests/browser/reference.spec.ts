@@ -280,11 +280,14 @@ test("reconnecting the reference host requires a fresh server command choice", a
     const connect = page.getByRole("button", { name: "Connect language server" });
     const run = page.getByRole("button", { name: "Run server command" });
     const command = page.getByRole("button", { name: "fixture.status" });
+    const source = page.getByRole("textbox", { name: "quote.ts" });
     await connect.click();
+    await expect(source).toBeFocused();
     await run.click();
     const previous = await command.elementHandle();
     disconnect!();
     await connect.click();
+    await expect(source).toBeFocused();
     await expect(run).toBeVisible();
     await expect(command).toHaveCount(0);
     await previous!.evaluate(node => (node as HTMLButtonElement).click());
@@ -292,7 +295,6 @@ test("reconnecting the reference host requires a fresh server command choice", a
     await run.click();
     await command.click();
     await expect.poll(() => !!lateReply).toBe(true);
-    const source = page.getByRole("textbox", { name: "quote.ts" });
     await source.press("ArrowRight");
     await expect(page.getByText("Server command running…")).toBeVisible();
     lateReply!();

@@ -113,6 +113,7 @@ function renderConnection() {
 }
 const stopConnection = provider.subscribe(renderConnection);
 connect.onclick = () => {
+    focusActivePane();
     languageEnabled = true;
     current.enableLanguage();
     const attempt = provider.getSnapshot().commandRequiresReconnect ? provider.reconnect() : provider.connect();
