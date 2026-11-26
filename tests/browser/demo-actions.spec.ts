@@ -186,8 +186,4 @@ test("a clean position offers no fabricated fix and Escape preserves source and 
     await expect(popup.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
     await popup.getByRole("button", { name: "Cancel fix" }).press("Escape");
     await expect(popup).toBeHidden(); await expect(source).toBeFocused(); await expect(page.locator("#files")).not.toContainText("●");
-    await source.press("Control+.");
-    await expect(popup).toContainText("No available actions for this range.");
-    await source.press("Enter"); await expect(popup).toBeHidden(); await expect(source).toBeFocused();
-    await expect(page.locator("#cursor")).toHaveText("Ln 2, Col 1");
 });

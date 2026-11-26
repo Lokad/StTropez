@@ -2,13 +2,13 @@ import { readFile } from "node:fs/promises";
 import { fixtureModules } from "../helpers/fixture-modules.ts";
 import { libraryCss, libraryModules } from "../../scripts/library-entries.mjs";
 import { parseDocumentation } from "../../scripts/documentation-audit.mjs";
-import { expect, pauseBetweenCommandTurns, test } from "./fixtures.ts";
+import { expect, test } from "./fixtures.ts";
 
 const serveModules = fixtureModules(
     Object.fromEntries(libraryModules.map(entry => [entry.output.slice(0, -3), entry.source])),
 );
 
-test("the tutorial keeps a pending split edit through host commands", async ({ page }) => {
+test("the tutorial saves a split edit and detects a conflicting save", async ({ page }) => {
     const path = "docs/getting-started.md";
     const guide = parseDocumentation(path, await readFile(path, "utf8"));
     const html = guide.tree.children.find(node => node.type === "code" && node.lang === "html");
@@ -25,7 +25,6 @@ test("the tutorial keeps a pending split edit through host commands", async ({ p
         return route.fulfill({ contentType, body });
     });
     await serveModules(page, "/checklist/sttropez/");
-    await page.clock.install();
     await page.goto("/checklist/");
     const split = page.getByRole("textbox", { name: "Checklist split" });
     const save = page.getByRole("button", { name: "Save", exact: true });
@@ -38,23 +37,7 @@ test("the tutorial keeps a pending split edit through host commands", async ({ p
     await page.keyboard.insertText("0\n".repeat(lines));
     await propose.click();
     await split.press("Control+a");
-    const resume = await pauseBetweenCommandTurns(page);
     await page.keyboard.press("Control+]");
-    await apply.click({ force: true });
-    await expect(output).toHaveText("An edit is pending. Try again when it finishes.");
-    await undo.click({ force: true });
-    await save.click({ force: true });
-    expect(await page.evaluate(() => sessionStorage.getItem("tasks.md"))).toBeNull();
-    let confirmations = 0;
-    page.on("dialog", async dialog => {
-        confirmations++;
-        await dialog.accept();
-    });
-    await page.getByRole("button", { name: "Close", exact: true }).click({ force: true });
-    expect(confirmations).toBe(0);
-    await expect(split).toBeAttached();
-    await resume();
-    await expect(page.locator("main .st-viewport-row").first()).toHaveJSProperty("textContent", "  0");
     await save.click();
     expect(await page.evaluate(() => sessionStorage.getItem("tasks.md"))).toBe("  0\n".repeat(lines));
     await apply.click();

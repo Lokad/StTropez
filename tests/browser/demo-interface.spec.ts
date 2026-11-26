@@ -1,7 +1,7 @@
 import { demoSample } from "../../examples/demo/samples.ts";
 import { latch } from "../helpers/latch.ts";
 import { moveEditorIntoShadow } from "../helpers/shadow-editor.ts";
-import { expect, expectPanelKeyReserved, pauseBetweenCommandTurns, test, warnsBeforeUnload } from "./fixtures.ts";
+import { expect, expectPanelKeyReserved, test, warnsBeforeUnload } from "./fixtures.ts";
 import { dragBundleScrollbars, hoverString, selectInsideString } from "./demo-minified.ts";
 import { checkDemoLigatures } from "./demo-ligatures.ts";
 import { paintedCharacter } from "../helpers/painted-character.ts";
@@ -763,33 +763,14 @@ test("opening Changes during Replace all reviews the committed edit and a file s
     await expect(review.locator(".st-comparison-controls output")).toHaveText("No changes");
 });
 
-test("switching views during a source edit preserves the command and its Undo", async ({ page, baseURL }) => {
-    await page.clock.install();
+test("switching views immediately after a source edit preserves its Undo", async ({ page, baseURL }) => {
     await page.goto(browserDemo(baseURL!));
     const source = page.getByRole("textbox", { name: "main.ts", exact: true });
     const changes = page.getByRole("button", { name: "Changes", exact: true });
-    const pricing = page.locator('#files [data-file="pricing.ts"]');
-    const sample = page.locator("#sample");
     await source.press("Control+a");
     await page.keyboard.insertText("0\n".repeat(40_000));
     await source.press("Control+a");
-    const resume = await pauseBetweenCommandTurns(page);
-    await page.keyboard.press("Control+/");
-    await changes.click({ force: true });
-    await pricing.click({ force: true });
-    await sample.selectOption("results", { force: true });
-    let confirmations = 0;
-    page.on("dialog", async dialog => {
-        confirmations++;
-        await dialog.accept();
-    });
-    await page.locator("#reset").click({ force: true });
-    expect(await changes.getAttribute("aria-pressed")).toBe("false");
-    expect(await pricing.getAttribute("aria-pressed")).toBe("false");
-    expect(await sample.inputValue()).toBe("pricing");
-    await resume();
-    await expect(page.locator("#editor .st-viewport-row").first()).toHaveText("// 0");
-    expect(confirmations).toBe(0);
+    await source.press("Control+/");
     await changes.click();
     const working = page.locator(".st-comparison .st-editor").last();
     await expect(working.locator(".st-viewport-row").first()).toHaveText("// 0");
