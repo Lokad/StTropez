@@ -18,8 +18,7 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 | --- | --- |
 | `npm run typecheck`, `npm run check:docs` | Strict projects and handbook examples, links, sizes and public index |
 | `npm test` | Models, host policy and integration. Select `test:models` or `test:integration` for one group. |
-| `npm run test:browser`, `test:browsers` | Source fixtures in Chromium or all three engines |
-| `npm run test:ci` | [Selected Chromium workflows](../tests/browser/ci.txt) |
+| `npm run test:browser`, `test:browsers` | Full source suite in Chromium (CI) or all three engines |
 | `npm run check` | Types, docs, models, integration, build and source Chromium |
 | `npm run inspect` | Headless screenshots and editor state |
 | `npm run build:demo`, `npm run test:demo` | Build and exercise the static deployment |

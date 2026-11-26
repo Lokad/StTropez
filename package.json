@@ -45,7 +45,6 @@
     "test:models": "node --test \"tests/*.test.ts\"",
     "test:integration": "node --test \"tests/integration/*.test.ts\"",
     "test:browser": "playwright test --project=chromium",
-    "test:ci": "playwright test --project=chromium --test-list=tests/browser/ci.txt",
     "test:browsers": "playwright test --global-timeout=3600000",
     "browsers:install": "playwright install chromium firefox webkit",
     "inspect": "node scripts/inspect.mjs",
