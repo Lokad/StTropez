@@ -375,9 +375,9 @@ test("demo construction rolls back acquired owners without retrying or replacing
         assert.equal(recoveryAttempts, 1); assert.equal(store.closes, 1);
         assert.equal(recovery.closes, point === "recovery-store" ? 0 : 1); assert.equal(watches, 0);
         if (workspace) {
-            const { resources, documents, tabs, views, leases, subscriptions } = workspace.diagnostics();
-            assert.deepEqual({ resources, documents, tabs, views, leases, subscriptions },
-                { resources: 0, documents: 0, tabs: 0, views: 0, leases: 0, subscriptions: 0 });
+            const { resources, documents, views, leases, subscriptions } = workspace.diagnostics();
+            assert.deepEqual({ resources, documents, views, leases, subscriptions },
+                { resources: 0, documents: 0, views: 0, leases: 0, subscriptions: 0 });
         }
     });
 });

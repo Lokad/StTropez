@@ -14,11 +14,10 @@ async function fixture(t: TestContext) {
     const { workspace, provider } = f;
     const scope = provider.createScope();
     const binding = scope.attachDocument(f.source.documentId);
-    const tab = workspace.tabs.open({ kind: "text", documentId: f.source.documentId });
     const view = workspace.createDocumentView(f.source.documentId);
     const lifetime = new AbortController();
     const editor = {
-        ...editorState(), workspace, view, tab: workspace.tabs.capture(tab), signal: lifetime.signal,
+        ...editorState(), workspace, view, signal: lifetime.signal,
         element: { isConnected: true, ownerDocument: { defaultView: { setTimeout, clearTimeout } } },
         viewport: { revealOffset() {} }, focus() {},
         activity: () => ({ input: "idle" }),
@@ -26,7 +25,7 @@ async function fixture(t: TestContext) {
     t.after(() => {
         lifetime.abort();
         view.dispose();
-        workspace.tabs.close(tab);
+
         scope.dispose();
     });
     f.peer.onRequest("test/barrier", () => null);
@@ -42,7 +41,6 @@ async function fixture(t: TestContext) {
         replace: () => {
             lifetime.abort();
             view.dispose();
-            workspace.tabs.replace(tab, { kind: "text", documentId: f.other.documentId });
         },
     };
 }
@@ -62,7 +60,7 @@ function holdReply(f: Fixture, method: string, reply: unknown) {
 const sourceChanges = {
     selection: (f: Fixture) => f.select(),
     typing: (f: Fixture) => f.edit(),
-    "tab replacement": (f: Fixture) => f.replace(),
+    "editor disposal": (f: Fixture) => f.replace(),
 };
 
 for (const [cause, interrupt] of Object.entries(sourceChanges)) {

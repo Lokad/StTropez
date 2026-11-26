@@ -27,7 +27,7 @@ export function createNavigationHost(host: LanguageHost & { restorePane?: (view:
             recorded: () => visits.get().includes(key),
             visit(open: () => boolean) {
                 const opened = point.visit(open), depth = history.getSnapshot().back;
-                if (opened && depth && host.workspace.ownsDocumentView(editor.view, editor.tab) && visits.get().at(-1) !== key)
+                if (opened && depth && host.workspace.ownsDocumentView(editor.view) && visits.get().at(-1) !== key)
                     visits.set([...visits.get(), key].slice(-depth));
                 return opened;
             },
@@ -61,7 +61,7 @@ export type HostLocation = NonNullable<ReturnType<NavigationHost["history"]["cap
 export const unavailablePaneMessage = "Show a source pane or finish its pending input, then try again.";
 
 export function isMountedEditor(workspace: Workspace, editor: TextEditor): boolean {
-    return editor.element.isConnected && !editor.activity().disposed && workspace.ownsDocumentView(editor.view, editor.tab)
+    return editor.element.isConnected && !editor.activity().disposed && workspace.ownsDocumentView(editor.view)
         && !!workspace.observeDocument(editor.view.documentId).getSnapshot();
 }
 

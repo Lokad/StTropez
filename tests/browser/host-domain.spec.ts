@@ -27,7 +27,7 @@ test(`plain 1000 indexed annotations stay bounded with inactive documents and ty
     await page.evaluate(() => window.hostFixture.seedInactiveDocuments()); await waitForDomain(page);
     const seeded = await snapshot(page), inactive = await page.evaluate(() => window.hostFixture.inactiveDocuments());
     expect(inactive).toHaveLength(100); expect(inactive.every(v => v.revision === 0 && !v.dirty)).toBe(true);
-    expect(seeded.diagnostics.documents).toBe(initial.diagnostics.documents + 100); expect(seeded.diagnostics.tabs).toBe(initial.diagnostics.tabs);
+    expect(seeded.diagnostics.documents).toBe(initial.diagnostics.documents + 100);
     expect(seeded.bindings.views.map(v => v.viewId)).toEqual(initial.bindings.views.map(v => v.viewId)); expect(seeded.bindings.activeViews).toBe(2);
     await button(page, "Save source").click(); await expect.poll(async () => (await snapshot(page)).pendingSaves.length).toBe(1);
     await page.evaluate(() => window.hostFixture.finishSave()); await expect.poll(async () => (await snapshot(page)).source.dirty).toBe(false);
@@ -69,7 +69,7 @@ test(`plain 1000 indexed annotations stay bounded with inactive documents and ty
     await expect.poll(() => page.workers().length).toBe(0);
     const stopped = await snapshot(page);
     expect(stopped.bindings.domain).toMatchObject({ sessions: [], pending: false, subscriptions: 0 }); expect(await page.evaluate(() => window.hostFixture.inactiveDocuments())).toEqual([]);
-    expect(stopped.diagnostics.documents).toBe(initial.diagnostics.documents); expect(stopped.diagnostics.tabs).toBe(initial.diagnostics.tabs);
+    expect(stopped.diagnostics.documents).toBe(initial.diagnostics.documents);
 });
 test(`plain actual domain discovery preserves manual folds, independent views and remount`, async ({ page }) => {
     test.setTimeout(120000); const text = "manual\r\nbody\r\n" + region + "tail";

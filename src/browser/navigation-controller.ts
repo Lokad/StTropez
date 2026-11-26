@@ -57,7 +57,7 @@ function navigationResult(reply: LspNavigationResult, canOpen: () => boolean): N
 
 /** A passive definition lookup can paint a link. Only an explicit request resolves its target URIs. */
 export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, options: NavigationControllerOptions): NavigationController {
-    const { workspace, view, tab } = editor;
+    const { workspace, view } = editor;
     const notifications = workspace.createNotificationScope(), state = new Store(idle, notifications);
     const events = new AbortController();
     const available = () => !events.signal.aborted && canInspectView(editor, options.canCapture);
@@ -163,7 +163,7 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
         try {
             const documents = project(source);
             if (explicit !== job) return stale;
-            if (tab) job.stops.push(workspace.tabs.subscribe(() => { if (!workspace.ownsDocumentView(view, tab)) expire(job); }));
+
             for (const doc of documents) {
                 observeProjectDocument(workspace, () => doc, () => expire(job), job.stops);
             }
@@ -187,7 +187,7 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
             job.reply = reply;
             const result = navigationResult(reply, () => {
                 notifications.assertWritable();
-                return explicit === job && !job.expired && available() && workspace.ownsDocumentView(view, tab)
+                return explicit === job && !job.expired && available() && workspace.ownsDocumentView(view)
                     && (!job.source || job.source.isCurrent()) && reply.isCurrent();
             });
             publish(result.count ? "ready" : "empty", result);

@@ -1,10 +1,10 @@
-import type { DocumentSnapshot, DocumentView, EditOrigin, ResourceMetadata, TabTarget, Workspace } from "../core/workspace.ts";
+import type { DocumentSnapshot, DocumentView, EditOrigin, ResourceMetadata, Workspace } from "../core/workspace.ts";
 import type { FoldingSnapshot } from "../core/folding.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 function ownsEditorView(editor: TextEditor) {
-    return !editor.signal.aborted && editor.workspace.ownsDocumentView(editor.view, editor.tab);
+    return !editor.signal.aborted && editor.workspace.ownsDocumentView(editor.view);
 }
 
 export function requireLanguageView(editor: TextEditor): void {
@@ -24,11 +24,11 @@ export function canInspectView(editor: TextEditor, canCapture?: () => boolean): 
     return editorReadyForRequest(editor) && (canCapture?.() ?? true);
 }
 
-/** Changes to the text, selections, fold projection or mounted tab can retire a view request. */
-export function observeViewSource(workspace: Workspace, view: DocumentView, target: TabTarget | undefined, changed: () => void) {
+/** Changes to the text, selections or fold projection can retire a view request. */
+export function observeViewSource(workspace: Workspace, view: DocumentView, changed: () => void) {
     const stops = [workspace.observeDocument(view.documentId).subscribe(changed), view.subscribe(changed),
         view.folding.subscribe(changed)];
-    if (target) stops.push(workspace.tabs.subscribe(changed));
+
     return stops;
 }
 
@@ -51,18 +51,17 @@ export function sameEditAuthority(before: ResourceMetadata, after: ResourceMetad
         && (left === right || left.length === right.length && left.every((origin, index) => origin === right[index]));
 }
 
-type CaptureOwner = Pick<TextEditor, "workspace" | "tab" | "view" | "signal">;
+type CaptureOwner = Pick<TextEditor, "workspace" | "view" | "signal">;
 
 /** Capture a request until the editor closes or its source changes. */
 export function captureViewRequest(editor: CaptureOwner, options: CapturedViewOptions = {}): CapturedViewRequest | undefined {
     return captureRequest(editor, options, true);
 }
 
-export function captureRequest({ workspace, tab: target, view, signal }: CaptureOwner,
+export function captureRequest({ workspace, view, signal }: CaptureOwner,
     options: CapturedViewOptions, selectionBound: boolean): CapturedViewRequest | undefined {
     const { editOrigin, available = () => true } = options;
-    const tab = target && { ...target };
-    if (signal.aborted || !workspace.ownsDocumentView(view, tab) || !available()) return;
+    if (signal.aborted || !workspace.ownsDocumentView(view) || !available()) return;
     const document = workspace.observeDocument(view.documentId).getSnapshot(); if (!document) return;
     const resource = workspace.resourceForDocument(document.id), permission = resource.metadata.getSnapshot();
     if (permission.state !== "ready" || editOrigin !== undefined && !permission.capabilities.edit.includes(editOrigin)) return;
@@ -77,7 +76,7 @@ export function captureRequest({ workspace, tab: target, view, signal }: Capture
         if (deferred) queueMicrotask(release); else release();
     };
     const matches = () => {
-        return !signal.aborted && lease.active() && workspace.ownsDocumentView(view, tab)
+        return !signal.aborted && lease.active() && workspace.ownsDocumentView(view)
             && workspace.observeDocument(document.id).getSnapshot()?.revision === document.revision
             && (!selectionBound || view.getSnapshot().selectionSet === selectionSet && folding.index.sameProjection(view.folding.getSnapshot().index))
             && sameEditAuthority(permission, resource.metadata.getSnapshot()) && available();
@@ -88,7 +87,7 @@ export function captureRequest({ workspace, tab: target, view, signal }: Capture
         return active;
     };
     const changed = () => { isCurrent(); };
-    stops.push(...observeViewSource(workspace, view, tab, changed), resource.metadata.subscribe(changed));
+    stops.push(...observeViewSource(workspace, view, changed), resource.metadata.subscribe(changed));
     signal.addEventListener("abort", () => cancel(), { once: true, signal: abort.signal });
     if (!isCurrent()) return;
     return Object.freeze({ view, document, selectionSet, folding, signal: abort.signal, isCurrent,

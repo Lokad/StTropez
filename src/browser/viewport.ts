@@ -7,8 +7,7 @@ import { Store, type Observable } from "../core/observable.ts";
 import { lineContentEnd } from "../core/newlines.ts";
 import { localAsciiGraphemePoint } from "../core/grapheme-point.ts";
 import { graphemeBoundaries } from "../core/graphemes.ts";
-import { captureTextSurface } from "../core/workspace.ts";
-import type { DocumentId, DocumentSnapshot, DocumentView, TabId, Workspace } from "../core/workspace.ts";
+import type { DocumentId, DocumentSnapshot, DocumentView, Workspace } from "../core/workspace.ts";
 import type { Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
@@ -205,9 +204,9 @@ function viewportSettings(previous: ViewportSettings, changes?: Partial<Viewport
 }
 
 /** Bounded DOM view layer with local native text geometry. Native-device qualification remains separate. */
-export function mountTextViewport(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
+export function mountTextViewport(host: HTMLElement, workspace: Workspace, documentId: DocumentId,
     options: TextViewportOptions = {}): TextViewport {
-    return mountViewport(host, workspace, identity, options).viewport;
+    return mountViewport(host, workspace, documentId, options).viewport;
 }
 
 /** Internal mount: navigation and comparison publication share the viewport lifetime. */
@@ -215,10 +214,10 @@ export type MountedViewport = Readonly<{
     viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean;
 }>;
 
-export function mountViewport(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId | ReturnType<typeof captureTextSurface>,
+export function mountViewport(host: HTMLElement, workspace: Workspace, documentId: DocumentId,
     options: TextViewportOptions = {}, comparison?: ComparisonPresentation): MountedViewport {
     let settings = viewportSettings(defaultSettings, options.settings);
-    const { documentId, resource, tab } = typeof identity === "string" ? captureTextSurface(workspace, identity) : identity;
+    const resource = workspace.resourceForDocument(documentId);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId), owner = host.ownerDocument, browserWindow = owner.defaultView;
     if (!browserWindow) { if (!options.view) view.dispose(); throw new Error("Viewport requires an attached browser document."); }
@@ -227,7 +226,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     const currentDocument = source.getSnapshot;
     const viewState = view.getSnapshot;
     const currentFolds = view.folding.getSnapshot;
-    const live = () => workspace.ownsDocumentView(view, tab);
+    const live = () => workspace.ownsDocumentView(view);
     const root = editorElement(owner, "div", "viewport");
     const surface = editorElement(owner, "div", "viewport-surface");
     const spacer = editorElement(owner, "div", "viewport-spacer");
@@ -1014,7 +1013,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             overviewEpoch++; schedule();
         }
     }), source.subscribe(documentChanged), view.subscribe(schedule), view.folding.subscribe(foldsChanged), resource.metadata.subscribe(schedule)];
-    if (tab) subscriptions.push(workspace.tabs.subscribe(schedule));
+
     let activitySnapshot: ViewportActivity | undefined;
     function activity(): ViewportActivity {
         const pending = frame !== undefined;

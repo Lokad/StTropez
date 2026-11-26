@@ -43,7 +43,7 @@ const changed = Object.freeze({ triggerKind: 3, isRetrigger: true } as const);
 
 /** Manual and advertised signature triggers on a single mounted editing surface. */
 export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, options: SignatureControllerOptions): SignatureController {
-    const { workspace, view, tab, element } = editor;
+    const { workspace, view, element } = editor;
     const win = element.ownerDocument.defaultView!;
     const { provider } = owner;
     const client = signatureClient(owner);
@@ -235,7 +235,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     function typed(event: Event) {
         const after = currentView();
         const input = acceptedTypedText(event, element, after);
-        if (!input || !workspace.ownsDocumentView(view, tab)) return;
+        if (!input || !workspace.ownsDocumentView(view)) return;
         const { before, text } = input;
         if (queued?.target && queued.target !== before) {
             // An open signature may refresh at the new caret. A first trigger belongs to its original call.

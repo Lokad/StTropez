@@ -40,8 +40,8 @@ On detach, store `captureView()` by document and view. Dispose the view when its
 
 ### Mounting and presentation
 
-Mount by document or tab ID. Omitting `view` gives the mount ownership. Closing or replacing the tab
-expires pending input. `ariaLabel` defaults to the document title.
+Mount by document ID. The editor owns the view it creates. Dispose the editor when its pane closes or
+switches documents. Disposal expires pending input. `ariaLabel` defaults to the document title.
 
 Set `readOnly: true` at mount for navigation, copy and Find. Remount to change it. Use `configure()`
 and `settings()` for display and editing options.

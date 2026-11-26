@@ -10,10 +10,11 @@ import { clientFixture, settled } from "./helpers/lsp-client.ts";
 async function fixture(t: TestContext, text: string, diagnostics?: HoverDiagnostics) {
     const f = clientFixture(t), { workspace, provider } = f, documentId = f.source.documentId;
     workspace.edit({ documentId, expectedRevision: f.document().revision, origin: "human", edits: [{ from: 0, to: f.document().buffer.length, insert: text }] });
-    const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId);
+    const view = workspace.createDocumentView(documentId);
     const timers = new Map<number, () => void>(); let serial = 0;
     const owner = { defaultView: { setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) } };
-    const editor = { workspace, tab: workspace.tabs.capture(tab), view, signal: new AbortController().signal,
+    const mount = new AbortController();
+    const editor = { workspace, view, signal: mount.signal,
         element: { ownerDocument: owner, isConnected: true }, ...editorState(),
         activity: () => ({ input: "idle", disposed: false }), focus: () => { throw new Error("Hover moved focus."); } } as unknown as TextEditor;
     const language = attachEditorLanguage(editor, provider, { hover: diagnostics ? { diagnostics } : {} });
@@ -27,11 +28,11 @@ async function fixture(t: TestContext, text: string, diagnostics?: HoverDiagnost
         return { entered: entered.promise, reply: answer.resolve };
     }
     const finish = async () => {
-        language.dispose(); view.dispose(); workspace.tabs.close(tab); await settled();
+        language.dispose(); view.dispose(); await settled();
         assert.equal(timers.size, 0); assert.equal(workspace.diagnostics().leases, 0);
         assert.equal(provider.snapshot().scopes, 0);
     };
-    return { ...f, hover, request, hold, view, tab, timers, leases, finish };
+    return { ...f, hover, request, hold, view, mount, timers, leases, finish };
 }
 test("hover releases the read lease after a reply with no range and expires on disconnect", async t => {
     const f = await fixture(t, "const value"), before = f.document();
@@ -88,10 +89,10 @@ test("deferred hover invalidation preserves a newer request after editing and re
         f.view.setSelection(f.document().revision, { anchor: 8, head: 8 }); await settled();
         assert.equal(f.hover.getSnapshot().status, "expired"); assert.equal(f.workspace.diagnostics().leases, f.leases);
         selection.reply({ contents: "wrong selection" });
-        const tab = f.hold(); f.request(8); await tab.entered;
-        f.workspace.tabs.replace(f.tab, { kind: "panel", resourceId: f.source.id, panelType: "configuration" }); await settled();
-        assert.equal(f.hover.getSnapshot().status, "expired"); assert.deepEqual(await f.request(8), { status: "refused", reason: "unavailable-view" });
-        assert.equal(f.sent("$/cancelRequest").length, 3); tab.reply({ contents: "old tab" }); await settled();
+        const pending = f.hold(); f.request(8); await pending.entered;
+        f.mount.abort(); await settled();
+        assert.equal(f.hover.getSnapshot().status, "disposed");
+        assert.equal(f.sent("$/cancelRequest").length, 3); pending.reply({ contents: "old editor" }); await settled();
     } finally { await f.finish(); }
 });
 

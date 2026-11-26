@@ -15,8 +15,7 @@ import { indexGraphemes } from "../core/graphemes.ts";
 import { createSelectionSet, planSelectionEdits } from "../core/selections.ts";
 import { selectionOccurrences } from "../core/selection-occurrences.ts";
 import type { Affinity } from "../core/positions.ts";
-import { captureTextSurface } from "../core/workspace.ts";
-import type { DocumentId, DocumentView, DocumentViewSnapshot, TabId, TabTarget, Workspace } from "../core/workspace.ts";
+import type { DocumentId, DocumentView, DocumentViewSnapshot, Workspace } from "../core/workspace.ts";
 import type { EditKind, Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { BufferPosition, TextBuffer } from "../core/text-buffer.ts";
@@ -90,7 +89,7 @@ export type EditorPasteHandler = (data: DataTransfer) => ((insertion: CapturedIn
 const editIntents = ["beforeinput", "compositionstart", "paste", "cut"] as const;
 export type EditorEditIntent = typeof editIntents[number];
 type PasteOwner = { handler: EditorPasteHandler; pending?: CapturedInsertion };
-export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; strings: ReturnType<typeof resolveControlStrings>; workspace: Workspace; tab: TabTarget | undefined; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
+export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HTMLDivElement; strings: ReturnType<typeof resolveControlStrings>; workspace: Workspace; signal: AbortSignal; view: DocumentView; viewport: TextViewport; decorations: TextViewport["decorations"];
     /** One pending host insertion, invalidated by later editing/selection/authority/lifecycle changes. */
     captureInsertion: (kind?: "paste" | "replace") => CapturedInsertion | undefined;
     registerPasteHandler: (handler: EditorPasteHandler) => () => void;
@@ -113,13 +112,13 @@ export type TextEditor = Observable<TextEditorSnapshot> & Readonly<{ element: HT
 export type MountedTextEditor = Readonly<{ editor: TextEditor; input: HTMLTextAreaElement; setComparisonRows: MountedViewport["setComparisonRows"] }>;
 
 /** Text editor with bounded native input and virtualized rendering. Native IME qualification is separate. */
-export function mountTextEditor(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
+export function mountTextEditor(host: HTMLElement, workspace: Workspace, documentId: DocumentId,
     options: TextEditorOptions = {}): TextEditor {
-    return mountEditor(host, workspace, identity, options).editor;
+    return mountEditor(host, workspace, documentId, options).editor;
 }
 
 /** Private pane mount; the comparison capability belongs to this exact editor lifetime. */
-export function mountEditor(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId,
+export function mountEditor(host: HTMLElement, workspace: Workspace, documentId: DocumentId,
     options: TextEditorOptions = {}, comparison?: ComparisonPresentation & {
         commands: ReadonlyMap<string, EditorCommand>;
         epoch: () => number | undefined;
@@ -140,7 +139,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const automaticIndent = automaticIndentation();
     const readOnly = options.readOnly === true;
     let readOnlyReason: EditRefusedDetail["reason"] | undefined;
-    const surface = captureTextSurface(workspace, identity), { documentId, resource, tab: target } = surface;
+    const resource = workspace.resourceForDocument(documentId);
     if (options.view && (options.view.documentId !== documentId || !workspace.ownsDocumentView(options.view))) throw new Error("View belongs to a different document or workspace.");
     const view = options.view ?? workspace.createDocumentView(documentId);
     const source = workspace.observeDocument(documentId);
@@ -149,9 +148,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
     const currentDocument = () => workspace.document(documentId);
     const currentSelections = () => currentView().selectionSet;
     const currentFolds = () => currentFolding().index;
-    const live = () => workspace.ownsDocumentView(view, target);
+    const live = () => workspace.ownsDocumentView(view);
     let setComparisonRows: MountedTextEditor["setComparisonRows"], viewport: TextViewport, navigation: MountedViewport["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
-    try { const mounted = mountViewport(host, workspace, surface, { ...options, view }, comparison);
+    try { const mounted = mountViewport(host, workspace, documentId, { ...options, view }, comparison);
         viewport = mounted.viewport; navigation = mounted.navigation; setComparisonRows = mounted.setComparisonRows; }
     catch (error) { if (!options.view) view.dispose(); throw error; }
     const root = viewport.element;
@@ -1168,7 +1167,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         const point = pointerHit(event, viewport.getSnapshot().gutterWidth); if (!point) return;
         event.preventDefault(); if (!draggedWord && !foldSummaryClick) selectWord(point.offset, event.altKey);
     });
-    const textDrag = mountTextDragDrop({ workspace, tab: target, view, viewport, input,
+    const textDrag = mountTextDragDrop({ workspace, view, viewport, input,
         available: () => !disposed && !composing && !input.disabled,
         beforeStart: () => { stopDrag(); activeCommand = undefined; preferred = undefined; group = undefined; },
         afterDrop: () => { revealCaret(); focus(); refresh(); },
@@ -1475,7 +1474,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         view.folding.subscribe(() => { const revision = currentFolding().revision;
             if (revision === observedFoldRevision) { activeCommand = undefined; stopDrag(); preferred = undefined; }
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh)];
-    if (target) subscriptions.push(workspace.tabs.subscribe(refresh));
+
     let activitySnapshot: TextEditorActivity | undefined;
     function activity(): TextEditorActivity {
         const input = composing ? "composing" : hostInsertion ? "host-insertion" : "idle";
@@ -1488,9 +1487,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         return activitySnapshot = Object.freeze({ disposed, input, pendingCaret, pendingDragScroll });
     }
     refresh();
-    brackets = mountBracketHighlights(workspace, target, view, viewport, input, () => language,
+    brackets = mountBracketHighlights(workspace, view, viewport, input, () => language,
         () => !disposed && !composing && !hostInsertion && !activeCommand, bracketOptions);
-    warnings = mountCharacterWarnings(workspace, target, view, viewport, warningOptions);
+    warnings = mountCharacterWarnings(workspace, view, viewport, warningOptions);
     let cachedSettings: ResolvedEditorSettings | undefined, cachedViewport: ViewportSettings | undefined;
     const settings = (): ResolvedEditorSettings => {
         const presentation = viewport.settings();
@@ -1499,7 +1498,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         return cachedSettings = Object.freeze({ ...presentation, language, pasteLineEndings, bracketMatching: bracketOptions,
             characterWarnings: warningOptions?.configuration ?? false });
     };
-    const editor: TextEditor = Object.freeze({ element: root, strings, workspace, tab: target, signal: listeners.signal, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
+    const editor: TextEditor = Object.freeze({ element: root, strings, workspace, signal: listeners.signal, view, viewport, decorations: viewport.decorations, focus, activity, bracketMatching: brackets.handle, characterWarnings: warnings.handle,
         getSnapshot: editorState.observable.getSnapshot,
         subscribe(listener: ObservableListener) {
             if (disposed) throw new Error("Editor is disposed.");

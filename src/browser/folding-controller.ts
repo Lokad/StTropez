@@ -30,8 +30,8 @@ export type FoldingController = Observable<FoldingStatus> & Readonly<{
 /** One discovery policy for one retained view. Providers own syntax; the editor owns fold projection. */
 export function createFoldingController(editor: TextEditor, discover: FoldDiscovery,
     options: Readonly<{ delayMs?: number }> = {}): FoldingController {
-    const { workspace, tab: target, view } = editor, win = editor.element.ownerDocument.defaultView!;
-    if (editor.signal.aborted || !workspace.ownsDocumentView(view, target)) throw new Error("Invalid fold discovery view.");
+    const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
+    if (editor.signal.aborted || !workspace.ownsDocumentView(view)) throw new Error("Invalid fold discovery view.");
     const delay = options.delayMs ?? 100;
     if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid fold discovery delay.");
     const notifications = workspace.createNotificationScope();
@@ -40,7 +40,7 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
     const listeners = new AbortController(), runner = createCooperativeRunner(win);
     let disposed = false;
     let job: { document: DocumentSnapshot; abort: AbortController; pumping?: boolean; cursor?: FoldDiscoveryCursor } | undefined;
-    const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view, target);
+    const available = () => !disposed && !editor.activity().disposed && workspace.ownsDocumentView(view);
     const busy = () => editor.activity().input !== "idle";
     const publish = (status: FoldingStatus["status"], message = "") => {
         const folds = view.folding.getSnapshot(), summary = foldSummary(folds.index);
@@ -149,7 +149,7 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         if (!next) { cancel(); return; }
         if (next.revision !== observed) { observed = next.revision; refresh(); }
     });
-    const stopTab = target && workspace.tabs.subscribe(() => { if (!available()) cancel(); });
+
     const stopFolds = view.folding.subscribe(() => { if (!disposed) publish(cell.get().status, cell.get().message); });
     const dispose = () => {
         if (disposed) return;
@@ -159,7 +159,7 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         cancel();
         listeners.abort();
         stopDocument();
-        stopTab?.();
+
         stopFolds();
         publish("disposed");
         cell.clearSnapshotListeners();

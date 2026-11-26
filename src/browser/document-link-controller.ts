@@ -48,7 +48,7 @@ const watchLinks = documentRangeWatch<LspDocumentLink>(documentLinkMethod, linkC
 /** Discover links for one editor. Only a current user action hands an opaque target to the host. */
 export function mountDocumentLinks(editor: TextEditor, owner: LspDocumentOwner, options: DocumentLinkControllerOptions): DocumentLinkController {
     const { provider } = owner;
-    const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
+    const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
     const { scope, state, signal, active, available, capture, release, expire, mount } =
         languageReview<Job, DocumentLinkSnapshot>(editor, "Document link", idle, options.canCapture,
             status => publish(status));
@@ -56,7 +56,7 @@ export function mountDocumentLinks(editor: TextEditor, owner: LspDocumentOwner, 
         scope.publish(state, Object.freeze({ status, links, message }));
     }
     function captureCurrent(j: Job) {
-        return active.job === j && !j.invalid && workspace.ownsDocumentView(view, tab) && available(view.documentId)
+        return active.job === j && !j.invalid && workspace.ownsDocumentView(view) && available(view.documentId)
             && (!j.watched || j.watched.isCurrent()) && (!j.source || j.source.isCurrent())
             && j.project.allows(options);
     }

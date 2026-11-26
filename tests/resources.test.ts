@@ -16,16 +16,15 @@ function fixture() {
     const workspace = new Workspace();
     const source = workspace.createTextResource({ scope: "scope", resource: "source", variant: "working" }, "Same label", { value: "abc", serverVersion: "v0" });
     const form = workspace.createResource<{ path: string; nested: { enabled: boolean } }>({ scope: "scope", resource: "configuration", variant: "working" }, "Same label", { value: { path: "in.csv", nested: { enabled: true } }, serverVersion: "c0" });
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId });
     const edit = (text: string, origin: "human" | "agent" | "host" = "human") => workspace.edit({ documentId: source.documentId,
         expectedRevision: workspace.document(source.documentId).revision, origin,
         edits: [{ from: 0, to: workspace.document(source.documentId).text().length, insert: text }] });
-    return { workspace, source, form, tab, edit };
+    return { workspace, source, form, edit };
 }
 
 test("typed resources need no document, isolate scopes/variants and expose immutable content", () => {
     const { workspace, form } = fixture();
-    workspace.tabs.open({ kind: "panel", resourceId: form.id, panelType: "configuration" });
+
     assert.equal(workspace.getSnapshot().documents.length, 1);
     const value = { path: "other.csv", nested: { enabled: false } };
     workspace.updateResource(form, { expectedRevision: 0, value, origin: "human" });
@@ -103,9 +102,7 @@ test("internal resources keep captured ownership while workspace inventories con
         { buffer }, { edit: [], save: false }, options);
     const scratch = workspace.createTextResource({ scope: "test", resource: "scratch", variant: "one" }, "Scratch", { value: "x" }, undefined, options);
     const panel = workspace.createResource({ scope: "test", resource: "panel", variant: "one" }, "Panel", { value: { count: 0 } }, undefined, options);
-    const referenceTab = workspace.tabs.open({ kind: "text", documentId: reference.documentId });
-    const panelTab = workspace.tabs.open({ kind: "panel", resourceId: panel.id, panelType: "temporary" });
-    const target = workspace.tabs.capture(referenceTab), resourceTarget = workspace.captureResource(reference.id);
+            const resourceTarget = workspace.captureResource(reference.id);
     const inventory = workspace.getSnapshot();
     assert.deepEqual(inventory.resources.map(resource => resource.id), [source.id, form.id]);
     assert.deepEqual(inventory.documents.map(document => document.id), [source.documentId]);
@@ -119,31 +116,26 @@ test("internal resources keep captured ownership while workspace inventories con
     assert.equal(workspace.updateResource(panel, { expectedRevision: 0, value: { count: 1 }, origin: "human" }).applied, true);
     assert.equal(panel.metadata.getSnapshot().visibility, "internal");
     const view = workspace.createDocumentView(reference.documentId), lease = workspace.acquire(reference.id);
-    let calls = 0, current = true;
-    const stop = workspace.tabs.subscribe(() => { calls++; current = !!workspace.tabs.resolve(target); });
     workspace.releaseResourceWhenUnowned(reference.id);
-    assert.equal(current, true);
-    workspace.tabs.close(referenceTab); assert.equal(current, false); assert.equal(calls, 1); stop();
     await Promise.resolve(); assert.equal(reference.getSnapshot().state, "ready");
     lease.release(); await Promise.resolve(); assert.equal(reference.getSnapshot().state, "ready");
     view.dispose(); await Promise.resolve(); assert.equal(reference.getSnapshot().state, "released");
     assert.equal(workspace.resolveResource(resourceTarget), undefined);
-    workspace.tabs.close(panelTab); workspace.releaseResource(panel.id, true); workspace.releaseResource(scratch.id, true);
+    workspace.releaseResource(panel.id, true); workspace.releaseResource(scratch.id, true);
     assert.deepEqual(workspace.getSnapshot().resources.map(resource => resource.id), [source.id, form.id]);
     assert.equal(workspace.diagnostics().resources, 2);
 });
 
-test("a non-text panel traverses load failure, retry, ownership and release without allocating a buffer", () => {
+test("a value resource traverses load failure, retry, ownership and release without allocating a buffer", () => {
     const workspace = new Workspace();
     const form = workspace.createResource<{ path: string }>({ scope: "probe", resource: "form", variant: "working" }, "Form");
-    const tab = workspace.tabs.open({ kind: "panel", resourceId: form.id, panelType: "form" });
     const first = workspace.beginLoad(form);
     assert.equal(first.fail("Temporary failure"), true);
     assert.equal(form.getSnapshot().state, "failed"); assert.equal(workspace.getSnapshot().documents.length, 0);
     workspace.beginLoad(form).dispose();
     assert.equal(form.metadata.getSnapshot().failure, "Temporary failure");
     const retry = workspace.beginLoad(form), value = { path: "loaded.csv" };
-    workspace.tabs.close(tab); assert.throws(() => workspace.releaseResource(form.id));
+    assert.throws(() => workspace.releaseResource(form.id));
     assert.equal(retry.accept({ value, serverVersion: "f1" }), true);
     value.path = "later host mutation";
     const ready = form.getSnapshot(); assert.ok(ready.state === "ready"); assert.equal(ready.value().path, "loaded.csv");
@@ -216,7 +208,6 @@ test("resource-key allocation and duplicate checks do not traverse the workspace
 test("loads distinguish readiness, ignore superseded responses and release ownership on disposal", () => {
     const workspace = new Workspace();
     const handle = workspace.createTextResource({ scope: "probe", resource: "loading", variant: "working" }, "Loading");
-    const tab = workspace.tabs.open({ kind: "text", documentId: handle.documentId });
     assert.equal(handle.getSnapshot().state, "loading");
     assert.throws(() => workspace.document(handle.documentId));
     assert.equal(workspace.edit({ documentId: handle.documentId, expectedRevision: 0, origin: "human", edits: [] }).applied, false);
@@ -224,13 +215,12 @@ test("loads distinguish readiness, ignore superseded responses and release owner
     assert.equal(handle.getSnapshot().state, "failed"); assert.ok(handle.metadata.getSnapshot().failure);
     abandoned.dispose(); assert.equal(workspace.ownership(handle.id).leases, 0);
     const first = workspace.beginLoad(handle), second = workspace.beginLoad(handle);
-    workspace.tabs.close(tab);
+
     assert.equal(workspace.ownership(handle.id).leases, 1);
     assert.throws(() => workspace.releaseResource(handle.id));
     assert.equal(second.fail("Synthetic failure"), true);
     assert.equal(handle.getSnapshot().state, "failed");
     const retry = workspace.beginLoad(handle);
-    const reopened = workspace.tabs.open({ kind: "text", documentId: handle.documentId });
     assert.equal(retry.accept({ value: "ready", serverVersion: "v1" }), true);
     assert.equal(first.accept({ value: "stale", serverVersion: "old" }), false);
     const interrupted = workspace.beginLoad(handle);
@@ -242,7 +232,7 @@ test("loads distinguish readiness, ignore superseded responses and release owner
     assert.equal(workspace.document(handle.documentId).text(), "ready");
     assert.equal(workspace.ownership(handle.id).leases, 0);
     const target = workspace.captureResource(handle.id);
-    workspace.tabs.close(reopened); workspace.releaseResource(handle.id);
+    workspace.releaseResource(handle.id);
     assert.equal(handle.getSnapshot().state, "released");
     assert.equal(workspace.resolveResource(target), undefined);
     const fresh = workspace.createTextResource({ scope: "probe", resource: "loading", variant: "working" }, "Fresh", { value: "new" });
@@ -326,8 +316,8 @@ test("deferred resource release follows final ownership and preserves later unsa
     const workspace = new Workspace(), keys = [workspace.createResourceKey("test", "display"), workspace.createResourceKey("test", "display")];
     assert.notDeepEqual(keys[0], keys[1]); assert.ok(Object.isFrozen(keys[0]));
     const source = workspace.createTextResource(keys[0]!, "Reference", { value: "base" }), target = workspace.captureResource(source.id);
-    const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }), view = workspace.createDocumentView(source.documentId), lease = workspace.acquire(source.id);
-    workspace.releaseResourceWhenUnowned(source.id); view.dispose(); workspace.tabs.close(tab); await Promise.resolve();
+    const view = workspace.createDocumentView(source.documentId), lease = workspace.acquire(source.id);
+    workspace.releaseResourceWhenUnowned(source.id); view.dispose(); await Promise.resolve();
     assert.equal(workspace.resolveResource(target), source); assert.equal(workspace.document(source.documentId).text(), "base");
     lease.release(); const replacementLease = workspace.acquire(source.id); await Promise.resolve();
     assert.equal(workspace.resolveResource(target), source); replacementLease.release(); await Promise.resolve();
@@ -378,14 +368,14 @@ test("failing an unstarted save leaves the submitted write in control of its sta
     assert.equal(workspace.document(source.documentId).text(), "unsaved");
 });
 
-test("two queued saves capture exact contents; canonical replies and close/reopen never overwrite later typing", async () => {
-    const { workspace, source, tab, edit } = fixture();
+test("two queued saves capture exact contents; canonical replies preserve later typing", async () => {
+    const { workspace, source, edit } = fixture();
     const commands = new HostSaveQueue(workspace), responses = [deferred<SaveResponse<string>>(), deferred<SaveResponse<string>>()];
     const calls: SaveSubmission<string>[] = [];
     const port = { save: (submission: SaveSubmission<string>) => { calls.push(submission); return responses[calls.length - 1]!.promise; } };
     edit("first"); const first = commands.save(workspace.captureSave(source), port);
     edit("second"); const second = commands.save(workspace.captureSave(source), port);
-    edit("human correction"); workspace.tabs.close(tab);
+    edit("human correction");
     assert.throws(() => workspace.releaseResource(source.id, true));
     assert.throws(() => workspace.beginLoad(source));
     await Promise.resolve(); assert.equal(calls.length, 1); assert.equal(calls[0]!.value, "first");
@@ -395,7 +385,7 @@ test("two queued saves capture exact contents; canonical replies and close/reope
     if (receipt.kind === "saved") { assert.equal(receipt.receipt.submission.revision, 1); assert.equal(receipt.receipt.canonicalApplied, false); }
     await Promise.resolve();
     assert.equal(calls.length, 2); assert.equal(calls[1]!.value, "second"); assert.equal(calls[1]!.expectedServerVersion, "v1");
-    workspace.tabs.open({ kind: "text", documentId: source.documentId });
+
     responses[1]!.resolve({ kind: "saved", serverVersion: "v2" }); await second;
     assert.equal(workspace.document(source.documentId).text(), "human correction");
     assert.equal(source.metadata.getSnapshot().dirty, true); assert.equal(source.metadata.getSnapshot().serverVersion, "v2");
@@ -422,13 +412,13 @@ test("canonical saves apply only without later edits or a revoked edit capabilit
 });
 
 test("Run captures source/configuration/settings before awaiting and retains both resources without saving", async () => {
-    const { workspace, source, form, tab, edit } = fixture();
+    const { workspace, source, form, edit } = fixture();
     const result = deferred<string>(), settings: { mode: RunSettings["mode"] } = { mode: "preview" };
     let captured: unknown;
     const run = runWithResources(workspace, source, form, settings, submission => { captured = submission; return result.promise; });
     settings.mode = "inspect"; edit("after run");
     workspace.updateResource(form, { expectedRevision: 0, origin: "human", value: { path: "new.csv", nested: { enabled: false } } });
-    workspace.tabs.close(tab);
+
     assert.throws(() => workspace.releaseResource(source.id, true)); assert.throws(() => workspace.releaseResource(form.id, true));
     assert.deepEqual(JSON.parse(JSON.stringify(captured)), { source: { target: { id: source.id }, key: source.metadata.getSnapshot().key,
         revision: 0, value: "abc", serverVersion: "v0" }, configuration: { target: { id: form.id }, key: form.metadata.getSnapshot().key,

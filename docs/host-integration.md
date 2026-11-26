@@ -49,7 +49,7 @@ export function attachConvertedPaste(
 
 Call `captureViewRequest(editor, options)` before the first `await`. Omit
 `editOrigin` for reads. Edits need permission for the chosen origin. A revision, selection, visible-fold,
-authority or tab-target change expires the capture. Disposing the editor aborts outstanding requests,
+or edit-authority change expires the capture. Disposing the editor aborts outstanding requests,
 even when a new mount reuses its document view.
 
 `commit(operation)` consumes the capture or returns `false` if stale. Use `available` for host checks.

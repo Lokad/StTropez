@@ -1,7 +1,7 @@
 import { isMountedEditor } from "./captured-view.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
-import type { DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
+import type { DocumentView, Workspace } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { ViewState } from "./view-state.ts";
 import { mapViewAnchor } from "./view-state.ts";
@@ -20,7 +20,7 @@ export type NavigationHistory = Observable<Depths> & Readonly<{
     forward: Travel;
     dispose: () => void;
 }>;
-type Entry = { view: DocumentView; tab: TabTarget | undefined; origin: ViewState; state: ViewState; revision: number; stop: () => void };
+type Entry = { view: DocumentView; origin: ViewState; state: ViewState; revision: number; stop: () => void };
 
 /** Keep successful jumps and map the saved positions through document changes. */
 export function createNavigationHistory(workspace: Workspace): NavigationHistory {
@@ -39,7 +39,7 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
     function clear(stack: Entry[]) {
         for (const entry of stack.splice(0)) entry.stop();
     }
-    const owns = (entry: Entry) => workspace.ownsDocumentView(entry.view, entry.tab);
+    const owns = (entry: Entry) => workspace.ownsDocumentView(entry.view);
     function live(editor: TextEditor) {
         return !disposed && isMountedEditor(editor, workspace);
     }
@@ -47,8 +47,8 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
         const state = editor.activity();
         return state.input !== "idle";
     }
-    function track({ view, tab }: TextEditor, origin: ViewState, revision: number): Entry {
-        const entry: Entry = { view, tab, origin, state: origin, revision, stop: workspace.onDocumentChange(view.documentId, change => {
+    function track({ view }: TextEditor, origin: ViewState, revision: number): Entry {
+        const entry: Entry = { view, origin, state: origin, revision, stop: workspace.onDocumentChange(view.documentId, change => {
             if (entry.revision !== change.previousRevision) return;
             const { state } = entry;
             const selections = change.mapSelections(state.selectionSet ?? { ranges: [state], primary: 0 });

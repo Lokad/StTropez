@@ -23,8 +23,8 @@ test("failed host attachments unwind acquired owners and can mount and edit agai
         const controller = new HostController(), bindings = new ViewBindings(controller), host = document.querySelector<HTMLDivElement>("#host")!;
         const messages = (error: unknown): string[] => error instanceof AggregateError ? error.errors.flatMap(messages) : [String(error instanceof Error ? error.message : error)];
         const ownership = () => {
-            const { resources, documents, tabs, views, leases, subscriptions } = controller.workspace.diagnostics();
-            return { resources, documents, tabs, views, leases, subscriptions, hostSubscriptions: controller.debug().hostSubscriptions };
+            const { resources, documents, views, leases, subscriptions } = controller.workspace.diagnostics();
+            return { resources, documents, views, leases, subscriptions, hostSubscriptions: controller.debug().hostSubscriptions };
         };
         const result = [];
         try {

@@ -130,7 +130,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         frame = undefined;
         if (!anchor) return;
         const document = source.getSnapshot();
-        if (document?.revision !== anchor.revision || !workspace.ownsDocumentView(view, editor.tab)) return hide("expired");
+        if (document?.revision !== anchor.revision || !workspace.ownsDocumentView(view)) return hide("expired");
         if (!element.isConnected) return hide("clipped");
         // A scroll can arrive before the rows for its new position have been painted.
         if (viewport.activity().pending) return;
@@ -229,7 +229,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
             onAbort(signal, viewport.onRender(schedule));
             resize.observe(element);
             onAbort(signal, source.subscribe(schedule));
-            if (editor.tab) onAbort(signal, workspace.tabs.subscribe(schedule));
+
             listen(win, "scroll", schedule, { capture: true, passive: true });
             listen(win, "resize", reconsider);
             listen(win.visualViewport, "scroll", schedule);

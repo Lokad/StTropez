@@ -11,7 +11,7 @@ import { lineContentEnd } from "../core/newlines.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
 import type { DiffHunk, DiffRange } from "../core/diff.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
-import type { DocumentId, DocumentView, TabId, TextResourceHandle, Workspace } from "../core/workspace.ts";
+import type { DocumentId, DocumentView, TextResourceHandle, Workspace } from "../core/workspace.ts";
 import { mountEditor } from "./text-editor.ts";
 import type { EditorSettings, TextEditor, TextEditorOptions } from "./text-editor.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
@@ -76,7 +76,7 @@ function inlineChange(line: number, side: "working" | "baseline", hunk: DiffHunk
 }
 
 /** Two independently virtualized panes. Hosts own reference retrieval, acceptance, saving and execution. */
-export function mountTextComparison(host: HTMLElement, workspace: Workspace, identity: DocumentId | TabId, baseline: ComparisonBaseline | DocumentId,
+export function mountTextComparison(host: HTMLElement, workspace: Workspace, documentId: DocumentId, baseline: ComparisonBaseline | DocumentId,
     options: TextComparisonOptions = {}): TextComparison {
     const requestedBudget = options.workBudget ?? 4096;
     validateWorkBudget(requestedBudget, "Comparison");
@@ -85,7 +85,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     const owner = host.ownerDocument, win = owner.defaultView;
     if (!win) throw new Error("Comparison requires an attached browser document.");
     let display: TextResourceHandle | undefined;
-    const controller = compareText(workspace, identity, baseline, options, typeof baseline === "string" ? undefined : next =>
+    const controller = compareText(workspace, documentId, baseline, options, typeof baseline === "string" ? undefined : next =>
         !!display && workspace.adoptSaved(display.id, { text: next.buffer, serverVersion: next.version, history: "reset" }).applied);
     const runner = createCooperativeRunner(win);
     const root = editorElement(owner, "div", "comparison");
@@ -143,7 +143,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
     });
     let workingMount: ReturnType<typeof mountEditor>;
     try {
-        workingMount = mountEditor(workingPane.content, workspace, identity, {
+        workingMount = mountEditor(workingPane.content, workspace, documentId, {
             view: controller.view, ...paneOptions, ariaLabel: strings.text("Comparison working source"),
         }, presentation("working"));
     }

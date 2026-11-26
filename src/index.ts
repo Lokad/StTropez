@@ -25,13 +25,12 @@ export { characterWarningLabel } from "./core/character-warnings.ts";
 export type { CharacterWarningKind, CharacterWarningOptions, CharacterWarningConfiguration, CharacterWarning, CharacterWarningLimits, CharacterWarningBatch } from "./core/character-warnings.ts";
 export type { Snippet, SnippetStop, SnippetOccurrence, SnippetParseResult, SnippetEditPlan } from "./core/snippets.ts";
 export { Workspace } from "./core/workspace.ts";
-export type { WorkspaceTabs } from "./core/workspace-tabs.ts";
 export type { TextTransaction } from "./core/text-transaction.ts";
 export type {
     BatchEditResult, Capabilities, ChangeResult, DocumentChange, DocumentEditRequest, DocumentId, DocumentLanguage, DocumentSnapshot, DocumentView,
     DocumentViewSnapshot, EditOrigin, EditRequest, EditResult, HistoryRequest,
     LoadedResource, LoadedTextBuffer, ResourceLoad, ResourceHandle, ResourceId, ResourceKey, ResourceLease,
-    ResourceMetadata, ResourceOptions, ResourceSnapshot, ResourceTarget, ResourceVisibility, SaveReceipt, SaveReview, SaveSubmission, SaveTicket, Surface, TabId, TabSnapshot, TabTarget, TextResourceHandle, TextResourceOptions, TextTransactionOptions, TextWriteResult,
+    ResourceMetadata, ResourceOptions, ResourceSnapshot, ResourceTarget, ResourceVisibility, SaveReceipt, SaveReview, SaveSubmission, SaveTicket, TextResourceHandle, TextResourceOptions, TextTransactionOptions, TextWriteResult,
     ViewId, WorkspaceOptions, WorkspaceSnapshot,
 } from "./core/workspace.ts";
 export type { AfterDelivery, NotificationScope, Observable, ObservableListener } from "./core/observable.ts";

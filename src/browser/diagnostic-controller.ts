@@ -39,7 +39,7 @@ const empty: DiagnosticSnapshot = Object.freeze({ diagnostics: emptyList, diagno
 /** Displays pushed diagnostics for one view, including positions mapped while analysis is pending. */
 export function mountDiagnostic(editor: TextEditor, { scope, binding }: LspDocumentOwner,
     options: DiagnosticControllerOptions): DiagnosticController {
-    const { workspace, tab } = editor;
+    const { workspace } = editor;
     const source = scope.observeDiagnostics(binding);
     const layer = editor.decorations.add({ order: 40 });
     const notifications = workspace.createNotificationScope(options.onError);
@@ -86,12 +86,12 @@ export function mountDiagnostic(editor: TextEditor, { scope, binding }: LspDocum
         notifications.assertWritable();
         stop?.(); stop = undefined; clear();
     };
-    const stopTabs = tab ? workspace.tabs.subscribe(() => { if (!available()) clear(); }) : undefined;
+
     const dispose = () => {
         if (disposed) return;
         notifications.assertWritable(); disposed = true;
         cancel();
-        stopTabs?.();
+
         layer.dispose();
         cell.clearSnapshotListeners();
     };

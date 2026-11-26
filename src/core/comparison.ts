@@ -6,8 +6,7 @@ import { Store } from "./observable.ts";
 import { validateWorkBudget } from "./kernel-cursor.ts";
 import { mapComparisonHunks } from "./comparison-presentation.ts";
 import type { Observable } from "./observable.ts";
-import { captureTextSurface } from "./workspace.ts";
-import type { DocumentId, DocumentSnapshot, DocumentView, ResourceLease, TabId, TabTarget, Workspace } from "./workspace.ts";
+import type { DocumentId, DocumentSnapshot, DocumentView, ResourceLease, Workspace } from "./workspace.ts";
 import type { SelectionSet } from "./selections.ts";
 
 export type ComparisonBaseline = Readonly<{ buffer: TextBuffer; version: string }>;
@@ -26,7 +25,7 @@ export type ComparisonTicket = Readonly<{
     complete: (baseline: ComparisonBaseline) => boolean; cancel: () => void; finish: () => void;
 }>;
 export type ComparisonReversion = Readonly<{
-    kind: "revert"; capture: ComparisonCapture & Readonly<{ generation: number; tab?: TabTarget; selectionSet: SelectionSet }>;
+    kind: "revert"; capture: ComparisonCapture & Readonly<{ generation: number; selectionSet: SelectionSet }>;
     isCurrent: () => boolean; complete: () => boolean; cancel: () => void; finish: () => void;
 }>;
 /** Exact hunk from one comparison run. Its action expires when either side changes. */
@@ -42,10 +41,10 @@ function baseline(value: ComparisonBaseline, epoch: number): ComparisonBaseline 
 }
 
 /** The browser can project an external reference into a retained document in the same publication. */
-export function compareText(workspace: Workspace, identity: DocumentId | TabId, initial: ComparisonBaseline | DocumentId,
+export function compareText(workspace: Workspace, documentId: DocumentId, initial: ComparisonBaseline | DocumentId,
     options: Readonly<{ view?: DocumentView; onListenerError?: (error: unknown) => void }> = {},
     projectReference?: (next: ComparisonBaseline) => boolean): ComparisonController {
-    const { documentId, resource, tab: target } = captureTextSurface(workspace, identity);
+    const resource = workspace.resourceForDocument(documentId);
     const document = workspace.document(documentId);
     const referenceDocument = typeof initial === "string" ? workspace.observeDocument(initial) : undefined;
     const fromDocument = (value: DocumentSnapshot, epoch: number) => baseline({ buffer: value.buffer, version: String(value.revision) }, epoch);
@@ -63,7 +62,7 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
     let reversionPolicy = resource.metadata.getSnapshot(), reversionPolicyGeneration = 0;
     const pending = new Set<() => void>();
     const publish = (next: ComparisonSnapshot) => { scope.publish(state, Object.freeze(next)); };
-    const live = () => !disposed && state.get().baseline !== null && workspace.ownsDocumentView(view, target)
+    const live = () => !disposed && state.get().baseline !== null && workspace.ownsDocumentView(view)
         && resource.getSnapshot().state === "ready" && (!referenceDocument || !!referenceDocument.getSnapshot());
     const canAccept = () => live() && resource.metadata.getSnapshot().capabilities.edit.includes("human");
     function expire(): void {
@@ -90,7 +89,7 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
         }
     };
     const stopDocument = workspace.observeDocument(documentId).subscribe(update), stopMetadata = resource.metadata.subscribe(update);
-    const stopTab = target && workspace.tabs.subscribe(update), stopReference = referenceDocument?.subscribe(update);
+    const stopReference = referenceDocument?.subscribe(update);
     function begin(kind: "refresh" | "accept"): ComparisonTicket {
         scope.assertWritable();
         if (referenceDocument) throw new Error("A followed reference changes through its workspace document.");
@@ -124,7 +123,7 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
         if (!canAccept() || current.status !== "ready" || !current.baseline || !current.working) throw new Error("Comparison reversion is unavailable.");
         const capture = Object.freeze({ baselineEpoch: current.baseline.epoch, baselineVersion: current.baseline.version,
             working: current.working, serverVersion: resource.metadata.getSnapshot().serverVersion,
-            generation: current.generation, ...(target ? { tab: target } : {}), selectionSet: view.getSnapshot().selectionSet });
+            generation: current.generation, selectionSet: view.getSnapshot().selectionSet });
         const refresh = refreshGeneration, acceptance = acceptanceGeneration,
             policy = reversionPolicyGeneration, generation = ++reversionGeneration;
         const lease = workspace.acquire(resource.id); let finished = false;
@@ -177,7 +176,7 @@ export function compareText(workspace: Workspace, identity: DocumentId | TabId, 
         scope.assertWritable(); if (disposed) return;
         retention.release();
         for (const finish of [...pending]) finish();
-        disposed = true; stopDocument(); stopMetadata(); stopTab?.(); stopReference?.(); referenceLease?.release(); job?.dispose(); job = undefined;
+        disposed = true; stopDocument(); stopMetadata(); stopReference?.(); referenceLease?.release(); job?.dispose(); job = undefined;
         if (!options.view) view.dispose();
         publish({ status: "disposed", generation: state.get().generation + 1, baseline: null, working: null, hunks: emptyList, progress: null, failure: null });
     } });

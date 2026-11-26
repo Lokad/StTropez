@@ -143,22 +143,19 @@ test("a translated review toolbar shares navigation labels with both panes", asy
 });
 
 test("a document reference follows edits in its source editor and stays read-only in review", async ({ page }) => {
-    const ids = await page.evaluate(async () => {
+    const followsReference = await page.evaluate(async () => {
         const path = "/comparison-ownership/", { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextComparison, mountTextEditor } = await import(path + "tools.js") as typeof import("../../src/browser/index.ts");
-        class DocumentWorkspace extends Workspace {
-            override get tabs(): never { throw new Error("A document-only editor requested the tab layout."); }
-        }
-        const workspace = new DocumentWorkspace();
+        const workspace = new Workspace();
         const resource = (name: string) => workspace.createDocument({ scope: "review", resource: name, variant: "source" }, name, "a");
         const working = resource("working"), baseline = resource("baseline");
         const host = document.createElement("section"); host.id = "follow-document"; document.body.append(host);
         const source = mountTextEditor(host, workspace, baseline, { ariaLabel: "Reference source editor" });
         const review = mountTextComparison(host, workspace, working, baseline);
         host.addEventListener("release", () => { review.dispose(); source.dispose(); host.remove(); }, { once: true });
-        return { tabs: workspace.diagnostics().tabs, reference: review.panes.reference.view.documentId === baseline };
+        return review.panes.reference.view.documentId === baseline;
     });
-    expect(ids).toEqual({ tabs: 0, reference: true });
+    expect(followsReference).toBe(true);
     const host = page.locator("#follow-document"), source = host.getByRole("textbox", { name: "Reference source editor" });
     const reference = host.getByRole("textbox", { name: "Comparison baseline source" });
     await expect(host.locator(".st-comparison-controls output")).toHaveText("No changes");

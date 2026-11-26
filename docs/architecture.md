@@ -74,9 +74,8 @@ connection and synchronized documents. The host owns state shared across mounts.
 
 ### Identity and asynchronous work
 
-Capture a resource and server version for Save, a document revision for an edit, and a tab ID and generation
-for a tab command. Moving a tab preserves its generation. A pane request also checks its view and request
-identity. [View captures](host-integration.md#captured-view-requests)
+Capture a resource and server version for Save and a document revision for an edit. A pane request belongs
+to the issuing editor. Dispose the editor when the host replaces its pane. [View captures](host-integration.md#captured-view-requests)
 
 ### Snapshots and notification delivery
 

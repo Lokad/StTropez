@@ -9,7 +9,7 @@ import { latch } from "./helpers/latch.ts";
 
 test("occurrences coalesce refreshes and bound busy retries from the actual debounce turn", { timeout: 10000 }, async t => {
     for (const delay of [undefined, 37]) {
-        const f = clientFixture(t), tab = f.workspace.tabs.open({ kind: "text", documentId: f.source.documentId }), view = f.workspace.createDocumentView(f.source.documentId);
+        const f = clientFixture(t), view = f.workspace.createDocumentView(f.source.documentId);
         f.peer.onRequest("textDocument/documentHighlight", () => [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } } }]);
         await f.provider.connect();
         const tasks = new Map<number, { run: () => void; delay: number }>(); let serial = 0, time = 0, busy = true;
@@ -17,7 +17,7 @@ test("occurrences coalesce refreshes and bound busy retries from the actual debo
             setTimeout: (run: () => void, delay: number) => { tasks.set(++serial, { run, delay }); return serial; },
             clearTimeout: (id: number) => { tasks.delete(id); } } };
         const layers = createDecorationLayers(f.document, () => {}, () => true);
-        const editor = { decorations: layers.handle, signal: new AbortController().signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, ...editorState({ focused: true }), element: Object.assign(new EventTarget(), { ownerDocument: owner }),
+        const editor = { decorations: layers.handle, signal: new AbortController().signal, workspace: f.workspace, view, ...editorState({ focused: true }), element: Object.assign(new EventTarget(), { ownerDocument: owner }),
             activity: () => ({ disposed: false, input: busy ? "host-insertion" : "idle" }) } as unknown as TextEditor;
         const fire = (delay: number, elapsed = delay) => {
             assert.equal(tasks.size, 1); const [id, task] = tasks.entries().next().value!;
@@ -54,7 +54,7 @@ test("occurrences coalesce refreshes and bound busy retries from the actual debo
             f.edit(); reply.resolve([{ range: { start: { line: 0, character: 6 }, end: { line: 0, character: 10 } } }]);
             await settled(); assert.equal(controller.getSnapshot().items.length, 0);
             controller.refresh(); assert.equal(tasks.size, 1);
-        } finally { stopReady(); language.dispose(); layers.dispose(); view.dispose(); f.workspace.tabs.close(tab); await f.provider.flush(); }
+        } finally { stopReady(); language.dispose(); layers.dispose(); view.dispose(); await f.provider.flush(); }
         assert.equal(tasks.size, 0); assert.equal(f.workspace.diagnostics().leases, 0);
     }
 });

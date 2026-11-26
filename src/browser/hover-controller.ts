@@ -42,7 +42,7 @@ type Inspection = { revision: number; selection: SelectionSet; folds: FoldIndex;
 
 /** A mounted view owns the range, provider reply and diagnostic messages displayed together. */
 export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options: HoverControllerOptions): HoverController {
-    const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
+    const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
     const notifications = workspace.createNotificationScope(options.onError), cell = new Store(idle, notifications);
     const client = hoverClient(owner);
     let inspection: Inspection | undefined, disposed = false;
@@ -60,7 +60,7 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
         capture.cancel();
         if (inspection === current) {
             // The displayed card still follows the view after its read lease is released.
-            current.stops.push(...observeViewSource(workspace, view, tab, changed));
+            current.stops.push(...observeViewSource(workspace, view, changed));
         }
     }
     function release(): void {

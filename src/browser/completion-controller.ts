@@ -72,7 +72,7 @@ function connectionStatus(phase: LspWorkspaceSnapshot["phase"]): CompletionSnaps
 export function mountCompletion(editor: TextEditor, ownerConnection: LspDocumentOwner,
     options: CompletionControllerOptions): CompletionController {
     const input = editorInput(editor);
-    const { workspace, tab: target, view } = editor, documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
+    const { workspace, view } = editor, documentId = view.documentId, resource = workspace.resourceForDocument(documentId);
     const listeners = new AbortController();
     const listen = listenUntil(listeners.signal);
     const { scope, binding, provider } = ownerConnection;
@@ -555,7 +555,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         else closeList("expired");
     }),
     resource.metadata.subscribe(() => { if (snippet && !authorityCurrent(snippet.authority)) { snippet = undefined; publish("expired"); } if (job && !authorityCurrent(job.authority)) closeList("expired"); })];
-    if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) { snippet = undefined; closeList("expired"); } }));
+
     listen(input, "blur", () => {
         cancelAuto();
         if (job) closeList("idle");

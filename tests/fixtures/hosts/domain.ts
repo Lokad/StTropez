@@ -36,7 +36,7 @@ export class HostDomainTools {
     private available(session: Session): boolean {
         const { editor } = session;
         return !this.disposed && this.sessions.get(session.token) === session && editor.element.isConnected && !editor.activity().disposed
-            && this.workspace.ownsDocumentView(editor.view, editor.tab)
+            && this.workspace.ownsDocumentView(editor.view)
             && this.workspace.resourceForDocument(editor.view.documentId).getSnapshot().state === "ready";
     }
     private authority(session: Session): string {

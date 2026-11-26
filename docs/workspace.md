@@ -29,8 +29,8 @@ A resource key groups scope, resource and variant. Reopening a released key give
 Across awaits, capture and resolve a `ResourceTarget`. Views of one `DocumentId` share text and history.
 Local revision tracks edits. Server version identifies the saved baseline.
 
-Use `tabs.capture(id)` before a delay and `tabs.resolve(target)` afterward. Closing or replacing the surface
-expires the target. `ownsDocumentView(view, target?)` checks workspace and optional tab.
+`ownsDocumentView(view)` checks that the view belongs to this workspace. To target one mount,
+capture its editor and check `editor.signal`. Disposing the editor aborts the signal even if the host keeps the view.
 
 Read `getSnapshot()` or subscribe to `metadata`. `document(id)` requires ready text.
 `observeDocument(id).getSnapshot()` can return `undefined`. Read ranges through `buffer`.
@@ -180,12 +180,12 @@ Call `workspace.beginLoad(handle)` before starting a read. Complete it with `acc
 or `fail(message)`. Call `dispose()` to abandon it and restore the previous state. A superseded read releases
 its lease immediately and ignores late replies. Acceptance resets selections, folds and linked history.
 
-Tabs, views and leases retain resources. `acquire(id, { preventReload: true })` blocks refresh.
+Views and leases retain resources. `acquire(id, { preventReload: true })` blocks refresh.
 Use `releaseResource` after last use or `releaseResourceWhenUnowned` to defer release. A dirty edit cancels release when discard is forbidden.
 
 <a id="delayed-work-and-presentation"></a>
 
-### Keep a delayed reply on the right tab
+### Keep a delayed reply on its original editor
 
 Capture the original editor and document. Before displaying a reply, check the editor's lifetime, the
 document revision and the host's cancellation signal.
@@ -203,7 +203,7 @@ export async function analyze<T>(
     const source = document.getSnapshot();
     if (!source || signal.aborted || editor.signal.aborted) return;
     const result = await compute(source.buffer, signal);
-    if (signal.aborted || editor.signal.aborted || !editor.workspace.ownsDocumentView(editor.view, editor.tab)) return;
+    if (signal.aborted || editor.signal.aborted || !editor.workspace.ownsDocumentView(editor.view)) return;
     if (document.getSnapshot()?.revision === source.revision) display(result);
 }
 ```
@@ -311,7 +311,7 @@ export function restrictPair(workspace: Workspace, first: ResourceId, second: Re
 ## Host responsibilities
 
 Validate schemas, enforce permissions and storage preconditions, and confirm draft discard. Release
-subscriptions, views, tabs and leases on close.
+subscriptions, views and leases on close.
 
 ## Not covered
 

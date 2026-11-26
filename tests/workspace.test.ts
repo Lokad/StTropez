@@ -8,8 +8,7 @@ import type { DocumentChange } from "../src/index.ts";
 function fixture() {
     const workspace = new Workspace();
     const documentId = workspace.createDocument({ scope: "demo", resource: "sample", variant: "working" }, "Sample", "abc");
-    const tabId = workspace.tabs.open({ kind: "text", documentId });
-    return { workspace, documentId, tabId };
+        return { workspace, documentId };
 }
 
 test("language changes publish a new document identity without replaying an edit", () => {
@@ -209,40 +208,15 @@ test("follow-up writes run after listeners in order and expire with their subscr
     first(); last(); assert.equal(workspace.diagnostics().subscriptions, 0);
 });
 
-test("delayed actions expire after replacement or close", () => {
-    const { workspace, documentId, tabId } = fixture();
-    const view = workspace.createDocumentView(documentId);
-    const target = workspace.tabs.capture(tabId);
-    const before = workspace.tabs.resolve(target);
-    let observed = before;
-    const stop = workspace.tabs.subscribe(() => { observed = workspace.tabs.resolve(target); });
-    assert.throws(() => workspace.tabs.replace(tabId, { kind: "text", documentId: "missing" as typeof documentId }));
-    assert.equal(workspace.tabs.resolve(target), before);
-    workspace.tabs.replace(tabId, { kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" });
-    assert.equal(workspace.tabs.resolve(target), undefined); assert.equal(observed, undefined);
-    const replacement = workspace.tabs.capture(tabId);
-    assert.equal(workspace.ownsDocumentView(view), true);
-    assert.equal(workspace.ownsDocumentView(view, target), false);
-    assert.equal(workspace.ownsDocumentView(view, replacement), false);
-    workspace.tabs.close(tabId);
-    const reopened = workspace.tabs.capture(workspace.tabs.open({ kind: "text", documentId }));
-    assert.equal(workspace.tabs.resolve(replacement), undefined);
-    assert.equal(workspace.ownsDocumentView(view, reopened), true);
-    view.dispose();
-    assert.equal(workspace.ownsDocumentView(view, reopened), false);
-    assert.throws(() => workspace.tabs.capture(tabId), /Unknown tab/); stop();
-});
-
 test("guards cannot target a different workspace with identical local IDs", () => {
     const first = fixture();
     const second = fixture();
     const local = first.workspace.createDocumentView(first.documentId), foreign = second.workspace.createDocumentView(second.documentId);
-    const target = first.workspace.tabs.capture(first.tabId);
+
     assert.equal(local.id, foreign.id);
-    assert.equal(first.workspace.ownsDocumentView(local, target), true);
-    assert.equal(second.workspace.tabs.resolve(target), undefined);
-    assert.equal(first.workspace.ownsDocumentView(foreign, target), false);
-    assert.equal(second.workspace.ownsDocumentView(foreign, target), false);
+    assert.equal(first.workspace.ownsDocumentView(local), true);
+    assert.equal(first.workspace.ownsDocumentView(foreign), false);
+    assert.equal(second.workspace.ownsDocumentView(foreign), true);
     local.dispose(); foreign.dispose();
 });
 
@@ -252,17 +226,6 @@ test("late agent edits cannot overwrite a newer human revision", () => {
     assert.deepEqual(workspace.edit({ documentId, expectedRevision: 0, origin: "agent", edits: [{ from: 0, to: 3, insert: "old" }] }),
         { applied: false, reason: "stale-revision" });
     assert.equal(workspace.document(documentId).text(), "aBc");
-});
-
-test("all surfaces share one document while ownership prevents premature release", () => {
-    const { workspace, documentId, tabId } = fixture();
-    const panel = workspace.tabs.open({ kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" });
-    workspace.tabs.close(tabId);
-    assert.throws(() => workspace.releaseDocument(documentId));
-    workspace.tabs.close(panel);
-    assert.equal(workspace.document(documentId).text(), "abc");
-    workspace.releaseDocument(documentId);
-    assert.throws(() => workspace.document(documentId));
 });
 
 test("snapshots are immutable, stable between changes and notify subscribers once", () => {

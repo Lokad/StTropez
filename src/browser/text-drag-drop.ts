@@ -2,7 +2,7 @@ import { listenUntil } from "./listen.ts";
 import { clientBox, hitTestRoot, onPaintedSelection } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import type { Affinity } from "../core/positions.ts";
-import type { DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
+import type { DocumentView, Workspace } from "../core/workspace.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import { applyTextDrop, captureTextTransfer, isCurrentTextTransfer } from "./text-transfer.ts";
 import type { TextTransferCapture } from "./text-transfer.ts";
@@ -34,10 +34,10 @@ function beginDrag(root: HTMLElement, owner: symbol, source: TextTransferCapture
 }
 
 /** Native data-store bridge. Payloads are read at drop, never during protected dragover. */
-export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab: TabTarget | undefined; view: DocumentView; viewport: TextViewport;
+export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; view: DocumentView; viewport: TextViewport;
     input: HTMLTextAreaElement; available: () => boolean; beforeStart: () => void;
     afterDrop: (offset: number) => void; rejected: (reason: string) => void }>) {
-    const { workspace, tab, view, viewport, input } = options, root = viewport.element;
+    const { workspace, view, viewport, input } = options, root = viewport.element;
     const document = root.ownerDocument, win = document.defaultView!, owner = Symbol(), listeners = new AbortController();
     const listen = listenUntil(listeners.signal);
     const apple = /Mac|iPhone|iPad|iPod/.test(win.navigator.platform);
@@ -49,7 +49,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     let armed: Arm | undefined, aim: Aim | undefined, previewFrame: number | undefined;
     let disposed = false, expired = false;
     function current() {
-        if (disposed || !options.available() || !root.isConnected || !workspace.ownsDocumentView(view, tab)) return;
+        if (disposed || !options.available() || !root.isConnected || !workspace.ownsDocumentView(view)) return;
         return workspace.observeDocument(view.documentId).getSnapshot();
     }
     function clearAim(): void {
@@ -114,7 +114,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
         if (!intent || event.target === input || !event.dataTransfer || current()?.revision !== intent.revision || view.getSnapshot().selectionSet !== intent.selectionSet) {
             event.preventDefault(); clearArm(); return;
         }
-        options.beforeStart(); const captured = captureTextTransfer(workspace, tab, view);
+        options.beforeStart(); const captured = captureTextTransfer(workspace, view);
         const source = captured && input.readOnly ? Object.freeze({ ...captured, moveAllowed: false }) : captured;
         if (!source || source.revision !== intent.revision || source.selectionSet !== intent.selectionSet) { event.preventDefault(); clearArm(); return; }
         const { token } = beginDrag(root, owner, source); armed = undefined;
@@ -161,7 +161,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
                 source = active.source;
             }
             options.beforeStart();
-            const result = applyTextDrop({ workspace, tab, view, expectedRevision: captured.revision, offset: captured.offset,
+            const result = applyTextDrop({ workspace, view, expectedRevision: captured.revision, offset: captured.offset,
                 ...(source ? { source } : { text: data.getData("text/plain") }), copy: captured.copy });
             if (!result.applied) options.rejected(result.reason);
             else if (result.offset !== null) options.afterDrop(result.offset);
@@ -182,7 +182,7 @@ export function mountTextDragDrop(options: Readonly<{ workspace: Workspace; tab:
     listen(win, "pagehide", finish);
     const resource = workspace.resourceForDocument(view.documentId);
     const subscriptions = [workspace.observeDocument(view.documentId).subscribe(changed), view.subscribe(changed), resource.metadata.subscribe(changed)];
-    if (tab) subscriptions.push(workspace.tabs.subscribe(changed));
+
     return Object.freeze({
         disarm: clearArm,
         arm: (event: PointerEvent): boolean => {

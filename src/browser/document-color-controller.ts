@@ -69,7 +69,7 @@ function colorChoice(label: string, index: number,
 /** Review one provider color presentation and apply all its edits as one undo command. */
 export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner, options: DocumentColorControllerOptions): DocumentColorController {
     const { provider } = owner;
-    const { workspace, view, tab } = editor, win = editor.element.ownerDocument.defaultView!;
+    const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
     const { scope, state, signal, active, available, capture, release, expire, mount } =
         languageReview<Job, DocumentColorSnapshot>(editor, "Document color", idle, options.canCapture,
             status => publish(status), j => j.preview?.capture.cancel());
@@ -99,7 +99,7 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
         return failed(error);
     }
     function current(j: Job) {
-        return active.job === j && !j.invalid && available(view.documentId) && workspace.ownsDocumentView(view, tab) && (j.reply?.isCurrent() ?? j.source.isCurrent());
+        return active.job === j && !j.invalid && available(view.documentId) && workspace.ownsDocumentView(view) && (j.reply?.isCurrent() ?? j.source.isCurrent());
     }
     function startTimer(j: Job, call: TimedRequest) {
         win.clearTimeout(j.timer);

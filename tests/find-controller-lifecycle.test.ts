@@ -9,7 +9,7 @@ import type { FindHost } from "../src/browser/find.ts";
 test("controller and workspace notifications reject cross-owner writes through nested delivery", t => {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
     const documentId = workspace.createDocument({ scope: "find", resource: "notifications", variant: "working" }, "Source", "cat");
-    const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>();
+    const view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>();
     let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
@@ -17,9 +17,9 @@ test("controller and workspace notifications reject cross-owner writes through n
         viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
     const scope = workspace.createNotificationScope();
     const observe = t.mock.method(workspace, "createNotificationScope", () => scope);
-    const find = findForView(workspace, workspace.tabs.capture(tab), editor);
+    const find = findForView(workspace, editor);
     observe.mock.restore();
-    const comparison = compareText(workspace, tab, { buffer: TextBuffer.from("cat"), version: "one" });
+    const comparison = compareText(workspace, documentId, { buffer: TextBuffer.from("cat"), version: "one" });
     const other = new Workspace(), independent = other.createDocument({ scope: "find", resource: "other", variant: "working" }, "Other", "a");
     const write = () => workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision, origin: "human", edits: [{ from: 0, to: 0, insert: "x" }] });
     const rejected: string[] = [], attempt = (name: string, command: () => unknown) => { try { command(); } catch (error) { if (error instanceof Error && /Reentrant mutation/.test(error.message)) rejected.push(name); else errors.push(error); } };
@@ -47,20 +47,20 @@ test("controller and workspace notifications reject cross-owner writes through n
         assert.equal(scope.subscriptionCount(), 0);
         stopLate();
     } finally {
-        stops.forEach(stop => stop()); find.dispose(); comparison.dispose(); view.dispose(); workspace.tabs.close(tab);
+        stops.forEach(stop => stop()); find.dispose(); comparison.dispose(); view.dispose();
         assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0);
     }
 });
 
 test("changing whole-word mode excludes selected substring matches", () => {
     const workspace = new Workspace(), original = "cat scatter cat_ cat", documentId = workspace.createDocument({ scope: "find", resource: "options", variant: "working" }, "Source", original);
-    const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId);
+    const view = workspace.createDocumentView(documentId);
     const tasks = new Map<number, () => void>(); let serial = 0, focused = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ input: "idle", disposed: false }),
         viewport: { revealRange: () => {} }, focus: () => { focused++; } } satisfies FindHost;
-    const find = findForView(workspace, workspace.tabs.capture(tab), editor);
+    const find = findForView(workspace, editor);
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 100); const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); } };
     try {
         view.setSelection(0, { anchor: original.length, head: original.lastIndexOf("cat") });
@@ -84,32 +84,31 @@ test("changing whole-word mode excludes selected substring matches", () => {
         assert.equal(workspace.observeHistory(documentId).getSnapshot().undoDepth, history.undoDepth + 1);
         assert.equal(find.getSnapshot().wholeWord, true); assert.equal(find.getSnapshot().count, 1);
     } finally {
-        find.dispose(); view.dispose(); workspace.tabs.close(tab);
+        find.dispose(); view.dispose();
         assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().views, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0);
     }
 });
 
-for (const lifetime of ["destroyed", "expired", "view-disposed"] as const) for (const composing of [false, true])
+for (const lifetime of ["destroyed", "view-disposed"] as const) for (const composing of [false, true])
     test(`current replacement stays inert after ${lifetime} with composition ${composing}`, async t => {
         const workspace = new Workspace(), documentId = workspace.createDocument({ scope: "find", resource: "source", variant: "working" }, "Source", "sample sample");
-        const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId, { anchor: 0, head: 6 });
+        const view = workspace.createDocumentView(documentId, { anchor: 0, head: 6 });
         const owner = Object.assign(new EventTarget(), { defaultView: { setTimeout: (work: () => void, delay: number) => Number(setTimeout(work, delay)), clearTimeout, performance } });
         // This headless facade exercises controller ownership and notifications. Real DOM/input remains browser coverage.
         let inactive = false;
         const editor = { view, element: { ownerDocument: owner }, ...editorState({ readOnlyReason: "read-only" }), activity: () => ({ input: inactive && composing ? "composing" : "idle", disposed: false }),
             viewport: { revealRange: () => { assert.equal(inactive, false, "Inactive view must not be revealed."); } },
             focus: () => { assert.equal(inactive, false, "Inactive editor must not receive focus."); } } satisfies FindHost;
-        const find = findForView(workspace, workspace.tabs.capture(tab), editor); let stop = () => {};
+        const find = findForView(workspace, editor); let stop = () => {};
         try {
             find.setQuery("sample");
             for (let turns = 0; find.getSnapshot().status !== "ready"; turns++) { assert.ok(turns < 100); await new Promise(resolve => setTimeout(resolve, 1)); }
             find.next(); assert.notEqual(find.getSnapshot().current, null); inactive = true;
             if (lifetime === "destroyed") find.dispose();
-            else if (lifetime === "expired") workspace.tabs.replace(tab, { kind: "panel", resourceId: workspace.resourceForDocument(documentId).id, panelType: "configuration" });
             else view.dispose();
             const before = find.getSnapshot(), document = workspace.document(documentId), selected = view.getSnapshot(), history = workspace.observeHistory(documentId).getSnapshot();
             if (lifetime !== "view-disposed") assert.equal(before.current, null);
-            assert.equal(before.reason, lifetime === "expired" ? "view-unavailable" : null);
+            assert.equal(before.reason, null);
             let notifications = 0; stop = find.subscribe(() => { notifications++; });
             const returned = find.replaceCurrent("changed"), after = find.getSnapshot();
             t.diagnostic(JSON.stringify({ lifetime, composing, returned, notifications, before, after }));
@@ -117,20 +116,20 @@ for (const lifetime of ["destroyed", "expired", "view-disposed"] as const) for (
             assert.strictEqual(workspace.document(documentId).buffer, document.buffer); assert.equal(workspace.document(documentId).revision, document.revision);
             assert.deepEqual(view.getSnapshot(), selected); assert.deepEqual(workspace.observeHistory(documentId).getSnapshot(), history);
         } finally {
-            stop(); find.dispose(); view.dispose(); workspace.tabs.close(tab);
+            stop(); find.dispose(); view.dispose();
             assert.equal(workspace.diagnostics().views, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0);
         }
     });
 
 test("case options retain raw Unicode matches and literal Replace All commits in one shared history entry", () => {
     const workspace = new Workspace(), original = "K k K_ 𐐀 𐐨 café café SS ß", documentId = workspace.createDocument({ scope: "find", resource: "case", variant: "working" }, "Source", original);
-    const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId), peer = workspace.createDocumentView(documentId);
+    const view = workspace.createDocumentView(documentId), peer = workspace.createDocumentView(documentId);
     const tasks = new Map<number, () => void>(); let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ input: "idle", disposed: false }),
         viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
-    const find = findForView(workspace, workspace.tabs.capture(tab), editor), text = () => { const buffer = workspace.document(documentId).buffer; return buffer.slice(0, buffer.length); };
+    const find = findForView(workspace, editor), text = () => { const buffer = workspace.document(documentId).buffer; return buffer.slice(0, buffer.length); };
     const runOne = () => { const [id, work] = tasks.entries().next().value!; tasks.delete(id); work(); };
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 100); runOne(); } };
     try {
@@ -169,7 +168,7 @@ test("case options retain raw Unicode matches and literal Replace All commits in
         find.setFlags({ wholeWord: true }); drain();
         assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain(); assert.equal(text(), many); assert.deepEqual(view.getSnapshot().selectionSet, complete);
     } finally {
-        find.dispose(); view.dispose(); peer.dispose(); workspace.tabs.close(tab);
+        find.dispose(); view.dispose(); peer.dispose();
         assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().subscriptions, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().views, 0);
     }
 });

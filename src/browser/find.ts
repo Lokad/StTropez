@@ -4,7 +4,7 @@ import { emptyList } from "../core/empty-list.ts";
 import { isOffsetRange } from "../core/bounds.ts";
 import { LiteralSearch } from "../core/search.ts";
 import type { TextEditor, TextEditorActivity } from "./text-editor.ts";
-import type { DocumentSnapshot, DocumentView, EditResult, TabTarget, Workspace } from "../core/workspace.ts";
+import type { DocumentSnapshot, DocumentView, EditResult, Workspace } from "../core/workspace.ts";
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { FindIndex } from "../core/find-index.ts";
 import { LiteralFindRepair } from "./find-index.ts";
@@ -87,13 +87,13 @@ const hasResults = (state: FindSnapshot) => state.status === "ready" || state.st
 
 /** Host-rendered find UI; scanning/planning yield, while replacement uses one captured transaction. */
 export function createFindController(editor: TextEditor, options: FindControllerOptions = {}): FindController {
-    return findForView(editor.workspace, editor.tab, editor, options, editor.viewport);
+    return findForView(editor.workspace, editor, options, editor.viewport);
 }
 
-export function findForView(workspace: Workspace, target: TabTarget | undefined, editor: FindHost, options: FindControllerOptions = {}, viewport?: TextViewport): FindController {
+export function findForView(workspace: Workspace, editor: FindHost, options: FindControllerOptions = {}, viewport?: TextViewport): FindController {
     const backend = options.regularExpressionBackend, regexDelay = options.regularExpressionDelayMs ?? 80;
     if (!Number.isFinite(regexDelay) || regexDelay < 0 || regexDelay > 1000) throw new RangeError("Invalid regular-expression query delay.");
-    if (editor.activity().disposed || !workspace.ownsDocumentView(editor.view, target)) throw new Error("Find requires the captured document view.");
+    if (editor.activity().disposed || !workspace.ownsDocumentView(editor.view)) throw new Error("Find requires the captured document view.");
     const documentId = editor.view.documentId, resource = workspace.resourceForDocument(documentId), lease = workspace.acquire(resource.id), owner = editor.element.ownerDocument, win = owner.defaultView!;
     const viewSnapshot = () => editor.view.getSnapshot();
     const currentSelection = () => viewSnapshot().selectionSet;
@@ -122,7 +122,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
     let edges: { prefix: number; suffix: number } | undefined;
     let scanMaximum = 0, replaceTransactionMs = 0;
     const sameOwner = (a: DocumentSnapshot, b: DocumentSnapshot) => a.id === b.id && a.resourceId === b.resourceId && a.key === b.key;
-    const valid = () => !disposed && lease.active() && workspace.ownsDocumentView(editor.view, target)
+    const valid = () => !disposed && lease.active() && workspace.ownsDocumentView(editor.view)
         && documentChanges.getSnapshot() !== undefined && !editor.activity().disposed;
     const publish = (patch: FindPatch) => {
         const previous = store.get(), next = Object.freeze({ ...previous, ...patch });
@@ -647,7 +647,7 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
             restart(state.query, state, true);
         }
     })];
-    if (target) subscriptions.push(workspace.tabs.subscribe(() => { if (!valid()) { stop(); expire(); } }));
+
     const dispose = () => {
         if (disposed) return;
         scope.assertWritable();

@@ -6,7 +6,7 @@ import { Store } from "../core/observable.ts";
 import { isFocused } from "./dom-focus.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 import type { Observable } from "../core/observable.ts";
-import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
+import type { DocumentId, DocumentView, Workspace } from "../core/workspace.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { InlineDecoration, TextViewport } from "./viewport.ts";
 
@@ -17,7 +17,7 @@ export type BracketHighlights = Observable<BracketHighlightSnapshot> & Readonly<
     refresh: () => void }>;
 
 /** Internal view owner. The editor supplies its existing activity/configuration without a second editor state. */
-export function mountBracketHighlights(workspace: Workspace, target: TabTarget | undefined, view: DocumentView, viewport: TextViewport, input: HTMLTextAreaElement,
+export function mountBracketHighlights(workspace: Workspace, view: DocumentView, viewport: TextViewport, input: HTMLTextAreaElement,
     configuration: () => ResolvedLanguageConfiguration, idle: () => boolean, initial: false | Required<BracketMatchOptions> = false) {
     const documentId = view.documentId, win = input.ownerDocument.defaultView!;
     const notifications = workspace.createNotificationScope(), runner = createCooperativeRunner(win);
@@ -30,7 +30,7 @@ export function mountBracketHighlights(workspace: Workspace, target: TabTarget |
     let job: Job | undefined, current: (() => boolean) | undefined, decorations: readonly InlineDecoration[] = emptyList;
     const layer = viewport.decorations.add({ order: 100, minimap: false });
     const focused = () => isFocused(input);
-    const available = () => !disposed && !!limits && !input.disabled && workspace.ownsDocumentView(view, target) && focused();
+    const available = () => !disposed && !!limits && !input.disabled && workspace.ownsDocumentView(view) && focused();
     function cursor(buffer: TextBuffer, at: number): BracketMatchCursor {
         const configured = configuration();
         if (configured !== language) { language = configured; matcher = new BracketMatcher(configured); }
@@ -98,7 +98,7 @@ export function mountBracketHighlights(workspace: Workspace, target: TabTarget |
             events = new AbortController();
             for (const name of ["focus", "blur", "compositionstart", "compositionend", "input", "keyup"] as const) input.addEventListener(name, observed, { signal: events.signal });
             stops.push(workspace.observeDocument(documentId).subscribe(observed), view.subscribe(observed));
-            if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) refresh(); }));
+
         }
         refresh(true); return true;
     };

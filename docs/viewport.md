@@ -26,7 +26,7 @@ export function showPreview(host: HTMLElement, workspace: Workspace, documentId:
 
 ### Mounting and presentation
 
-Mount by document ID for a preview or tab ID to clear it on tab replacement. `ariaLabel` defaults to the
+Mount by document ID and dispose the viewport when its pane closes. `ariaLabel` defaults to the
 title. An explicit `view` from the same workspace and document preserves selections and folds across mounts.
 The viewport disposes views it creates.
 

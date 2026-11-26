@@ -9,7 +9,7 @@ import type { TextEditor } from "../src/browser/text-editor.ts";
 import { clientFixture } from "./helpers/lsp-client.ts";
 
 for (const kind of ["folding", "highlights"] as const) test(`${kind} commands reject listener reentry while internal revision refresh remains available`, async t => {
-    const f = clientFixture(t), tab = f.workspace.tabs.open({ kind: "text", documentId: f.source.documentId }), view = f.workspace.createDocumentView(f.source.documentId);
+    const f = clientFixture(t), view = f.workspace.createDocumentView(f.source.documentId);
     const tasks = new Map<number, () => void>(); let serial = 0;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } };
     const registry = createCommandRegistry(false, () => true, () => () => true, () => editor);
@@ -20,7 +20,7 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
     }
     const layers = createDecorationLayers(f.document, () => {}, () => true);
     const lifetime = new AbortController();
-    const editor = { decorations: layers.handle, commands: registry.commands, keymap: registry.keymap, signal: lifetime.signal, workspace: f.workspace, tab: f.workspace.tabs.capture(tab), view, element: Object.assign(new EventTarget(), { ownerDocument: owner }), ...editorState(),
+    const editor = { decorations: layers.handle, commands: registry.commands, keymap: registry.keymap, signal: lifetime.signal, workspace: f.workspace, view, element: Object.assign(new EventTarget(), { ownerDocument: owner }), ...editorState(),
         activity: () => ({ disposed: false, input: "idle" }), viewport: { revealRange: () => {} }, focus: () => {} } as unknown as TextEditor;
     const controller = kind === "folding" ? createFoldingController(editor, () => [])
         : attachEditorLanguage(editor, f.provider, { occurrences: {} }).occurrences;
@@ -40,7 +40,7 @@ for (const kind of ["folding", "highlights"] as const) test(`${kind} commands re
         const before = controller.getSnapshot(); assert.notEqual(before.status, "disposed");
         f.edit(); assert.notEqual(controller.getSnapshot(), before);
         assert.notEqual(controller.getSnapshot().status, "disposed");
-    } finally { lifetime.abort(); stop(); layers.dispose(); view.dispose(); f.workspace.tabs.close(tab); }
+    } finally { lifetime.abort(); stop(); layers.dispose(); view.dispose(); }
     assert.equal(controller.getSnapshot().status, "disposed");
     assert.equal(closed, 1);
     assert.throws(() => controller.subscribe(() => {}), /disposed/);

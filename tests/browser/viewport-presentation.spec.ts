@@ -256,7 +256,7 @@ test("document mounts own Find, fold discovery and pending insertions across a r
                 if (!insertion) throw new Error("Could not capture the selected text.");
                 editor.dispose();
                 replacement = mount(); replacement.focus(); reply!();
-                return { tabs: workspace.diagnostics().tabs, expired: insertion.signal.aborted && !insertion.insert("stale"),
+                return { expired: insertion.signal.aborted && !insertion.insert("stale"),
                     cancelled: discoverySignal?.aborted, find: find.getSnapshot().status, folds: folds.getSnapshot().status };
             },
             finish: () => {
@@ -267,11 +267,11 @@ test("document mounts own Find, fold discovery and pending insertions across a r
         };
     });
     await expect.poll(() => fixture.evaluate(f => f.ready())).toBe(true);
-    expect(await fixture.evaluate(f => f.replace())).toEqual({ tabs: 0, expired: true, cancelled: true, find: "disposed", folds: "disposed" });
+    expect(await fixture.evaluate(f => f.replace())).toEqual({ expired: true, cancelled: true, find: "disposed", folds: "disposed" });
     await expect(page.getByRole("textbox", { name: "Source" })).toBeFocused();
     await page.keyboard.type("ok");
     await expect(page.locator(".st-viewport")).toContainText("ok");
-    expect(await fixture.evaluate(f => f.finish())).toMatchObject({ text: "one\n  ok\nend", ranges: 0, tabs: 0, views: 0, leases: 0, subscriptions: 0 });
+    expect(await fixture.evaluate(f => f.finish())).toMatchObject({ text: "one\n  ok\nend", ranges: 0, views: 0, leases: 0, subscriptions: 0 });
 });
 
 test("cancelling a refresh makes the same selection editable before the stale reply settles", async ({ page }) => {

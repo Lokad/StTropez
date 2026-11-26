@@ -37,8 +37,7 @@ previews. A formatter returning `undefined` selects English. Use `controls: fals
 
 ### Identity and comparison state
 
-Mount by working document or tab ID. Moving the tab keeps the review. Closing or replacing it expires the
-target. A `{ buffer, version }` baseline creates a private read-only document. A `DocumentId` baseline
+Mount by working document ID. Dispose the comparison when its host pane closes or switches documents. A `{ buffer, version }` baseline creates a private read-only document. A `DocumentId` baseline
 follows that workspace document and uses its decimal revision as version.
 
 Read `getSnapshot()` or `subscribe()`. A `ready` result has exact hunks for its `generation`. During a new
@@ -123,8 +122,7 @@ Unavailable capture can throw. Stale completion returns `false`. Complete, cance
 ### Baseline views and decoration
 
 Attach colors, folds and Find to `panes.reference` and `panes.working` using each pane’s revision. Refresh
-preserves the reference editor, reruns Find and maps surviving folds. The private baseline omits Save, tabs
-and public inventory. [Decorations](viewport.md#decoration-layers)
+preserves the reference editor, reruns Find and maps surviving folds. The private baseline is read-only and stays out of the public inventory. [Decorations](viewport.md#decoration-layers)
 
 Only changed source rows get tinted. Insertions and deletions mark a point on the empty side. Theme
 backgrounds with `--st-comparison-baseline-line` and `--st-comparison-working-line`, gutters with the

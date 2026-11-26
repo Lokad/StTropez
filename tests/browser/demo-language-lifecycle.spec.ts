@@ -69,8 +69,8 @@ test("language mounting releases partial owners, preserves failures and rejects 
         const file = project.files[0]!, editor = mountTextEditor(document.querySelector<HTMLDivElement>("#mount")!, project.workspace, file.resource.documentId, { view: file.view });
         const frames = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         const ownership = () => {
-            const { resources, documents, tabs, views, leases, subscriptions } = project.workspace.diagnostics();
-            return { resources, documents, tabs, views, leases, subscriptions };
+            const { resources, documents, views, leases, subscriptions } = project.workspace.diagnostics();
+            return { resources, documents, views, leases, subscriptions };
         };
         const panels = [".st-completion", ".st-signature", ".demo-snippet", ".st-hover", ".st-locations", ".st-rename", ".st-code-actions"];
         const panelCounts = () => panels.map(selector => ({ selector, count: document.querySelectorAll(selector).length }));

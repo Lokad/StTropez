@@ -56,7 +56,7 @@ function unsubscribes. `dispose()` releases a mount. Its document can outlive it
 | --- | --- |
 | Resource | The host’s scope, resource and variant identify a file or value. Its workspace handle survives a label change. |
 | Document | Panes with the same document ID share text and Undo. A revision identifies its text version. Storage has a separate version. |
-| Tab | Moving a tab preserves its ID. Replacing its contents changes its generation. |
+| Tab | A host UI element that selects a document or panel. The host owns its identity and lifetime. |
 | View | One set of selections, folds and scroll offsets for a document. |
 | Capture | The target and inputs retained when an operation starts, including the checks needed to use its result. |
 | Lease | Keeps the resource in the workspace until release. |

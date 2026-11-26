@@ -106,16 +106,16 @@ test("caseless repair cannot expose a clipped surrogate as a new literal match",
 function fixture(text: string, clock: Pick<Performance, "now"> = performance) {
     const errors: unknown[] = [], workspace = new Workspace({ onListenerError: error => errors.push(error) });
     const documentId = workspace.createDocument({ scope: "find", resource: "retention", variant: "working" }, "Source", text);
-    const tab = workspace.tabs.open({ kind: "text", documentId }), view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>(); let serial = 0;
+    const view = workspace.createDocumentView(documentId), tasks = new Map<number, () => void>(); let serial = 0;
     const owner = Object.assign(new EventTarget(), { defaultView: { performance: clock,
         setTimeout: (work: () => void) => { tasks.set(++serial, work); return serial; }, clearTimeout: (id: number) => tasks.delete(id) } });
     const editor = { view, element: { ownerDocument: owner }, ...editorState(), activity: () => ({ input: "idle", disposed: false }), viewport: { revealRange: () => {} }, focus: () => {} } satisfies FindHost;
-    const find = findForView(workspace, workspace.tabs.capture(tab), editor), document = () => workspace.document(documentId);
+    const find = findForView(workspace, editor), document = () => workspace.document(documentId);
     const step = () => { const entry = tasks.entries().next().value; assert.ok(entry); tasks.delete(entry[0]); entry[1](); };
     const drain = () => { for (let turns = 0; tasks.size; turns++) { assert.ok(turns < 1000); step(); } assert.deepEqual(errors, []); };
     const edit = (from: number, to: number, insert: string) => { assert.equal(workspace.edit({ documentId, expectedRevision: document().revision, origin: "human", edits: [{ from, to, insert }], history: { kind: "replace" } }).applied, true); };
     const select = (anchor: number, head = anchor) => view.setSelection(document().revision, { anchor, head });
-    const dispose = () => { find.dispose(); view.dispose(); workspace.tabs.close(tab); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); };
+    const dispose = () => { find.dispose(); view.dispose(); assert.equal(tasks.size, 0); assert.equal(workspace.diagnostics().leases, 0); assert.equal(workspace.diagnostics().subscriptions, 0); };
     return { workspace, documentId, view, find, document, tasks, step, drain, edit, select, dispose };
 }
 

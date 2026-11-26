@@ -155,7 +155,6 @@ test("immutable Run/log resources link captured inputs and keep older progress/r
         h.runResources.open(initialLog);
         const oldLog = h.runResources.inspect();
         assert.equal(h.debug().diagnostics.resources, beforeRun.resources);
-        assert.equal(h.debug().diagnostics.tabs, beforeRun.tabs);
         sourceEdit(h, " later"); h.setPath("later-connection.csv"); h.transfer.update("destination", "later-target.csv"); const second = h.run(); await settled(); const latest = h.debug().activity.lastRun;
         const secondId = h.runResources.state.getSnapshot().runs[1]!.id; h.runResources.open(secondId); const selection = h.runResources.state.getSnapshot().selected, before = h.debug();
         const capturedInspection = outputs.state.getSnapshot();

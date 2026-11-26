@@ -21,7 +21,7 @@ const identifier = new RegExp(`^(?:\\$|${codeWordConstituentPattern})+$`, "u");
 /** Advisory occurrences for one captured view. Never changes text, selection, focus or connection policy. */
 export function mountOccurrences(editor: TextEditor, owner: LspDocumentOwner,
     { delayMs: delay = 150 }: Readonly<{ delayMs?: number }>): LspHighlightController {
-    const { workspace, tab: target, view } = editor, documentId = view.documentId, win = editor.element.ownerDocument.defaultView!;
+    const { workspace, view } = editor, documentId = view.documentId, win = editor.element.ownerDocument.defaultView!;
     if (!Number.isFinite(delay) || delay < 0) throw new RangeError("Invalid highlight delay.");
     const { provider } = owner;
     const client = highlightClient(owner);
@@ -30,7 +30,7 @@ export function mountOccurrences(editor: TextEditor, owner: LspDocumentOwner,
     let disposed = false, generation = 0, timer: number | undefined;
     let result: Awaited<ReturnType<typeof client.run>["result"]> | undefined;
     let occurrence: LspDocumentHighlight | undefined;
-    const available = () => !disposed && !editor.signal.aborted && workspace.ownsDocumentView(view, target);
+    const available = () => !disposed && !editor.signal.aborted && workspace.ownsDocumentView(view);
     const watching = () => available() && editor.getSnapshot().focused && provider.getSnapshot().phase === "ready";
     const intersect = (from: number, to: number) => result?.isCurrent() && watching()
         ? result.intersect(from, to) : emptyList;
@@ -107,7 +107,7 @@ export function mountOccurrences(editor: TextEditor, owner: LspDocumentOwner,
             connection = next;
             if (changed) refresh();
         })];
-    if (target) stops.push(workspace.tabs.subscribe(() => { if (!available()) refresh(); }));
+
     stops.push(editor.subscribe(refresh));
     const dispose = () => {
         if (disposed) return;

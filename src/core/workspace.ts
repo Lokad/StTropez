@@ -1,6 +1,4 @@
 import { isNonNegativeInteger } from "./bounds.ts";
-import { createWorkspaceTabs } from "./workspace-tabs.ts";
-import type { WorkspaceTabs } from "./workspace-tabs.ts";
 import type { TextEdit } from "./changes.ts";
 import { compactDocumentEdit, replacementSpan, textDifference } from "./changes.ts";
 import { documentChange } from "./document-change.ts";
@@ -23,20 +21,8 @@ import type { Immutable, SnapshotValue } from "./values.ts";
 
 export type ResourceId = string & { readonly resourceId: unique symbol };
 export type DocumentId = string & { readonly documentId: unique symbol };
-export type TabId = string & { readonly tabId: unique symbol };
 export type ViewId = string & { readonly viewId: unique symbol };
 const documentIdPrefix = "document-";
-
-/** Resolve a mount once. Only a real tab contributes presentation-generation authority. */
-export function captureTextSurface(workspace: Workspace, identity: DocumentId | TabId) {
-    if (identity.startsWith(documentIdPrefix)) {
-        const resource = workspace.resourceForDocument(identity as DocumentId);
-        return { documentId: resource.documentId, resource, tab: undefined };
-    }
-    const tab = workspace.tabs.capture(identity as TabId), surface = workspace.tabs.resolve(tab)?.surface;
-    if (surface?.kind !== "text") throw new Error("Expected a text surface.");
-    return { documentId: surface.documentId, resource: workspace.resourceForDocument(surface.documentId), tab };
-}
 
 export type ResourceKey = Readonly<{ scope: string; resource: string; variant: string }>;
 export type EditOrigin = "human" | "agent" | "host";
@@ -72,16 +58,10 @@ export type DocumentView = Observable<DocumentViewSnapshot> & Readonly<{ id: Vie
     folding: DocumentFolding;
     setSelection: (expectedRevision: number, selection: Selection) => boolean;
     setSelections: (expectedRevision: number, selections: readonly Selection[], primary?: number) => boolean; dispose: () => void }>;
-export type Surface = Readonly<
-    { kind: "text"; documentId: DocumentId }
-    | { kind: "panel"; resourceId: ResourceId; panelType: string }
->;
-export type TabSnapshot = Readonly<{ id: TabId; generation: number; surface: Surface }>;
 export type WorkspaceSnapshot = Readonly<{
     revision: number; resources: readonly ResourceMetadata[];
     documents: readonly DocumentSnapshot[];
 }>;
-export type TabTarget = Readonly<{ workspace: symbol; id: TabId; generation: number }>;
 export type ResourceTarget = Readonly<{ workspace: symbol; id: ResourceId }>;
 export type ResourceLease = Readonly<{ resourceId: ResourceId; active: () => boolean; release: () => void }>;
 export type ResourceLoad<T> = Readonly<{
@@ -195,15 +175,10 @@ export class Workspace {
     readonly #deferredReleases = new Map<ResourceId, boolean>();
     readonly #queuedReleases = new Set<ResourceId>();
     readonly #documents = new Map<DocumentId, ResourceRecord>();
-    #layout?: ReturnType<typeof createWorkspaceTabs>;
     readonly #state: Store<number>;
     #snapshot: WorkspaceSnapshot | undefined;
     readonly getSnapshot: () => WorkspaceSnapshot;
     readonly subscribe: Observable<WorkspaceSnapshot>["subscribe"];
-    get tabs(): WorkspaceTabs {
-        this.#layout ??= createWorkspaceTabs(this, this.#scope, this.#lifetime, changed => this.#publish(changed), id => this.#scheduleRelease(id));
-        return this.#layout.api;
-    }
 
     constructor(options: WorkspaceOptions = {}) {
         this.#history = new TextHistory(options.history);
@@ -285,9 +260,9 @@ export class Workspace {
     }
 
     resource(id: ResourceId): ResourceHandle<SnapshotValue> { return this.#requireResource(id).handle; }
-    diagnostics(): Readonly<{ resources: number; documents: number; tabs: number; views: number; leases: number; subscriptions: number;
+    diagnostics(): Readonly<{ resources: number; documents: number; views: number; leases: number; subscriptions: number;
         history: Readonly<{ groups: number; changes: number; changedUnits: number }> }> {
-        return Object.freeze({ resources: this.#records.size, documents: this.#documents.size, tabs: this.#layout?.count() ?? 0,
+        return Object.freeze({ resources: this.#records.size, documents: this.#documents.size,
             views: [...this.#documents.values()].reduce((total, record) => total + record.views.size, 0), history: this.#history.diagnostics(),
             leases: [...this.#records.values()].reduce((total, record) => total + record.leases.size + record.views.size, 0), subscriptions: this.#scope.subscriptionCount() });
     }
@@ -336,11 +311,8 @@ export class Workspace {
         };
     }
     observeHistory(id: DocumentId): Observable<HistorySnapshot> { return this.#requireDocument(id).history.observable; }
-    ownsDocumentView(view: DocumentView, target?: TabTarget): boolean {
-        if (this.#documents.get(view.documentId)?.views.get(view.id)?.handle !== view) return false;
-        if (target === undefined) return true;
-        const surface = this.tabs.resolve(target)?.surface;
-        return surface?.kind === "text" && surface.documentId === view.documentId;
+    ownsDocumentView(view: DocumentView): boolean {
+        return this.#documents.get(view.documentId)?.views.get(view.id)?.handle === view;
     }
     createDocumentView(id: DocumentId, initial: Selection | SelectionSet = { anchor: 0, head: 0 }): DocumentView {
         // View registration, like subscribing, may occur during host view attachment in a delivery.
@@ -628,9 +600,9 @@ export class Workspace {
             this.#scheduleRelease(id);
         } });
     }
-    ownership(id: ResourceId): Readonly<{ leases: number; tabs: number; saves: number }> {
+    ownership(id: ResourceId): Readonly<{ leases: number; saves: number }> {
         const record = this.#requireResource(id);
-        return Object.freeze({ leases: record.leases.size + record.views.size, saves: record.saveReservations, tabs: this.#layout?.count(id) ?? 0 });
+        return Object.freeze({ leases: record.leases.size + record.views.size, saves: record.saveReservations });
     }
     beginLoad<T extends SnapshotValue>(handle: ResourceHandle<T>): ResourceLoad<T> {
         this.#scope.assertWritable();
@@ -821,11 +793,11 @@ export class Workspace {
         } });
     }
 
-    /** Release now, or after the last tab/lease leaves. Unsaved changes cancel a non-discarding release. */
+    /** Release now, or after the last view or lease is released. Unsaved changes cancel a non-discarding release. */
     releaseResourceWhenUnowned(id: ResourceId, discard = false): void {
         this.#scope.assertWritable(); const record = this.#requireResource(id), owners = this.ownership(id);
         if (record.metadata.get().dirty && !discard) throw new Error("Explicit discard is required to release unsaved work.");
-        if (!owners.tabs && !owners.leases) { this.releaseResource(id, discard); return; }
+        if (!owners.leases) { this.releaseResource(id, discard); return; }
         this.#deferredReleases.set(id, discard);
     }
     #scheduleRelease(id: ResourceId): void {
@@ -838,13 +810,13 @@ export class Workspace {
             const discard = this.#deferredReleases.get(id), record = this.#records.get(id);
             if (discard === undefined || !record) return;
             if (record.metadata.get().dirty && !discard) { this.#deferredReleases.delete(id); return; }
-            const owners = this.ownership(id); if (!owners.tabs && !owners.leases) this.releaseResource(id, discard);
+            const owners = this.ownership(id); if (!owners.leases) this.releaseResource(id, discard);
         });
     }
     releaseResource(id: ResourceId, discard = false): void {
         this.#scope.assertWritable();
         const record = this.#requireResource(id), owners = this.ownership(id), state = record.state.get();
-        if (owners.tabs || owners.leases) throw new Error("Resource still has tabs or leases.");
+        if (owners.leases) throw new Error("Resource still has views or leases.");
         if (state.metadata.dirty && !discard) throw new Error("Explicit discard is required to release unsaved work.");
         record.saved = undefined; record.buffer = null; record.savedBuffer = null; record.change = null;
         if (record.documentId !== null) this.#history.forget(record.documentId);
