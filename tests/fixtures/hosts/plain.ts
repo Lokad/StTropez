@@ -114,7 +114,7 @@ export function mountPlain(host: HTMLElement, controller: HostController, bindin
         const key = readScene().reviewKey;
         review.hidden = key === undefined;
         if (key === reviewKey) return;
-        // Record identity before mounting: the comparison creates its own reference display tab.
+        // Record identity before mounting the reference document, which can notify observers.
         reviewKey = key; destroyVariants?.(); destroyVariants = undefined; bindings.comparison(null); review.replaceChildren();
         if (key !== undefined) { const controls = document.createElement("div"), content = document.createElement("div"); review.append(controls, content);
             destroyVariants = mountVariantPanel(controls, controller, bindings); bindings.comparison(content); }

@@ -36,7 +36,7 @@ export class ViewBindings {
     private readonly instructionMemory: InstructionViewState = { generation: 0, fields: {}, focus: undefined };
     private readonly stopInputCapture: () => void;
     private readonly stopDocumentCleanup: () => void;
-    private readonly mounted = new Map<string, { editor: TextEditor; documentId: DocumentId; dispose: () => void }>();
+    private readonly mounted = new Map<string, { editor: TextEditor; documentId: DocumentId; target: TabTarget; dispose: () => void }>();
     private readonly lspOwner: LspWorkspace | undefined;
     readonly projectScope: LspWorkspaceScope;
     private readonly states = new Map<string, Map<DocumentId, ViewState>>();
@@ -94,7 +94,7 @@ export class ViewBindings {
             this.referenceGeneration = publication.generation;
             const view = this.retainedView("comparison", this.controller.source.documentId);
             const presentation = new EditingPresentation(), referencePresentation = new EditingPresentation();
-            const review = mountTextComparison(host, this.controller.workspace, this.controller.viewTab("primary"),
+            const review = mountTextComparison(host, this.controller.workspace, view.documentId,
                 baseline, { ariaLabel: "Source review", view, requestLine: linePrompt(host.ownerDocument), scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned });
             this.review = review;
             scope.defer(() => { if (this.review === review) this.review = undefined; review.dispose(); });
@@ -102,6 +102,11 @@ export class ViewBindings {
                 status.textContent = event.target === review.panes.reference.element ? "The comparison reference is read-only." : "This source is read-only.";
             }, { signal: listeners.signal });
             const saveTarget = this.controller.workspace.tabs.capture(this.controller.viewTab("primary"));
+            scope.defer(this.controller.workspace.tabs.subscribe(after => {
+                if (!this.controller.workspace.tabs.resolve(saveTarget)) after(() => {
+                    if (this.review === review) this.comparison(null);
+                });
+            }));
             this.attachTools(scope, "comparison", this.controller.viewTab("primary"), review.panes.working, presentation);
             scope.defer(() => referencePresentation.clear());
             const reference = review.panes.reference;
@@ -215,7 +220,9 @@ export class ViewBindings {
         this.language = new HostLanguageTools(controller.workspace, { canCapture, providerFactory: lsp.provider });
         this.hover = new HostHoverTools(kind => { if (kind === "pointer") return !this.signature?.state.getSnapshot().visible; this.signature?.dismiss(); return true; }, { ...lsp.hover, canCapture });
         const present = (document: DocumentId) => this.presentNavigationDocument(document);
-        const languageHost = createNavigationHost({ workspace: controller.workspace, canCapture, present, reconnect: reconnectProvider });
+        const languageHost = createNavigationHost({ workspace: controller.workspace, canCapture, present, reconnect: reconnectProvider,
+            restorePane: view => this.selections.get("secondary")?.get(view.documentId) === view
+                ? present(view.documentId) : undefined });
         this.locationHistory = languageHost.history;
         this.links = new HostDocumentLinks(languageHost, lsp.links);
         this.navigation = new HostNavigationTools(languageHost, { ...lsp.navigation, linkAt: (editor, offset) => this.links.linkAt(editor, offset) });
@@ -262,16 +269,17 @@ export class ViewBindings {
         states.set(documentId, state); this.states.set(id, states);
     }
     private presentNavigationDocument(documentId: DocumentId): TextEditor | undefined {
-        const editor = this.mounted.get("secondary")?.editor;
-        if (!editor?.tab) return;
+        const mounted = this.mounted.get("secondary");
+        if (!mounted) return;
+        const { editor, target } = mounted;
         const host = editor.element.closest<HTMLDivElement>(".editor-host"), activity = editor.activity();
         if (!host?.isConnected || activity.disposed || activity.input !== "idle"
             || this.tablePaste.hasPendingInput(editor.view.documentId)) return;
-        const { workspace, tab } = editor;
-        if (!workspace.ownsDocumentView(editor.view, tab) || !workspace.observeDocument(documentId).getSnapshot()) return;
+        const { workspace } = editor;
+        if (!workspace.ownsDocumentView(editor.view, target) || !workspace.observeDocument(documentId).getSnapshot()) return;
         if (editor.view.documentId === documentId) return editor;
         // Explicit host lifecycle: replace this captured pane synchronously; React owns only its stable ref.
-        this.detach("secondary"); workspace.tabs.replace(tab.id, { kind: "text", documentId }); this.secondary(host);
+        this.detach("secondary"); workspace.tabs.replace(target.id, { kind: "text", documentId }); this.secondary(host);
         return this.mounted.get("secondary")?.editor;
     }
     private ref(id: "primary" | "secondary", ariaLabel: string): (host: HTMLDivElement | null) => void {
@@ -279,7 +287,8 @@ export class ViewBindings {
             this.detach(id);
             if (host === null) return;
             const workspace = this.controller.workspace, tabId = this.controller.viewTab(id);
-            const tab = workspace.tabs.resolve(workspace.tabs.capture(tabId));
+            const target = workspace.tabs.capture(tabId);
+            const tab = workspace.tabs.resolve(target);
             if (tab?.surface.kind !== "text") throw new Error("Text view requires a text tab.");
             const documentId = tab.surface.documentId;
             const view = this.retainedView(id, documentId);
@@ -289,7 +298,7 @@ export class ViewBindings {
                 const presentation = new EditingPresentation();
                 const surface = id === "primary" ? host.ownerDocument.createElement("div") : host;
                 if (surface !== host) { surface.className = "host-instruction-source"; host.append(surface); scope.defer(() => surface.remove()); }
-                const editor = mountTextEditor(surface, workspace, tabId, { ariaLabel, view, requestLine: linePrompt(surface.ownerDocument) });
+                const editor = mountTextEditor(surface, workspace, documentId, { ariaLabel, view, requestLine: linePrompt(surface.ownerDocument) });
                 scope.defer(editor.dispose);
                 const lane = surface !== host ? host.ownerDocument.createElement("div") : undefined;
                 if (lane) { lane.className = "host-instruction-lane"; lane.hidden = true; host.append(lane); scope.defer(() => lane.remove()); }
@@ -321,10 +330,14 @@ export class ViewBindings {
                 }, { signal: listeners.signal });
                 editor.element.addEventListener("focusout", () => { feedback.textContent = ""; }, { signal: listeners.signal });
                 editor.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
-                const saveTarget = workspace.tabs.capture(tabId);
-                this.registerPaneCommands(editor, saveTarget, scope);
+                this.registerPaneCommands(editor, target, scope);
+                scope.defer(workspace.tabs.subscribe(after => {
+                    if (!workspace.tabs.resolve(target)) after(() => {
+                        if (this.mounted.get(id)?.editor === editor) this.detach(id);
+                    });
+                }));
                 const state = this.states.get(id)?.get(documentId); if (state) editor.restoreView(state, { selection: "current" });
-                this.mounted.set(id, { editor, documentId, dispose: scope.dispose }); this.mounts++;
+                this.mounted.set(id, { editor, documentId, target, dispose: scope.dispose }); this.mounts++;
             } catch (error) { scope.rollback(error); }
         };
     }

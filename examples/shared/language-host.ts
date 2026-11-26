@@ -1,4 +1,4 @@
-import type { DocumentId, TabTarget, Workspace } from "../../src/index.ts";
+import type { DocumentId, DocumentView, TabTarget, Workspace } from "../../src/index.ts";
 import type { TextEditor } from "../../src/browser/index.ts";
 import { createNavigationHistory } from "../../src/browser/index.ts";
 import { focusSource, focusSourceCaret } from "./source-focus.ts";
@@ -14,7 +14,7 @@ export type LanguageHost = Readonly<{
 }>;
 
 /** A later destination request owns focus even if its result is empty or fails. */
-export function createNavigationHost(host: LanguageHost) {
+export function createNavigationHost(host: LanguageHost & { restorePane?: (view: DocumentView) => TextEditor | undefined }) {
     let latest = 0;
     const history = createNavigationHistory(host.workspace);
     // The link panel has a targeted Return. Track opaque visit identities so it never pops a newer symbol jump.
@@ -40,7 +40,8 @@ export function createNavigationHost(host: LanguageHost) {
             for (const { editor } of panes) if (editor.view === view && isMountedEditor(host.workspace, editor)) {
                 origin = editor; return editor;
             }
-            return undefined;
+            origin = host.restorePane?.(view);
+            return origin;
         });
         const depth = history.getSnapshot().back;
         if (visits.get().length !== depth) visits.set(visits.get().slice(0, depth));

@@ -198,11 +198,10 @@ test.describe("plain LSP inspection/navigation", () => {
         await expect(pane.getByText("Navigation companion", { exact: true })).toBeInViewport();
         expect(after.bindings.views.find(view => view.id === "secondary")?.selection).toMatchObject({ anchor: 6, head: 6 });
         await expect(results(page)).toHaveCount(0);
-        await expect(button(page, "Return to navigation origin")).toBeDisabled();
         await secondary.press("ArrowLeft");
         expect((await snapshot(page)).bindings.views.find(view => view.id === "secondary")?.selection).toMatchObject({ anchor: 5, head: 5 });
         expect(after.source.id).toBe(before.source.id); expect(after.history).toEqual(before.history);
-        await pane.getByRole("button", { name: "Show original source", exact: true }).click();
+        await button(page, "Return to navigation origin").click();
         await expect(secondary).toBeFocused();
         await expect(pane.getByText("Navigation companion", { exact: true })).toHaveCount(0);
         await expect.poll(() => secondary.locator("..").evaluate(node => node.scrollTop)).toBe(scroll);
