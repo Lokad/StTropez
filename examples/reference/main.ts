@@ -5,6 +5,7 @@ import {
     mountTextComparison, mountTextEditor, openWebSocketTransport,
 } from "sttropez/browser";
 import { bindLanguage } from "./language.js";
+import { restoreReferenceView, type SavedReferenceView } from "../shared/reference-view.js";
 
 const name = "quote.ts";
 const initial = `export const accent = "#5fae99";
@@ -50,10 +51,16 @@ const provider = new BrowserLspWorkspace(workspace, {
     },
 });
 let languageEnabled = false;
+let reviewLayout = { scrollLinked: false, rowsAligned: false };
+let savedReference: SavedReferenceView | undefined;
 
 function mount(review: boolean) {
     let comparison: TextComparison | undefined;
-    if (review) comparison = mountTextComparison(pane, workspace, file.documentId, baseline, { view, settings });
+    if (review) {
+        comparison = mountTextComparison(pane, workspace, file.documentId, baseline, { view, settings, ...reviewLayout });
+        restoreReferenceView(comparison.panes.reference, baseline, savedReference);
+        savedReference = undefined;
+    }
     const editor = comparison?.panes.working
         ?? mountTextEditor(pane, workspace, file.documentId, { ariaLabel: name, view, settings });
     (comparison ?? editor).commands.register({ id: "source.save", label: "Save for this tab", run() { save(); } },
@@ -125,6 +132,13 @@ function switchView(review: boolean) {
     if (Boolean(current.comparison) !== review) {
         if (!readyForHostAction()) return;
         const position = current.editor.captureView();
+        const { comparison } = current;
+        if (comparison) {
+            const state = comparison.getSnapshot();
+            reviewLayout = { scrollLinked: state.scrollLinked, rowsAligned: state.alignment.enabled };
+            const shown = state.comparison.baseline;
+            if (shown) savedReference = { baseline: shown, state: comparison.panes.reference.captureView() };
+        }
         current.dispose();
         current = mount(review);
         current.editor.restoreView(position);

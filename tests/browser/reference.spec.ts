@@ -354,6 +354,49 @@ test("Save and Changes preserve a pending edit in the reference host", async ({ 
     expect(await page.evaluate(() => sessionStorage.getItem("sttropez.reference.quote"))).toBe(text);
 });
 
+test("returning to Changes restores the saved view and layout across working edits", async ({ page }) => {
+    await page.goto("/reference/");
+    const changes = page.getByRole("button", { name: "Changes", exact: true });
+    const source = page.getByRole("button", { name: "Source", exact: true });
+    await changes.click();
+    const panes = page.locator(".st-comparison-panes > section");
+    const baseline = panes.first().getByRole("textbox");
+    const working = panes.last().getByRole("textbox");
+    const link = page.getByLabel("Link review scrolling");
+    const align = page.getByLabel("Align review rows");
+    await link.check();
+    await align.check();
+    await panes.first().getByRole("button", { name: /Collapse lines/ }).first().click();
+    await baseline.press("Control+Home");
+    await baseline.press("End");
+    await baseline.press("Shift+Home");
+    const selection = () => baseline.evaluate((field: HTMLTextAreaElement) =>
+        [field.value.slice(field.selectionStart, field.selectionEnd), field.selectionDirection]);
+    const original = await selection();
+    expect(original).toEqual(['export const accent = "#5fae99";', "backward"]);
+
+    await source.click();
+    await page.getByRole("textbox", { name: "quote.ts" }).press("Control+End");
+    await page.keyboard.insertText("// later edit");
+    await changes.click();
+    await expect(working).toBeFocused();
+    await expect.poll(selection).toEqual(original);
+    await expect(panes.first().locator(".st-fold-summary")).toBeVisible();
+    await expect(panes.last().locator(".st-fold-summary")).toHaveCount(0);
+    await expect(link).toBeChecked();
+    await expect(align).toBeChecked();
+
+    await link.uncheck();
+    await source.click();
+    await page.getByRole("button", { name: "Save for this tab" }).click();
+    await changes.click();
+    await expect(baseline).toHaveValue(/later edit$/);
+    await expect(baseline).toHaveJSProperty("selectionEnd", 0);
+    await expect(panes.first().locator(".st-fold-summary")).toHaveCount(0);
+    await expect(link).not.toBeChecked();
+    await expect(align).toBeChecked();
+});
+
 test("the reference app edits, reviews and saves the document while its language tools follow the working view", async ({ page }) => {
     await page.goto("/reference/");
     const source = page.getByRole("textbox", { name: "quote.ts" });

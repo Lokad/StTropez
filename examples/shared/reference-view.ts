@@ -1,5 +1,5 @@
-import type { TextEditor, ViewState } from "../../src/browser/index.ts";
-import type { ComparisonBaseline } from "../../src/index.ts";
+import type { TextEditor, ViewState } from "sttropez/browser";
+import type { ComparisonBaseline } from "sttropez";
 
 export type SavedReferenceView = Readonly<{ baseline: ComparisonBaseline; state: ViewState }>;
 
