@@ -24,26 +24,26 @@ test("real definition and reference navigation open the captured file and range 
         .toEqual([definition, definition]);
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Find references", exact: true }).click();
     const locations = page.getByRole("region", { name: "Symbol locations", exact: true });
-    await expect(locations.getByRole("button", { name: /^main.ts ·/ }).first()).toBeVisible();
+    await expect(locations.getByRole("option", { name: /^main.ts ·/ }).first()).toBeVisible();
     await releaseFolds();
     await expect(page.locator("#editor .st-fold-button").first()).toBeVisible();
     await expect(locations).toBeVisible();
-    await locations.getByRole("button", { name: /^main.ts ·/ }).last().click();
+    await locations.getByRole("option", { name: /^main.ts ·/ }).last().click();
     await expect(page.getByRole("textbox", { name: "main.ts", exact: true })).toBeFocused();
     await expect(page.locator("#files")).not.toContainText("●");
     await page.getByRole("textbox", { name: "main.ts", exact: true }).press("Shift+F12");
-    await expect(locations.getByRole("button", { name: /^pricing.ts ·/ })).toBeVisible();
+    await expect(locations.getByRole("option", { name: /^pricing.ts ·/ })).toBeVisible();
     await locations.locator('[data-location="0"]').press("ArrowDown");
-    await expect(locations.locator('[data-location="1"]')).toHaveAttribute("data-chosen", "true");
+    await expect(locations.locator('[data-location="1"]')).toHaveAttribute("aria-selected", "true");
     await page.keyboard.press("Enter"); await expect(locations).toBeHidden();
     if (await pricing.count()) await page.locator('[data-file="main.ts"]').click();
     await page.getByRole("textbox", { name: "main.ts", exact: true }).press("Control+End");
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Go to definition", exact: true }).click();
-    await expect(locations).toContainText("No definition in this sample.");
-    await locations.getByRole("button", { name: "Close locations" }).press("Escape");
+    await expect(locations).toContainText("No definition found.");
+    await source.press("Escape");
     await expect(locations).toBeHidden(); await expect(source).toBeFocused();
     await symbol(page); await source.press("Shift+F12");
-    const pricingChoice = locations.getByRole("button", { name: /^pricing.ts ·/ });
+    const pricingChoice = locations.getByRole("option", { name: /^pricing.ts ·/ });
     await expect(pricingChoice).toBeVisible();
     const previousChoice = await pricingChoice.elementHandle();
     await source.pressSequentially("x"); await expect(locations).toBeHidden();
@@ -111,13 +111,13 @@ test("a delayed definition leaves output focus, Back history and the next typing
     const output = page.getByRole("region", { name: "JavaScript output", exact: true }).getByRole("textbox");
     await output.focus(); await expect.poll(() => cancelled).toBe(true); release!(); release = undefined;
     await expect(output).toBeFocused(); await expect(source).toBeVisible();
-    await expect(page.locator("#navigate-back")).toBeDisabled(); await expect(page.locator(".demo-symbols")).toBeHidden();
+    await expect(page.locator("#navigate-back")).toBeDisabled(); await expect(page.locator(".st-locations")).toBeHidden();
 
     await source.press("F12"); await expect.poll(() => !!release).toBe(true);
     await page.locator('[data-file="pricing.ts"]').click(); const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true });
     await pricing.press("Control+Home"); await pricing.pressSequentially("// Keep my current helper\n"); release!();
     await expect(pricing).toBeFocused(); await expect(page.locator("#editor")).toContainText("// Keep my current helper");
-    await expect(page.locator(".demo-symbols")).toBeHidden();
+    await expect(page.locator(".st-locations")).toBeHidden();
 });
 
 test("symbol commands keep an already visible declaration on the same screen row", async ({ page }) => {
@@ -148,9 +148,8 @@ test("symbol commands keep an already visible declaration on the same screen row
             await expect(page.getByLabel("New name")).toHaveValue("symbol80");
             await page.getByLabel("New name").press("Escape");
         } else if (key === "Shift+F12") {
-            const locations = page.getByRole("region", { name: "Symbol locations" });
-            await expect(locations.getByRole("button", { name: /^main.ts ·/ }).first()).toBeVisible();
-            await source.press("Escape");
+            await expect.poll(() => source.evaluate((input: HTMLTextAreaElement) => input.value.slice(input.selectionStart, input.selectionEnd))).toBe("symbol80");
+            await source.press("ArrowLeft");
         } else {
             await expect(page.locator("#cursor")).toHaveText("Ln 81, Col 7");
         }

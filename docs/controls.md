@@ -1,6 +1,6 @@
 # Built-in controls
 
-Find, completion, hover, signature help, rename, quick fixes and the color picker share the editor palette.
+Find, completion, hover, signature help, rename, quick fixes, locations and the color picker share the editor palette.
 Each control is optional. Set the palette on an ancestor of both the editor and its Find bar.
 
 ## Use
@@ -43,6 +43,10 @@ A hover card offers Code actions at the inspected position, Edit color on a swat
 the attachment supplies those controls and a link opener. `hover.popup.actions(point, state)` can
 return host buttons with a `label` and a `run` callback. Stale buttons expire with the card.
 
+`navigation.chooser.capture(kind, offset)` captures a destination callback or returns `undefined` to decline.
+One result opens directly. For several, the chooser shows file, line and excerpt. Use arrows or Page Up/Down,
+Enter to open and Escape to dismiss. `fileLabel` names host URIs. Results expire on focus or selection changes.
+
 Borders, secondary text, fields and hovered rows derive from the surface and text colors. The selected
 row uses the selection color. In forced colors, the current completion, quick fix and pressed Find
 toggle use the system highlight and an outline.
@@ -52,6 +56,7 @@ toggle use the system highlight and an outline.
 | All | Set on the surrounding host | `--st-background`, `--st-foreground`, `--st-selection`, `--st-font`, `--st-focus-ring` |
 | Find | `.st-find-bar`, `.st-find-options [aria-pressed="true"]`, `.st-find-status` | `--st-find-background`, `--st-find-border` |
 | Completion | `.st-completion`, `[role="option"][aria-selected="true"]` | `--st-completion-background`, `--st-completion-selected` |
+| Locations | `.st-locations`, `[role="option"][aria-selected="true"]` | Completion colors |
 | Hover | `.st-hover`, `.st-documentation` | `--st-hover-background` |
 | Signature help | `.st-signature`, `mark` | `--st-signature-background`, `--st-signature-parameter-background`, `--st-signature-parameter-text` |
 | Rename | `.st-rename`, `del`, `ins` | `--st-rename-removed`, `--st-rename-added` |

@@ -71,7 +71,7 @@ test("a late definition leaves typing in the reference Find bar", async ({ page 
     await page.keyboard.up("Control");
     const at = (await source.inputValue()).indexOf("function quote") + "function ".length;
     await expect.poll(() => source.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd]))
-        .toEqual([at, at + "quote".length]);
+        .toEqual([at, at]);
 });
 
 test("the reference host highlights the completion that Enter inserts", async ({ page }) => {

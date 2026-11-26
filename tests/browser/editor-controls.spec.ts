@@ -255,6 +255,35 @@ test("hover actions use the inspected position and expire with the card", async 
     await source.press("Escape");
 });
 
+test("several definitions offer a choice and a single reference opens directly", async ({ page }) => {
+    await page.routeWebSocket("**/lsp-fixture", client => {
+        const server = client.connectToServer();
+        client.onMessage(packet => {
+            const request = JSON.parse(packet.toString());
+            if (!["textDocument/definition", "textDocument/references"].includes(request.method)) return server.send(packet);
+            const location = (line: number, character: number) => ({ uri: request.params.textDocument.uri,
+                range: { start: { line, character }, end: { line, character: character + 6 } } });
+            const result = [location(0, 6)];
+            if (request.method === "textDocument/definition") result.push(location(1, 4));
+            client.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }));
+        });
+    });
+    await page.goto("/controls/");
+    await expect(page.locator(".st-color-swatch")).toBeVisible();
+    const source = page.getByRole("textbox", { name: "colors.ts" });
+    await source.press("F12");
+    const list = page.getByRole("region", { name: "Symbol locations" });
+    await expect(list.getByRole("option")).toHaveCount(2);
+    await source.press("ArrowDown");
+    await source.press("Enter");
+    const last = (await source.inputValue()).lastIndexOf("accent");
+    const selection = () => source.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd]);
+    await expect.poll(selection).toEqual([last, last]);
+    await source.press("Shift+F12");
+    await expect.poll(selection).toEqual([6, 12]);
+    await expect(list).toBeHidden();
+});
+
 test("clicking an allowed command action runs it once", async ({ page }) => {
     const executed: string[] = [];
     page.on("websocket", socket => socket.on("framesent", frame => {

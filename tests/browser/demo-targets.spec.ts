@@ -25,9 +25,9 @@ test("held target contents cannot load a tab or steal focus after source edits o
         await source.press("ArrowRight"); await source.press("ArrowLeft"); await source.press("F12"); await expect.poll(() => held).toBe(true);
     };
     await request(); await source.press("Control+End"); await page.keyboard.insertText("// newer source\n"); release!();
-    await expect(page.locator(".demo-symbols")).toBeHidden(); await expect(page.locator("#files button")).toHaveText(["main.ts ●"]); await expect(source).toBeFocused();
+    await expect(page.locator(".st-locations")).toBeHidden(); await expect(page.locator("#files button")).toHaveText(["main.ts ●"]); await expect(source).toBeFocused();
     await request(); await page.locator("#sample").selectOption("pricing"); release!();
-    await expect(page.locator("#files button")).toHaveText(["main.ts", "pricing.ts"]); await expect(page.locator(".demo-symbols")).toBeHidden();
+    await expect(page.locator("#files button")).toHaveText(["main.ts", "pricing.ts"]); await expect(page.locator(".st-locations")).toBeHidden();
     // This test cancels a captured target reply, not an unrelated connecting transport.
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30000 });
     await page.locator("#sample").selectOption("navigation"); await expect(page.locator("#files button")).toHaveText(["main.ts ●"]);

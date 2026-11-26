@@ -123,9 +123,8 @@ controls read `signature` and `anchor`.
 ### Navigation and target loading
 
 Ctrl/Cmd+hover underlines a symbol. In `onDefinition`, `navigation.request("definition", offset)` reuses its
-lookup. `request("references", offset, false)` excludes declarations. Page with `count` and
-`locationAt(index)`. `choice.open(present)` validates before reveal. Results survive caret movement unless
-`resultLifetime: "view"` expires them on selection or fold changes.
+lookup. `request("references", offset, false)` excludes declarations. Use the [location chooser](controls.md) or read `locationAt(index)` up to `count`.
+`choice.open(present)` validates the target. `resultLifetime: "view"` expires results on selection or fold changes.
 
 Supply open snapshots in `documents`. For a missing URI, `resolveTarget(uri, context)` gives the operation
 and source. Authorize the URI and honor cancellation. Return `{ document: workspace.document(id) }` for a

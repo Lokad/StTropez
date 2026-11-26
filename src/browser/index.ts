@@ -29,6 +29,7 @@ export type { RenameController, RenameControllerOptions, RenamePreview, RenameSn
 export type { SignatureController, SignatureControllerOptions, SignatureSnapshot } from "./signature-controller.ts";
 export type { SignaturePopupOptions } from "./signature-popup.ts";
 export type { HoverPopupAction, HoverPopupOptions } from "./hover-popup.ts";
+export type { LocationChooserOptions } from "./location-chooser.ts";
 export type { NavigationController, NavigationControllerOptions, NavigationPointerLink, NavigationSnapshot, NavigationResult, NavigationChoice, NavigationDestination } from "./navigation-controller.ts";
 export type { HoverController, HoverControllerOptions, HoverDiagnostics, HoverSnapshot } from "./hover-controller.ts";
 export type { CodeActionPopupOptions } from "./code-action-popup.ts";

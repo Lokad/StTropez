@@ -26,16 +26,6 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 #view-menu p { max-width: 240px; padding: 0 11px; color: #aebed3; line-height: 1.5; }
 #character-warning-details { max-width: 340px; }
 #character-warning-details p { padding: 0 11px; color: #aebed3; line-height: 1.5; }
-.demo-symbols { position: fixed; z-index: 25; width: min(350px, calc(100vw - 16px)); max-height: min(270px, calc(100vh - 16px)); overflow: auto; padding: 12px; border: 1px solid #50627f; border-radius: 7px; background: #1b283c; box-shadow: 0 8px 28px #0007; font-size: 12px; }
-.demo-symbols:not([hidden]) { display: flex; flex-direction: column; }
-.demo-symbols > :not(.demo-location-rows) { flex: none; }
-.demo-location-pages:not([hidden]) { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 4px; }
-.demo-location-rows { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.demo-location-rows > button, .demo-symbols > button { display: block; width: 100%; margin-top: 5px; text-align: left; }
-.demo-location-rows code { display: block; margin-top: 2px; font: 12px/1.4 var(--st-font); color: #b4c7d9; overflow-wrap: anywhere; }
-.demo-location-rows mark { background: transparent; color: #e2fff6; font-weight: 700; }
-.demo-location-rows [data-chosen="true"] { background: #365474; color: #e2fff6; }
-.demo-symbols p { margin: 0 0 10px; }
 .st-documentation code { font-family: var(--st-font); }
 button, select, input { font: inherit; font-size: 13px; color: inherit; border: 1px solid #36435a; border-radius: 5px; background: #1b273a; padding: 7px 11px; }
 button { cursor: pointer; } button:hover { background: #25354e; } button:disabled { opacity: .5; cursor: default; }

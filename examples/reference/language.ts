@@ -8,17 +8,20 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const language = attachEditorLanguage(editor, provider, {
         completion: { autoConnect: false, automatic: false, list: true }, diagnostics: { autoConnect: false },
         hover: { popup: true }, signature: { popup: true }, occurrences: {}, links: { paint: true },
-        navigation: { onDefinition: offset => { void definition(beginCommand(), offset); } },
+        navigation: { chooser: {
+            fileLabel: at => at.document.documentId === editor.view.documentId ? editor.workspace.document(editor.view.documentId).title : at.document.uri,
+            capture: kind => at => {
+                if (at.document.documentId !== editor.view.documentId) { result.value = at.document.uri; return; }
+                editor.reveal({ from: at.from, to: kind === "definition" ? at.from : at.to },
+                    { select: true, focus: true, align: "center-if-outside", expectedRevision: at.document.revision });
+            },
+        } },
         colors: { picker: true }, rename: { popup: { onNotice: message => { result.value = message; } } }, codeActions: { popup: true }, commands: {},
     });
     const events = new AbortController();
     let intent = 0;
     let offeredCommandVersion: number | undefined;
     let stopLinkList: (() => void) | undefined;
-    let definitionFocus = 0;
-    const leaveSource = () => { definitionFocus = 0; };
-    editor.element.addEventListener("focusout", leaveSource, { signal: events.signal });
-    window.addEventListener("blur", leaveSource, { signal: events.signal });
     function clear() {
         stopLinkList?.();
         stopLinkList = undefined;
@@ -82,22 +85,8 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     command("signature", async request => {
         display(request, await language.signature.request(), help => { if (!help.signature) result.value = "No signature."; });
     });
-    async function definition(request: number, offset?: number): Promise<void> {
-        definitionFocus = request;
-        const outcome = await language.navigation.request("definition", offset);
-        if (definitionFocus !== request) return;
-        display(request, outcome, locations => {
-            const choice = locations.locationAt(0);
-            if (!choice) result.value = "No definition.";
-            else choice.open(place => {
-                if (place.document.documentId === editor.view.documentId) {
-                    editor.reveal(place, { select: true, focus: true, align: "center-if-outside",
-                        expectedRevision: place.document.revision });
-                } else result.value = place.document.uri;
-            });
-        });
-    }
-    command("definition", definition);
+    command("definition", () => { editor.commands.run("locations.definition"); });
+    command("references", () => { editor.commands.run("locations.references"); });
     command("rename", () => { editor.commands.run("rename.start"); });
     command("actions", () => { editor.commands.run("quickfix.show"); });
     command("links", async request => {

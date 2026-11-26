@@ -72,7 +72,7 @@ test("language mounting releases partial owners, preserves failures and rejects 
             const { resources, documents, tabs, views, leases, subscriptions } = project.workspace.diagnostics();
             return { resources, documents, tabs, views, leases, subscriptions };
         };
-        const panels = [".st-completion", ".st-signature", ".demo-snippet", ".st-hover", ".demo-symbols", ".st-rename", ".st-code-actions"];
+        const panels = [".st-completion", ".st-signature", ".demo-snippet", ".st-hover", ".st-locations", ".st-rename", ".st-code-actions"];
         const panelCounts = () => panels.map(selector => ({ selector, count: document.querySelectorAll(selector).length }));
         const results = [], feedback = document.createElement("output");
         try {

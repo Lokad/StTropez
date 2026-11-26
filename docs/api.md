@@ -65,6 +65,7 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [browser/hover-popup.ts](../src/browser/hover-popup.ts) | `HoverPopupAction`, `HoverPopupOptions` |
 | [browser/input-events.ts](../src/browser/input-events.ts) | `EditRefusedDetail`, `InputConflictDetail`, `editRefusedEvent`, `inputConflictEvent` |
 | [browser/language-command.ts](../src/browser/language-command.ts) | `ChangedDocument`, `LanguageCommandOptions`, `LanguageCommands` |
+| [browser/location-chooser.ts](../src/browser/location-chooser.ts) | `LocationChooserOptions` |
 | [browser/lsp-highlights.ts](../src/browser/lsp-highlights.ts) | `LspHighlightController`, `LspHighlightSnapshot` |
 | [browser/lsp-websocket.ts](../src/browser/lsp-websocket.ts) | `WebSocketTransportOptions`, `openWebSocketTransport` |
 | [browser/lsp-workspace.ts](../src/browser/lsp-workspace.ts) | `BrowserLspWorkspace`, `BrowserLspWorkspaceOptions` |

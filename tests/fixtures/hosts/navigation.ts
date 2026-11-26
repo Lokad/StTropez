@@ -5,7 +5,8 @@ import { attachPanelSession } from "../../../examples/shared/editor-attachment.t
 import { createReviewKey, type PanelPaging } from "../../../examples/shared/panel-actions.ts";
 import { createPanelKeyBinding, focusResult, registerResultArrows } from "../../../examples/shared/panel-keys.ts";
 import { createWorkingSource } from "./working-source.ts";
-import { locationExcerpt, locationPage, type NavigationPage } from "../../../examples/shared/location-excerpt.ts";
+import { locationExcerpt } from "../../../src/browser/location-excerpt.ts";
+import { locationPage, type NavigationPage } from "../../../examples/shared/location-excerpt.ts";
 import type { DocumentId, TabId, TabTarget } from "../../../src/index.ts";
 import { attachEditorLanguage } from "../../../src/browser/index.ts";
 import type { NavigationChoice, NavigationController, NavigationDestination, NavigationOrigin, NavigationPointerLink, NavigationResult, TextEditor } from "../../../src/browser/index.ts";

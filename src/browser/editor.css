@@ -166,7 +166,7 @@
 .st-editor > .st-editor-overlay[popover] { inset: auto; color: inherit; cursor: auto; user-select: text; overscroll-behavior: contain; }
 .st-editor-overlay[hidden] { display: none; }
 
-:is(.st-hover, .st-signature, .st-find-bar, .st-completion, .st-rename, .st-code-actions, .st-color-picker) {
+:is(.st-hover, .st-signature, .st-find-bar, .st-completion, .st-locations, .st-rename, .st-code-actions, .st-color-picker) {
     --_st-control-text: var(--st-foreground, #e1e7ef);
     --_st-control-surface: var(--st-background, #1b283c);
     --_st-control-secondary: color-mix(in srgb, var(--_st-control-text) 85%, var(--_st-control-surface));
@@ -209,13 +209,15 @@
 .st-find-status.no-matches { color: var(--_st-control-text); }
 .st-find-status.search-failed { color: var(--_st-control-removed); overflow-wrap: anywhere; }
 
-.st-completion { position: fixed; z-index: 20; display: flex; flex-direction: column; width: 340px; max-height: 310px; overflow: hidden; border: 1px solid var(--_st-control-border); border-radius: 7px; background: var(--st-completion-background, var(--_st-control-surface)); padding: 0; box-shadow: var(--_st-control-shadow); }
+:is(.st-completion, .st-locations) { position: fixed; z-index: 20; display: flex; flex-direction: column; width: 340px; max-height: 310px; overflow: hidden; border: 1px solid var(--_st-control-border); border-radius: 7px; background: var(--st-completion-background, var(--_st-control-surface)); padding: 0; box-shadow: var(--_st-control-shadow); }
+.st-locations code { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--_st-control-secondary); }
+.st-locations mark { color: inherit; background: transparent; font-weight: bold; }
 .st-completion-count { flex: none; padding: 6px 12px; color: var(--_st-control-secondary); font-size: 12px; }
 .st-completion-choices { position: relative; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; }
 .st-completion-choices::before { display: block; content: ""; height: var(--st-completion-extent); }
-.st-completion button { position: absolute; left: 0; width: 100%; height: var(--st-completion-row); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border: 0; border-radius: 0; text-align: left; padding: 5px 12px; background: transparent; font: 13px/1.5 var(--st-font, monospace); color: inherit; box-sizing: border-box; }
-.st-completion button:hover { background: var(--_st-control-hover); }
-.st-completion button[aria-selected="true"] { background: var(--st-completion-selected, var(--_st-control-selected)); color: var(--_st-control-text); }
+:is(.st-completion, .st-locations) button { position: absolute; left: 0; width: 100%; height: var(--st-completion-row); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border: 0; border-radius: 0; text-align: left; padding: 5px 12px; background: transparent; font: 13px/1.5 var(--st-font, monospace); color: inherit; box-sizing: border-box; }
+:is(.st-completion, .st-locations) button:hover { background: var(--_st-control-hover); }
+:is(.st-completion, .st-locations) button[aria-selected="true"] { background: var(--st-completion-selected, var(--_st-control-selected)); color: var(--_st-control-text); }
 .st-completion pre { flex: none; margin: 0; padding: 10px 12px; border-top: 1px solid var(--_st-control-border); font: 12px/1.5 var(--st-font, monospace); color: var(--_st-control-secondary); white-space: pre-wrap; max-height: 100px; overflow: auto; }
 
 .st-hover footer { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -252,7 +254,7 @@
 .st-color-picker p:empty { display: none; }
 
 @media (forced-colors: active) {
-    :is(.st-completion button[aria-selected="true"], .st-code-actions [data-chosen="true"],
+    :is(:is(.st-completion, .st-locations) button[aria-selected="true"], .st-code-actions [data-chosen="true"],
         .st-find-options button[aria-pressed="true"]) {
         forced-color-adjust: none; color: HighlightText; background: Highlight;
         outline: 2px solid HighlightText; outline-offset: -2px;

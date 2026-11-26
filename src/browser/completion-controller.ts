@@ -1,3 +1,4 @@
+import { moveChoice } from "./choice-rows.ts";
 import { transientSurface } from "./transient-surface.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
 import { listenUntil } from "./listen.ts";
@@ -580,10 +581,9 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     function navigate(direction: -1 | 1, page: boolean) {
         if (!job?.visible.length) return false;
         const count = job.visible.length;
-        if (!page) return chooseCompletion((job.choice + direction + count) % count, job.id);
-        const rows = options.getPageSize?.() ?? list?.pageSize() ?? 10;
-        if (!isPositiveInteger(rows)) return false;
-        const next = Math.max(0, Math.min(count - 1, job.choice + direction * rows));
+        const rows = page ? options.getPageSize?.() ?? list?.pageSize() ?? 10 : undefined;
+        if (page && !isPositiveInteger(rows)) return false;
+        const next = moveChoice(job.choice, count, direction, rows);
         return next === job.choice || chooseCompletion(next, job.id);
     }
     function cycleChoice(direction: -1 | 1) {

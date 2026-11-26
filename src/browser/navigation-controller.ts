@@ -1,3 +1,4 @@
+import { mountLocationChooser, type LocationChooserOptions } from "./location-chooser.ts";
 import { onAbort } from "./listen.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import { Store } from "../core/observable.ts";
@@ -24,6 +25,7 @@ export type NavigationControllerOptions = Readonly<{
     documents?: () => readonly DocumentSnapshot[]; canCapture?: () => boolean;
     /** A view-bound chooser expires when its source caret or folded projection changes. */
     resultLifetime?: "document" | "view";
+    chooser?: LocationChooserOptions;
     prepareRequest?: (kind: Kind) => LspPrepare | undefined;
     /** Handle a modifier click through the host's usual definition command. Call request synchronously to reuse its lookup. */
     onDefinition?: (offset: number) => void;
@@ -181,7 +183,7 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
                 expire(job);
                 return stale;
             }
-            if (options.resultLifetime !== "view") { delete job.source; source.cancel(); }
+            if (!options.chooser && options.resultLifetime !== "view") { delete job.source; source.cancel(); }
             job.reply = reply;
             const result = navigationResult(reply, () => {
                 notifications.assertWritable();
@@ -219,15 +221,21 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
         activation = hover; hover = undefined; layer.clear();
         try {
             if (options.onDefinition) options.onDefinition(hit.offset);
-            else void request("definition", hit.offset).catch(() => {});
+            else void controller.request("definition", hit.offset).catch(() => {});
         } finally { const unused = activation; activation = undefined; release(unused); }
     }, events.signal, options.linkAt);
     editor.onEditIntent(kind => { if (kind === "compositionstart") cancel(); else if (markedLink) leave(); }, events.signal);
     function dispose() {
         if (events.signal.aborted) return;
+        chooser?.dispose();
         events.abort(); stop(); leave(); clearExplicit(); layer.dispose();
         publish("disposed");
         state.clearSnapshotListeners();
     }
-    return Object.freeze({ request, cancel, dispose, ...controllerObservable(state, "Navigation", () => events.signal.aborted) });
+    const plain = { request, cancel, dispose, ...controllerObservable(state, "Navigation", () => events.signal.aborted) };
+    let chooser: ReturnType<typeof mountLocationChooser> | undefined;
+    try { if (options.chooser) chooser = mountLocationChooser(editor, plain, options.chooser); }
+    catch (error) { dispose(); throw error; }
+    const controller = Object.freeze(chooser ? { ...plain, request: chooser.request, cancel: chooser.cancel } : plain);
+    return controller;
 }
