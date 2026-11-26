@@ -8,6 +8,6 @@
     "emitDeclarationOnly": true,
     "tsBuildInfoFile": "artifacts/types/protocol.tsbuildinfo"
   },
-  "include": ["src/protocol/**/*.ts"],
+  "include": ["src/protocol/**/*.ts", "src/kernels/**/*.ts"],
   "references": [{ "path": "./tsconfig.core.json" }]
 }

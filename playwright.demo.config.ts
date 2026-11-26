@@ -9,5 +9,5 @@ export default defineConfig({
     use: { baseURL, headless: true, viewport: { width: 1440, height: 900 },
         screenshot: "only-on-failure", trace: "retain-on-failure" },
     projects: ["chromium", "firefox", "webkit"].map(name => ({ name, use: { browserName: name as "chromium" | "firefox" | "webkit" } })),
-    webServer: published ? [] : { command: "npm run preview:demo", url: baseURL, reuseExistingServer: !process.env.CI, timeout: 30000 },
+    webServer: published ? [] : { command: "npm run preview:demo", url: baseURL, reuseExistingServer: false, timeout: 30000 },
 });

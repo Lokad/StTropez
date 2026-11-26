@@ -7,7 +7,8 @@
     "paths": {
       "sttropez": ["./src/index.ts"],
       "sttropez/browser": ["./src/browser/index.ts"],
-      "sttropez/protocol": ["./src/protocol/index.ts"]
+      "sttropez/protocol": ["./src/protocol/index.ts"],
+      "sttropez/kernels": ["./src/kernels/index.ts"]
     },
     "incremental": true,
     "tsBuildInfoFile": "artifacts/types/development.tsbuildinfo"
