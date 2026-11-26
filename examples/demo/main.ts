@@ -1,6 +1,9 @@
 import { isSaveKey, isUnmodifiedShortcut, usesAppleShortcuts } from "../shared/host-shortcuts.ts";
 import { mountTextEditor, mountTextComparison, mountFindBar, createFoldingController, diagnosticDecoration, editRefusedEvent } from "../../src/browser/index.ts";
-import type { EditorCommands, EditRefusedDetail, TextEditor, TextComparison, FoldingController, DecorationLayer, DecorationProvider } from "../../src/browser/index.ts";
+import type {
+    EditorCommands, EditRefusedDetail, TextEditor, TextComparison, FoldingController,
+    DecorationLayer, DecorationProvider, NavigationOrigin,
+} from "../../src/browser/index.ts";
 import { discoverIndentationFolds } from "../../src/index.ts";
 import { DemoProject } from "./project.ts";
 import { linePrompt } from "../shared/line-prompt.ts";
@@ -158,14 +161,9 @@ function renderProblems(): void {
         const code = problem.code === undefined ? "" : `${problem.source === "typescript" ? "TS" : ""}${problem.code}: `;
         const { line, character } = problem.range.start;
         item.textContent = `${problem.name}:${line + 1}:${character + 1} · ${code}${problem.message}`;
-        const open = (target: { documentId: typeof problem.documentId; revision: number; from: number; to: number }) => {
-            if (!current() || !list.contains(row) || !confirmed || editorBusy()) return false;
-            const file = captured.files.find(file => file.resource.documentId === target.documentId);
-            if (!file || captured.workspace.document(target.documentId).revision !== target.revision) return false;
-            if (file !== active) mountFile(file);
-            return editor?.view === file.view && !!editor.reveal(target, {
-                expectedRevision: target.revision, align: "center-if-outside", select: true, focus: true
-            });
+        const open = (target: DemoSymbolTarget) => {
+            if (!current() || !list.contains(row) || !confirmed || !editor) return false;
+            return openLocation(captured, target, captured.navigation.capture(editor), "center-if-outside");
         };
         item.disabled = !confirmed;
         item.addEventListener("click", () => {
@@ -301,16 +299,26 @@ function detachView(keepProblems = false): void {
     if (!keepProblems) element("panel-content").replaceChildren();
     if (metadataFrame !== undefined) cancelAnimationFrame(metadataFrame); metadataFrame = undefined;
 }
-function openLocation(capturedProject: DemoProject, capturedEditor: TextEditor, target: DemoSymbolTarget,
-    origin = capturedProject.navigation.capture(capturedEditor)): void {
-    if (disposed || project !== capturedProject || editor !== capturedEditor) return;
+function openLocation(capturedProject: DemoProject, target: DemoSymbolTarget, origin: NavigationOrigin | undefined,
+    align: "nearest" | "center-if-outside" = "nearest"): boolean {
+    if (disposed || project !== capturedProject || !origin) return false;
     const destination = capturedProject.files.find(file => file.resource.documentId === target.documentId);
-    if (!destination || capturedProject.workspace.document(target.documentId).revision !== target.revision) return;
-    origin?.visit(() => {
+    if (!destination || capturedProject.workspace.document(target.documentId).revision !== target.revision) return false;
+    const sameView = editor?.view === destination.view;
+    let opened = false;
+    origin.visit(() => {
         if (destination !== active) mountFile(destination);
-        return editor?.view === destination.view && !!editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true });
+        if (editor?.view !== destination.view) return false;
+        opened = !!editor.reveal(target, { expectedRevision: target.revision, select: true, focus: true, align });
+        if (!opened || !sameView) return opened;
+        // A second click still offers fixes. Add a Back stop only if the view moved.
+        const before = origin.viewState;
+        const after = editor.captureView();
+        return before.selectionSet !== after.selectionSet || before.scrollTop !== after.scrollTop
+            || before.scrollLeft !== after.scrollLeft || before.folding?.generation !== after.folding?.generation;
     });
     renderMetadata();
+    return opened;
 }
 function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEditor: TextEditor) {
     languageViewFailure = undefined;
@@ -322,7 +330,7 @@ function attachLanguage(capturedProject: DemoProject, file: DemoFile, capturedEd
     };
     try {
         return mountDemoLanguage(capturedProject, file, capturedEditor, capturedProject.language,
-            (target, origin) => openLocation(capturedProject, capturedEditor, target, origin), report, element("language-command-status"), element("snippet-controls"));
+            (target, origin) => openLocation(capturedProject, target, origin), report, element("language-command-status"), element("snippet-controls"));
     } catch (error) { report(error); }
 }
 function detachLanguage(): void {
@@ -404,7 +412,7 @@ function mountFile(file: DemoFile, focus = false): void {
         const capturedProject = project, capturedEditor = editor;
         hostIntegrations = mountHostIntegrations(project, file, editor, {
             mode: element("host-paste-mode") as HTMLSelectElement, insert: button("host-insert-table"), annotate: button("host-annotate"), status: element("host-status") },
-            target => openLocation(capturedProject, capturedEditor, target));
+            target => openLocation(capturedProject, target, capturedProject.navigation.capture(capturedEditor)));
     }
     if (element("workspace").classList.contains("collapsed")) setReviewCollapsed?.(true);
     renderMetadata(); renderLanguage(); renderOutput(); if (focus) editor.focus();

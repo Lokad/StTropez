@@ -73,9 +73,20 @@ test("real provider retains the 1200-field catalogue through filtering, acceptan
 test("the type error sample offers a spelling fix from Problems and shows the correction in Changes", async ({ page }) => {
     await page.goto("/?provider=browser&sample=errors");
     await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
+    const pricingTab = page.getByRole("button", { name: "pricing.ts", exact: true });
+    await pricingTab.click();
+    const pricing = page.getByRole("textbox", { name: "pricing.ts", exact: true });
+    await pricing.press("Control+Home");
+    await pricing.press("End");
+    await pricing.press("Shift+Home");
+    const firstLine = (await pricing.inputValue()).split("\n", 1)[0]!;
     await page.locator('[data-panel="problems"]').click();
-    await page.getByRole("button", { name: /TS2551:.*quanity/ }).click();
-    await page.locator(".demo-problem").getByRole("button", { name: /^Review .*fix/ }).click();
+    const problem = page.getByRole("button", { name: /TS2551:.*quanity/ });
+    const review = page.locator(".demo-problem").getByRole("button", { name: /^Review .*fix/ });
+    await problem.click();
+    await expect(review).toBeEnabled();
+    await problem.click();
+    await review.click();
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
     await popup.getByRole("button", { name: "Change spelling to 'quantity'", exact: true }).click();
     await expect(page.locator("#panel-content")).toHaveText("No problems in this project.");
@@ -83,6 +94,16 @@ test("the type error sample offers a spelling fix from Problems and shows the co
     const panes = page.locator(".st-comparison-panes > section");
     await expect(panes.first()).toContainText("item.quanity >= 1");
     await expect(panes.last()).toContainText("item.quantity >= 1");
+    await page.locator("#code-menu summary").click();
+    const back = page.getByRole("button", { name: "Back to previous location" });
+    await expect(back).toBeEnabled();
+    await back.click();
+    await expect(pricingTab).toHaveAttribute("aria-pressed", "true");
+    const working = page.getByRole("textbox", { name: "Comparison working source" });
+    await expect(working).toBeFocused();
+    await expect.poll(() => working.evaluate((input: HTMLTextAreaElement) =>
+        [input.selectionStart, input.selectionDirection, input.value.slice(input.selectionStart, input.selectionEnd)]))
+        .toEqual([0, "backward", firstLine]);
 });
 
 test("real member completion preserves provider punctuation, resolves, applies once and undoes", async ({ page }) => {
