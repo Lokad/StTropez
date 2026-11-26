@@ -4,7 +4,7 @@ import type { DocumentId } from "../core/workspace.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
 import { isNonNegativeInteger } from "../core/bounds.ts";
-import { readRegexResult, regexIdentity, regexOptions, regexProtocolVersion, regexQuery, regexSourceLimit } from "../protocol/regex.ts";
+import { readRegexResult, regexIdentity, regexOptions, regexOutputLimit, regexProtocolVersion, regexQuery } from "../protocol/regex.ts";
 import type { RegexOptions, RegexRequest, RegexResult } from "../protocol/regex.ts";
 
 type Capture = Readonly<{ documentId: DocumentId; revision: number; buffer: TextBuffer }>;
@@ -55,7 +55,7 @@ export function createRegexClient(host: Readonly<{ clock: Pick<Window, "setTimeo
         const { documentId, revision } = capture;
         const length = capture.buffer.length;
         const query = { length, pattern, matchCase, wholeWord: options.wholeWord ?? false };
-        const maxOutput = options.maxOutputUnits ?? regexSourceLimit;
+        const maxOutput = regexOutputLimit(length, options);
         if (!documentId || typeof documentId !== "string" || !isNonNegativeInteger(revision) || !regexQuery(query) || !regexOptions(options, length))
             throw new RangeError("Unsupported regex capture.");
         const replacement = options.replacement;
@@ -73,7 +73,6 @@ export function createRegexClient(host: Readonly<{ clock: Pick<Window, "setTimeo
         let lastFrom = -1;
         let lastTo = 0;
         let inserted = 0;
-        let removed = 0;
         let scanned = 0;
         const replacing = replacement !== undefined;
         function release(error?: Error) {
@@ -152,13 +151,12 @@ export function createRegexClient(host: Readonly<{ clock: Pick<Window, "setTimeo
                         if (nextEnd < inserted || nextEnd > result.insertions.length) throw new Error("Invalid regex insertion offset.");
                         edits.push(Object.freeze({ from, to, insert: result.insertions.slice(inserted, nextEnd) }));
                         inserted = nextEnd;
-                        removed += to - from;
                     }
                 }
                 const done = position === result.offsets.length;
                 scanned = done ? length : lastTo;
                 if (done) {
-                    if (result.operation === "regex-edits" && (inserted !== result.insertions.length || length - removed + inserted > regexSourceLimit))
+                    if (result.operation === "regex-edits" && inserted !== result.insertions.length)
                         throw new Error("Invalid regex result size.");
                     release();
                 }

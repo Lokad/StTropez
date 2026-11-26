@@ -2,10 +2,14 @@ import { isNonNegativeInteger, isOffsetRange, isPositiveInteger } from "../core/
 import type { SearchMatch } from "../core/search.ts";
 
 /** Private structured-clone messages shared by the worker and its owning browser client. */
-export const regexProtocolVersion = 4;
-export const regexSourceLimit = 512_000;
+export const regexProtocolVersion = 5;
+// Both source offsets and cumulative insertion lengths travel in a Uint32Array.
+const maxOffset = 0xffff_ffff;
 export const regexErrorLimit = 256;
 export type RegexOptions = Readonly<{ replacement?: string; range?: SearchMatch; maxOutputUnits?: number }>;
+export function regexOutputLimit(length: number, options: RegexOptions): number {
+    return options.maxOutputUnits ?? Math.min(maxOffset, length + 512_000);
+}
 export type RegexQuery = Readonly<{ length: number; pattern: string; matchCase: boolean; wholeWord?: boolean }>;
 type Identity = Readonly<{ id: number; revision: number }>;
 export type RegexRequest = Identity & RegexQuery & RegexOptions & Readonly<{
@@ -20,14 +24,14 @@ const record = (value: unknown): value is Record<string, unknown> => typeof valu
 export const regexIdentity = (value: unknown): value is Record<string, unknown> & Identity =>
     record(value) && isPositiveInteger(value.id) && isNonNegativeInteger(value.revision);
 export function regexQuery(value: RegexQuery): boolean {
-    return isNonNegativeInteger(value.length) && value.length <= regexSourceLimit
+    return isNonNegativeInteger(value.length) && value.length <= maxOffset
         && typeof value.pattern === "string" && value.pattern.length <= 4096 && typeof value.matchCase === "boolean"
         && (value.wholeWord === undefined || typeof value.wholeWord === "boolean");
 }
 export function regexOptions(value: RegexOptions, length: number): boolean {
     const range = value.range;
     return (value.replacement === undefined || typeof value.replacement === "string" && value.replacement.length <= 32768)
-        && (value.maxOutputUnits === undefined || isNonNegativeInteger(value.maxOutputUnits) && value.maxOutputUnits <= regexSourceLimit)
+        && (value.maxOutputUnits === undefined || isNonNegativeInteger(value.maxOutputUnits) && value.maxOutputUnits <= maxOffset)
         && (range === undefined || value.replacement !== undefined && record(range)
             && isOffsetRange(range.from, range.to, length));
 }

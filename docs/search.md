@@ -136,8 +136,8 @@ decodes `\n` and `\\` in regex replacements.
 
 | Worker limit | Value |
 | --- | --- |
-| Source / pattern / template | 512,000 / 4,096 / 32,768 UTF-16 units |
-| Output | `maxOutputUnits` defaults to and caps at 512,000 inserted units. Final text must fit 512,000 units. |
+| Pattern / template | 4,096 / 32,768 UTF-16 units |
+| Output | `maxOutputUnits` limits total insertion, by default the source length plus 512,000 units. Worker offsets and insertion lengths fit unsigned 32-bit integers. |
 | Timing | `regularExpressionDelayMs` defaults to 80 ms (0–1,000). Positive finite `timeoutMs` defaults to 5,000 ms. |
 
 The worker caches by document, revision and buffer. Timeout or cancellation during matching terminates it.

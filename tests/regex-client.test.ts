@@ -144,6 +144,18 @@ test("regex replacement preserves captures, large insertions, zero-width and who
     }
 });
 
+test("regex replacement can grow a document past the performance bound and search the new revision", async t => {
+    const before = TextBuffer.from("x".repeat(512_000));
+    const f = fixture(before, "^x+$", true, { replacement: "$&!" });
+    t.after(() => f.client.dispose());
+    const plan = await f.cursor.next();
+    assert.equal(plan.done, true);
+    const after = before.apply(plan.edits).buffer;
+    assert.equal(after.length, 512_001);
+    const cursor = f.client.createCursor({ documentId: "one" as DocumentId, revision: 2, buffer: after }, "!$", true);
+    assert.deepEqual((await cursor.next()).matches, [{ from: 512_000, to: 512_001 }]);
+});
+
 test("invalid or stale worker replies cannot publish a completed search or replacement", async () => {
     const version = regexProtocolVersion;
     const matches = (offsets: number[]) => ({ operation: "regex-matches", offsets: Uint32Array.from(offsets) });

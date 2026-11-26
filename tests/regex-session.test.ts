@@ -18,7 +18,7 @@ test("one request captures a bounded source and only the same identity can reuse
         { ...start, version: version + 1 }, { ...start, length: 512001 }, { ...start, length: 1 },
         { ...start, source: 99 }, { ...start, pattern: "x".repeat(4097) },
         { ...start, matchCase: "yes" }, { ...start, replacement: "x".repeat(32769) },
-        { ...start, replacement: "", maxOutputUnits: 512001 }, { ...start, range: { from: 0, to: 1 } },
+        { ...start, replacement: "", maxOutputUnits: 2 ** 32 }, { ...start, range: { from: 0, to: 1 } },
     ]) assert.equal(session.receive(invalid)?.operation, "regex-error");
 });
 
@@ -33,8 +33,6 @@ test("replacement checks a captured range and bounds expansion before returning 
         });
     }
     assert.equal(session.receive({ ...start, maxOutputUnits: 3 })?.operation, "regex-error");
-    const text = "x".repeat(512000);
-    assert.equal(session.receive({ ...query, text, length: text.length, pattern: "$", replacement: "!" })?.operation, "regex-error");
     const invalid = session.receive({ ...start, pattern: "x".repeat(4000) + "\n(" });
     assert.ok(invalid?.operation === "regex-error");
     assert.match(invalid.message, /^Invalid regular expression: .*group/i);

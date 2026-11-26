@@ -1,7 +1,7 @@
 import { regexMatches, regexRanges, regexReplacement } from "../core/regex-search.ts";
 import { splitsSurrogatePair } from "../core/utf16.ts";
-import { isNonNegativeInteger } from "../core/bounds.ts";
-import { regexErrorLimit, regexIdentity, regexOptions, regexProtocolVersion, regexQuery, regexSourceLimit } from "./regex.ts";
+import { isPositiveInteger } from "../core/bounds.ts";
+import { regexErrorLimit, regexIdentity, regexOptions, regexOutputLimit, regexProtocolVersion, regexQuery } from "./regex.ts";
 import type { RegexReply, RegexRequest, RegexResult } from "./regex.ts";
 
 function run(request: RegexRequest, text: string): RegexResult {
@@ -11,22 +11,19 @@ function run(request: RegexRequest, text: string): RegexResult {
         for (const at of regexRanges(text, pattern, matchCase, wholeWord)) offsets.push(at.from, at.to);
         return { operation: "regex-matches", offsets: Uint32Array.from(offsets) };
     }
-    const limit = request.maxOutputUnits ?? regexSourceLimit;
+    const limit = regexOutputLimit(text.length, request);
     const parts: string[] = [];
     let inserted = 0;
-    let removed = 0;
     const matches = range && splitsSurrogatePair(text, range.from) ? []
         : regexMatches(text, pattern, matchCase, wholeWord, range?.from);
     for (const match of matches) {
         if (range && (match.from !== range.from || match.to !== range.to)) break;
         const insert = regexReplacement(text, match, replacement, limit - inserted);
         inserted += insert.length;
-        removed += match.to - match.from;
         offsets.push(match.from, match.to, inserted);
         if (insert) parts.push(insert);
         if (range) break;
     }
-    if (text.length - removed + inserted > regexSourceLimit) throw new RangeError("Regex result exceeds the supported document size.");
     return { operation: "regex-edits", offsets: Uint32Array.from(offsets), insertions: parts.join("") };
 }
 
@@ -40,7 +37,7 @@ export class RegexSession {
         try {
             if (value.version !== version) throw new RangeError("Unsupported regex worker protocol version.");
             const request = value as unknown as RegexRequest;
-            if (!isNonNegativeInteger(request.source) || !request.source || !regexQuery(request) || !regexOptions(request, request.length))
+            if (!isPositiveInteger(request.source) || !regexQuery(request) || !regexOptions(request, request.length))
                 throw new RangeError("Unsupported regex capture.");
             if (request.text !== undefined) {
                 if (request.source !== id || typeof request.text !== "string" || request.text.length !== request.length)
