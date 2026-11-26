@@ -1,3 +1,4 @@
+import type { TextEdit } from "../core/changes.ts";
 import { onAbort } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { isOffsetRange } from "../core/bounds.ts";
@@ -7,7 +8,7 @@ import type { DocumentSnapshot, DocumentView, EditResult, TabTarget, Workspace }
 import { unchangedPositionEdges } from "../core/positions.ts";
 import { FindIndex } from "../core/find-index.ts";
 import { LiteralFindRepair } from "./find-index.ts";
-import { createFindReplacementPlan, literalReplacement } from "../core/find.ts";
+import { createFindReplacementPlan } from "../core/find.ts";
 import type { FindBackend, FindQueryCapture, FindSearchCursor, FindPlanCursor, FindPlanStep } from "../core/find.ts";
 import type { Observable, ObservableListener } from "../core/observable.ts";
 import type { SearchMatch, SearchStep } from "../core/search.ts";
@@ -463,60 +464,42 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
         return selectMatch(match.index, true, match.wrappedTo);
     };
     function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch, focusEditor = false): boolean {
-        const immediate = !!range && !state.regularExpression;
         if (!valid() || state.revision !== readDocument().revision || (state.regularExpression && !backend)) return false;
         if (!replacementAllowed()) return false;
         advanceAfterReplace = undefined;
         const request = state.regularExpression ? capture(state) : undefined;
         const positions = matches, total = range ? 1 : count;
         const selectionSet = currentSelection();
-        const unindexed = !!request && !!range && !matchesRange(indexAt(range.from), range.from, range.to);
-        const acceptPlan = createFindReplacementPlan(positions, total, range, unindexed);
-        // A synchronous literal replacement must leave an in-progress repair alive on a no-op.
-        // Yielding plans cancel scans and retain authority until their captured commit.
-        if (!immediate) stop();
+        // Regex replies may outlive this turn. A literal index is already local and validated.
+        if (request) stop();
         captureFocus();
-        const token = generation, focusToken = focusGeneration; let committed = false;
-        if (!immediate) { observePlanAuthority(token); publish({ status: "replacing", ...noNotice }); }
-        if (token !== generation) return false;
-        try {
-            const created = request
-                ? backend!.replace(request, replacement, range)
-                : literalReplacement(positions, replacement, range);
-            if (token !== generation) { created.dispose(); return false; }
-            planCursor = created;
-        }
-        catch (error) { failed(error, token, true); return false; }
+        const token = generation, focusToken = focusGeneration;
         const current = () => {
             if (token !== generation) return false;
             if (!valid() || readDocument().revision !== state.revision || currentSelection() !== selectionSet) { restart(state.query); return false; }
             return replacementAllowed(true);
         };
-        const receive = (result: FindPlanStep) => {
-            if (!current()) return;
-            const edits = acceptPlan(result);
-            if (!edits) { later(step); return; }
-            const finished = planCursor; planCursor = undefined; finished?.dispose(); if (!current()) return;
+        const commit = (edits: readonly TextEdit[]): boolean => {
+            if (!current()) return false;
             if (!edits.length) {
                 stop();
                 scope.batch(() => {
                     publish({ status: "ready" });
                     if (focusGeneration === focusToken) next(1);
                 });
-                return;
+                return false;
             }
             const head = range ? range.from + edits[0]!.insert.length : undefined, started = win.performance.now();
             const applied = workspace.edit({ documentId, expectedRevision: state.revision, origin: "human", edits, view: editor.view,
                 ...(head === undefined ? {} : { selection: { anchor: head, head } }), history: { kind: "replace" } });
-            committed = applied.applied;
             stopPlanAuthority?.(); stopPlanAuthority = undefined;
-            if (!valid()) return;
+            if (!valid()) return applied.applied;
             replaceTransactionMs = win.performance.now() - started;
             if (!applied.applied) {
                 refuseReplacement(applied.reason, true);
-                return;
+                return false;
             }
-            if (!immediate && readDocument().revision === state.revision) publish({ status: "ready" });
+            if (request && readDocument().revision === state.revision) publish({ status: "ready" });
             if (range && range.from === range.to && store.get().query === state.query && store.get().regularExpression && valid()) {
                 replacedZero = { revision: readDocument().revision, head: head!, selectionSet: currentSelection() };
             }
@@ -529,6 +512,35 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 }
                 if (focusEditor) editor.focus();
             }
+            return true;
+        };
+        if (!request) {
+            try {
+                const edits = Array.from({ length: total }, (_, index) => {
+                    const { from, to } = range ?? positions.at(index);
+                    return { from, to, insert: replacement };
+                });
+                return commit(edits);
+            } catch (error) { failed(error, token, true); return false; }
+        }
+        const unindexed = !!range && !matchesRange(indexAt(range.from), range.from, range.to);
+        const acceptPlan = createFindReplacementPlan(positions, total, range, unindexed);
+        observePlanAuthority(token);
+        publish({ status: "replacing", ...noNotice });
+        if (token !== generation) return false;
+        try {
+            const created = backend!.replace(request, replacement, range);
+            if (token !== generation) { created.dispose(); return false; }
+            planCursor = created;
+        } catch (error) { failed(error, token, true); return false; }
+        const receive = (result: FindPlanStep) => {
+            if (!current()) return;
+            const edits = acceptPlan(result);
+            if (!edits) { later(step); return; }
+            const finished = planCursor;
+            planCursor = undefined;
+            finished?.dispose();
+            commit(edits);
         };
         const step = () => {
             if (!current()) return;
@@ -537,7 +549,6 @@ export function findForView(workspace: Workspace, target: TabTarget | undefined,
                 else receive(result);
             } catch (error) { failed(error, token, true); }
         };
-        if (immediate) { step(); return committed; }
         later(step); return true;
     }
     const replaceCurrent = (replacement: string): boolean => {

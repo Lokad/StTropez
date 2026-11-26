@@ -34,17 +34,3 @@ export function createFindReplacementPlan(positions: FindIndex, total: number, r
         return Object.freeze(edits);
     };
 }
-
-/** Literal replacement reuses the captured search index and releases it on disposal. */
-export function literalReplacement(index: FindIndex, replacement: string, range?: SearchMatch): FindPlanCursor {
-    let positions = range ? undefined : index, at = 0;
-    const count = range ? 1 : index.count;
-    return {
-        next() {
-            const edits: TextEdit[] = [], end = Math.min(count, at + planStepEdits);
-            for (; at < end; at++) edits.push({ ...(range ?? positions!.at(at)), insert: replacement });
-            return { done: at === count, edits };
-        },
-        dispose() { positions = undefined; at = count; },
-    };
-}

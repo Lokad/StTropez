@@ -52,7 +52,7 @@ test("controller and workspace notifications reject cross-owner writes through n
     }
 });
 
-test("changing whole-word mode cancels captured replacement and excludes selected substring matches", () => {
+test("changing whole-word mode excludes selected substring matches", () => {
     const workspace = new Workspace(), original = "cat scatter cat_ cat", documentId = workspace.createDocument({ scope: "find", resource: "options", variant: "working" }, "Source", original);
     const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId);
     const tasks = new Map<number, () => void>(); let serial = 0, focused = 0;
@@ -68,7 +68,6 @@ test("changing whole-word mode cancels captured replacement and excludes selecte
         find.setQuery("cat"); drain(); assert.equal(find.getSnapshot().count, 4);
         assert.equal(find.getSnapshot().current, 3);
         const before = workspace.document(documentId), history = workspace.observeHistory(documentId).getSnapshot();
-        find.replaceAll("changed"); assert.equal(find.getSnapshot().status, "replacing");
         find.setFlags({ wholeWord: true }); drain();
         assert.equal(find.getSnapshot().wholeWord, true); assert.equal(find.getSnapshot().count, 2);
         assert.equal(find.getSnapshot().current, 1); assert.equal(view.getSnapshot().selectionSet, selected);
@@ -123,7 +122,7 @@ for (const lifetime of ["destroyed", "expired", "view-disposed"] as const) for (
         }
     });
 
-test("case options retain raw Unicode matches, cancel captured plans and preserve complete shared history", () => {
+test("case options retain raw Unicode matches and literal Replace All commits in one shared history entry", () => {
     const workspace = new Workspace(), original = "K k K_ 𐐀 𐐨 café café SS ß", documentId = workspace.createDocument({ scope: "find", resource: "case", variant: "working" }, "Source", original);
     const tab = workspace.tabs.open({ kind: "text", documentId }, "left"), view = workspace.createDocumentView(documentId), peer = workspace.createDocumentView(documentId);
     const tasks = new Map<number, () => void>(); let serial = 0;
@@ -138,7 +137,7 @@ test("case options retain raw Unicode matches, cancel captured plans and preserv
         find.setQuery("k"); assert.equal(find.getSnapshot().matchCase, true);
         find.setFlags({ matchCase: false }); drain(); assert.equal(find.getSnapshot().count, 3);
         const before = workspace.document(documentId), history = workspace.observeHistory(documentId).getSnapshot();
-        find.replaceAll("x"); find.setFlags({ matchCase: false, wholeWord: true }); drain();
+        find.setFlags({ matchCase: false, wholeWord: true }); drain();
         assert.equal(find.getSnapshot().count, 2); assert.equal(workspace.document(documentId), before); assert.deepEqual(workspace.observeHistory(documentId).getSnapshot(), history);
         view.setSelections(before.revision, [{ anchor: 0, head: 1 }, { anchor: original.length, head: original.length }]);
         const set = view.getSnapshot().selectionSet;
@@ -160,12 +159,14 @@ test("case options retain raw Unicode matches, cancel captured plans and preserv
         find.setFlags({ matchCase: false, wholeWord: false }); find.setQuery("k"); drain(); assert.equal(find.getSnapshot().count, 3300);
         view.setSelection(workspace.document(documentId).revision, { anchor: 0, head: 0 });
         find.next(-1); assert.equal(view.getSnapshot().selection.anchor, many.lastIndexOf("K"));
-        const revision = workspace.document(documentId).revision; find.replaceAll("x"); runOne();
-        const primary = view.getSnapshot().selection;
-        view.setSelections(revision, [primary, { anchor: many.length, head: many.length }]); drain();
-        assert.equal(workspace.document(documentId).revision, revision); assert.equal(text(), many);
+        const revision = workspace.document(documentId).revision;
+        view.setSelections(revision, [view.getSnapshot().selection, { anchor: many.length, head: many.length }]);
         const complete = view.getSnapshot().selectionSet, depth = workspace.observeHistory(documentId).getSnapshot().undoDepth;
-        find.replaceAll("x"); drain(); assert.equal(text(), "x x x_\n".repeat(1100)); assert.equal(workspace.observeHistory(documentId).getSnapshot().undoDepth, depth + 1);
+        find.replaceAll("x");
+        assert.equal(workspace.document(documentId).revision, revision + 1);
+        assert.equal(text(), "x x x_\n".repeat(1100));
+        assert.equal(workspace.observeHistory(documentId).getSnapshot().undoDepth, depth + 1);
+        find.setFlags({ wholeWord: true }); drain();
         assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain(); assert.equal(text(), many); assert.deepEqual(view.getSnapshot().selectionSet, complete);
     } finally {
         find.dispose(); view.dispose(); peer.dispose(); workspace.tabs.close(tab);

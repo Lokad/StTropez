@@ -121,9 +121,9 @@ comparison pane allows navigation only.
 matches remain replaceable during repair. Literal replacement inserts verbatim. Find advances while view,
 selection, focus and folds remain current.
 
-`replaceAll(text)` captures revision, selections and tab generation. Composition or a change to permissions,
-selection, query or target can cancel it. The plan commits in one Undo. `{ focusEditor: true }` returns
-focus unless another control has taken it.
+`replaceAll(text)` commits indexed literal matches before returning. Regex waits for the worker and cancels
+on composition or a change of revision, selection, permissions, query or target. Both use one Undo entry.
+`{ focusEditor: true }` respects later focus changes.
 
 ### Regular expressions and worker limits
 
