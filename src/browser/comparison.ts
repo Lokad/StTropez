@@ -18,7 +18,7 @@ import { createComparisonScroll } from "./comparison-scroll.ts";
 import { createComparisonAlignment } from "./comparison-alignment.ts";
 import type { ComparisonAlignmentSnapshot } from "./comparison-alignment.ts";
 import { mountComparisonControls, sameControlState } from "./comparison-controls.ts";
-import { commandRegistration, type EditorCommand, type EditorCommands } from "./command-registry.ts";
+import { builtinKeyPriority, commandRegistration, type EditorCommand, type EditorCommands } from "./command-registry.ts";
 import { createComparisonPanes } from "./comparison-panes.ts";
 import { createCooperativeRunner } from "./cooperative-runner.ts";
 
@@ -370,7 +370,7 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, ide
             ["comparison.nextChange", strings.nextChange ?? "Next change", "F7", 1],
             ["comparison.previousChange", strings.previousChange ?? "Previous change", "Shift+F7", -1],
         ] as const) commands.register({ id, label, owner: "editor", category: strings.commandCategory ?? "Comparison",
-            enabled: () => stateStore.get().canNavigate, run: (_, pane) => navigateFrom(pane, direction) }, { keys: [key] });
+            enabled: () => stateStore.get().canNavigate, run: (_, pane) => navigateFrom(pane, direction) }, { keys: [key], priority: builtinKeyPriority.editor });
         const review: TextComparison = Object.freeze({ element: root, controller, commands, panes: editors, activePane, ...stateStore.observable, navigateHunk, revertSelectedHunk, hunkAt, setScrollLinked, setRowsAligned,
             getDiagnostics: () => {
                 const { linked, pending } = scroll.snapshot();

@@ -46,7 +46,7 @@ import { CharacterWarnings } from "../core/character-warnings.ts";
 import type { CharacterWarningConfiguration, CharacterWarningOptions } from "../core/character-warnings.ts";
 import { mountCharacterWarnings } from "./character-warnings.ts";
 import type { CharacterWarningHighlights } from "./character-warnings.ts";
-import { createCommandRegistry, isModifierKey, type EditorCommand, type EditorCommands, type EditorKeymap } from "./command-registry.ts";
+import { builtinKeyPriority, createCommandRegistry, isModifierKey, type EditorCommand, type EditorCommands, type EditorKeymap } from "./command-registry.ts";
 import { defaultEditorShortcuts, editCommand, editorCommandLabels, editorKeyCommand } from "./editor-commands.ts";
 import { classifyEditingKey, commandKey, historyKey, isDeletionCommand, nativeDeletion } from "./editing-keys.ts";
 import type { DeletionCommand, KeyBinding, KeyStroke, ViewCommand } from "./editing-keys.ts";
@@ -254,7 +254,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
         } });
     }
     for (const [keys, command] of apple ? defaultEditorShortcuts.apple : defaultEditorShortcuts.standard) {
-        registry.keymap.bind(keys, command);
+        registry.keymap.bind(keys, command, { priority: builtinKeyPriority.editor });
     }
     function cancelScans(): void {
         wordCursor?.dispose();

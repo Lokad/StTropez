@@ -1,5 +1,5 @@
 import type { TextEditor } from "./text-editor.ts";
-import type { EditorCommands } from "./command-registry.ts";
+import { builtinKeyPriority, type EditorCommands } from "./command-registry.ts";
 
 /** Find fields and editor panes invoke the same commands on their captured editor. */
 export function bindFindCommands(register: (...args: Parameters<EditorCommands["register"]>) => void,
@@ -13,10 +13,10 @@ export function bindFindCommands(register: (...args: Parameters<EditorCommands["
         { id: "find.previous", label: "Previous match", keys: ["Shift+F3"], run: (pane: TextEditor) => navigate(-1, pane) },
     ];
     for (const { id, label, keys, run } of entries) {
-        register({ id, label: text(label), category: text("Find"), run: (_, pane) => run(pane) }, { keys, shared: true });
+        register({ id, label: text(label), category: text("Find"), run: (_, pane) => run(pane) }, { keys, shared: true, priority: builtinKeyPriority.editor });
     }
     for (const [key, direction, label] of [["Enter", "next", "Select next match"], ["Shift+Enter", "previous", "Select previous match"]] as const) {
         register({ id: "find.query." + direction, label: text(label), category: text("Find"), enabled: (_, pane) => queryFocused(pane),
-            run: (_, pane) => { pane.commands.run("find." + direction); } }, { keys: [key], shared: true, priority: 40, repeat: false });
+            run: (_, pane) => { pane.commands.run("find." + direction); } }, { keys: [key], shared: true, priority: builtinKeyPriority.field, repeat: false });
     }
 }

@@ -187,14 +187,15 @@ export function undoMenuItem(editor: TextEditor) {
 }
 ```
 
-`commands.register(command, { keys, priority })` returns a disposable command and bindings.
-Translate with `settings.commandLabel(id, fallback)`. `keymap.bind("Mod+k Mod+i", id)` adds a chord,
-`keymap.unbind(keys)` clears it.
+`commands.register(command, { keys, priority })` installs both until disposal.
+Translate with `settings.commandLabel(id, fallback)`. Bind chords with `keymap.bind("Mod+k Mod+i", id)`.
+`keymap.unbind(keys)` clears those keys.
 
-- Bind a logical key or a physical `Code:BracketLeft`. A matching logical key wins. `Space` and
-  `Plus` name literal keys. Higher priorities run first. Returning `false` tries the next choice.
-- Duplicate IDs, tied priorities or a single key used as a chord prefix throw. Both chord strokes
-  must reach the same control within 1.5 seconds and with the same selection and revision.
+- Logical keys win over physical keys such as `Code:BracketLeft`. `Space` and `Plus` are literals.
+- Host priority defaults to 0, above built-ins. Highest wins, newest wins ties. Disabled or declined
+  commands (`false`) fall through.
+- Duplicate IDs and single-key/chord-prefix conflicts throw. Both strokes need the same control,
+  selection and revision within 1.5 seconds.
 - Use `repeat: false` for one activation per press. To share a shortcut with a toolbar, set
   `shared: true` and forward its event to that pane's `keymap.handle`.
   [Host commands](host-integration.md#navigation-commands-and-lifecycle)

@@ -1,3 +1,4 @@
+import { builtinKeyPriority } from "./command-registry.ts";
 import type { CodeActionChoice, CodeActionController, CodeActionPreview } from "./code-action-controller.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { mountAnchoredOverlay } from "./anchored-overlay.ts";
@@ -153,7 +154,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
     function bind(id: string, label: string, key: string, run: (arg: unknown) => boolean | void, opening = false) {
         const enabled = () => opening || !panel.hidden && (editor.getSnapshot().focused || panel.matches(":focus-within"));
         onAbort(signal, editor.commands.register({ id, label: text(label), category: text("Code actions"), owner: "editor", enabled, run },
-            { keys: [key], priority: opening ? 9 : 35, shared: key !== "Enter", repeat: key !== "Enter" }).dispose);
+            { keys: [key], priority: opening ? builtinKeyPriority.open : builtinKeyPriority.quickFix, shared: key !== "Enter", repeat: key !== "Enter" }).dispose);
     }
     bind("quickfix.show", "Show quick fixes", "Mod+.", show, true);
     bind("quickfix.dismiss", "Dismiss quick fixes", "Escape", close);

@@ -1,3 +1,4 @@
+import { builtinKeyPriority } from "./command-registry.ts";
 import { listenUntil, onAbort } from "./listen.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
@@ -237,7 +238,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         armed = true; schedule(context, after);
     }
     function bind(id: string, label: string, keys: string[], enabled: () => boolean, run: () => void | boolean) {
-        const registration = editor.commands.register({ id, label, owner: "editor", category: "Signature help", enabled, run }, { keys, priority: 10 });
+        const registration = editor.commands.register({ id, label, owner: "editor", category: "Signature help", enabled, run }, { keys, priority: builtinKeyPriority.signature });
         onDispose(registration.dispose);
     }
     let providerState = provider.getSnapshot();

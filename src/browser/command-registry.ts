@@ -11,6 +11,11 @@ export type EditorCommand = Readonly<{
 }>;
 type CommandInfo = Readonly<{ id: string; label: string; owner: string; category: string; enabled: boolean }>;
 type BindingOptions = Readonly<{ shared?: boolean; priority?: number; repeat?: boolean }>;
+// Host shortcuts default to zero. Fields and open popups claim their keys before ordinary editing.
+export const builtinKeyPriority = {
+    editor: -10, open: -9, signature: -8, hover: -7, completion: -6,
+    renameSubmit: -5, quickFix: -4, renameDismiss: -3, field: -2, replacement: -1,
+} as const;
 export type EditorCommands = Readonly<{
     register: (command: EditorCommand, shortcuts?: BindingOptions & { readonly keys: readonly string[] }) => { dispose(): void };
     run: (id: string, argument?: unknown) => boolean;
@@ -211,10 +216,10 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
             if (!lookup(id)) throw new Error(`Unknown command: ${id}`);
             const group: Strokes = bindings.get(first) ?? new Map(), choices = group.get(last) ?? [], priority = options?.priority ?? 0;
             if (!Number.isFinite(priority)) throw new RangeError("Key binding priority must be finite.");
-            if (choices.some(binding => binding.priority === priority) || (last ? group.has("") : group.size && !group.has("")))
+            if (last ? group.has("") : group.size && !group.has(""))
                 throw new Error(`Key binding conflicts: ${keys}`);
             const binding = { id, keys: keys.trim().replace(/\s+/g, " "), shared: options?.shared ?? false, priority, repeat: options?.repeat ?? true };
-            reset(); group.set(last, [...choices, binding].sort((a, b) => b.priority - a.priority)); bindings.set(first, group);
+            reset(); group.set(last, [binding, ...choices].sort((a, b) => b.priority - a.priority)); bindings.set(first, group);
             return { dispose: () => remove(first, last, candidate => candidate !== binding) };
         },
         unbind(keys) {

@@ -7,7 +7,7 @@ const name = "colors.ts";
 const file = workspace.createTextResource({ scope: "controls", resource: name, variant: "working" }, name,
     { value: 'const accent = "#5fae99";\nuse(accent);' }, undefined,
     { language: { uri: "file:///colors.ts", languageId: "typescript" } });
-const editor = mountTextEditor(document.querySelector("main")!, workspace, file.documentId);
+export const editor = mountTextEditor(document.querySelector("main")!, workspace, file.documentId);
 const find = mountFindBar(document.querySelector("#find")!);
 find.attach(editor);
 const provider = new BrowserLspWorkspace(workspace, {

@@ -1,3 +1,4 @@
+import { builtinKeyPriority } from "./command-registry.ts";
 import { listenUntil } from "./listen.ts";
 import { mountCompletionList, type CompletionListStrings } from "./completion-list.ts";
 import { done, failed, refused, stale, type Outcome } from "../core/outcome.ts";
@@ -562,7 +563,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     const registrations: { dispose(): void }[] = [];
     const visible = () => !!job?.visible.length;
     const navigatingSnippet = () => !!snippet;
-    function register(id: string, label: string, keys: string[], enabled: () => boolean, run: () => boolean | void, priority = 30) {
+    function register(id: string, label: string, keys: string[], enabled: () => boolean, run: () => boolean | void, priority: number = builtinKeyPriority.completion) {
         registrations.push(editor.commands.register({ id, label, owner: "editor", category: "Completion", enabled, run() {
             notifications.assertWritable();
             const started = clock.performance.now();
@@ -608,7 +609,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         for (const [id, label, direction, key] of [["previous", "Previous", -1, "Up"], ["next", "Next", 1, "Down"]] as const) {
             register("completion." + id, label + " completion", ["Arrow" + key], visible, () => navigate(direction, false));
             register("completion.page-" + id, label + " completion page", ["Page" + key], visible, () => navigate(direction, true));
-            register("snippet." + id, label + " placeholder", [direction === 1 ? "Tab" : "Shift+Tab"], navigatingSnippet, () => moveSnippet(direction), 40);
+            register("snippet." + id, label + " placeholder", [direction === 1 ? "Tab" : "Shift+Tab"], navigatingSnippet, () => moveSnippet(direction), builtinKeyPriority.field);
             register("snippet.choice-" + id, label + " snippet choice", ["Alt+Arrow" + key, "Alt+Shift+Arrow" + key],
                 () => !!snippet?.stops[snippet.active]?.choices.length, () => cycleChoice(direction));
         }

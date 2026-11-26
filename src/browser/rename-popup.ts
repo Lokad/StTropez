@@ -1,3 +1,4 @@
+import { builtinKeyPriority } from "./command-registry.ts";
 import { identifierAt } from "../core/identifier.ts";
 import { reviewPanel } from "./review-controls.ts";
 import { isFocused, revealInPage } from "./dom-focus.ts";
@@ -180,12 +181,12 @@ export function mountRenamePopup(editor: TextEditor, owner: LspDocumentOwner, re
         onAbort(signal, commands.register({ id, label: text(label), owner: "editor", category: "Rename", enabled, run },
             { keys: [key], priority, shared: true, repeat: false }).dispose);
     }
-    bind("rename.start", "Rename symbol", "F2", () => editor.getSnapshot().readOnlyReason === null, open, 9);
-    bind("rename.dismiss", "Dismiss rename", "Escape", () => !!source, arg => close(arg !== false), 39);
+    bind("rename.start", "Rename symbol", "F2", () => editor.getSnapshot().readOnlyReason === null, open, builtinKeyPriority.open);
+    bind("rename.dismiss", "Dismiss rename", "Escape", () => !!source, arg => close(arg !== false), builtinKeyPriority.renameDismiss);
     bind("rename.submit", "Preview or apply rename", "Enter", () => isFocused(name), () => {
         if (shown) accept(shown);
         else if (review.getSnapshot().status !== "pending") prepare();
-    }, 33);
+    }, builtinKeyPriority.renameSubmit);
     element.querySelector(".st-viewport-surface")!.append(panel);
     return () => hide(false);
 }

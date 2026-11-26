@@ -1,6 +1,30 @@
 import { expect, test } from "./fixtures.ts";
 import type { Locator } from "@playwright/test";
 
+test("host shortcuts override Find and restore its bindings on disposal", async ({ page }) => {
+    await page.goto("/controls/");
+    const bindings = await page.evaluateHandle(async () => {
+        const path = "/controls/app.js";
+        const { editor } = await import(path) as typeof import("../fixtures/controls/main.ts");
+        const calls: string[] = [];
+        function bind(id: string, keys: string[], run: () => void) {
+            return editor.commands.register({ id, label: id, run }, { keys, shared: true });
+        }
+        const host = bind("host.search", ["Mod+f", "Escape", "F3"], () => { calls.push("host"); });
+        const newest = bind("host.temporary", ["Mod+f"], () => { calls.push("temporary"); });
+        return { calls, host, newest };
+    });
+    const source = page.getByRole("textbox", { name: "colors.ts" });
+    for (const key of ["Control+f", "Escape", "F3"]) await source.press(key);
+    await bindings.evaluate(b => b.newest.dispose());
+    await source.press("Control+f");
+    expect(await bindings.evaluate(b => b.calls)).toEqual(["temporary", "host", "host", "host"]);
+    await bindings.evaluate(b => b.host.dispose());
+    await source.press("Control+f");
+    await expect(page.getByRole("textbox", { name: "Find text" })).toBeFocused();
+    await bindings.dispose();
+});
+
 async function contrast(element: Locator) {
     return element.evaluate(node => {
         const ctx = document.createElement("canvas").getContext("2d")!;

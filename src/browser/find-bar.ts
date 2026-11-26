@@ -3,7 +3,7 @@ import { onAbort } from "./listen.ts";
 import { editorElement } from "./editor-element.ts";
 import { NotificationScope, Store, type Observable } from "../core/observable.ts";
 import type { TextEditor } from "./text-editor.ts";
-import type { EditorCommands } from "./command-registry.ts";
+import { builtinKeyPriority, type EditorCommands } from "./command-registry.ts";
 import { createFindController, type FindController, type FindSnapshot } from "./find.ts";
 import { createRegexFindBackend } from "./regex-find.ts";
 import { bindFindCommands } from "./find-controls.ts";
@@ -261,22 +261,22 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
             register({ id: "find.replaceCurrent", label: text("Replace current match"),
                 enabled: from => owns() && (from === "button" ? !replace.disabled : focused() === replacement),
                 run: () => { if (!replace.disabled) find?.replaceCurrent(value()); } },
-                { keys: ["Enter"], shared: true, priority: 41, repeat: false });
+                { keys: ["Enter"], shared: true, priority: builtinKeyPriority.replacement, repeat: false });
             register({ id: "find.replaceAll", label: text("Replace all matches"),
                 enabled: () => owns() && !row.hidden && !all.disabled,
                 run: () => {
                     replacement.focus({ preventScroll: true });
                     find?.replaceAll(value());
-                } }, { keys: ["Ctrl+Alt+Enter"], shared: true, repeat: false });
+                } }, { keys: ["Ctrl+Alt+Enter"], shared: true, repeat: false, priority: builtinKeyPriority.editor });
             register({ id: "find.insertLineBreak", label: text("Insert a line break in Find or Replace"),
                 enabled: () => owns() && (focused() === query || focused() === replacement),
                 run: () => {
                     const input = focused() === query ? query : replacement;
                     input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
                     input.dispatchEvent(new Event("input", { bubbles: true }));
-                } }, { keys: ["Mod+Enter"], shared: true, priority: 40, repeat: false });
+                } }, { keys: ["Mod+Enter"], shared: true, priority: builtinKeyPriority.field, repeat: false });
             register({ id: "find.close", label: text("Close Find"), category: text("Find"), enabled: owns, run: close },
-                { keys: ["Escape"], shared: true, repeat: false });
+                { keys: ["Escape"], shared: true, repeat: false, priority: builtinKeyPriority.editor });
             panes.set(editor, detach);
             editor.element.addEventListener("focusin", () => setTarget(editor), { signal });
             editor.signal.addEventListener("abort", detach, { once: true, signal });

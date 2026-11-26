@@ -723,7 +723,7 @@ test("popup bindings fall back in priority order and roll back conflicts without
             { keys: ["Escape"], priority: 5, shared: true });
         let conflict = false;
         try { commands.register({ id: "test.rejected", label: "Duplicate", run: () => { calls.push("rejected"); } },
-            { keys: ["F8", "Escape"], priority: 5, shared: true }); } catch { conflict = true; }
+            { keys: ["F8", "Escape F8"], priority: 5, shared: true }); } catch { conflict = true; }
         const partial = commands.get("test.rejected") !== undefined || press("F8");
         query.focus();
         const fellBack = press("Escape") && document.activeElement === editor;

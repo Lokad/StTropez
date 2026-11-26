@@ -1,3 +1,4 @@
+import { builtinKeyPriority } from "./command-registry.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { Store, type Observable } from "../core/observable.ts";
 import { lineContentEnd } from "../core/newlines.ts";
@@ -137,8 +138,8 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
                     && !commandTargets(id, group).next().done,
                 run: group => runCommand(id, group) }));
         }
-        editor.keymap.bind("Mod+Shift+[", "fold.collapse", { shared: true });
-        editor.keymap.bind("Mod+Shift+]", "fold.expand", { shared: true });
+        editor.keymap.bind("Mod+Shift+[", "fold.collapse", { shared: true, priority: builtinKeyPriority.editor });
+        editor.keymap.bind("Mod+Shift+]", "fold.expand", { shared: true, priority: builtinKeyPriority.editor });
     } catch (error) {
         for (const registration of registrations) registration.dispose();
         throw error;

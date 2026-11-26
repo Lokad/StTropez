@@ -16,7 +16,7 @@ test("shared commands keep the initiating pane through focus changes and expire 
             run: (_, pane) => { field.value += pane === reference ? "R" : "W"; } },
             { keys: ["Mod+k Mod+j"], shared: true });
         // The second pane owns this key. A failed shared registration must release the first pane's binding.
-        reference.commands.register({ id: "host.local", label: "Local", run() {} }, { keys: ["F8"] });
+        reference.commands.register({ id: "host.local", label: "Local", run() {} }, { keys: ["F8 F9"] });
         let conflict = false;
         try {
             review.commands.register({ id: "host.other", label: "Other", run() {} }, { keys: ["F8"] });

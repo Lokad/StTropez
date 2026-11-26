@@ -1,3 +1,4 @@
+import { builtinKeyPriority } from "./command-registry.ts";
 import { listenUntil } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { refused } from "../core/outcome.ts";
@@ -82,13 +83,13 @@ export function mountHoverPopup(editor: TextEditor, hover: HoverController, opti
     }
     try {
         stops.push(commands.register({ id: "hover.inspect", label: "Inspect type", owner: "editor", category: "Hover",
-            run: () => { void inspect(); } }, { keys: ["Mod+k Mod+i"] }).dispose);
+            run: () => { void inspect(); } }, { keys: ["Mod+k Mod+i"], priority: builtinKeyPriority.editor }).dispose);
         stops.push(commands.register({ id: "hover.dismiss", label: "Dismiss hover", owner: "editor", category: "Hover",
             enabled: () => !!anchor || dwell.isPending(), run: () => {
                 const shown = !!anchor && !popup.hidden;
                 cancel();
                 return shown;
-            } }, { keys: ["Escape"], priority: 20, shared: true }).dispose);
+            } }, { keys: ["Escape"], priority: builtinKeyPriority.hover, shared: true }).dispose);
     } catch (error) { dispose(); throw error; }
     listen(element, "pointerenter", () => win.clearTimeout(leaveTimer));
     listen(element, "pointerleave", () => {

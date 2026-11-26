@@ -100,15 +100,15 @@ test("language shortcuts follow their panel and editor through attachment failur
         const host = document.querySelector<HTMLDivElement>("#host")!, tab = controller.viewTab("primary");
         const results = [];
         try {
-            for (const [feature, discover, shortcut, priority] of [
-                ["links", "links.discover", "F4", 7], ["colors", "colors.discover", "F6", 8],
-                ["navigation", "navigation.definition", "F12", 5], ["rename", "rename.start", "F2", 9],
-                ["actions", "actions.request", "Mod+.", 6], ["hover", "hover.inspect", "Mod+k Mod+i", 20],
-                ["signature", "signature.request", "Mod+Shift+Space", 10],
+            for (const [feature, discover, shortcut] of [
+                ["links", "links.discover", "F4"], ["colors", "colors.discover", "F6"],
+                ["navigation", "navigation.definition", "F12"], ["rename", "rename.start", "F2"],
+                ["actions", "actions.request", "Mod+."], ["hover", "hover.inspect", "Mod+k Mod+i"],
+                ["signature", "signature.request", "Mod+Shift+Space"],
             ] as const) {
                 const panel = feature === "hover" ? bindings.signature : bindings[feature];
                 const first = mountTextEditor(host, controller.workspace, tab);
-                const conflict = first.commands.register({ id: "host.escape", label: "Host Escape", run() {} }, { keys: ["Escape"], priority });
+                const conflict = first.commands.register({ id: "host.escape", label: "Host Escape chord", run() {} }, { keys: ["Escape F8"] });
                 const owned = (editor: typeof first) => editor.commands.list().filter(c => c.id.startsWith(feature + ".")).map(c => c.id);
                 const sessions = () => { const active = panel.debug().sessions; return typeof active === "number" ? active : active.length; };
                 let refused = false;
