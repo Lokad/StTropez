@@ -36,7 +36,7 @@ export type SignatureController = Observable<SignatureSnapshot> & Readonly<{
 }>;
 type Call = ReturnType<LspSignatureClient["run"]>;
 type Request = { capture: CapturedViewRequest; call?: Call; help?: NonNullable<Awaited<Call["result"]>>;
-    timer?: number; typing?: boolean; argumentKey?: string };
+    timer?: number; typing?: boolean; argumentKey?: string; chosen: string | undefined };
 const idle: SignatureSnapshot = Object.freeze({ status: "idle", message: "", anchor: null, signature: null, activeSignature: 0, signatureCount: 0 });
 const manual = Object.freeze({ triggerKind: 1, isRetrigger: false } as const);
 const changed = Object.freeze({ triggerKind: 3, isRetrigger: true } as const);
@@ -115,10 +115,10 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         return publish({ status: "ready", message: `Signature ${index + 1} of ${help.signatures.length}.`, anchor: cell.get().anchor,
             signature: help.signatures[index]!, activeSignature: index, signatureCount: help.signatures.length });
     }
-    function captureRequest(): Request | undefined {
+    function captureRequest(chosen?: string): Request | undefined {
         const capture = captureViewRequest(editor, { available });
         if (!capture) return;
-        const current: Request = { capture }; job = current; armed = true;
+        const current: Request = { capture, chosen }; job = current; armed = true;
         onAbort(capture.signal, () => expire(current));
         return current;
     }
@@ -163,7 +163,16 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
                 return done(publish({ ...idle, status: "empty", message: "No signature at this position." }));
             }
             current.help = help;
-            return done(show(help, help.activeSignature));
+            let index = help.activeSignature;
+            const label = current.chosen;
+            if (label !== undefined) {
+                const parameter = help.signatures[index]!.activeParameter;
+                const chosen = help.signatures.findIndex(item => item.label === label
+                    && (parameter === null || parameter < item.parameters.length));
+                if (chosen >= 0 && help.selectOverload(help.signatures[chosen]!)) index = chosen;
+                else current.chosen = undefined;
+            }
+            return done(show(help, index));
         } catch (error) {
             if (current && current !== job) return stale;
             if (timedOut) error = new Error("Signature help timed out.");
@@ -178,9 +187,14 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     }
     function canCycle() { return !!job?.help && job.help.signatures.length > 1 && job.capture.isCurrent() && job.help.isCurrent(); }
     function cycle(delta: number) {
-        const help = job?.help; if (!help || !canCycle()) return;
+        const current = job, help = current?.help;
+        if (!help || !canCycle()) return;
         const index = (cell.get().activeSignature + delta + help.signatures.length) % help.signatures.length;
-        if (help.selectOverload(help.signatures[index]!)) show(help, index);
+        const signature = help.signatures[index]!;
+        if (help.selectOverload(signature)) {
+            current.chosen = signature.label;
+            show(help, index);
+        }
     }
     function crossedArgument(current: Request, after: DocumentViewSnapshot) {
         const { document, selectionSet } = current.capture, before = selectionSet.ranges[0]!, caret = after.selection.head;
@@ -211,8 +225,9 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
         const previous = cell.get(), { signature } = previous;
         if (!signature) return false;
         // Transfer only the displayed label. The new caret owns cancellation and the next request.
+        const chosen = job?.chosen;
         release();
-        if (!captureRequest()) { cancel(); return false; }
+        if (!captureRequest(chosen)) { cancel(); return false; }
         publish({ ...previous, status: "pending", message: "Updating signature help.", anchor: Object.freeze({ revision: after.revision, offset: after.selection.head }),
             signature: text.includes(",") ? Object.freeze({ ...signature, activeParameter: null }) : signature });
         return true;

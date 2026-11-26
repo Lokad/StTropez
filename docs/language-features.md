@@ -119,7 +119,8 @@ export function createHelpView(
 
 `signature: { popup: true }` enables Ctrl/Cmd+Shift+Space in either pane. Triggers use the caret after
 pairing. A comma clears the parameter highlight pending refresh. Up/Down cycles overloads unless completion
-owns the keys. Escape closes the top popup. Leaving the call, blur or composition dismisses help. Custom
+owns the keys. Typing in the same argument list keeps the chosen overload while the server offers it
+and it accepts the active parameter. Escape closes the top popup. Leaving the call, blur or composition dismisses help. Custom
 controls read `signature` and `anchor`.
 
 ### Navigation and target loading
