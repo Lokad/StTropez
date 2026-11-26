@@ -399,23 +399,21 @@ test("horizontal arrows move offscreen carets by grapheme without measuring thei
     await measurement.dispose();
 });
 
-test("typing during vertical multicaret navigation edits the destination rows", async ({ page }) => {
-    const count = 160;
+test("two thousand carets move down before the next typed character", async ({ page }) => {
+    const count = 2000;
     await setup(page, Array(count + 1).fill("abcd").join("\n"));
     await page.evaluate(count => {
         const carets = Array.from({ length: count }, (_, i) => ({ anchor: 5 * i + 2, head: 5 * i + 2 }));
         window.editingFixture.selections(carets, count / 2);
     }, count);
     await ready(page);
-    const pending = await page.locator("#primary textarea").evaluate(input => {
+    const moved = await page.locator("#primary textarea").evaluate(input => {
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
-        const navigating = window.editingFixture.snapshot().primary.pendingCommand;
-        input.dispatchEvent(new InputEvent("beforeinput", {
-            inputType: "insertText", data: "!", bubbles: true, cancelable: true
-        }));
-        return navigating;
+        const fixture = window.editingFixture;
+        return { pending: fixture.snapshot().primary.pendingCommand, first: fixture.selectionSet().ranges[0]!.head };
     });
-    expect(pending).toBeTruthy();
+    expect(moved).toEqual({ pending: false, first: 7 });
+    await page.keyboard.type("!");
     await ready(page);
     const expected = "abcd" + "\nab!cd".repeat(count);
     const result = await page.evaluate(() => {

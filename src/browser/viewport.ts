@@ -65,7 +65,7 @@ type ViewportNavigation = Readonly<{
     columnAt: (offset: number, affinity?: Affinity) => number | undefined;
     caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
     selectionAtColumns: (line: number, anchor: number, head: number) => (Selection & { reaches: boolean }) | undefined;
-    prepareNavigationRows: (lines: readonly number[]) => () => void;
+    fixedPitch: () => boolean;
 }>;
 export type TextViewport = Observable<ViewportSnapshot> & Readonly<{ element: HTMLDivElement; view: DocumentView; decorations: DecorationLayers;
     /** Observe completed paints and consumed scheduled renders, including unchanged paints. */
@@ -245,7 +245,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     root.style.fontVariantLigatures = settings.fontLigatures ? "normal" : "none";
     for (const element of [spacer, probe, probeHost, numbers]) element.setAttribute("aria-hidden", "true");
     probe.textContent = "M".repeat(64);
-    probeHost.append(probe);
+    const narrowProbe = probe.cloneNode() as HTMLSpanElement;
+    narrowProbe.textContent = "i".repeat(64);
+    probeHost.append(probe, narrowProbe);
     gutter.append(numbers, foldLayer);
     surface.append(layer, gutter);
     root.append(surface, spacer, probeHost);
@@ -308,30 +310,16 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     let renderedSelection: Selection | null = null;
     let renderedSelectionSet: SelectionSet | null = null;
     let renders = 0, firstLine = 0, lastLine = 0, partialRows = 0, textUnits = 0, readUnits = 0, lastRenderMs = 0;
-    function measurementLayer() {
-        const layer = editorElement(owner, "div", "viewport-command-measure");
-        layer.setAttribute("aria-hidden", "true");
-        return layer;
-    }
-    const commandMeasure = measurementLayer();
+    const commandMeasure = editorElement(owner, "div", "viewport-command-measure");
+    commandMeasure.setAttribute("aria-hidden", "true");
     const commandRow = owner.createElement("div");
     commandMeasure.append(commandRow);
     let commandGeometry: ReturnType<typeof rowGeometry> | undefined;
-    type CommandRow = { item: Row; element: HTMLDivElement; geometry?: ReturnType<typeof rowGeometry> };
-    let preparedRows: Readonly<{ revision: number; selectionSet: SelectionSet; element: HTMLDivElement; rows: Map<number, CommandRow> }> | undefined;
-    const clearPreparedRows = () => {
-        if (!preparedRows) return;
-        commandMeasure.remove();
-        preparedRows.element.remove();
-        preparedRows.element.replaceChildren();
-        preparedRows.rows.clear();
-        preparedRows = undefined;
-    };
     let anchor: Readonly<{ revision: number; offset: number; topRemainder: number; leftRemainder: number; aligned?: true }> | undefined;
     let reveal: Readonly<{ revision: number; foldGeneration: number; offset: number; end?: number; align?: RevealAlignment }> & Required<RevealOptions> | undefined;
     let horizontalAnchor: ViewState["horizontalAnchor"];
     let fragmentPlacement: Readonly<{ revision: number; line: number; from: number; to: number; left: number; shift: number }> | undefined;
-    let measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null, spacerWidth = -1;
+    let fixedPitch = false, measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null, spacerWidth = -1;
     let selectionMetrics: { font: string; height: number; zoom: number } | undefined;
     let paintEpoch = 0;
     let painted: Readonly<{ key: readonly unknown[]; horizontalAnchor: typeof horizontalAnchor; placement: typeof fragmentPlacement }> | undefined;
@@ -372,12 +360,12 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         () => !disposed && live() ? currentDocument() : undefined,
         (dirty, overview) => {
             for (const row of visibleItems) if (dirty(row)) dirtyRows.add(row.line);
-            commandGeometry = undefined; clearPreparedRows();
+            commandGeometry = undefined;
             if (overview) overviewEpoch++;
             if (dirtyRows.size || overview && minimap) schedule();
         }, () => live());
     // Host invalidation and font loading can change inline layout without changing text/classes.
-    const invalidate = () => { paintEpoch++; selectionMetrics = undefined; geometries.clear(); commandGeometry = undefined; clearPreparedRows(); schedule(); };
+    const invalidate = () => { measuredFont = ""; paintEpoch++; selectionMetrics = undefined; geometries.clear(); commandGeometry = undefined; schedule(); };
     const flush = () => { if (disposed) return; const scheduled = frame !== undefined; if (scheduled) win.cancelAnimationFrame(frame!); render(scheduled); };
     const position = (axis: ScrollAxis, value: number): number => Math.min(axis.maximum, Math.max(0, value));
     const gapAt = (index: RowIndex, row: number) => "gapAt" in index ? index.gapAt(row) : undefined;
@@ -401,7 +389,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         // other positions keep the same source row under the reader's eye.
         const at = top > 0 && !anchor ? verticalAnchor() : undefined;
         if (at) anchor = { revision: at.revision, offset: at.offset, topRemainder: at.topRemainder, leftRemainder: left - (at.offset - document!.buffer.offsetAt(document!.buffer.lineAt(at.offset))) * columnWidth };
-        comparisonRows = value && Object.freeze({ ...value }); rowGeneration++; clearPreparedRows(); schedule(); return true;
+        comparisonRows = value && Object.freeze({ ...value }); rowGeneration++; schedule(); return true;
     }
     const validateScroll = (position: Readonly<{ top?: number; left?: number }>) => {
         if ((position.top !== undefined && !Number.isFinite(position.top)) || (position.left !== undefined && !Number.isFinite(position.left))) throw new RangeError("Invalid scroll position.");
@@ -472,7 +460,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         rowGeneration++;
     }
     const documentChanged = () => {
-        clearPreparedRows();
         const current = currentDocument();
         mapRowSources(current);
         if (current && previous && current.revision !== previous.revision) {
@@ -496,7 +483,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     };
     let restoredFolds: FoldingSnapshot | undefined;
     const foldsChanged = () => {
-        clearPreparedRows();
         const folds = currentFolds(), documentAdvanced = folds.revision !== observedFoldRevision; observedFoldRevision = folds.revision;
         const restored = folds === restoredFolds; restoredFolds = undefined;
         if (restored) { schedule(); return; }
@@ -579,9 +565,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
     };
     type MeasuredRow = Readonly<{ complete: boolean; point: (offset: number, affinity?: Affinity) => CaretRectangle | undefined;
         nearest: (column: number) => CaretRectangle }>;
-    function measuredRow(entry: CommandRow, revision: number, rectangle: ReturnType<typeof clientBox>): MeasuredRow {
-        const { item, element } = entry, buffer = workspace.document(documentId).buffer, start = buffer.offsetAt(item.line);
-        const value = entry.geometry ??= rowGeometry(element, 0, revision, lineHeight * rectangle.zoom), bounds = element.getBoundingClientRect(), origin = padding + (item.from - start) * columnWidth;
+    function measuredRow(item: Row, value: ReturnType<typeof rowGeometry>, rectangle: ReturnType<typeof clientBox>): MeasuredRow {
+        const buffer = workspace.document(documentId).buffer, start = buffer.offsetAt(item.line);
+        const bounds = commandRow.getBoundingClientRect(), origin = padding + (item.from - start) * columnWidth;
         const mapped = (point: CaretRectangle): CaretRectangle => Object.freeze({ ...point, offset: point.offset + item.from,
             left: rectangle.left + (origin - left) * rectangle.zoom + point.left - bounds.left, top: rectangle.top + (padding + renderedIndex.rowAt(item.line) * lineHeight - top) * rectangle.zoom + point.top - bounds.top });
         return { complete: item.complete,
@@ -595,33 +581,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             },
             nearest: column => mapped(value.nearest(bounds.left + (column - origin) * rectangle.zoom)) };
     }
-    function prepareNavigationRows(lines: readonly number[]): () => void {
-        clearPreparedRows(); const document = currentDocument();
-        if (disposed || !live() || document?.revision !== renderedRevision) return () => {};
-        if (lines.length > 64 || lines.some(line => !isIndex(line, document.buffer.lineCount))) throw new RangeError("Invalid navigation row batch.");
-        const element = measurementLayer(), batchRows = new Map<number, CommandRow>(), selectionSet = viewState().selectionSet;
-        const highlightedLine = currentLine(document, selectionSet, renderedIndex);
-        for (const line of lines) {
-            if (batchRows.has(line) || rows.get(line)?.dataset.complete === "true") continue;
-            const buffer = document.buffer, start = buffer.offsetAt(line), end = line + 1 < buffer.lineCount ? buffer.offsetAt(line + 1) : buffer.length;
-            // Complete short rows have a known origin. Contextual windows keep the existing fallback.
-            if (end - start > 514) continue;
-            const item = row(buffer, line, left, true); if (!item.complete) continue;
-            const node = owner.createElement("div"); paintRow(node, item, document, selectionSet, highlightedLine); node.style.height = `${lineHeight}px`; node.style.lineHeight = comparisonRows ? `${lineHeight}px` : "";
-            element.append(node); batchRows.set(line, { item, element: node });
-        }
-        // Identical painted rows already reuse the single-row probe's native geometry. Keep
-        // that path instead of measuring separate copies of repeated text in a batch.
-        const keys = new Map<CommandRow, string>(), counts = new Map<string, number>();
-        for (const entry of batchRows.values()) { const key = entry.element.className + "\0" + entry.element.innerHTML;
-            keys.set(entry, key); counts.set(key, (counts.get(key) ?? 0) + 1); }
-        for (const [line, entry] of batchRows) if (counts.get(keys.get(entry)!)! > 1) { entry.element.remove(); batchRows.delete(line); }
-        // All writes precede native geometry reads. Keep the bounded batch across yielding turns;
-        // the batch also owns the single-row probe when every offscreen row repeats.
-        const batch = { revision: document.revision, selectionSet, element, rows: batchRows }; preparedRows = batch;
-        if (batchRows.size) root.append(element);
-        return () => { if (preparedRows === batch) clearPreparedRows(); };
-    }
     function withRow<T>(line: number, scrollLeft: number, offset: number | undefined, work: (row: MeasuredRow) => T): T | undefined {
         const document = currentDocument();
         if (disposed || !live() || document?.revision !== renderedRevision) return;
@@ -632,8 +591,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             return work({ complete: existing.dataset.complete === "true", point: value.point,
                 nearest: column => value.nearest(rectangle.left + (column - left) * rectangle.zoom) });
         }
-        if (preparedRows && (preparedRows.revision !== document.revision || preparedRows.selectionSet !== viewState().selectionSet)) clearPreparedRows();
-        const prepared = preparedRows?.rows.get(line); if (prepared) return work(measuredRow(prepared, document.revision, rectangle));
         const item = row(document.buffer, line, scrollLeft, true);
         const selectionSet = viewState().selectionSet;
         const changed = paintRow(commandRow, item, document, selectionSet, currentLine(document, selectionSet, renderedIndex));
@@ -642,9 +599,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         if (!commandMeasure.parentNode) root.append(commandMeasure);
         try {
             if (changed || !commandGeometry) commandGeometry = rowGeometry(commandRow, 0, document.revision, lineHeight * rectangle.zoom);
-            return work(measuredRow({ item, element: commandRow, geometry: commandGeometry }, document.revision, rectangle));
+            return work(measuredRow(item, commandGeometry, rectangle));
         } finally {
-            if (!preparedRows) commandMeasure.remove();
+            commandMeasure.remove();
         }
     }
     // Measure the contents: a full-row background can be wider than its source text.
@@ -674,7 +631,13 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         const font = [style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.fontStretch, style.letterSpacing, style.wordSpacing,
             style.tabSize, style.fontVariant, style.fontVariantLigatures, style.fontKerning,
             style.fontFeatureSettings, style.fontVariationSettings, style.textAlign, style.textTransform, style.textIndent].join("|");
-        if (font !== measuredFont) { measuredWidth = 0; measuredFont = font; }
+        if (font !== measuredFont) {
+            measuredWidth = 0;
+            measuredFont = font;
+            const narrow = parseFloat(win.getComputedStyle(narrowProbe).width);
+            fixedPitch = Math.abs(narrow - 64 * columnWidth) < .1 && style.fontVariantLigatures === "none"
+                && (style.wordSpacing === "normal" || parseFloat(style.wordSpacing) === 0);
+        }
         const document = live() ? currentDocument() : undefined;
         // Reserve space by document line count. Scrolling and folding keep the text origin fixed.
         const lineCount = Math.max(document?.buffer.lineCount ?? 0, comparison?.gutterLineCount() ?? 0);
@@ -1081,7 +1044,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
                 if (next.minimap) minimap = createMinimap();
                 else { minimap?.dispose(); minimap = undefined; }
             }
-            if (next.highlightCurrentLine !== previous.highlightCurrentLine) { clearPreparedRows(); commandGeometry = undefined; }
+            if (next.highlightCurrentLine !== previous.highlightCurrentLine) { commandGeometry = undefined; }
             if (next.fontLigatures !== previous.fontLigatures) root.style.fontVariantLigatures = next.fontLigatures ? "normal" : "none";
             if (next.fontLigatures !== previous.fontLigatures || next.foldLabels !== previous.foldLabels) invalidate();
             else schedule();
@@ -1197,7 +1160,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             horizontalAnchor = undefined;
             fragmentPlacement = undefined;
             commandRow.replaceChildren();
-            clearPreparedRows();
             root.replaceChildren();
             root.remove();
             publishGeometry(emptyViewport);
@@ -1252,7 +1214,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         return end - span.from <= 514 && row(buffer, line, left, true).complete;
     }
     const navigation = Object.freeze<ViewportNavigation>({
-        prepareNavigationRows,
+        fixedPitch: () => fixedPitch,
         horizontalPoint(buffer, range, direction, extend) {
             const collapse = !extend && range.anchor !== range.head;
             const leftward = direction < 0;
