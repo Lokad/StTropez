@@ -94,7 +94,8 @@ Each comparison pane numbers its own lines and leaves alignment gaps blank.
 ### Pointer dwell
 
 `observePointerDwell(editor, listener, options)` reports offset, affinity, document and painted revision
-after a mouse or pen rests (default 300 ms). Use `onMiss` to clear hints, `cancel()` to forget a visit.
+after a mouse or pen rests (default 300 ms). Keys cancel dwell until the pointer moves.
+`onMiss` clears hints.
 
 ### Shortcuts
 

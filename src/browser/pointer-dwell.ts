@@ -18,6 +18,13 @@ export function observePointerDwell(editor: TextEditor, listener: (position: Poi
     const events = new AbortController(), signal = events.signal;
     const listen = listenUntil(signal);
     let timer: number | undefined, last: PointerDwellPosition | undefined;
+    let pointerX = NaN, pointerY = NaN;
+    function moved({ clientX, clientY }: PointerEvent): boolean {
+        const changed = pointerX !== clientX || pointerY !== clientY;
+        pointerX = clientX;
+        pointerY = clientY;
+        return changed;
+    }
     let pending: { x: number; y: number; offset?: number; revision: number; folds: number; alignment: number | null; scrolled: boolean } | undefined;
     function cancel(): void {
         win.clearTimeout(timer); timer = undefined; pending = undefined; last = undefined;
@@ -30,10 +37,13 @@ export function observePointerDwell(editor: TextEditor, listener: (position: Poi
             && Math.abs(point.top + point.height / 2 - y) <= point.height) return point;
     }
     listen(element, "pointermove", event => {
+        const changed = moved(event);
         if (options.enabled?.() === false) { cancel(); return; }
         if (event.buttons || event.pointerType === "touch" || event.ctrlKey || event.metaKey || editor.getSnapshot().composing) {
             cancel(); options.onMiss?.(); return;
         }
+        // A repaint under a stationary pointer can dispatch another move at the same coordinates.
+        if (!changed) return;
         const x = event.clientX, y = event.clientY, paint = viewport.activity();
         const revision = view.getSnapshot().revision, folds = view.folding.getSnapshot().generation, alignment = paint.alignmentId;
         const point = paint.pending ? undefined : hit(x, y);
@@ -56,7 +66,8 @@ export function observePointerDwell(editor: TextEditor, listener: (position: Poi
             listener(last);
         }, delay);
     });
-    for (const type of ["pointerleave", "pointercancel", "pointerdown", "compositionstart", "beforeinput"]) listen(element, type, cancel);
+    for (const type of ["pointerdown", "pointerleave"] as const) listen(element, type, event => { moved(event); cancel(); });
+    for (const type of ["pointercancel", "compositionstart", "beforeinput"]) listen(element, type, cancel);
     listen(win, "scroll", event => {
         const target = event.target;
         if (target === win || target instanceof win.Node && (element.contains(target) || target.contains(element))) {
@@ -64,7 +75,7 @@ export function observePointerDwell(editor: TextEditor, listener: (position: Poi
             last = undefined;
         }
     }, { capture: true, passive: true });
-    listen(win, "keydown", event => { if (event.ctrlKey || event.metaKey || event.isComposing) cancel(); }, { capture: true });
+    listen(win, "keydown", cancel, { capture: true });
     listen(win, "blur", cancel); listen(win, "resize", cancel);
     function dispose(): void { cancel(); events.abort(); editor.signal.removeEventListener("abort", dispose); }
     onAbort(editor.signal, dispose);

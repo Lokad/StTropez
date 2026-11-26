@@ -24,6 +24,10 @@ test("a dwell stays on its source revision and fold projection", async ({ page }
     await expect.poll(() => probe.evaluate(p => p.dwell.isPending())).toBe(false);
     expect(await probe.evaluate(p => p.visits)).toEqual([]);
     await ready(page);
+    expect(await probe.evaluate(p => p.visit(1))).toBe(false);
+    expect(await probe.evaluate(p => p.visit(2))).toBe(true);
+    await page.keyboard.press("ArrowRight");
+    expect(await probe.evaluate(p => p.visit(2))).toBe(false);
     expect(await probe.evaluate(p => p.visit(1))).toBe(true);
     await expect.poll(() => probe.evaluate(p => p.visits.map(point => point.offset))).toEqual([1]);
     expect(await probe.evaluate(p => { const armed = p.visit(3); window.editingFixture.dispose(); return [armed, p.dwell.isPending()]; })).toEqual([true, false]);
