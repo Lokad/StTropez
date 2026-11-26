@@ -357,7 +357,7 @@ const languageStatus = document.createElement("output");
 toolbar.append(languageStatus);
 const showLanguage = () => {
     const state = completion.getSnapshot();
-    languageStatus.textContent = diagnostics.getSnapshot().diagnostics[0]?.message ?? state.message;
+    languageStatus.textContent = diagnostics.getSnapshot().diagnostics[0]?.message ?? state.reason ?? state.status;
 };
 const stopLanguage = completion.subscribe(showLanguage);
 const stopDiagnostics = diagnostics.subscribe(showLanguage);

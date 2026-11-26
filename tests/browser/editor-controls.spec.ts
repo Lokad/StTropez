@@ -147,6 +147,12 @@ test("accepting a completion keeps its visible line at the same scroll position"
     await source.press("End");
     await source.press("Control+Space");
     await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
+    const list = page.getByRole("listbox", { name: "Completions" });
+    await source.press("ArrowLeft");
+    await expect(list).toBeVisible();
+    await source.press("ArrowRight");
+    await expect(list).toHaveAttribute("aria-busy", "false");
+    await expect(source).toBeFocused();
     const top = await viewport.evaluate(el => el.scrollTop);
     expect(top).toBeGreaterThan(0);
     await source.press("Enter");

@@ -73,7 +73,9 @@ export function completionButton(list: CompletionSnapshot, index: number) {
 Ctrl/Cmd+Space requests suggestions. `filterManualCompletions` enables prefix filtering. Words and trigger
 characters open automatic suggestions unless `automatic: false`. Edits filter by `filterText`. `sortText`
 orders choices and `preselect` selects the initial row. Use arrows or Page keys to move, Enter to replace
-the provider range, Tab to insert preserving the suffix and Escape to dismiss.
+the provider range, Tab to insert preserving the suffix and Escape to dismiss. Left and Right within a word keep
+the list visible and request choices at the new caret. Old rows cannot edit while that request is pending.
+Custom controls can render feedback from `status`, `reason` and `omittedCompletions`.
 
 An incomplete list stays during refresh. `item.accept()` can succeed while resolve is pending. Typing or
 selection changes cancel pending acceptance. Insertion and additional edits apply once in one Undo. Manual

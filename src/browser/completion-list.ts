@@ -31,7 +31,9 @@ export function mountCompletionList(editor: TextEditor, source: Observable<Compl
         }
         count.textContent = strings.completionStatus(state, filterManual);
         count.title = strings.omittedCompletions(state);
-        detail.textContent = state.resolving ? strings.text("Loading details…") : state.completionDetail;
+        popup.setAttribute("aria-busy", String(state.pending));
+        detail.textContent = state.resolving ? strings.text("Loading details…")
+            : state.status === "pending" ? strings.text("Updating suggestions…") : state.completionDetail;
         if (current?.choices !== state.choices || current?.choiceIndex !== state.choiceIndex) {
             current = state;
             rows.set(state.choices.length, state.choiceIndex, (index, button) => {

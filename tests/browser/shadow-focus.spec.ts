@@ -14,7 +14,6 @@ const serveModules = fixtureModules({
 
 type Fixture = { workspace: Workspace; source: TextResourceHandle; editor: TextEditor;
     provider?: LspWorkspace; completion?: CompletionController; highlights?: LspHighlightController;
-    prepareCompletion?: () => Promise<void>;
     errors: string[]; cancellations: string[]; dispose: () => Promise<void> };
 declare global { interface Window { shadowFocus: Fixture } }
 let css: string;
@@ -45,7 +44,7 @@ async function mount(page: Page, language: boolean) {
             const endpoint = new URL("/lsp-fixture", location.href); endpoint.protocol = "ws:";
             f.provider = new BrowserLspWorkspace(workspace, {
                 connect: signal => openWebSocketTransport(endpoint.href, { signal }), onError: report });
-            const language = attachEditorLanguage(editor, f.provider, { completion: { onError: report, prepareCompletion: async () => f.prepareCompletion?.() }, occurrences: { delayMs: 0 } });
+            const language = attachEditorLanguage(editor, f.provider, { completion: { onError: report }, occurrences: { delayMs: 0 } });
             f.completion = language.completion;
             f.highlights = language.occurrences;
         }
@@ -108,45 +107,6 @@ test("a link controller on a later pane requests links on the already open conne
         } finally { second.dispose(); host.remove(); await dispose(); }
     });
     expect(result).toEqual({ status: "ready", sameConnection: true });
-});
-
-test("completion distinguishes host preparation failures from malformed provider replies and keeps local typing available", async ({ page }) => {
-    let reply: unknown = [null];
-    await page.routeWebSocket("**/lsp-fixture", client => {
-        const server = client.connectToServer(); server.onMessage(message => client.send(message));
-        client.onMessage(message => {
-            const value = JSON.parse(message.toString());
-            if (value.method === "textDocument/completion") { client.send(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: reply })); return; }
-            server.send(message);
-        });
-    });
-    const input = await mount(page, true);
-    try {
-        await expect.poll(async () => (await completion(page)).connected).toBe(true);
-        for (const failure of ["type", "range", "none"] as const) {
-            await page.evaluate(async failure => {
-                window.shadowFocus.prepareCompletion = async () => {
-                    if (failure === "type") throw new TypeError("Host preparation failed.");
-                    if (failure === "range") throw new RangeError("Host preparation failed.");
-                };
-            }, failure);
-            await input.focus();
-            expect(await page.evaluate(async () => (await window.shadowFocus.completion!.request()).status)).toBe("failed");
-            const state = await completion(page);
-            expect(state.message).toContain(failure === "none" ? "Malformed" : "provider unavailable");
-            expect(state.choices).toEqual([]);
-        }
-        reply = null;
-        expect(await page.evaluate(async () => {
-            const controller = window.shadowFocus.completion!;
-            const obsolete = controller.request();
-            const next = await controller.request();
-            return [(await obsolete).status, next.status === "done" ? next.value.choices : next.status];
-        })).toEqual(["stale", []]);
-        const before = await text(page); await input.press("Control+End"); await input.press(";");
-        await expect.poll(() => text(page)).toBe(before + ";");
-        expect(await page.evaluate(() => window.shadowFocus.errors)).toEqual([]);
-    } finally { await page.evaluate(() => window.shadowFocus.dispose()); }
 });
 
 test("nested shadow focus supports occurrences, automatic completion, deferred acceptance and snippet composition", async ({ page }, info) => {

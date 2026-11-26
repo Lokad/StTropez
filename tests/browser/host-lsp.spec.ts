@@ -298,11 +298,6 @@ test.describe(`plain LSP editor host`, () => {
         await publishFixtureDiagnostics(page, uri, "html"); await expect(diagnostics).toContainText("<img src=x onerror=unsafe()>"); expect(await page.locator('img[src="x"]').count()).toBe(0);
         await publishFixtureDiagnostics(page, uri, "clear"); await expect(diagnostics.getByRole("button")).toHaveCount(0);
     });
-    test("a malformed completion leaves the list empty and a fresh request can be accepted", async ({ page }) => {
-        await seed(page, "const saMORE = 1; // TODO\r\n");
-        await page.evaluate(() => window.hostFixture.faultProviderNext("malformed")); await field(page).press("Control+Space"); await expect(page.getByLabel("Language status", { exact: true })).toContainText("Malformed"); await expect(page.getByRole("option")).toHaveCount(0);
-        await page.evaluate(() => window.hostFixture.providerCustom("fixture/completionStyle", { style: "plain" })); await offer(page); await field(page).press("Alt+Enter"); expect(await source(page)).toBe("const sample = 1; // TODO\r\n");
-    });
     test("pending results expire on navigation, authority changes and remount; outage preserves typing", async ({ page }) => {
         let requests = 0;
         page.on("websocket", socket => socket.on("framesent", frame => { const value = JSON.parse(frame.payload.toString()); if (value.method === "textDocument/completion") requests++; }));

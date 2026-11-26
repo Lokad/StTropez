@@ -89,7 +89,7 @@ test("language result callbacks cannot follow a newer view or diagnostic batch w
     type Snapshot = Parameters<typeof languagePanelModel>[1];
     const chosen: number[] = [], inserted: string[] = [], diagnostics: number[] = [];
     const state: Snapshot = Object.freeze({ readOnlyReference: false, view: "primary", providerError: null, find: null, folds: null, foldMessage: "Captured folds", query: "sa", replacement: "sample", wholeWord: false, matchCase: true, regularExpression: false,
-        provider: Object.freeze({ message: "Captured offer", connected: true, pending: false, offerText: "sample", anchor: { revision: 0, from: 0, to: 2 }, choices: Object.freeze(["sample"]),
+        provider: Object.freeze({ status: "ready" as const, reason: null, connected: true, pending: false, anchor: { revision: 0, from: 0, to: 2 }, choices: Object.freeze(["sample"]),
             choiceIndex: 0, completionDetail: "", completionIncomplete: false, resolving: false, snippet: null, omittedCompletions: [],
             diagnosticsPending: false, unversionedDiagnostics: [],
             completionAt: (index: number) => ({ label: "sample", select: () => { chosen.push(index); return true; },

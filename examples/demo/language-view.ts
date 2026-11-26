@@ -1,3 +1,4 @@
+import { completionFeedback } from "../shared/language/completion-feedback.ts";
 import { attachEditorLanguage } from "../../src/browser/index.ts";
 import type { TextEditor, CompletionController, CompletionSnippet, NavigationOrigin } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
@@ -47,7 +48,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
         } };
         const render = () => {
             const state = controller?.getSnapshot();
-            if (state) commands.feedback("complete", state.choices.length ? "" : state.pending ? "Getting completions…" : state.message, !state.pending || !!state.choices.length);
+            if (state) commands.feedback("complete", state.choices.length ? "" : completionFeedback(state), !state.pending || !!state.choices.length);
             const snippet = state?.snippet; snippetPanel.hidden = !valid() || !snippet;
             if (snippet && !snippetPanel.hidden && renderedSnippet !== snippet) {
                 renderedSnippet = snippet;

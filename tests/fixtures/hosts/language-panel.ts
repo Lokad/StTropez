@@ -1,3 +1,4 @@
+import { completionFeedback } from "../../../examples/shared/language/completion-feedback.ts";
 import type { HostLanguageTools } from "./language.ts";
 import { revealCompletionRow } from "../../../examples/shared/language/completion-list.ts";
 type LanguageSnapshot = ReturnType<HostLanguageTools["state"]["getSnapshot"]>;
@@ -9,7 +10,7 @@ const capturedCommand = (tools: Pick<LanguagePanelTools, "state">, state: Langua
 function languageActions(tools: LanguagePanelTools, state: LanguageSnapshot): readonly Readonly<{
     label: string; invoke: () => void; disabled: boolean; keepEditorFocus?: boolean
 }>[] {
-    const available = state.view !== null, providerAvailable = state.provider !== null, offered = state.provider?.offerText != null;
+    const available = state.view !== null, providerAvailable = state.provider !== null, offered = !!state.provider?.choices.length;
     const found = !!state.find?.count && (state.find.status === "ready" || state.find.status === "searching" && state.find.retained);
     return [
         { label: "Request completion", invoke: tools.request, disabled: !providerAvailable },
@@ -38,12 +39,12 @@ function foldText(state: LanguageSnapshot): string {
 }
 /** Rendering only observes the supplied snapshot; result activation checks that it is still current. */
 export function languagePanelModel(tools: LanguagePanelTools, state: LanguageSnapshot) {
-    const offered = state.provider?.offerText, labels = state.provider?.choices ?? (offered != null ? [offered] : []);
+    const labels = state.provider?.choices ?? [];
     return {
         label: "Language and find tools", title: "Language and find", bind: tools.toolsRef, key: tools.keyFromTools,
         help: "Ctrl+Space requests completion; Alt+Enter replaces it. Ctrl+F finds, Ctrl+H replaces, F3 moves to the next match, and Escape returns to source. Ctrl+S saves the working source.",
-        status: { label: "Language status", text: state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider?.message
-            ?? (state.providerError !== null ? `Language provider unavailable: ${state.providerError} Local editing and Find remain available. Use Reconnect provider to retry.` : "Focus a source view to use language actions.") },
+        status: { label: "Language status", text: state.readOnlyReference ? "Search in the read-only reference. Replacement is unavailable." : state.provider ? completionFeedback(state.provider)
+            : (state.providerError !== null ? `Language provider unavailable: ${state.providerError} Local editing and Find remain available. Use Reconnect provider to retry.` : "Focus a source view to use language actions.") },
         choices: { label: "Completion choices", identity: state.provider?.choices, selected: state.provider?.choiceIndex ?? 0,
             items: () => labels.map((label, index) => ({ key: `${index}:${label}`, label,
                 invoke: capturedCommand(tools, state, () => state.provider?.completionAt(index)?.select()) } as const)) },
