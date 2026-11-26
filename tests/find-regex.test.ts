@@ -102,7 +102,7 @@ test("regex navigation waits for its search and drops the command if the selecti
         f.find.setFlags({ regularExpression: true });
         f.find.setQuery("c.t");
         const initial = f.view.getSnapshot().selectionSet;
-        f.find.next(1, { whenReady: true });
+        assert.deepEqual(f.find.next(1, { whenReady: true }), { status: "done", value: "queued" });
         f.find.next(-1, { whenReady: true });
         assert.equal(f.view.getSnapshot().selectionSet, initial);
         await f.drain();
@@ -127,12 +127,12 @@ test("async regex find advances empty matches, accepts manual overlaps and prese
         assert.deepEqual(f.find.matchesIn(1, 3), [{ from: 2, to: 2 }]);
         assert.deepEqual(f.find.matchesIn(9, 9), [{ from: 9, to: 9 }]);
         for (const head of [0, 2, 3, 4, 5, 6, 7, 8, 9, 0]) {
-            assert.equal(f.find.next(), true);
+            assert.equal(f.find.next().status, "done");
             const selection = f.view.getSnapshot().selection;
             assert.deepEqual([selection.anchor, selection.head], [head, head]);
         }
         f.view.setSelections(0, [{ anchor: 0, head: 0 }, { anchor: 3, head: 3 }]); const selected = f.view.getSnapshot().selectionSet;
-        assert.equal(f.find.replaceCurrent("<>"), true);
+        assert.deepEqual(f.find.replaceCurrent("<>"), { status: "done", value: "queued" });
         await f.drain();
         assert.equal(f.text(), "<>" + original);
         assert.equal(f.workspace.observeHistory(f.source.id).getSnapshot().undoDepth, 1);
@@ -165,19 +165,19 @@ test("regex replacement keeps the configured flags and starts with the revealed 
         f.find.setQuery("beta"); await f.drain();
         const state = f.find.getSnapshot(); assert.equal(state.wholeWord, true); assert.equal(state.matchCase, false); assert.equal(state.regularExpression, true); assert.equal(state.count, 2);
         f.view.setSelection(0, { anchor: 7, head: 8 }); // Only the "e" in the first match.
-        assert.equal(f.find.replaceCurrent("x"), true);
+        assert.equal(f.find.replaceCurrent("x").status, "done");
         await f.drain();
         assert.equal(f.find.getSnapshot().reason, null);
         assert.equal(f.view.getSnapshot().selection.anchor, 17);
         assert.equal(f.workspace.document(f.source.id).revision, 0);
         f.view.setSelection(0, { anchor: 0, head: 5 });
-        assert.equal(f.find.replaceCurrent("x"), true);
+        assert.equal(f.find.replaceCurrent("x").status, "done");
         assert.equal(f.view.getSnapshot().selection.anchor, 6);
         assert.equal(f.workspace.document(f.source.id).revision, 0);
-        assert.equal(f.find.replaceCurrent("x"), true); await f.drain();
+        assert.equal(f.find.replaceCurrent("x").status, "done"); await f.drain();
         assert.equal(f.text(), "alpha x beta_ BETA");
         const selected = f.view.getSnapshot().selection; assert.deepEqual([selected.anchor, selected.head], [14, 18]);
-        assert.equal(f.find.replaceCurrent("x"), true); await f.drain(); assert.equal(f.text(), "alpha x beta_ x");
+        assert.equal(f.find.replaceCurrent("x").status, "done"); await f.drain(); assert.equal(f.text(), "alpha x beta_ x");
     } finally { f.finish(); }
 });
 
@@ -201,8 +201,8 @@ test("partial async regex plans respect selection, revision, composition, author
             assert.equal(f.find.getSnapshot().reason, { selection: "cancelled", revision: "cancelled", composition: "composition-active",
                 authority: "read-only", options: "cancelled", view: "view-unavailable", focus: "replaced" }[change], change);
             if (change === "composition") {
-                assert.equal(f.find.next(), false); assert.equal(f.find.getSnapshot().reason, "composition-active");
-                assert.equal(f.find.replaceCurrent("dog"), false); assert.equal(f.find.getSnapshot().reason, "composition-active");
+                assert.deepEqual(f.find.next(), { status: "refused", reason: "composition-active" }); assert.equal(f.find.getSnapshot().reason, "composition-active");
+                assert.notEqual(f.find.replaceCurrent("dog").status, "done"); assert.equal(f.find.getSnapshot().reason, "composition-active");
             }
         } finally { f.finish(); }
     }
@@ -251,7 +251,7 @@ test("missing backend, syntax errors and failed or mismatched plans cannot publi
         assert.equal(f.find.getSnapshot().reason, "replacement-failed");
         assert.equal(f.workspace.observeHistory(f.source.id).getSnapshot().undoDepth, 0); assert.equal(f.plans[0]!.disposed, true);
         assert.ok(Object.isFrozen(f.find.matchesIn(0, 7)));
-        assert.equal(f.find.next(), true); assert.equal(f.find.getSnapshot().reason, null); assert.equal(f.find.getSnapshot().message, "");
+        assert.equal(f.find.next().status, "done"); assert.equal(f.find.getSnapshot().reason, null); assert.equal(f.find.getSnapshot().message, "");
     } finally { f.finish(); }
     const wrong = fixture("cat cat");
     try {

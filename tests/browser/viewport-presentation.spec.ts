@@ -254,7 +254,7 @@ test("document mounts own Find, fold discovery and pending insertions across a r
         return {
             ready: () => !!reply && find.getSnapshot().status === "ready",
             replace: () => {
-                if (!find.next()) throw new Error("Could not select the match.");
+                if (find.next().status !== "done") throw new Error("Could not select the match.");
                 const insertion = editor.captureInsertion();
                 if (!insertion) throw new Error("Could not capture the selected text.");
                 editor.dispose();

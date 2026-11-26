@@ -202,7 +202,7 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
         input.select();
     }
     function close() {
-        if (!find?.acceptPreview()) revealCaret();
+        if (find?.acceptPreview().status !== "done") revealCaret();
         bar.hidden = true;
         if (find?.getSnapshot().status === "ready") {
             find.setHighlightMatches(false);

@@ -1,3 +1,4 @@
+import { done, failed as failure, refused, stale, type Outcome } from "../core/outcome.ts";
 import type { TextEdit } from "../core/changes.ts";
 import { onAbort } from "./listen.ts";
 import { emptyList } from "../core/empty-list.ts";
@@ -65,15 +66,20 @@ export type FindSnapshot = FindNotice & Readonly<{
     matchesVersion: number;
 }>;
 export type FindDiagnostics = Readonly<{ maxScanStepMs: number; replaceTransactionMs: number }>;
+/** Immediate effect of a Find command. A queued operation publishes its final state to the controller. */
+type FindAction = Outcome<"selected" | "replaced" | "queued">;
+const selected = done("selected" as const);
+const replaced = done("replaced" as const);
+const queued = done("queued" as const);
 export type FindController = Observable<FindSnapshot> & Readonly<{
     getDiagnostics: () => FindDiagnostics;
     matchesIn: (from: number, to: number, capture?: FindSnapshot) => readonly SearchMatch[];
     setQuery: (query: string, options?: Readonly<{ preview?: boolean }>) => void;
     setFlags: (flags: FindFlags) => void;
     setHighlightMatches: (visible: boolean) => void;
-    acceptPreview: () => boolean;
-    next: (direction?: 1 | -1, options?: Readonly<{ whenReady?: boolean }>) => boolean;
-    replaceCurrent: (replacement: string) => boolean; replaceAll: (replacement: string, options?: Readonly<{ focusEditor?: boolean }>) => void; cancel: () => void; dispose: () => void }>;
+    acceptPreview: () => FindAction;
+    next: (direction?: 1 | -1, options?: Readonly<{ whenReady?: boolean }>) => FindAction;
+    replaceCurrent: (replacement: string) => FindAction; replaceAll: (replacement: string, options?: Readonly<{ focusEditor?: boolean }>) => FindAction; cancel: () => void; dispose: () => void }>;
 // A progress update retains the entire previous notice.
 type FindPatch = Partial<Omit<FindSnapshot, keyof FindNotice>> &
     (FindNotice | { [K in keyof FindNotice]?: never });
@@ -111,7 +117,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
     let advanceAfterReplace: SelectionSet | undefined;
     let focusOrigin: Element | null | undefined;
     let finishLiteral: (() => void) | undefined;
-    let pendingNext: { direction: 1 | -1; selection: SelectionSet; origin: Element | null | undefined } | undefined;
+    let pendingNext: (() => void) | undefined;
     let pendingPreview: { selection: SelectionSet; followSelected: boolean; scrollUnchanged: () => boolean; listeners: AbortController } | undefined;
     let previewed: { index: number; selection: SelectionSet } | undefined;
     const cancelPreview = () => { pendingPreview?.listeners.abort(); pendingPreview = undefined; };
@@ -194,16 +200,16 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
             stop();
             publish({ status: "ready", ...notice(reason, "Replacement cancelled. " + message) });
         } else publish(notice(reason, message));
-        return false;
+        return refused(reason);
     }
-    function replacementAllowed(planning = false): boolean {
+    function replacementRefusal(planning = false) {
         const metadata = resource.metadata.getSnapshot();
         const reason = metadata.state !== "ready" ? "not-ready" : editor.getSnapshot().readOnlyReason
             ?? humanEditRefusal(metadata) ?? (editor.activity().input === "composing" ? "composition-active" : null);
-        return !reason || refuseReplacement(reason, planning);
+        return reason ? refuseReplacement(reason, planning) : undefined;
     }
     const observePlanAuthority = (token: number) => { stopPlanAuthority = resource.metadata.subscribe(() => {
-        if (token === generation) replacementAllowed(true);
+        if (token === generation) replacementRefusal(true);
     }); };
     const capture = ({ query, wholeWord, matchCase }: Pick<FindQueryCapture, "query" | "wholeWord" | "matchCase">): FindQueryCapture => {
         const document = readDocument(); return Object.freeze({ documentId, revision: document.revision, buffer: document.buffer, query, wholeWord, matchCase });
@@ -446,43 +452,50 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
         if (next) selectMatch(next.index, false);
     }
     function finishNext(): void {
-        const pending = pendingNext;
+        const navigate = pendingNext;
         pendingNext = undefined;
-        if (pending && valid() && pending.selection === currentSelection()
-            && pending.origin === captureFocus() && !pending.origin?.matches(":disabled")) {
-            // A command queued before the first result arrives can accept that first visible match.
-            if (pending.direction === 1 && acceptPreview()) return;
-            next(pending.direction);
-        }
+        navigate?.();
     }
-    function acceptPreview(): boolean {
+    function acceptPreview(): FindAction {
         scope.assertWritable();
-        if (!previewed || !valid() || editor.activity().input === "composing" || store.get().status !== "ready"
-            || previewed.selection !== currentSelection()) return false;
-        return selectMatch(previewed.index, true);
+        if (!valid()) return stale;
+        if (editor.activity().input === "composing") return refused("composition-active");
+        if (!previewed || store.get().status !== "ready") return refused("no-preview");
+        if (previewed.selection !== currentSelection()) return stale;
+        return selectMatch(previewed.index, true) ? selected : stale;
     }
     const next: FindController["next"] = (direction = 1, options) => {
         scope.assertWritable();
         pendingNext = undefined;
-        if (!valid()) return false;
+        if (!valid()) return stale;
         if (editor.activity().input === "composing") {
             publish(notice("composition-active", "Finish composition before navigating."));
-            return false;
+            return refused("composition-active");
         }
         const match = nextMatch(direction);
         if (!match && options?.whenReady && store.get().status === "searching") {
-            pendingNext = { direction, selection: currentSelection(), origin: captureFocus() };
+            const selection = currentSelection(), origin = captureFocus();
+            let result: FindAction = queued;
+            pendingNext = () => {
+                if (!valid() || selection !== currentSelection() || origin !== captureFocus() || origin?.matches(":disabled")) {
+                    result = stale;
+                    return;
+                }
+                result = direction === 1 && acceptPreview().status === "done" ? selected : next(direction);
+            };
             finishLiteral?.();
-            return true;
+            return result;
         }
         cancelPreview();
-        if (!match) return false;
+        if (!match) return refused("no-match");
         advanceAfterReplace = undefined;
-        return selectMatch(match.index, true, match.wrappedTo);
+        return selectMatch(match.index, true, match.wrappedTo) ? selected : stale;
     };
-    function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch, focusEditor = false): boolean {
-        if (!valid() || state.revision !== readDocument().revision || (state.regularExpression && !backend)) return false;
-        if (!replacementAllowed()) return false;
+    function planReplacement(state: FindSnapshot, replacement: string, range?: SearchMatch, focusEditor = false): FindAction {
+        if (!valid() || state.revision !== readDocument().revision) return stale;
+        if (state.regularExpression && !backend) return refused("backend-unavailable");
+        const refusal = replacementRefusal();
+        if (refusal) return refusal;
         advanceAfterReplace = undefined;
         const request = state.regularExpression ? capture(state) : undefined;
         const positions = matches, total = range ? 1 : count;
@@ -491,31 +504,32 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
         if (request) stop();
         captureFocus();
         const token = generation, focusToken = focusGeneration;
-        const current = () => {
-            if (token !== generation) return false;
-            if (!valid() || readDocument().revision !== state.revision || currentSelection() !== selectionSet) { restart(state.query); return false; }
-            return replacementAllowed(true);
+        const expired = () => {
+            if (token !== generation) return stale;
+            if (!valid() || readDocument().revision !== state.revision || currentSelection() !== selectionSet) {
+                restart(state.query);
+                return stale;
+            }
+            return replacementRefusal(true);
         };
-        const commit = (edits: readonly TextEdit[]): boolean => {
-            if (!current()) return false;
+        const commit = (edits: readonly TextEdit[]): FindAction => {
+            const refusal = expired();
+            if (refusal) return refusal;
             if (!edits.length) {
                 stop();
                 scope.batch(() => {
                     publish({ status: "ready" });
                     if (focusGeneration === focusToken) next(1);
                 });
-                return false;
+                return refused("no-change");
             }
             const head = range ? range.from + edits[0]!.insert.length : undefined, started = win.performance.now();
             const applied = workspace.edit({ documentId, expectedRevision: state.revision, origin: "human", edits, view: editor.view,
                 ...(head === undefined ? {} : { selection: { anchor: head, head } }), history: { kind: "replace" } });
             stopPlanAuthority?.(); stopPlanAuthority = undefined;
-            if (!valid()) return applied.applied;
+            if (!valid()) return applied.applied ? replaced : stale;
             replaceTransactionMs = win.performance.now() - started;
-            if (!applied.applied) {
-                refuseReplacement(applied.reason, true);
-                return false;
-            }
+            if (!applied.applied) return refuseReplacement(applied.reason, true);
             if (request && readDocument().revision === state.revision) publish({ status: "ready" });
             if (range && range.from === range.to && store.get().query === state.query && store.get().regularExpression && valid()) {
                 replacedZero = { revision: readDocument().revision, head: head!, selectionSet: currentSelection() };
@@ -529,7 +543,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
                 }
                 if (focusEditor) editor.focus();
             }
-            return true;
+            return replaced;
         };
         if (!request) {
             try {
@@ -538,20 +552,20 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
                     return { from, to, insert: replacement };
                 });
                 return commit(edits);
-            } catch (error) { failed(error, token, true); return false; }
+            } catch (error) { failed(error, token, true); return failure(error); }
         }
         const unindexed = !!range && !matchesRange(indexAt(range.from), range.from, range.to);
         const acceptPlan = createFindReplacementPlan(positions, total, range, unindexed);
         observePlanAuthority(token);
         publish({ status: "replacing", ...noNotice });
-        if (token !== generation) return false;
+        if (token !== generation) return stale;
         try {
             const created = backend!.replace(request, replacement, range);
-            if (token !== generation) { created.dispose(); return false; }
+            if (token !== generation) { created.dispose(); return stale; }
             planCursor = created;
-        } catch (error) { failed(error, token, true); return false; }
+        } catch (error) { failed(error, token, true); return failure(error); }
         const receive = (result: FindPlanStep) => {
-            if (!current()) return;
+            if (expired()) return;
             const edits = acceptPlan(result);
             if (!edits) { later(step); return; }
             const finished = planCursor;
@@ -560,26 +574,31 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
             commit(edits);
         };
         const step = () => {
-            if (!current()) return;
+            if (expired()) return;
             try { const result = planCursor!.next();
                 if (isAsync(result)) void Promise.resolve(result).then(receive).catch(error => failed(error, token, true));
                 else receive(result);
             } catch (error) { failed(error, token, true); }
         };
-        later(step); return true;
+        later(step);
+        return queued;
     }
-    const replaceCurrent = (replacement: string): boolean => {
+    const replaceCurrent = (replacement: string): FindAction => {
         scope.assertWritable();
-        if (!valid()) return false;
-        if (!replacementAllowed()) return false;
-        if (previewed?.selection === currentSelection() && !selectMatch(previewed.index, true)) return false;
+        if (!valid()) return stale;
+        const refusal = replacementRefusal();
+        if (refusal) return refusal;
+        if (previewed?.selection === currentSelection() && !selectMatch(previewed.index, true)) return stale;
         const match = currentRange();
         return match ? planReplacement(store.get(), replacement, match) : next(1);
     };
     const replaceAll: FindController["replaceAll"] = (replacement, options) => {
         scope.assertWritable();
-        const state = store.get(); if (!valid() || state.status !== "ready" || !count) return;
-        planReplacement(state, replacement, undefined, options?.focusEditor);
+        if (!valid()) return stale;
+        const state = store.get();
+        if (state.status !== "ready") return refused("not-ready");
+        if (!count) return refused("no-match");
+        return planReplacement(state, replacement, undefined, options?.focusEditor);
     };
     // Disabling the command button can clear activeElement without a new focus choice.
     const cancelNavigation = () => { advanceAfterReplace = undefined; pendingNext = undefined; };

@@ -145,7 +145,7 @@ test("multiline Find repairs mixed endings and replaces a manually selected over
     const f = fixture("a\r\na\r\na\r\na");
     try {
         f.find.setQuery("a\na"); f.drain(); assert.equal(f.find.getSnapshot().count, 2);
-        f.select(3, 7); assert.equal(f.find.replaceCurrent("b"), true); f.drain();
+        f.select(3, 7); assert.equal(f.find.replaceCurrent("b").status, "done"); f.drain();
         assert.equal(f.document().text(), "a\r\nb\r\na"); assert.equal(f.find.getSnapshot().count, 0);
         f.edit(3, 4, "a"); f.drain();
         assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), [{ from: 0, to: 4 }]);
@@ -163,21 +163,21 @@ test("preview keeps the selection, replacement advances, and edits cancel a pend
         assert.equal(f.find.getSnapshot().current, 1); assert.equal(f.view.getSnapshot().selectionSet, selected);
         f.find.setFlags({ wholeWord: true }); f.drain();
         assert.equal(f.find.getSnapshot().current, 1); assert.equal(f.view.getSnapshot().selectionSet, selected);
-        assert.equal(f.find.replaceCurrent("dog"), true); f.drain();
+        assert.equal(f.find.replaceCurrent("dog").status, "done"); f.drain();
         assert.equal(f.document().text(), "a cat, a dog, a cat");
         assert.equal(f.find.getSnapshot().current, 1); assert.equal(f.find.getSnapshot().wrappedTo, null);
-        assert.equal(f.find.next(), true); assert.equal(f.find.getSnapshot().wrappedTo, "start");
-        assert.equal(f.find.next(-1), true); assert.equal(f.find.getSnapshot().wrappedTo, "end");
+        assert.equal(f.find.next().status, "done"); assert.equal(f.find.getSnapshot().wrappedTo, "start");
+        assert.equal(f.find.next(-1).status, "done"); assert.equal(f.find.getSnapshot().wrappedTo, "end");
         f.find.setQuery("dog", { preview: true }); f.edit(0, 0, "a "); f.drain();
         assert.equal(f.find.getSnapshot().count, 1); assert.equal(f.find.getSnapshot().current, null);
         f.find.setQuery("cat", { preview: true }); f.select(0); f.drain();
         assert.equal(f.find.getSnapshot().current, null); assert.equal(f.find.getSnapshot().wrappedTo, null);
-        assert.equal(f.find.acceptPreview(), false);
+        assert.notEqual(f.find.acceptPreview().status, "done");
         f.find.setQuery("dog", { preview: true }); f.drain(); f.select(1);
-        assert.equal(f.find.acceptPreview(), false, "dismissing an old preview preserves a newer selection");
+        assert.deepEqual(f.find.acceptPreview(), { status: "refused", reason: "no-preview" }, "dismissing an old preview preserves a newer selection");
         f.find.setQuery("dog", { preview: true });
-        assert.equal(f.find.acceptPreview(), false, "closing before discovery cannot schedule a later selection");
-        f.drain(); assert.equal(f.find.acceptPreview(), true); assert.equal(f.find.acceptPreview(), false);
+        assert.deepEqual(f.find.acceptPreview(), { status: "refused", reason: "no-preview" }, "closing before discovery cannot schedule a later selection");
+        f.drain(); assert.equal(f.find.acceptPreview().status, "done"); assert.notEqual(f.find.acceptPreview().status, "done");
         const { anchor, head } = f.view.getSnapshot().selection;
         assert.equal(f.document().buffer.slice(anchor, head), "dog");
     } finally { f.dispose(); }
@@ -194,14 +194,14 @@ test("refining a query follows the last Find selection at the same start", () =>
         assert.deepEqual(range(), [12, 16]);
         query("quant"); query("quanti"); query("quantity"); f.drain();
         assert.deepEqual(range(), [12, 20]); assert.equal(f.find.getSnapshot().current, 0);
-        assert.equal(f.find.next(), true); assert.deepEqual(range(), [22, 30]);
+        assert.equal(f.find.next().status, "done"); assert.deepEqual(range(), [22, 30]);
         query("quan"); f.drain(); assert.deepEqual(range(), [22, 26]);
         query("quantities"); f.drain();
         assert.deepEqual(range(), [22, 26]); assert.equal(f.find.getSnapshot().current, 0);
-        assert.equal(f.find.acceptPreview(), true); assert.deepEqual(range(), [0, 10]);
+        assert.equal(f.find.acceptPreview().status, "done"); assert.deepEqual(range(), [0, 10]);
         query("quan"); f.select(12, 16); f.drain();
         assert.deepEqual(range(), [12, 16]); assert.equal(f.find.getSnapshot().current, 1);
-        assert.equal(f.find.acceptPreview(), false);
+        assert.notEqual(f.find.acceptPreview().status, "done");
         f.select(13); assert.equal(f.find.getSnapshot().current, 1);
         f.select(11); assert.equal(f.find.getSnapshot().current, null);
         f.select(12, 16);
@@ -215,14 +215,14 @@ test("initial literal Next and Previous select during the command, including a p
     try {
         f.find.setQuery("cat", { preview: true });
         assert.equal(f.find.getSnapshot().status, "searching");
-        assert.equal(navigate(1), true);
+        assert.deepEqual(navigate(1), { status: "done", value: "selected" });
         assert.partialDeepStrictEqual(f.view.getSnapshot().selection, { anchor: 0, head: 3 });
-        assert.equal(navigate(1), true);
+        assert.deepEqual(navigate(1), { status: "done", value: "selected" });
         assert.partialDeepStrictEqual(f.view.getSnapshot().selection, { anchor: 8, head: 11 });
 
         f.select(0);
         f.find.setQuery("cat");
-        assert.equal(navigate(-1), true);
+        assert.deepEqual(navigate(-1), { status: "done", value: "selected" });
         assert.partialDeepStrictEqual(f.view.getSnapshot().selection, { anchor: 8, head: 11 });
         assert.equal(f.find.getSnapshot().wrappedTo, "end");
         f.select(4);
@@ -236,11 +236,11 @@ test("initial literal Next and Previous select during the command, including a p
         folds.setCollapsed(folds.getSnapshot(), ["block"], true);
         folds.setCollapsed(folds.getSnapshot(), ["block"], false);
         f.drain();
-        assert.equal(f.find.acceptPreview(), false);
+        assert.notEqual(f.find.acceptPreview().status, "done");
         f.select(0, 3);
         f.find.setQuery("cat");
         f.drain();
-        assert.equal(f.find.replaceCurrent("kitten"), true);
+        assert.equal(f.find.replaceCurrent("kitten").status, "done");
         folds.setCollapsed(folds.getSnapshot(), ["block"], true);
         f.drain();
         assert.equal(f.view.getSnapshot().selection.head, 6, "folding preserves the caret after replacement");
@@ -278,10 +278,10 @@ test("confirmed matches remain navigable and replaceable during repair without w
         f.find.setQuery("cat"); f.drain(); const previous = f.find.matchesIn(0, f.document().buffer.length);
         f.edit(40000, 40003, "dog"); const state = f.find.getSnapshot();
         assert.equal(state.status, "searching"); assert.equal(state.retained, true); assert.ok(state.count > 9000); assert.deepEqual(f.find.matchesIn(0, 400), previous.filter(m => m.from < 400));
-        f.select(0); assert.equal(f.find.next(-1), false); assert.equal(f.find.next(), true); assert.equal(f.view.getSnapshot().selection.anchor, 0); assert.equal(f.view.getSnapshot().selection.head, 3);
-        f.select(60000); assert.equal(f.find.next(-1), false); assert.equal(f.find.next(), false);
+        f.select(0); assert.notEqual(f.find.next(-1).status, "done"); assert.equal(f.find.next().status, "done"); assert.equal(f.view.getSnapshot().selection.anchor, 0); assert.equal(f.view.getSnapshot().selection.head, 3);
+        f.select(60000); assert.notEqual(f.find.next(-1).status, "done"); assert.notEqual(f.find.next().status, "done");
         const revision = f.document().revision; f.find.replaceAll("wrong"); assert.equal(f.document().revision, revision);
-        f.select(4, 7); assert.equal(f.find.replaceCurrent("kitten"), true); assert.equal(f.find.getSnapshot().retained, true);
+        f.select(4, 7); assert.deepEqual(f.find.replaceCurrent("kitten"), { status: "done", value: "replaced" }); assert.equal(f.find.getSnapshot().retained, true);
         f.drain(); assert.equal(f.find.getSnapshot().count, 19998); assert.equal(f.find.getSnapshot().status, "ready");
         assert.deepEqual(f.find.matchesIn(0, f.document().buffer.length), all(scan(f.document().buffer, "cat").index));
         f.workspace.undo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.getSnapshot().count, 19999);
@@ -289,7 +289,7 @@ test("confirmed matches remain navigable and replaceable during repair without w
         f.workspace.redo({ documentId: f.documentId, expectedRevision: f.document().revision }); f.drain(); assert.equal(f.find.getSnapshot().count, 19999);
         f.edit(60000, 60003, "dog"); f.select(4, 7);
         const history = f.workspace.observeHistory(f.documentId).getSnapshot();
-        assert.equal(f.find.replaceCurrent("cat"), true);
+        assert.equal(f.find.replaceCurrent("cat").status, "done");
         assert.equal(f.find.getSnapshot().status, "searching"); assert.equal(f.find.getSnapshot().retained, true);
         f.drain(); assert.equal(f.find.getSnapshot().status, "ready"); assert.equal(f.find.getSnapshot().count, 19998);
         assert.equal(f.find.getSnapshot().reason, "replaced");
@@ -307,13 +307,13 @@ test("an edit inside a long row keeps later literal matches usable without navig
         const last = f.document().buffer.length, suffix = last - 7;
         assert.equal(f.find.getSnapshot().status, "searching");
         assert.deepEqual(f.find.matchesIn(0, last), [{ from: 0, to: 3 }, { from: suffix, to: suffix + 3 }, { from: last - 3, to: last }]);
-        f.select(edited, edited + 3); assert.equal(f.find.replaceCurrent("wrong"), false);
+        f.select(edited, edited + 3); assert.notEqual(f.find.replaceCurrent("wrong").status, "done");
         f.find.replaceAll("wrong"); assert.equal(f.document().buffer.slice(edited, edited + 3), "dog");
-        f.select(3); assert.equal(f.find.next(), false);
-        f.select(suffix); assert.equal(f.find.next(-1), false); assert.equal(f.find.next(), true);
+        f.select(3); assert.notEqual(f.find.next().status, "done");
+        f.select(suffix); assert.notEqual(f.find.next(-1).status, "done"); assert.equal(f.find.next().status, "done");
         assert.equal(f.find.getSnapshot().current, 1);
         f.drain(); assert.equal(f.find.getSnapshot().count, 6); assert.equal(f.find.getSnapshot().current, 4);
-        assert.equal(f.find.replaceCurrent("last"), true); f.drain();
+        assert.equal(f.find.replaceCurrent("last").status, "done"); f.drain();
         assert.equal(f.document().buffer.slice(suffix, f.document().buffer.length), "last cat");
     } finally { f.dispose(); }
 });

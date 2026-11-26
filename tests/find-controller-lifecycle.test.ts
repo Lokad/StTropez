@@ -73,10 +73,10 @@ test("changing whole-word mode excludes selected substring matches", () => {
         assert.equal(find.getSnapshot().current, 1); assert.equal(view.getSnapshot().selectionSet, selected);
         assert.equal(workspace.document(documentId).revision, before.revision); assert.deepEqual(workspace.observeHistory(documentId).getSnapshot(), history); assert.equal(focused, 0);
         view.setSelection(before.revision, { anchor: 5, head: 8 });
-        assert.equal(find.replaceCurrent("dog"), true);
+        assert.equal(find.replaceCurrent("dog").status, "done");
         assert.equal(workspace.document(documentId), before);
         assert.equal(view.getSnapshot().selection.anchor, original.lastIndexOf("cat"));
-        assert.equal(find.replaceCurrent("dog"), true); drain();
+        assert.equal(find.replaceCurrent("dog").status, "done"); drain();
         assert.equal(workspace.document(documentId).revision, before.revision + 1);
         assert.equal(view.getSnapshot().selection.anchor, 0);
         assert.equal(view.getSnapshot().selection.head, 3);
@@ -112,7 +112,7 @@ for (const lifetime of ["destroyed", "view-disposed"] as const) for (const compo
             let notifications = 0; stop = find.subscribe(() => { notifications++; });
             const returned = find.replaceCurrent("changed"), after = find.getSnapshot();
             t.diagnostic(JSON.stringify({ lifetime, composing, returned, notifications, before, after }));
-            assert.equal(returned, false); assert.strictEqual(after, before); assert.equal(notifications, 0);
+            assert.deepEqual(returned, { status: "stale" }); assert.strictEqual(after, before); assert.equal(notifications, 0);
             assert.strictEqual(workspace.document(documentId).buffer, document.buffer); assert.equal(workspace.document(documentId).revision, document.revision);
             assert.deepEqual(view.getSnapshot(), selected); assert.deepEqual(workspace.observeHistory(documentId).getSnapshot(), history);
         } finally {
@@ -140,7 +140,7 @@ test("case options retain raw Unicode matches and literal Replace All commits in
         assert.equal(find.getSnapshot().count, 2); assert.equal(workspace.document(documentId), before); assert.deepEqual(workspace.observeHistory(documentId).getSnapshot(), history);
         view.setSelections(before.revision, [{ anchor: 0, head: 1 }, { anchor: original.length, head: original.length }]);
         const set = view.getSnapshot().selectionSet;
-        assert.equal(find.replaceCurrent("x"), true);
+        assert.equal(find.replaceCurrent("x").status, "done");
         // A caret move while the updated match index is pending takes precedence.
         view.setSelection(workspace.document(documentId).revision, { anchor: 3, head: 3 });
         const moved = view.getSnapshot().selectionSet;
@@ -149,7 +149,7 @@ test("case options retain raw Unicode matches and literal Replace All commits in
         assert.equal(workspace.observeHistory(documentId).getSnapshot().undoDepth, history.undoDepth + 1);
         assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain();
         assert.equal(text(), original); assert.deepEqual(view.getSnapshot().selectionSet, set);
-        find.setQuery("𐐨"); drain(); assert.equal(find.getSnapshot().count, 2); assert.equal(find.next(), true);
+        find.setQuery("𐐨"); drain(); assert.equal(find.getSnapshot().count, 2); assert.equal(find.next().status, "done");
         assert.equal(view.getSnapshot().selection.anchor, original.indexOf("𐐀")); assert.equal(view.getSnapshot().selection.head, original.indexOf("𐐀") + 2);
         find.replaceAll("Ω"); drain(); assert.equal(text(), original.replace("𐐀", "Ω").replace("𐐨", "Ω"));
         assert.equal(workspace.undo({ documentId, expectedRevision: workspace.document(documentId).revision }).applied, true); drain(); assert.equal(text(), original);

@@ -38,7 +38,7 @@ export function attachFind(editor: TextEditor, workerUrl: URL, fields: Omit<Find
         clock: editor.element.ownerDocument.defaultView!,
         createWorker: () => new Worker(workerUrl, { type: "module" })
     }) });
-    const keys = bindFindCommands(editor, { ...fields, navigate: direction => find.next(direction) });
+    const keys = bindFindCommands(editor, { ...fields, navigate: direction => find.next(direction).status === "done" });
     return { find, dispose() { keys.dispose(); find.dispose(); } };
 }
 ```
@@ -48,6 +48,11 @@ Use `entries.regexWorker` from the matching [package](packaging.md). Omit the ba
 ## Contract
 
 ### Options, matches and commands
+
+Navigation, accepting a preview and replacement return an outcome. A successful command reports
+`selected`, `replaced` or `queued` in `value`. Read the eventual replacement count or failure from the
+subscribed snapshot. A disposed target returns `stale`. A refusal has a reason such as `no-match`,
+`read-only` or `composition-active`.
 
 The bar starts case-insensitive, the controller case-sensitive. Both start in literal mode with
 `wholeWord: false`. Set the backend and delay at construction. Change search flags with `setFlags`.
