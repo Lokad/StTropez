@@ -9,7 +9,8 @@ test("fold discovery keeps an inserted line visible above the closing brace", as
     await expect(edited).toHaveText("}"); await edited.click({ position: { x: 2, y: 8 } });
     await source.press("Home"); await source.press("Control+Shift+Enter");
     await expect(fold).toHaveAttribute("aria-expanded", "true");
-    await expect(edited).toBeVisible(); await expect(edited).toHaveText(/^\s*$/);
+    await expect(edited).toBeInViewport();
+    await expect(edited).toHaveText(/^ {4}$/);
     await page.keyboard.type("visible"); await expect(edited).toHaveText(/^\s*visible$/);
     await source.press("Control+z"); await expect(edited).toHaveText(/^\s*$/);
 });
