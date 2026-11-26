@@ -412,7 +412,9 @@ export function decodeLspResolvedCompletion(value: unknown, original: LspComplet
     current(capture); return result;
 }
 /** Map one item through a proved typing insertion or backward deletion within its primary range. */
-export function rebaseLspCompletion(original: LspCompletion, next: LspDocumentSnapshot, change: DocumentChange, caret: number): LspCompletion | undefined {
+export function rebaseLspCompletion<C extends Pick<DocumentChange, "previousRevision" | "origin" | "kind" | "mapping">>(
+    original: LspCompletion, next: LspDocumentSnapshot, change: C, caret: number,
+): LspCompletion | undefined {
     const before = original.source, mapping = change.mapping, units = next.buffer.length - before.buffer.length, primary = original.primary;
     if (change.previousRevision !== before.revision || next.revision !== before.revision + 1 || change.origin !== "human"
         || next.uri !== before.uri || next.resourceId !== before.resourceId || next.documentId !== before.documentId || next.languageId !== before.languageId

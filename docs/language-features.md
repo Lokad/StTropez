@@ -392,7 +392,8 @@ in the same result list to give them one Return point. The history keeps the las
 and replaced tabs. Edits after a jump move the saved selections and scroll anchors with the source.
 Back restores them and reports `"restored"`, `"empty"` or
 `"busy"`. Pass `{ focus: true }` as the second argument to focus the editor on return.
-Dispose the history with its host.
+Dispose the history with its host. Canonical saves follow the workspace's selection rules.
+[Whole-text writes](workspace.md#transactions-and-history)
 [Restoring a view after edits](viewport.md#scrolling-and-saved-views)
 
 ### Rename and workspace edits

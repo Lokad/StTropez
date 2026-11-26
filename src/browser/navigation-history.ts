@@ -3,7 +3,7 @@ import type { Observable } from "../core/observable.ts";
 import type { DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
 import type { TextEditor } from "./text-editor.ts";
 import type { ViewState } from "./view-state.ts";
-import { createSelectionSet, mapSelectionSet } from "../core/selections.ts";
+import { createSelectionSet } from "../core/selections.ts";
 
 export type NavigationOrigin = Readonly<{ viewState: ViewState; visit: (open: () => boolean) => boolean }>;
 export type NavigationHistory = Observable<number> & Readonly<{
@@ -19,6 +19,10 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
     const entries: Entry[] = [];
     let disposed = false, navigating = false;
     const owns = (entry: Entry) => workspace.ownsDocumentView(entry.view, entry.tab);
+    function live(editor: TextEditor) {
+        return !disposed && !editor.signal.aborted && editor.element.isConnected
+            && workspace.ownsDocumentView(editor.view, editor.tab);
+    }
     function busy(editor: TextEditor) {
         const state = editor.activity();
         return state.composing || state.pendingCommand || state.pendingInput;
@@ -27,7 +31,7 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
         const entry: Entry = { view, tab, origin, state: origin, revision, stop: workspace.onDocumentChange(view.documentId, change => {
             if (entry.revision !== change.previousRevision) return;
             const { state } = entry;
-            const selections = mapSelectionSet(change.mapping, state.selectionSet ?? { ranges: [state], primary: 0 });
+            const selections = change.mapSelections(state.selectionSet ?? { ranges: [state], primary: 0 });
             const horizontal = state.horizontalAnchor, vertical = state.verticalAnchor;
             entry.revision = change.revision;
             entry.state = { ...selections.ranges[selections.primary]!, selectionSet: selections, scrollLeft: state.scrollLeft,
@@ -40,8 +44,8 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
         return entry;
     }
     function capture(editor: TextEditor, pointedOffset?: number): NavigationOrigin | undefined {
-        const { view, tab, signal } = editor;
-        if (disposed || signal.aborted || !editor.element.isConnected || !workspace.ownsDocumentView(view, tab) || busy(editor)) return;
+        const { view, tab } = editor;
+        if (!live(editor) || busy(editor)) return;
         let state = editor.captureView();
         if (pointedOffset !== undefined) {
             const set = createSelectionSet(workspace.document(view.documentId).buffer.length, [{ anchor: pointedOffset, head: pointedOffset }]);
@@ -50,8 +54,7 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
         }
         const revision = view.getSnapshot().revision;
         return Object.freeze({ viewState: state, visit(open: () => boolean) {
-            if (disposed || navigating || signal.aborted || !editor.element.isConnected || !workspace.ownsDocumentView(view, tab)
-                || view.getSnapshot().revision !== revision || busy(editor)) return false;
+            if (navigating || !live(editor) || view.getSnapshot().revision !== revision || busy(editor)) return false;
             scope.assertWritable(); navigating = true;
             let entry: Entry | undefined;
             try {
@@ -75,12 +78,10 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
         try {
             while (entries.length) {
                 const entry = entries[entries.length - 1]!;
-                if (!owns(entry)) { entries.pop()!.stop(); continue; }
-                const editor = present(entry.view);
+                const editor = owns(entry) ? present(entry.view) : undefined;
                 if (disposed) return "empty";
                 if (editor === "busy") return "busy";
-                if (editor?.view === entry.view && !editor.signal.aborted && editor.element.isConnected
-                    && owns(entry) && workspace.ownsDocumentView(editor.view, editor.tab)) {
+                if (editor?.view === entry.view && live(editor) && owns(entry)) {
                     if (busy(editor)) return "busy";
                     if (entry.revision === entry.view.getSnapshot().revision && editor.restoreView(entry.state)) {
                         entries.pop()!.stop();

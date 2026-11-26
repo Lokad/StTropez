@@ -95,18 +95,20 @@ function mapEndpoints(length: number, value: SelectionSet, map: (offset: number,
     }), value.primary);
 }
 
-/** The whole-text APIs supply a single compact replacement. Retain each pane's place within it. */
-export function mapWholeTextSelections(mapping: PositionMapping, after: TextBuffer, selections: SelectionSet): SelectionSet {
+/** Apply the same selection policy to live views and saved locations. */
+export function documentSelectionMapper(mapping: PositionMapping, after?: TextBuffer): (set: SelectionSet) => SelectionSet {
+    if (!after) return set => mapSelectionSet(mapping, set);
     const { prefix, suffix } = unchangedPositionEdges(mapping)!;
     const oldEnd = mapping.oldLength - suffix, newEnd = after.length - suffix;
-    return mapEndpoints(after.length, selections, (offset, affinity) => {
+    const map = (offset: number, affinity?: Affinity) => {
         if (offset === 0) return 0;
         if (offset === mapping.oldLength) return after.length;
         if (offset < prefix) return offset;
         if (offset > oldEnd) return newEnd + (offset - oldEnd);
         const next = oldEnd === prefix ? mapping.map(offset, affinity).offset : offset === oldEnd ? newEnd : Math.min(offset, newEnd);
         return splitsTextPair(after, next) ? next - 1 : next;
-    });
+    };
+    return set => mapEndpoints(after.length, createSelectionSet(mapping.oldLength, set.ranges, set.primary), map);
 }
 
 /** Preserve each endpoint's relative offset inside a replacement, including backwards selections. */

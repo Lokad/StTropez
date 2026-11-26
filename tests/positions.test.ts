@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import { unchangedPositionEdges } from "../src/core/positions.ts";
 import { documentChange } from "../src/core/document-change.ts";
+import { documentSelectionMapper } from "../src/core/selections.ts";
 import assert from "node:assert/strict";
 import { anchoredRange, importText, exportText, TextBuffer } from "../src/index.ts";
 import { applyTextEdits } from "../src/core/changes.ts";
@@ -100,7 +101,8 @@ test("seeded batches, inverse edits and compositions map every UTF-16 boundary a
         assert.equal(before.slice(before.length - value.suffix), after.slice(after.length - value.suffix));
         assert.deepEqual(map.map(value.prefix, "before"), { offset: value.prefix, deleted: false });
         assert.deepEqual(map.map(before.length - value.suffix, "after"), { offset: after.length - value.suffix, deleted: false });
-        const change = documentChange({ mapping: map, origin: "host", kind: "replace", previousRevision: 0, revision: 1, transactionId: 1 },
+        const change = documentChange({ mapping: map, mapSelections: documentSelectionMapper(map),
+            origin: "host", kind: "replace", previousRevision: 0, revision: 1, transactionId: 1 },
             TextBuffer.from(before), TextBuffer.from(after));
         assert.equal(applyTextEdits(before, change.edits), after);
         const split = (text: string, at: number) => at > 0 && /\r\n|[\ud800-\udbff][\udc00-\udfff]/.test(text.slice(at - 1, at + 1));

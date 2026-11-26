@@ -331,14 +331,20 @@ test("remounting after edits uses the retained selection, maps a fresh view or c
             const retained = live === view.getSnapshot().selectionSet;
             const here = editor.captureView(); view.setSelection(2, { anchor: 1, head: 1 });
             const exact = editor.restoreView(here, { selection: "current" });
+            const beforeRewrite = editor.captureView();
+            editor.dispose();
+            workspace.replaceText(id, "ABCDE", { expectedRevision: 2, origin: "host", history: "record" });
+            editor = mountTextEditor(host, workspace, id);
+            const rewritten = editor.restoreView(beforeRewrite);
             return { observedTop, mapped: mapped?.selection, mappedAnchors: [mapped?.verticalAnchorRestored, mapped?.horizontalAnchorRestored],
                 droppedAnchors: [clamped?.verticalAnchorRestored, clamped?.horizontalAnchorRestored], first: first.ranges.map(r => [r.anchor, r.head]), primary: first.primary,
                 clamped: clamped?.selection, second: second.ranges.map(r => [r.anchor, r.head]), foreign, kept: kept?.selection,
-                retained, sameRevision: exact?.selection, caret: view.getSnapshot().selection.head };
+                retained, sameRevision: exact?.selection, caret: beforeRewrite.head,
+                rewritten: rewritten?.selection, restoredCaret: editor.view.getSnapshot().selection.head };
         } finally { editor.dispose(); view.dispose(); host.remove(); }
     });
     expect(result).toEqual({ observedTop: 17, mapped: "mapped", mappedAnchors: [true, true], droppedAnchors: [false, false], first: [[0, 0], [11, 8]], primary: 1, clamped: "clamped", second: [[1, 1], [2, 2]],
-        foreign: null, kept: "current", retained: true, sameRevision: "current", caret: 1 });
+        foreign: null, kept: "current", retained: true, sameRevision: "current", caret: 1, rewritten: "mapped", restoredCaret: 1 });
 });
 
 test("Back restores the origin selections across edits at a same-file destination", async ({ page }) => {
@@ -347,8 +353,9 @@ test("Back restores the origin selections across edits at a same-file destinatio
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountTextEditor, createNavigationHistory } = await import(path + "browser.js") as typeof import("../../src/browser/index.ts");
         const workspace = new Workspace();
-        const { documentId } = workspace.createTextResource({ scope: "test", resource: "jump", variant: "source" }, "Jump",
+        const resource = workspace.createTextResource({ scope: "test", resource: "jump", variant: "source" }, "Jump",
             { value: "abc\norigin line\n" });
+        const { documentId } = resource;
         const host = document.body.appendChild(document.createElement("section"));
         const editor = mountTextEditor(host, workspace, documentId), history = createNavigationHistory(workspace);
         try {
@@ -358,6 +365,10 @@ test("Back restores the origin selections across edits at a same-file destinatio
             origin.visit(() => view.setSelection(revision, { anchor: 1, head: 1 }));
             for (const insert of ["xx", "y"]) workspace.edit({ documentId, expectedRevision: workspace.document(documentId).revision,
                 edits: [{ from: 1, to: 1, insert }], origin: "human" });
+            const save = workspace.captureSave(resource);
+            save.start();
+            save.accept({ serverVersion: "formatted", canonical: "0123456789ABCDEFGH\n" });
+            save.finish();
             const restored = history.back(() => editor);
             const { ranges, primary } = view.getSnapshot().selectionSet;
             return { restored, primary, ranges: ranges.map(({ anchor, head }) => [anchor, head]), depth: history.getSnapshot() };

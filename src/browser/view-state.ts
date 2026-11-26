@@ -1,7 +1,7 @@
 import type { Affinity } from "../core/positions.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, ViewId } from "../core/workspace.ts";
 import type { Selection } from "../core/history.ts";
-import { createSelectionSet, mapSelectionSet } from "../core/selections.ts";
+import { createSelectionSet } from "../core/selections.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { FoldRange } from "../core/folding.ts";
 
@@ -26,7 +26,7 @@ export function selectionToRestore(document: DocumentSnapshot, view: DocumentVie
         return { set: view.getSnapshot().selectionSet, source: "current" };
     const capture = state.selectionSet ?? { ranges: [state], primary: 0 }, length = document.buffer.length;
     if (saved && document.change?.previousRevision === saved.revision)
-        return { set: mapSelectionSet(document.change.mapping, capture), source: "mapped" };
+        return { set: document.change.mapSelections(capture), source: "mapped" };
     const set = createSelectionSet(saved?.revision === document.revision ? length : Number.MAX_SAFE_INTEGER, capture.ranges, capture.primary);
     const last = set.ranges[set.ranges.length - 1]!;
     if (Math.max(last.anchor, last.head) > length) {
