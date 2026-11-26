@@ -1,4 +1,5 @@
 import { isIndex, isOffsetRange } from "./bounds.ts";
+import type { PositionMapping } from "./positions.ts";
 import type { DiffHunk } from "./diff.ts";
 import { FoldIndex } from "./folding.ts";
 import type { FoldRegion } from "./folding.ts";
@@ -7,8 +8,8 @@ import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 import { partitionPoint } from "./bound-search.ts";
 
-type Side = "baseline" | "working";
-type Run = Readonly<{ row: number; length: number; baseline: number | null; working: number | null; baselineAnchor: number; workingAnchor: number }>;
+// A gap occupies [row, end) in the grid, immediately before a visible source row.
+type Gap = Readonly<{ row: number; end: number; before: number; anchor: number }>;
 type Hidden = Readonly<{ from: number; to: number; header: number }>;
 type Span = { a0: number; a1: number; b0: number; b1: number };
 export type ComparisonGap = Readonly<{ line: number; offset: number }>;
@@ -21,49 +22,65 @@ class ComparisonRowIndex {
     get regions(): readonly FoldRegion[] { return this.#folds.regions; }
     readonly #buffer: TextBuffer;
     readonly #folds: FoldIndex;
-    readonly #runs: readonly Run[];
-    readonly #real: readonly Run[];
-    readonly #side: Side;
-    constructor(buffer: TextBuffer, folds: FoldIndex, runs: readonly Run[], real: readonly Run[], side: Side, count: number) {
-        this.#buffer = buffer; this.#folds = folds; this.#runs = runs; this.#real = real; this.#side = side;
-        this.lineCount = buffer.lineCount; this.visibleLineCount = count; this.collapsedCount = folds.collapsedCount;
+    readonly #gaps: readonly Gap[];
+    constructor(buffer: TextBuffer, folds: FoldIndex, gaps: readonly Gap[]) {
+        this.#buffer = buffer;
+        this.#folds = folds;
+        this.#gaps = gaps;
+        this.lineCount = buffer.lineCount;
+        this.collapsedCount = folds.collapsedCount;
+        const last = gaps.at(-1);
+        this.visibleLineCount = folds.visibleLineCount + (last ? last.end - last.before : 0);
         Object.freeze(this);
     }
     matches(buffer: TextBuffer, folds: FoldIndex): boolean { return this.#buffer === buffer && this.#folds === folds; }
-    /** Reuse line runs while a new diff is pending. Gap offsets and fold headers use the new document. */
-    rebind(buffer: TextBuffer, folds: FoldIndex): ComparisonRowIndex | undefined {
-        if (buffer.lineCount !== this.lineCount || !this.#folds.sameProjection(folds)) return;
-        return new ComparisonRowIndex(buffer, folds, this.#runs, this.#real, this.#side, this.visibleLineCount);
+    rebind(buffer: TextBuffer, folds: FoldIndex, mapping?: PositionMapping): ComparisonRowIndex | undefined {
+        if (this.#folds.sameProjection(folds)) return new ComparisonRowIndex(buffer, folds, this.#gaps);
+        if (!mapping) return;
+        // Keep existing padding attached to its source boundary until the new diff supplies exact gaps.
+        const mapLine = (line: number) => line === this.lineCount ? buffer.lineCount
+            : buffer.lineAt(mapping.map(this.#buffer.offsetAt(line), "before").offset);
+        let padding = 0;
+        const gaps = this.#gaps.map(gap => {
+            const before = gap.before === this.#folds.visibleLineCount ? folds.visibleLineCount
+                : folds.rowAt(mapLine(this.#folds.lineAt(gap.before)));
+            const row = before + padding;
+            padding += gap.end - gap.row;
+            return { before, row, end: before + padding, anchor: mapLine(gap.anchor) };
+        });
+        return new ComparisonRowIndex(buffer, folds, gaps);
     }
     hiddenBy(line: number): FoldRegion | undefined { return this.#folds.hiddenBy(line); }
     headerAt(line: number): FoldRegion | undefined { return this.#folds.headerAt(line); }
-    #run(row: number): Run {
+    #preceding(row: number): Gap | undefined {
         if (!isIndex(row, this.visibleLineCount)) throw new RangeError("Invalid aligned row.");
-        const low = partitionPoint(this.#runs.length, index => this.#runs[index]!.row <= row);
-        return this.#runs[low - 1]!;
+        return this.#gaps[partitionPoint(this.#gaps.length, i => this.#gaps[i]!.row <= row) - 1];
     }
-    #anchor(run: Run): ComparisonGap {
-        const boundary = this.#side === "baseline" ? run.baselineAnchor : run.workingAnchor, source = Math.min(this.lineCount - 1, boundary);
-        const hidden = this.#folds.hiddenBy(source), line = hidden?.lineFrom ?? source;
-        return Object.freeze({ line, offset: hidden ? this.#buffer.offsetAt(line) : boundary === this.lineCount ? this.#buffer.length : this.#buffer.offsetAt(line) });
+    #anchor({ anchor }: Gap): ComparisonGap {
+        const source = Math.min(this.lineCount - 1, anchor);
+        const line = this.#folds.hiddenBy(source)?.lineFrom ?? source;
+        const offset = line === source && anchor === this.lineCount ? this.#buffer.length : this.#buffer.offsetAt(line);
+        return Object.freeze({ line, offset });
     }
     rowAt(line: number): number {
-        line = this.#folds.hiddenBy(line)?.lineFrom ?? line;
-        const low = partitionPoint(this.#real.length, index => this.#real[index]![this.#side]! <= line);
-        const run = this.#real[low - 1];
-        if (!run || line >= run[this.#side]! + run.length) throw new Error("Source row is missing from comparison alignment.");
-        return run.row + line - run[this.#side]!;
+        const before = this.#folds.rowAt(line);
+        const gap = this.#gaps[partitionPoint(this.#gaps.length, i => this.#gaps[i]!.before <= before) - 1];
+        return before + (gap ? gap.end - gap.before : 0);
     }
-    lineAt(row: number): number { const run = this.#run(row), line = run[this.#side]; return line === null ? this.#anchor(run).line : line + row - run.row; }
-    gapAt(row: number): ComparisonGap | undefined { const run = this.#run(row); return run[this.#side] === null ? this.#anchor(run) : undefined; }
-    /** Page destinations stay on real source rows, even when the page lies entirely in padding. */
+    lineAt(row: number): number {
+        const gap = this.#preceding(row);
+        if (gap && row < gap.end) return this.#anchor(gap).line;
+        return this.#folds.lineAt(row - (gap ? gap.end - gap.before : 0));
+    }
+    gapAt(row: number): ComparisonGap | undefined {
+        const gap = this.#preceding(row);
+        return gap && row < gap.end ? this.#anchor(gap) : undefined;
+    }
     nextLine(row: number, direction: -1 | 1): number {
         row = Math.max(0, Math.min(this.visibleLineCount - 1, row));
-        const low = partitionPoint(this.#real.length, index => this.#real[index]!.row <= row);
-        const before = this.#real[low - 1];
-        if (before && row < before.row + before.length) return before[this.#side]! + row - before.row;
-        const run = direction > 0 ? this.#real[low] ?? this.#real.at(-1)! : before ?? this.#real[0]!;
-        return run[this.#side]! + (direction < 0 || direction > 0 && run.row < row ? run.length - 1 : 0);
+        const gap = this.#preceding(row);
+        const source = gap && row < gap.end ? gap.before - Number(direction < 0) : row - (gap ? gap.end - gap.before : 0);
+        return this.#folds.lineAt(Math.max(0, Math.min(this.#folds.visibleLineCount - 1, source)));
     }
 }
 export type { ComparisonRowIndex };
@@ -90,8 +107,10 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
         hidden.push({ from: r.lineFrom + 1, to: r.lineTo, header: r.lineFrom });
         if (checkpoint(work)) yield;
     }
-    const runs: Run[] = [], ar: Run[] = [], br: Run[] = []; let rows = 0, ai = 0, bi = 0, ac = 0, bc = 0;
-    const visible = (line: number | null, length: number, side: Side) => {
+    const baselineGaps: Gap[] = [], workingGaps: Gap[] = [];
+    let rows = 0, runCount = 0, baselineLines = 0, workingLines = 0;
+    let ai = 0, bi = 0, ac = 0, bc = 0;
+    const visible = (line: number | null, length: number, side: "baseline" | "working") => {
         if (line === null) return { line, length, header: -1 };
         const hidden = side === "baseline" ? ah : bh; let at = side === "baseline" ? ai : bi;
         while (hidden[at] && hidden[at]!.to <= line) at++;
@@ -107,9 +126,13 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
             const av = visible(at < na ? a0 + at : null, limit, "baseline"), bv = visible(at < nb ? b0 + at : null, limit, "working");
             const count = Math.min(av.length, bv.length); if (count < 1) throw new Error("Alignment did not advance.");
             if (av.line !== null || bv.line !== null) {
-                const run = Object.freeze({ row: rows, length: count, baseline: av.line, working: bv.line,
-                    baselineAnchor: av.header >= 0 ? av.header : a0 + Math.min(at, na), workingAnchor: bv.header >= 0 ? bv.header : b0 + Math.min(at, nb) });
-                runs.push(run); if (run.baseline !== null) ar.push(run); if (run.working !== null) br.push(run);
+                if (av.line === null) baselineGaps.push({ row: rows, end: rows + count, before: baselineLines,
+                    anchor: av.header >= 0 ? av.header : a0 + Math.min(at, na) });
+                else baselineLines += count;
+                if (bv.line === null) workingGaps.push({ row: rows, end: rows + count, before: workingLines,
+                    anchor: bv.header >= 0 ? bv.header : b0 + Math.min(at, nb) });
+                else workingLines += count;
+                runCount++;
                 rows += count; if (!Number.isSafeInteger(rows)) throw new RangeError("Too many aligned rows.");
             }
             at += count; if (checkpoint(work)) yield;
@@ -131,8 +154,10 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
     if (pending) yield* flush(pending);
     if (a.lineCount - ac !== b.lineCount - bc) throw new Error("Comparison suffix rows disagree.");
     yield* emit(ac, a.lineCount - ac, bc, b.lineCount - bc);
-    if (!rows || !ar.length || !br.length) throw new Error("Comparison lost its source rows.");
-    return Object.freeze({ baseline: new ComparisonRowIndex(a, af, runs, ar, "baseline", rows), working: new ComparisonRowIndex(b, bf, runs, br, "working", rows), rowCount: rows, runCount: runs.length });
+    if (baselineLines !== af.visibleLineCount || workingLines !== bf.visibleLineCount)
+        throw new Error("Comparison lost its source rows.");
+    return Object.freeze({ baseline: new ComparisonRowIndex(a, af, baselineGaps),
+        working: new ComparisonRowIndex(b, bf, workingGaps), rowCount: rows, runCount });
 }
 
 export type ComparisonRowsProgress = Readonly<{ status: KernelStatus; work: number; result: ComparisonRows | null; failure: string | null }>;

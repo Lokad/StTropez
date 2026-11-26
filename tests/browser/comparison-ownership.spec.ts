@@ -255,7 +255,9 @@ test("typing below an aligned gap keeps the scrolled row in place on every paint
         const settle = async () => {
             for (let frame = 0; frame < 120; frame++) {
                 await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-                if (comparison.getSnapshot().alignment.status === "ready" && !viewport.activity().pending) return;
+                const state = comparison.getDiagnostics();
+                if (state.alignment.status === "ready" && !state.pendingScroll && !viewport.activity().pending
+                    && !comparison.panes.reference.viewport.activity().pending) return;
             }
             throw new Error("Alignment did not settle");
         };
@@ -264,16 +266,27 @@ test("typing below an aligned gap keeps the scrolled row in place on every paint
             editor.reveal({ line, column: 1 }, { select: true, focus: true, align: "center" });
             await settle();
             const position = () => [
-                viewport.element.querySelector(`.st-viewport-row[data-line="${line}"]`)?.getBoundingClientRect().top,
-                viewport.element.scrollTop
+                viewport.element.querySelector(`.st-viewport-row[data-line="${line - 2}"]`)?.getBoundingClientRect().top,
+                viewport.element.scrollTop,
+                comparison.panes.reference.viewport.element.scrollTop
             ];
             const before = position(), frames: (typeof before)[] = [];
-            const stop = viewport.onRender(() => frames.push(position()));
+            const record = () => { frames.push(position()); };
+            const stop = viewport.onRender(record);
+            const stopReference = comparison.panes.reference.viewport.onRender(record);
             document.execCommand("insertText", false, "x");
             viewport.flush();
             await settle();
+            const lengths: number[] = [];
+            for (const command of ["newline", "delete-lines", "undo", "undo"]) {
+                editor.commands.run(command);
+                viewport.flush();
+                await settle();
+                lengths.push(workspace.document(source.documentId).buffer.lineCount);
+            }
             stop();
-            return { before, frames, text: workspace.document(source.documentId).buffer.line(line).text };
+            stopReference();
+            return { before, frames, lengths, text: workspace.document(source.documentId).buffer.line(line).text };
         } finally {
             comparison.dispose();
             workspace.releaseResource(source.id, true);
@@ -281,6 +294,7 @@ test("typing below an aligned gap keeps the scrolled row in place on every paint
         }
     });
     expect(positions.text).toContain("x");
+    expect(positions.lengths).toEqual([109, 108, 109, 108]);
     expect(positions.before[0]).toEqual(expect.any(Number));
     expect(positions.before[1]).toBeGreaterThan(0);
     expect(positions.frames.length).toBeGreaterThan(0);

@@ -463,11 +463,20 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
         rows.clear(); for (const [line, element] of retained) rows.set(line, element);
         geometries.clear();
     }
+    function rebindComparison(document: DocumentSnapshot, folds: FoldingSnapshot) {
+        if (!comparisonRows || comparisonRows.index.matches(document.buffer, folds.index)) return;
+        const change = document.change;
+        const index = comparisonRows.index.rebind(document.buffer, folds.index,
+            change?.previousRevision === comparisonRows.revision ? change.mapping : undefined);
+        comparisonRows = index && { ...comparisonRows, revision: document.revision, foldGeneration: folds.generation, index };
+        rowGeneration++;
+    }
     const documentChanged = () => {
         clearPreparedRows();
         const current = currentDocument();
         mapRowSources(current);
         if (current && previous && current.revision !== previous.revision) {
+            if (comparisonRows) rebindComparison(current, currentFolds());
             if (!anchor) {
                 const visibleRow = Math.min(renderedIndex.visibleLineCount - 1, Math.max(0, Math.floor((top - padding) / lineHeight))), line = renderedIndex.lineAt(visibleRow);
                 const start = previous.buffer.offsetAt(line), end = line + 1 < previous.buffer.lineCount ? previous.buffer.offsetAt(line + 1) - 1 : previous.buffer.length;
@@ -686,11 +695,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, identity:
             return;
         }
         const folds = currentFolds();
-        if (comparisonRows && !comparisonRows.index.matches(document.buffer, folds.index)) {
-            const index = comparisonRows.index.rebind(document.buffer, folds.index);
-            comparisonRows = index && { ...comparisonRows, revision: document.revision, foldGeneration: folds.generation, index };
-            rowGeneration++;
-        }
+        rebindComparison(document, folds);
         const index: RowIndex = comparisonRows?.index ?? folds.index;
         if (comparisonRows) lineHeight = Math.max(naturalLineHeight, comparisonRows.lineHeight);
         if (measuredRevision !== document.revision) { measuredWidth = 0; measuredRevision = document.revision; }

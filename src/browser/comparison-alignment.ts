@@ -43,9 +43,7 @@ export function createComparisonAlignment(win: Window, panes: ComparisonPanes,
     function update(): void {
         if (disposed || !enabled) return;
         const next = reference(), state = getComparison();
-        if (installed && (state.baseline !== installed.state.baseline || next !== installed.reference
-            || !installed.a.index.sameProjection(next.editor.view.folding.getSnapshot().index)
-            || !installed.b.index.sameProjection(working.view.folding.getSnapshot().index))) clear();
+        if (installed && (state.baseline !== installed.state.baseline || next !== installed.reference)) clear();
         if (state.status !== "ready" || !state.baseline || !state.working || !next) {
             cancel(); if (state.status !== "running") clear();
             capture = undefined; result = undefined; installedPitch = 0;
