@@ -94,6 +94,18 @@ test("the reference host highlights the completion that Enter inserts", async ({
 });
 
 test("the reference shortcut and toolbar review a captured code action at the source", async ({ page }) => {
+    let disabledOnly = true;
+    await page.routeWebSocket("**/lsp-fixture", client => {
+        const server = client.connectToServer();
+        client.onMessage(message => {
+            const request = JSON.parse(message.toString());
+            if (disabledOnly && request.method === "textDocument/codeAction") {
+                client.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: [
+                    { title: "Unavailable context example", disabled: { reason: "The fixture requires another context." } },
+                ] }));
+            } else server.send(message);
+        });
+    });
     await page.setViewportSize({ width: 760, height: 240 });
     await page.goto("/reference/");
     await page.getByRole("button", { name: "Connect language server" }).click();
@@ -107,9 +119,18 @@ test("the reference shortcut and toolbar review a captured code action at the so
     const unavailable = panel.getByRole("button", { name: "Unavailable context example" });
     await expect(unavailable).toBeDisabled();
     await expect(panel).toBeInViewport();
+    await expect(panel.getByLabel("Quick-fix status")).toHaveText("No available actions for this range.");
     await expect(unavailable).toHaveAttribute("title", "The fixture requires another context.");
-    await source.press("Escape");
+    await source.press("ArrowDown");
     await expect(panel).toBeHidden();
+    await source.press("ControlOrMeta+Home");
+    await source.press("ControlOrMeta+.");
+    await expect(unavailable).toBeDisabled();
+    await source.press("Enter");
+    await expect(panel).toBeHidden();
+    await expect(page.locator("#pane .st-viewport-row").first()).toHaveText("");
+    await source.press("ControlOrMeta+z");
+    disabledOnly = false;
     await page.getByRole("button", { name: "Code actions", exact: true }).click();
     const edit = panel.getByRole("button", { name: 'Insert module "sample-utils"' });
     await edit.click();

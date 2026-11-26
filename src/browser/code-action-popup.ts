@@ -84,7 +84,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
             if (focused) editor.focus();
         }
         if (phase === "ready") command = !!preview?.command;
-        status.textContent = text(phase === "ready" && !items.length ? "No quick fix at this position." : message);
+        status.textContent = text(message);
         if (list !== items) {
             list = items;
             page(list, 0);
@@ -137,7 +137,7 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
             void choice.select({ review: true });
             return true;
         }
-        return length > 0 || state.status === "pending" || state.status === "executing";
+        return state.status === "pending" || state.status === "executing";
     }
     const listen = listenUntil(signal);
     listen(panel, "keydown", event => editor.keymap.handle(event));

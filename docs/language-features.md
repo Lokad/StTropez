@@ -460,8 +460,8 @@ to other project files. A superseded snapshot returns `stale` before discovery s
 Set `codeActions: { popup: true }` for an anchored review. Ctrl+. (Cmd+. on macOS) and
 `editor.commands.run("quickfix.show")` bring the caret into view and open the list. Arrow keys choose an action.
 Enter requests a preview if the first available fix needs resolution. Press Enter on a ready preview to apply it.
-While the list is loading, arrows and Enter preserve the source selection. Escape closes the list.
-Hover over a disabled choice to see its reason.
+While the list loads, arrows and Enter preserve the selection. If every choice is unavailable, the editor
+handles those keys normally. Hover over a disabled choice for its reason, or press Escape to close the list.
 Pass the choices returned by `request()` as the command argument to open a diagnostic's
 current list without another request.
 

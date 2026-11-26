@@ -247,7 +247,9 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
             for (const action of batch.actions) if (action.edit) j.capture.project.includeEdit(action.edit);
             const choices = Object.freeze(batch.actions.map((action, index) =>
                 actionChoice(action, index, disabled(batch, action), review => choose(source, index, review))));
-            publish({ ...empty, status: "ready", choices, message: choices.length ? "Choose an action." : "No actions for this range." });
+            const available = choices.some(choice => choice.disabled === null);
+            publish({ ...empty, status: "ready", choices,
+                message: available ? "Choose an action." : "No available actions for this range." });
             return done(choices);
         } catch (error) {
             return requestFailed(pending, error);
