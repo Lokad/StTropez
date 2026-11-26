@@ -1,4 +1,4 @@
-import { changedFiles, createEditNoteList } from "../../../examples/shared/edit-review.ts";
+import { changedFiles, createEditNoteList } from "./edit-review.ts";
 import { pageActions } from "../../../examples/shared/panel-actions.ts";
 import { createDestinationList, createToolPanel } from "./tool-panel.ts";
 import type { HostProjectTools, ProjectSnapshot } from "./project.ts";

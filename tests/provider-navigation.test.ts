@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
 import { SymbolScanner } from "./fixtures/language/navigation.ts";
-import { identifierAt } from "../examples/shared/language/identifier.ts";
+import { identifierAt } from "./fixtures/language/identifier.ts";
 import type { LspNavigationRequest } from "../src/protocol/index.ts";
 function run(texts: readonly string[], kind: LspNavigationRequest["kind"] = "references", includeDeclaration = true, budget = 3, name = "café") {
     const locations: { document: string; revision: number; from: number; to: number; declaration: boolean }[] = [];

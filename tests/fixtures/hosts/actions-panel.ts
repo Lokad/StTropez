@@ -1,7 +1,7 @@
 import { pageActions } from "../../../examples/shared/panel-actions.ts";
 import { bindChoiceList, createPanelTextField, createDestinationList, createToolPanel } from "./tool-panel.ts";
-import { changedFiles, createEditNoteList } from "../../../examples/shared/edit-review.ts";
-import { actionChoicePageSize } from "../../../examples/shared/action-pages.ts";
+import { changedFiles, createEditNoteList } from "./edit-review.ts";
+import { actionChoicePageSize } from "./action-pages.ts";
 import type { CodeActionChoice } from "../../../src/browser/index.ts";
 import type { HostActionsTools, ActionsSnapshot } from "./code-actions.ts";
 type ActionsPanelTools = Pick<HostActionsTools, "request" | "cancel" | "disconnect" | "reconnect" | "bindModule" | "setModule" | "openChangedDocument">;

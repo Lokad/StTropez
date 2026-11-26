@@ -11,7 +11,7 @@ import type { NavigationSnapshot } from "./fixtures/hosts/navigation.ts";
 import type { ProjectSnapshot } from "./fixtures/hosts/project.ts";
 import { renamePanelModel } from "./fixtures/hosts/rename-panel.ts";
 import { actionsPanelModel } from "./fixtures/hosts/actions-panel.ts";
-import type { HostRenameSnapshot } from "../examples/shared/rename.ts";
+import type { HostRenameSnapshot } from "./fixtures/hosts/rename.ts";
 import type { ActionsSnapshot } from "./fixtures/hosts/code-actions.ts";
 import { documentColorsPanelModel } from "./fixtures/hosts/document-colors-panel.ts";
 import { documentLinksPanelModel } from "./fixtures/hosts/document-links-panel.ts";

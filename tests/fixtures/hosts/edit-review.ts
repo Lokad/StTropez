@@ -1,7 +1,7 @@
-import type { LspEditNotes, LspWorkspaceEditNote } from "../../src/protocol/index.ts";
-import type { DocumentId } from "../../src/index.ts";
-import type { ChangedFile } from "./language-host.ts";
-import { panelPaging } from "./panel-actions.ts";
+import type { LspEditNotes, LspWorkspaceEditNote } from "../../../src/protocol/index.ts";
+import type { DocumentId } from "../../../src/index.ts";
+import type { ChangedFile } from "../../../examples/shared/language-host.ts";
+import { panelPaging } from "../../../examples/shared/panel-actions.ts";
 
 export const editPageSize = 64;
 export type EditPage = Readonly<{ page: number; count: number; notes: readonly LspWorkspaceEditNote[] }>;

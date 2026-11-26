@@ -1,5 +1,5 @@
-import type { CodeActionController, CodeActionPreview } from "../../src/browser/index.ts";
-import { panelPaging, type createReviewKey } from "./panel-actions.ts";
+import type { CodeActionController, CodeActionPreview } from "../../../src/browser/index.ts";
+import { panelPaging, type createReviewKey } from "../../../examples/shared/panel-actions.ts";
 import { editPaging, readEditPage, type EditPage } from "./edit-review.ts";
 
 export const actionChoicePageSize = 16;

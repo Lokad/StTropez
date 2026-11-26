@@ -1,6 +1,6 @@
 import { activatePanelAction, bindPageButton, panelActionKey, type PanelAction } from "../../../examples/shared/panel-actions.ts";
 import type { DestinationList, PanelTextField } from "./tool-panel.ts";
-import { editPageSize, formatEditNote, type EditNotes } from "../../../examples/shared/edit-review.ts";
+import { editPageSize, formatEditNote, type EditNotes } from "./edit-review.ts";
 import { memo, Profiler, StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";

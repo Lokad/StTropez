@@ -3,15 +3,15 @@ import { captureDestinationPanes, isMountedEditor, presentDocument, type Navigat
 import { focusSource, onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { attachPanelSession } from "../../../examples/shared/editor-attachment.ts";
 import { createReviewKey, type PanelPaging } from "../../../examples/shared/panel-actions.ts";
-import { createPanelKeyBinding, focusResult, registerResultArrows } from "../../../examples/shared/panel-keys.ts";
+import { createPanelKeyBinding, focusResult, registerResultArrows } from "./panel-keys.ts";
 import { createWorkingSource } from "./working-source.ts";
 import { locationExcerpt } from "../../../src/browser/location-excerpt.ts";
-import { locationPage, type NavigationPage } from "../../../examples/shared/location-excerpt.ts";
+import { locationPage, type NavigationPage } from "./navigation-page.ts";
 import type { DocumentId, TabId, TabTarget } from "../../../src/index.ts";
 import { attachEditorLanguage } from "../../../src/browser/index.ts";
 import type { NavigationChoice, NavigationController, NavigationDestination, NavigationOrigin, NavigationPointerLink, NavigationResult, TextEditor } from "../../../src/browser/index.ts";
 import type { LspNavigationRequest, LspPrepare, LspWorkspace } from "../../../src/protocol/index.ts";
-import { identifierAt } from "../../../examples/shared/language/identifier.ts";
+import { identifierAt } from "../language/identifier.ts";
 import { validateNavigationDocuments } from "../language/navigation.ts";
 import type { NavigationFault } from "../language/navigation.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";

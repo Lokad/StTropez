@@ -1,7 +1,7 @@
 import { createPanelTextField, createDestinationList, createToolPanel } from "./tool-panel.ts";
-import { changedFiles, editPageSize } from "../../../examples/shared/edit-review.ts";
+import { changedFiles, editPageSize } from "./edit-review.ts";
 import { pageActions } from "../../../examples/shared/panel-actions.ts";
-import type { HostRenameTools, RenameNote, HostRenameSnapshot } from "../../../examples/shared/rename.ts";
+import type { HostRenameTools, RenameNote, HostRenameSnapshot } from "./rename.ts";
 type RenamePanelTools = Pick<HostRenameTools, "prepare" | "apply" | "cancel" | "disconnect" | "reconnect" | "bindName" | "setName" | "openChanged">;
 function renameActions(tools: RenamePanelTools, s: HostRenameSnapshot) {
     return [

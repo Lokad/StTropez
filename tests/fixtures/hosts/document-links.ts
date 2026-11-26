@@ -1,5 +1,5 @@
 import { fixtureRequests, type FixturePolicy } from "../language/fixture-requests.ts";
-import { createPanelKeyBinding, focusResult, registerResultArrows } from "../../../examples/shared/panel-keys.ts";
+import { createPanelKeyBinding, focusResult, registerResultArrows } from "./panel-keys.ts";
 import { attachPanelSession } from "../../../examples/shared/editor-attachment.ts";
 import { createReviewKey, panelPaging, type PanelPaging } from "../../../examples/shared/panel-actions.ts";
 import { captureDestinationPanes, presentDocument, unavailablePaneMessage, type HostLocation, type NavigationHost } from "../../../examples/shared/language-host.ts";

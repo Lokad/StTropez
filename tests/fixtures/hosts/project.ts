@@ -11,7 +11,7 @@ import { HostCell } from "../../../examples/shared/observable.ts";
 import type { LspApplyEdit, LspCommandScope, LspRequestContext, LspWorkspace } from "../../../src/protocol/index.ts";
 import type { LspProjectClient, LspProjectFactory } from "../language/lsp-project-client.ts";
 import { readLspEditNotes } from "../../../src/protocol/index.ts";
-import { editPaging, readEditPage, type EditPage } from "../../../examples/shared/edit-review.ts";
+import { editPaging, readEditPage, type EditPage } from "./edit-review.ts";
 import type { PanelPaging } from "../../../examples/shared/panel-actions.ts";
 type Session = { token: number; id: string; target: TabTarget; editor: TextEditor };
 type Participant = Readonly<{ document: DocumentSnapshot; authority: string }>;

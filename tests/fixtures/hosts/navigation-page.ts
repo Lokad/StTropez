@@ -1,4 +1,4 @@
-import type { NavigationChoice, NavigationResult } from "../../src/browser/index.ts";
+import type { NavigationChoice, NavigationResult } from "../../../src/browser/index.ts";
 
 export type NavigationPage = Readonly<{
     count: number; first: number; locations: readonly NavigationChoice[]; selected: NavigationChoice;

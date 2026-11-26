@@ -6,7 +6,7 @@ import { setImmediate } from "node:timers/promises";
 import type { RpcTransport } from "../../../src/protocol/json-rpc.ts";
 import { referencePeer } from "./reference-peer.ts";
 import { provide } from "../language/provider.ts";
-import { identifierAt } from "../../../examples/shared/language/identifier.ts";
+import { identifierAt } from "../language/identifier.ts";
 import { SymbolScanner } from "../language/navigation.ts";
 import { renameName } from "../language/rename.ts";
 import type { Location, TextEdit, WorkspaceEdit } from "vscode-languageserver-protocol/node.js";

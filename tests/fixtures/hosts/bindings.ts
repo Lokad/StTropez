@@ -21,7 +21,7 @@ import { HostProjectTools } from "./project.ts";
 import { HostDocumentColors } from "./document-colors.ts";
 import { HostDocumentLinks } from "./document-links.ts";
 import { HostActionsTools } from "./code-actions.ts";
-import { HostRenameTools } from "../../../examples/shared/rename.ts";
+import { HostRenameTools } from "./rename.ts";
 import { HostSignatureTools } from "./signature.ts";
 import { mountInstructionWidget } from "./instruction-widget.ts";
 import type { InstructionViewState } from "./instruction-widget.ts";

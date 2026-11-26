@@ -1,7 +1,7 @@
 import { fixtureRequests } from "../language/fixture-requests.ts";
 import { createReviewKey, type PanelPaging } from "../../../examples/shared/panel-actions.ts";
-import { createActionPages, requestActionsForReview } from "../../../examples/shared/action-pages.ts";
-import { createPanelKeyBinding } from "../../../examples/shared/panel-keys.ts";
+import { createActionPages, requestActionsForReview } from "./action-pages.ts";
+import { createPanelKeyBinding } from "./panel-keys.ts";
 import { attachPanelSession } from "../../../examples/shared/editor-attachment.ts";
 import { focusSourceCaret, onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { isMountedEditor, openChangedFile, type ChangedFile, type LanguageHost } from "../../../examples/shared/language-host.ts";

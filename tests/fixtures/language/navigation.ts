@@ -1,4 +1,4 @@
-import { maxIdentifierUnits } from "../../../examples/shared/language/identifier.ts";
+import { maxIdentifierUnits } from "./identifier.ts";
 
 export const navigationLimits = Object.freeze({ documents: 100, sourceUnits: 16777216, chunkUnits: 16384, symbolUnits: maxIdentifierUnits, locations: 1024, page: 64, responseUnits: 524288 });
 export type NavigationDocument = Readonly<{ document: string; revision: number; length: number }>;

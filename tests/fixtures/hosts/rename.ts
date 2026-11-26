@@ -1,15 +1,15 @@
-import { createReviewKey, type PanelPaging } from "./panel-actions.ts";
+import { createReviewKey, type PanelPaging } from "../../../examples/shared/panel-actions.ts";
 import { editPageSize, editPaging, readEditPage } from "./edit-review.ts";
 import { createPanelKeyBinding } from "./panel-keys.ts";
-import { attachPanelSession } from "./editor-attachment.ts";
-import { focusSourceCaret, onSourceFocus } from "./source-focus.ts";
-import { isMountedEditor, openChangedFile, type LanguageHost } from "./language-host.ts";
-import type { DocumentId, TabId } from "../../src/index.ts";
-import { attachEditorLanguage } from "../../src/browser/index.ts";
-import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../src/browser/index.ts";
-import type { LspWorkspace, LspWorkspaceEditNote } from "../../src/protocol/index.ts";
-import { identifierAt } from "./language/identifier.ts";
-import { HostCell } from "./observable.ts";
+import { attachPanelSession } from "../../../examples/shared/editor-attachment.ts";
+import { focusSourceCaret, onSourceFocus } from "../../../examples/shared/source-focus.ts";
+import { isMountedEditor, openChangedFile, type LanguageHost } from "../../../examples/shared/language-host.ts";
+import type { DocumentId, TabId } from "../../../src/index.ts";
+import { attachEditorLanguage } from "../../../src/browser/index.ts";
+import type { RenameController, RenamePreview, RenameSnapshot, TextEditor } from "../../../src/browser/index.ts";
+import type { LspWorkspace, LspWorkspaceEditNote } from "../../../src/protocol/index.ts";
+import { identifierAt } from "../language/identifier.ts";
+import { HostCell } from "../../../examples/shared/observable.ts";
 
 type Session = { id: string; editor: TextEditor; controller: RenameController };
 export type RenameNote = Omit<LspWorkspaceEditNote, "insert" | "insertUnits"> & Readonly<{ ordinal: number; line: number; column: number; after: string }>;

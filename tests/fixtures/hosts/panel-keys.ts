@@ -1,5 +1,5 @@
-import type { TextEditor } from "../../src/browser/index.ts";
-import type { scopedCommands } from "./editor-attachment.ts";
+import type { TextEditor } from "../../../src/browser/index.ts";
+import type { scopedCommands } from "../../../examples/shared/editor-attachment.ts";
 
 export function focusResult(list: HTMLElement | null, index: number): void {
     if (!list) return;
