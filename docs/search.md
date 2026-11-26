@@ -19,8 +19,8 @@ export function mountSearch(toolbar: HTMLElement, pane: TextEditor, workerUrl: U
 }
 ```
 
-Focus selects the pane, or call `setTarget(editor)`. Customize `text`, `status` and `targetLabel`. For
-custom controls attach one controller per editor.
+Focus or `setTarget(editor)` selects the pane. Ctrl+Alt+Enter replaces all and keeps Replace focused.
+Customize `text`, `status` and `targetLabel`. Mount custom controllers per pane.
 
 ```ts
 import { createFindController, createRegexFindBackend } from "sttropez/browser";

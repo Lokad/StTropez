@@ -106,7 +106,7 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
         replacement.focus({ preventScroll: true });
         target?.commands.run("find.replaceCurrent", "button");
     });
-    const all = button(row, "replace-all", "Replace all", () => find?.replaceAll(value(), { focusEditor: true }));
+    const all = button(row, "replace-all", "Replace all", () => target?.commands.run("find.replaceAll", "button"));
     const name = node("span", "find-target", bar);
     const status = node("output", "find-status", bar);
     button(bar, "find-close", "Close", close).title = text("Close find (Escape)");
@@ -262,6 +262,12 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
                 enabled: from => owns() && (from === "button" ? !replace.disabled : focused() === replacement),
                 run: () => { if (!replace.disabled) find?.replaceCurrent(value()); } },
                 { keys: ["Enter"], shared: true, priority: 41, repeat: false });
+            register({ id: "find.replaceAll", label: text("Replace all matches"),
+                enabled: () => owns() && !row.hidden && !all.disabled,
+                run: () => {
+                    replacement.focus({ preventScroll: true });
+                    find?.replaceAll(value());
+                } }, { keys: ["Ctrl+Alt+Enter"], shared: true, repeat: false });
             register({ id: "find.insertLineBreak", label: text("Insert a line break in Find or Replace"),
                 enabled: () => owns() && (focused() === query || focused() === replacement),
                 run: () => {

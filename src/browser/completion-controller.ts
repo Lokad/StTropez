@@ -342,8 +342,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         const after = currentView();
         cancelAuto();
         closeList("LSP completion applied.");
-        editor.viewport.revealOffset(after.selection.head);
-        editor.focus();
+        revealCaret(after.selection.head);
         if (character && available() && after.revision === result.revision) dispatchTypedText(editor.element, before, after, character);
         return true;
     };
@@ -376,6 +375,10 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         if (snippet) { snippet = undefined; if (available() && !editor.activity().composing) view.setSelection(currentDocument().revision, currentView().selection); }
         publish("LSP request or snippet cancelled."); };
     const snippetCurrent = (captured: SnippetSession) => snippet === captured && available() && !editor.getSnapshot().readOnlyReason && indentationCurrent(captured.indentation) && authorityCurrent(captured.authority) && currentDocument().revision === captured.revision;
+    function revealCaret(head: number) {
+        editor.viewport.revealRange(head, head);
+        editor.focus();
+    }
     const moveSnippet = (direction: -1 | 1): boolean => {
         const captured = snippet;
         if (!captured || !snippetCurrent(captured) || !idle()) return false;
@@ -386,7 +389,9 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             if (!view.setSelections(captured.revision, stop.ranges.map(range => ({ anchor: range.from, head: stop.index === 0 ? range.from : range.to })), primaryOccurrence(captured, stop))) return false;
             snippet = stop.index === 0 ? undefined : { ...captured, active };
         } finally { applying = false; }
-        publish(stop.index === 0 ? "Snippet complete." : "Snippet placeholder selected."); editor.viewport.revealOffset(currentView().selection.head); editor.focus(); return true;
+        publish(stop.index === 0 ? "Snippet complete." : "Snippet placeholder selected.");
+        revealCaret(currentView().selection.head);
+        return true;
     };
     const chooseSnippet = (index: number): boolean => {
         const captured = snippet, stop = captured?.stops[captured.active], value = stop?.choices[index];

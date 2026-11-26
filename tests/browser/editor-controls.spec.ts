@@ -1,5 +1,45 @@
 import { expect, test } from "./fixtures.ts";
 
+test("Replace all keeps typing in the replacement field after a click or shortcut", async ({ page }) => {
+    await page.goto("/controls/");
+    const source = page.getByRole("textbox", { name: "colors.ts" });
+    await source.press("Control+h");
+    const query = page.getByRole("textbox", { name: "Find text" });
+    const replacement = page.getByRole("textbox", { name: "Replacement text" });
+    const all = page.getByRole("button", { name: "Replace all", exact: true });
+    await query.fill("accent");
+    await replacement.fill("tone");
+    await all.click();
+    await expect(source).toHaveValue('const tone = "#5fae99";\nuse(tone);');
+    await page.keyboard.type("s");
+    await expect(replacement).toHaveValue("tones");
+    await query.fill("tone");
+    await expect(all).toBeEnabled();
+    await query.press("Control+Alt+Enter");
+    await expect(source).toHaveValue('const tones = "#5fae99";\nuse(tones);');
+    await expect(replacement).toBeFocused();
+});
+
+test("accepting a completion keeps its visible line at the same scroll position", async ({ page }) => {
+    await page.goto("/controls/");
+    const source = page.getByRole("textbox", { name: "colors.ts" });
+    await source.press("Control+a");
+    await page.keyboard.insertText("sa\n".repeat(120));
+    await source.press("Control+Home");
+    const viewport = page.locator(".st-viewport");
+    await viewport.evaluate(el => { el.scrollTop = 700; });
+    const row = viewport.locator('.st-viewport-row[data-line="36"]');
+    await row.click({ position: { x: 5, y: 5 } });
+    await source.press("End");
+    await source.press("Control+Space");
+    await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
+    const top = await viewport.evaluate(el => el.scrollTop);
+    expect(top).toBeGreaterThan(0);
+    await source.press("Enter");
+    await expect(row).toContainText("sample");
+    expect(await viewport.evaluate(el => el.scrollTop)).toBe(top);
+});
+
 test("clicking the rename status or disabled Apply keeps the next keystroke in the name field", async ({ page }) => {
     await page.goto("/controls/");
     const source = page.getByRole("textbox", { name: "colors.ts" });
