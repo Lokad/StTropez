@@ -230,7 +230,7 @@ export class ViewBindings {
         this.actions = new HostActionsTools(languageHost, lsp.actions, this.project);
         this.rename = new HostRenameTools(languageHost, lsp.owner);
         this.signature = new HostSignatureTools(canCapture, this.hover, lsp.signature, reconnectProvider);
-        this.tools = [this.language, this.signature, this.tablePaste, this.domain, this.navigation, this.project,
+        this.tools = [this.language, this.signature, this.domain, this.navigation, this.project,
             this.rename, this.actions, this.links, this.colors];
         this.stopInputCapture = controller.registerInputCaptureGuard(() => !this.instructionMount?.hasPendingInput() && !this.tablePaste.hasPendingInput(controller.source.documentId) && this.review?.panes.working.activity().input !== "host-insertion"
             && ![...this.mounted.values()].some(value => value.editor.activity().input === "host-insertion"),
@@ -337,6 +337,7 @@ export class ViewBindings {
     }
     private attachTools(scope: CleanupScope, id: string, tab: TabId, editor: TextEditor, presentation: EditingPresentation): void {
         editor.decorations.addProvider({ order: 0, provide: presentation.decorate });
+        scope.defer(this.tablePaste.attach(id, editor));
         for (const tool of this.tools) scope.defer(tool.attach(id, tab, editor, presentation));
     }
     private detach(id: string): void {

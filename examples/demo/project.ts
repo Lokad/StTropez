@@ -1,6 +1,6 @@
 import { TextBuffer, Workspace } from "../../src/index.ts";
 import { createNavigationHistory } from "../../src/browser/index.ts";
-import type { ComparisonBaseline, DocumentView, SaveReview, SaveTicket, TabId, TextResourceHandle } from "../../src/index.ts";
+import type { ComparisonBaseline, DocumentView, SaveReview, SaveTicket, TextResourceHandle } from "../../src/index.ts";
 import { createBrowserDraftStore } from "../shared/draft-store.ts";
 import type { DraftStore, StoredDraft } from "../shared/draft-store.ts";
 import { demoSample } from "./samples.ts";
@@ -11,7 +11,7 @@ import type { DemoProviderFactory } from "./provider-contract.ts";
 import { HostSourceNotes } from "../shared/source-notes.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 
-export type DemoFile = Readonly<{ name: string; resource: TextResourceHandle; tab: TabId; view: DocumentView; readOnly?: boolean }>;
+export type DemoFile = Readonly<{ name: string; resource: TextResourceHandle; view: DocumentView; readOnly?: boolean }>;
 type StoredProject = Readonly<{ version: 1; files: Readonly<Record<string, string>> }>;
 type Conflict = Readonly<{ token: string; baselines: ReadonlyMap<string, ComparisonBaseline> }>;
 type Review = Readonly<{ copy: Conflict; revisions: ReadonlyMap<DemoFile, number> }>;
@@ -114,14 +114,12 @@ export class DemoProject {
                 { value, serverVersion: this.token }, readOnly ? { edit: [], save: false } : undefined,
                 { language: this.services?.language.languageFor(name) ?? null });
             owners.defer(() => { this.workspace.releaseResource(resource.id, true); });
-            const tab = this.workspace.tabs.open({ kind: "text", documentId: resource.documentId }, "editor");
-            owners.defer(() => { this.workspace.tabs.close(tab); });
             const view = this.workspace.createDocumentView(resource.documentId); owners.defer(() => view.dispose());
             owners.defer(this.workspace.onDocumentChange(resource.documentId, () => {
                 if (this.notice.keepOnEdit) this.setEditRefusal();
                 else this.notice = {};
             }));
-            file = Object.freeze({ name, resource, tab, view, readOnly });
+            file = Object.freeze({ name, resource, view, readOnly });
             this.baselines.set(name, { buffer: this.workspace.document(resource.documentId).buffer, version: this.token ?? "sample" });
             this.loaded = Object.freeze([...this.loaded, file]); if (!readOnly) delete this.unloaded[name];
             this.fileOwners.defer(owners.dispose);

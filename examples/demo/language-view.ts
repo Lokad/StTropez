@@ -8,6 +8,7 @@ import { mountDemoSymbols } from "./symbols.ts";
 import type { DemoSymbolTarget } from "./symbols.ts";
 import { demoActionPolicy, mountDemoActions } from "./actions.ts";
 import { mountLanguageCommands } from "./language-commands.ts";
+import { isMountedEditor } from "../shared/language-host.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 
 /** Contextual completion UI around the public editor controller. It never changes text itself. */
@@ -17,7 +18,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
     const scope = new CleanupScope(); let disposed = false;
     const dispose = () => { disposed = true; scope.dispose(); };
     try {
-        const target = workspace.tabs.capture(file.tab), listeners = new AbortController();
+        const listeners = new AbortController();
         scope.defer(() => listeners.abort());
         const snippetPanel = document.createElement("div"); scope.defer(() => snippetPanel.remove());
         snippetPanel.className = "demo-snippet"; snippetPanel.hidden = true;
@@ -39,7 +40,7 @@ export function mountDemoLanguage(project: DemoProject, file: DemoFile, editor: 
                 case "quickfix": editor.commands.run("quickfix.show"); break;
             }
         }, reportError);
-        const valid = () => !disposed && editor.element.isConnected && !editor.activity().disposed && workspace.tabs.resolve(target)?.surface.kind === "text";
+        const valid = () => !disposed && isMountedEditor(workspace, editor);
         const canOpenLink = (target: string) => valid() && canOpenDemoHelp(target);
         const links = { canOpenLink, openLink(target: string) {
             if (canOpenLink(target)) window.open(target, "_blank", "noopener,noreferrer");

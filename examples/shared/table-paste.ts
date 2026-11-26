@@ -1,4 +1,4 @@
-import type { DocumentId, TabId } from "../../src/index.ts";
+import type { DocumentId } from "../../src/index.ts";
 import type { CapturedInsertion, TextEditor } from "../../src/browser/index.ts";
 import { HostCell } from "./observable.ts";
 import { TableTextFormatter, tableLimits, tsvTokens } from "./table-text.ts";
@@ -81,7 +81,7 @@ export class HostTablePaste {
         } catch (error) { this.fail(error instanceof Error && error.message.length <= 256 ? error.message : "Table conversion failed."); }
         finally { this.maxTurnMs = Math.max(this.maxTurnMs, win.performance.now() - began); }
     }
-    attach(id: string, _tab: TabId, editor: TextEditor): () => void {
+    attach(id: string, editor: TextEditor): () => void {
         if (this.sessions.has(id)) throw new Error("Table paste view is already mounted.");
         const session = { id, editor }, clock = editor.element.ownerDocument.defaultView!.performance;
         const stop = editor.registerPasteHandler(data => {

@@ -14,7 +14,7 @@ function fixture() {
         captureInsertion: () => captureInsertion(workspace, workspace.tabs.capture(tab), view, () => !composing,
             (plan, revision) => workspace.edit({ documentId: source.documentId, expectedRevision: revision, edits: plan.edits, selectionSet: plan.selectionSet, origin: "human", view, history: { kind: "paste" } }).applied, () => {}),
         focus: () => { throw new Error("Table paste must not focus a later editor."); } } as unknown as TextEditor;
-    const tools = new HostTablePaste(), detach = tools.attach("primary", tab, editor); tools.setEnabled(true);
+    const tools = new HostTablePaste(), detach = tools.attach("primary", editor); tools.setEnabled(true);
     const text = () => { const b = workspace.document(source.documentId).buffer; return b.slice(0, b.length); };
     const paste = (plain: string) => tools.insertTable("primary", plain);
     const turn = () => { const entry = timers.entries().next().value; if (entry) { timers.delete(entry[0]); entry[1](); } };

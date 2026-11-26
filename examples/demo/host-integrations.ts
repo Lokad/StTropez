@@ -2,6 +2,7 @@ import type { InlineDecoration, PresentedLine, TextEditor } from "../../src/brow
 import type { LanguageConfiguration } from "../../src/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
+import { isMountedEditor } from "../shared/language-host.ts";
 import { HostTablePaste } from "../shared/table-paste.ts";
 import type { HostSourceNotes } from "../shared/source-notes.ts";
 import type { DemoSymbolTarget } from "./symbols.ts";
@@ -20,7 +21,6 @@ export function hostDecorations(line: PresentedLine): readonly InlineDecoration[
 
 function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile, editor: TextEditor, open: (target: DemoSymbolTarget) => void) {
     const owner = editor.element.ownerDocument, layer = owner.createElement("div"), events = new AbortController(), nodes = new Map<number, HTMLElement>();
-    const origin = project.workspace.tabs.capture(file.tab);
     const observed = project.workspace.observeDocument(file.resource.documentId);
     // Sample-owned linkage: note labels and file names are host policy, not editor syntax.
     const inventory = file.name === "workflow.rules" ? project.files.find(candidate => candidate.name === "inventory.csv") : undefined;
@@ -41,15 +41,11 @@ function mountNotes(model: HostSourceNotes, project: DemoProject, file: DemoFile
                 node = owner.createElement(destination ? "button" : "span"); node.className = "demo-source-note";
                 if (destination) {
                     const link = node as HTMLButtonElement, workspace = project.workspace;
-                    const resource = workspace.captureResource(destination.resource.id), tab = workspace.tabs.capture(destination.tab);
                     const document = workspace.document(destination.resource.documentId);
                     link.type = "button"; link.title = `Open ${destination.name}`;
                     link.onclick = () => {
-                        const source = workspace.tabs.resolve(origin), target = workspace.tabs.resolve(tab);
-                        if (!link.isConnected || !editor.element.isConnected || editor.activity().disposed
-                            || source?.surface.kind !== "text" || source.surface.documentId !== file.resource.documentId
-                            || target?.surface.kind !== "text" || target.surface.documentId !== document.id
-                            || workspace.resolveResource(resource) !== destination.resource
+                        if (!link.isConnected || !isMountedEditor(workspace, editor)
+                            || !workspace.ownsDocumentView(destination.view)
                             || workspace.observeDocument(document.id).getSnapshot()?.revision !== document.revision) return;
                         open({ documentId: document.id, revision: document.revision, from: 0, to: 0 });
                     };
@@ -90,7 +86,7 @@ export function mountHostIntegrations(project: DemoProject, file: DemoFile, edit
     try {
         scope.defer(() => { controls.status.textContent = ""; });
         scope.defer(mountNotes(model, project, file, editor, open));
-        scope.defer(table.attach("source", file.tab, editor));
+        scope.defer(table.attach("source", editor));
         scope.defer(table.state.subscribe(renderStatus));
         scope.defer(() => events.abort());
         const noteKey = "Ctrl+Alt+M", formatKey = "Ctrl+Alt+V";

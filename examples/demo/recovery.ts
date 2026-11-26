@@ -1,4 +1,4 @@
-import type { DocumentSnapshot, Observable, ResourceMetadata, ResourceTarget, TabTarget, TextBuffer } from "../../src/index.ts";
+import type { DocumentSnapshot, Observable, ResourceMetadata, TextBuffer } from "../../src/index.ts";
 import type { Workspace } from "../../src/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import { createBrowserDraftStore } from "../shared/draft-store.ts";
@@ -7,7 +7,7 @@ import type { DemoFile } from "./project.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
 
 type Draft = Readonly<{ version: 1; id?: string; sample: string; baseVersion: string | null; files: Readonly<Record<string, string>> }>;
-type Capture = readonly Readonly<{ file: DemoFile; document: DocumentSnapshot; metadata: ResourceMetadata; target: ResourceTarget; tab: TabTarget }>[];
+type Capture = readonly Readonly<{ file: DemoFile; document: DocumentSnapshot; metadata: ResourceMetadata }>[];
 type Offer = Readonly<{ drafts: readonly Draft[]; selected: number; capture: Capture; working?: Draft; restoreInterrupted?: boolean }>;
 type RecoveryState = Readonly<{ status: "checking" | "idle" | "pending" | "writing" | "protected" | "offer" | "failed";
     busy: boolean; present: boolean; canReview: boolean; versions: number; selected: number; message: string }>;
@@ -112,13 +112,12 @@ export class DemoRecovery {
         this.observed = next; this.generation++; this.schedule();
     }
     private capture(): Capture {
-        return this.files.map(file => ({ file, document: this.workspace.document(file.resource.documentId), metadata: file.resource.metadata.getSnapshot(),
-            target: this.workspace.captureResource(file.resource.id), tab: this.workspace.tabs.capture(file.tab) }));
+        return this.files.map(file => ({ file, document: this.workspace.document(file.resource.documentId), metadata: file.resource.metadata.getSnapshot() }));
     }
     private targetsCurrent(capture: Capture): boolean {
         const files = this.files;
-        return !this.disposed && this.inputIdle() && capture.length === files.length && capture.every(item => files.includes(item.file) && this.workspace.resolveResource(item.target) === item.file.resource
-            && this.workspace.tabs.resolve(item.tab)?.surface.kind === "text" && this.workspace.ownsDocumentView(item.file.view)
+        return !this.disposed && this.inputIdle() && capture.length === files.length && capture.every(item => files.includes(item.file)
+            && this.workspace.ownsDocumentView(item.file.view)
             && this.workspace.document(item.document.id).revision === item.document.revision
             && item.file.resource.metadata.getSnapshot() === item.metadata && item.metadata.editLock === null
             && item.metadata.saveStatus !== "saving" && item.metadata.capabilities.edit.includes("human"));

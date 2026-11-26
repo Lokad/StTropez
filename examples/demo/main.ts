@@ -372,7 +372,7 @@ function mountFile(file: DemoFile, focus?: "working" | "reference"): void {
     const surface = demoSurface(element(panel === "changes" ? "panel-content" : "editor"), project.sample.id === "host");
     if (panel === "changes") {
         const baseline = project.baseline(file);
-        comparison = mountTextComparison(surface, project.workspace, file.tab, baseline,
+        comparison = mountTextComparison(surface, project.workspace, file.resource.documentId, baseline,
             { settings, view: file.view, requestLine: linePrompt(document), scrollLinked: true, rowsAligned: true, ariaLabel: `Changes in ${file.name}` });
         const labels = document.createElement("div"); labels.className = "demo-review-labels";
         const savedLabel = document.createElement("span"), workingLabel = document.createElement("span");
@@ -401,7 +401,7 @@ function mountFile(file: DemoFile, focus?: "working" | "reference"): void {
             (capture, signal) => plain ? discoverIndentationFolds(capture.buffer, outlineFolds(editingConfiguration().tabSize!)) : syntax!.discoverFolds(capture, signal));
         stopReferenceFolding = foldMenu.bind(reference, referenceFolding, "Saved copy");
     } else {
-        editor = mountTextEditor(surface, project.workspace, file.tab,
+        editor = mountTextEditor(surface, project.workspace, file.resource.documentId,
             { settings, view: file.view, ariaLabel: file.name, requestLine: linePrompt(document) });
         renderProblems();
     }
