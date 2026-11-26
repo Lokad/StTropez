@@ -1,16 +1,17 @@
 import { onAbort } from "./listen.ts";
 import { planSelectionEdits } from "../core/selections.ts";
 import type { SelectionEditPlan, SelectionSet } from "../core/selections.ts";
-import type { DocumentId, DocumentView, TabTarget, Workspace } from "../core/workspace.ts";
+import type { DocumentId } from "../core/workspace.ts";
+import type { TextEditor } from "./text-editor.ts";
 import { captureViewRequest } from "./captured-view.ts";
 
 export type CapturedInsertion = Readonly<{ documentId: DocumentId; revision: number; length: number; selectionSet: SelectionSet;
     signal: AbortSignal; isCurrent: () => boolean; insert: (text: string | readonly string[]) => boolean; cancel: () => void }>;
 
 /** Internal capture shared by the browser input owner and host-controller contract tests. */
-export function captureInsertion(workspace: Workspace, target: TabTarget | undefined, view: DocumentView, available: () => boolean,
+export function captureInsertion(editor: TextEditor, available: () => boolean,
     commit: (plan: SelectionEditPlan, revision: number) => boolean, ended: () => void): CapturedInsertion | undefined {
-    const capture = captureViewRequest(workspace, target, view, { editOrigin: "human", available }); if (!capture) return;
+    const capture = captureViewRequest(editor, { editOrigin: "human", available }); if (!capture) return;
     const { document, selectionSet } = capture;
     let done = false;
     const finish = () => { if (done) return; done = true; ended(); };

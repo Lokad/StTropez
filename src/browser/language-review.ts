@@ -8,7 +8,7 @@ import type { TextEditor } from "./text-editor.ts";
 type Job = {
     invalid: boolean;
     timer?: number;
-    source?: CapturedViewRequest<TextEditor["tab"]>;
+    source?: CapturedViewRequest;
     project: { dispose(): void };
     client: { dispose(): void };
 };
@@ -18,7 +18,7 @@ export function languageReview<J extends Job, S>(editor: TextEditor, name: strin
     canCapture: ((id: DocumentId) => boolean) | undefined,
     reset: (status: "idle" | "expired" | "disposed") => void, releaseExtra?: (job: J) => void) {
     requireLanguageView(editor);
-    const { workspace, tab, view } = editor;
+    const { workspace, view } = editor;
     const scope = workspace.createNotificationScope();
     const state = new Store(idle, scope);
     const events = new AbortController();
@@ -68,5 +68,5 @@ export function languageReview<J extends Job, S>(editor: TextEditor, name: strin
         return { ...controllerObservable(state, name, () => events.signal.aborted), cancel, dispose };
     }
     return { scope, state, signal: events.signal, active, available, release, expire, mount,
-        capture: () => captureViewRequest(workspace, tab, view, { available: () => available(view.documentId) }) };
+        capture: () => captureViewRequest(editor, { available: () => available(view.documentId) }) };
 }

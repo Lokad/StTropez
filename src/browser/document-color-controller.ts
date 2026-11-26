@@ -47,7 +47,7 @@ export type DocumentColorController = Observable<DocumentColorSnapshot> & Readon
     request: () => Promise<Outcome<readonly DocumentColorChoice[]>>;
     dismissPreview: () => void; cancel: () => void; dispose: () => void;
 }>;
-type Capture = CapturedViewRequest<TextEditor["tab"]>;
+type Capture = CapturedViewRequest;
 type TimedRequest = { timeout?: ReturnType<typeof failed> };
 type Preview = TimedRequest & { capture: Capture; reference: DocumentColorChoice; proposed: LspColor; result?: readonly LspColorPresentation[] };
 type Job = TimedRequest & { client: LspColorClient; project: ReturnType<typeof retainDocuments>; source: Capture; invalid: boolean; timer?: number;

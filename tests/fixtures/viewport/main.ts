@@ -1,6 +1,6 @@
 import { Workspace } from "../../../src/index.ts";
 import type { Selection, TextEdit } from "../../../src/index.ts";
-import { mountTextViewport } from "../../../src/browser/index.ts";
+import { mountTextViewport } from "../../../src/browser/viewport.ts";
 import type { ViewState } from "../../../src/browser/index.ts";
 import { corpus, corpusIds } from "../workloads.ts";
 import type { CorpusId } from "../workloads.ts";

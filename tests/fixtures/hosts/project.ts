@@ -81,7 +81,7 @@ export class HostProjectTools {
         return true;
     }
     private capture(origin: Session): CapturedViewRequest | undefined {
-        return captureViewRequest(this.host.workspace, origin.target, origin.editor.view,
+        return captureViewRequest(origin.editor,
             { available: () => this.available(origin) && this.host.canCapture(origin.editor.view.documentId) });
     }
     private changed(job: Job, followUp = queueMicrotask): void {

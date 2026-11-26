@@ -21,7 +21,7 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [core/language-configuration.ts](../src/core/language-configuration.ts) | `EditingPair`, `EnterIndent`, `LanguageConfiguration`, `LanguageEditContext`, `PairingContext`, `ResolvedLanguageConfiguration`, `resolveLanguageConfiguration` |
 | [core/language-edits.ts](../src/core/language-edits.ts) | `EditingCommand`, `planLanguageEdit` |
 | [core/newlines.ts](../src/core/newlines.ts) | `ImportedText`, `LineEnding`, `exportText`, `importText` |
-| [core/observable.ts](../src/core/observable.ts) | `AfterDelivery`, `Observable`, `ObservableListener` |
+| [core/observable.ts](../src/core/observable.ts) | `AfterDelivery`, `NotificationScope`, `Observable`, `ObservableListener` |
 | [core/positions.ts](../src/core/positions.ts) | `Affinity`, `AnchoredRange`, `MappedPosition`, `PositionMapping`, `anchoredRange` |
 | [core/search.ts](../src/core/search.ts) | `LiteralSearchOptions`, `SearchMatch`, `SearchStep` |
 | [core/selections.ts](../src/core/selections.ts) | `Selection`, `SelectionEditPlan`, `SelectionSet` |
@@ -53,8 +53,7 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [browser/document-color-controller.ts](../src/browser/document-color-controller.ts) | `ColorPresentationChoice`, `ColorPresentationReview`, `DocumentColorChoice`, `DocumentColorController`, `DocumentColorControllerOptions`, `DocumentColorSnapshot` |
 | [browser/document-link-controller.ts](../src/browser/document-link-controller.ts) | `DocumentLinkChoice`, `DocumentLinkController`, `DocumentLinkControllerOptions`, `DocumentLinkSnapshot` |
 | [browser/documentation.ts](../src/browser/documentation.ts) | `DocumentationOptions`, `DocumentationView`, `mountDocumentation` |
-| [browser/editor-commands.ts](../src/browser/editor-commands.ts) | `defaultEditorShortcuts` |
-| [browser/editor-language.ts](../src/browser/editor-language.ts) | `attachEditorLanguage` |
+| [browser/editor-language.ts](../src/browser/editor-language.ts) | `EditorLanguageAttachment`, `EditorLanguageOptions`, `attachEditorLanguage` |
 | [browser/find-bar.ts](../src/browser/find-bar.ts) | `FindBar`, `FindBarOptions`, `mountFindBar` |
 | [browser/find-controls.ts](../src/browser/find-controls.ts) | `FindCommandOptions`, `bindFindCommands` |
 | [browser/find.ts](../src/browser/find.ts) | `FindController`, `FindControllerOptions`, `FindDiagnostics`, `FindFlags`, `FindReason`, `FindSnapshot`, `createFindController` |
@@ -77,7 +76,7 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [browser/signature-popup.ts](../src/browser/signature-popup.ts) | `SignaturePopupOptions` |
 | [browser/text-editor.ts](../src/browser/text-editor.ts) | `EditorEditIntent`, `EditorPasteHandler`, `EditorRevealOptions`, `EditorRevealRange`, `EditorSettings`, `LinePrompt`, `ResolvedEditorSettings`, `TextEditor`, `TextEditorActivity`, `TextEditorCommand`, `TextEditorDiagnostics`, `TextEditorEdit`, `TextEditorEditTransform`, `TextEditorOptions`, `TextEditorSnapshot`, `mountTextEditor` |
 | [browser/view-state.ts](../src/browser/view-state.ts) | `ViewRestoreOptions`, `ViewRestoreResult`, `ViewState` |
-| [browser/viewport.ts](../src/browser/viewport.ts) | `FoldLabels`, `InlineDecoration`, `LineClass`, `LineDecorator`, `PresentedLine`, `RenderedRowBounds`, `RevealAlignment`, `RevealOptions`, `TextViewport`, `TextViewportOptions`, `ViewportActivity`, `ViewportDiagnostics`, `ViewportInputBinding`, `ViewportSettings`, `ViewportSnapshot`, `mountTextViewport` |
+| [browser/viewport.ts](../src/browser/viewport.ts) | `FoldLabels`, `InlineDecoration`, `LineClass`, `LineDecorator`, `PresentedLine`, `RenderedRowBounds`, `RevealAlignment`, `RevealOptions`, `TextViewport`, `TextViewportOptions`, `ViewportActivity`, `ViewportDiagnostics`, `ViewportInputBinding`, `ViewportSettings`, `ViewportSnapshot` |
 | [core/documentation.ts](../src/core/documentation.ts) | `DocumentationContent`, `DocumentationPart` |
 | [core/outcome.ts](../src/core/outcome.ts) | `Outcome` |
 

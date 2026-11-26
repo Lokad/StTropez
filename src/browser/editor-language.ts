@@ -16,7 +16,7 @@ import { mountLanguageCommands, type LanguageCommands, type LanguageCommandOptio
 import { mountNavigation, type NavigationController, type NavigationControllerOptions } from "./navigation-controller.ts";
 import { mountRename, type RenameController, type RenameControllerOptions } from "./rename-controller.ts";
 
-type Options = {
+export type EditorLanguageOptions = {
     navigation?: NavigationControllerOptions;
     rename?: RenameControllerOptions;
     commands?: LanguageCommandOptions;
@@ -42,12 +42,13 @@ type Features = {
     colors: DocumentColorController;
     links: DocumentLinkController;
 };
-type Attachment<O extends Options> = Readonly<{ [K in keyof O]: K extends keyof Features ? Features[K] : never }>
+export type EditorLanguageAttachment<O extends EditorLanguageOptions = EditorLanguageOptions> =
+    Readonly<{ [K in keyof O]: K extends keyof Features ? Features[K] : never }>
     & Readonly<{ dispose: () => void }>;
 
 type Mounts = {
-    [K in keyof Features]: (editor: TextEditor, owner: LspDocumentOwner, options: NonNullable<Options[K]>,
-        features: Partial<Features>, attachment: Options) => Features[K];
+    [K in keyof Features]: (editor: TextEditor, owner: LspDocumentOwner, options: NonNullable<EditorLanguageOptions[K]>,
+        features: Partial<Features>, attachment: EditorLanguageOptions) => Features[K];
 };
 const mounts: Mounts = {
     commands: mountLanguageCommands,
@@ -94,7 +95,8 @@ type Binding = { owner: LspDocumentOwner; users: number };
 const bindings = new WeakMap<TextEditor, Map<LspWorkspace, Binding>>();
 
 /** Independently mounted panels on the same editor and provider share its source binding. */
-export function attachEditorLanguage<O extends Options>(editor: TextEditor, provider: LspWorkspace, options: O): Attachment<O> {
+export function attachEditorLanguage<O extends EditorLanguageOptions>(editor: TextEditor, provider: LspWorkspace,
+    options: O): EditorLanguageAttachment<O> {
     requireLanguageView(editor);
     const scope = editor.workspace.createNotificationScope();
     scope.assertWritable();
@@ -123,7 +125,7 @@ export function attachEditorLanguage<O extends Options>(editor: TextEditor, prov
     try {
         for (const key of Object.keys(mounts) as (keyof Features)[]) mount(key);
         onAbort(editor.signal, dispose);
-        return Object.freeze({ ...features, dispose }) as Attachment<O>;
+        return Object.freeze({ ...features, dispose }) as EditorLanguageAttachment<O>;
     } catch (error) {
         dispose();
         throw error;

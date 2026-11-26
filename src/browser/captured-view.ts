@@ -32,8 +32,8 @@ export type CapturedViewOptions = Readonly<{
     /** Host lifecycle/input guard; call cancel when unobserved host state changes. */
     available?: () => boolean;
 }>;
-export type CapturedViewRequest<T extends TabTarget | undefined = TabTarget> = Readonly<{
-    target: T; view: DocumentView; document: DocumentSnapshot; selectionSet: SelectionSet; folding: FoldingSnapshot;
+export type CapturedViewRequest = Readonly<{
+    view: DocumentView; document: DocumentSnapshot; selectionSet: SelectionSet; folding: FoldingSnapshot;
     signal: AbortSignal; isCurrent: () => boolean; cancel: () => void;
     /** Consume once, keeping retention through this synchronous operation. No edit authority is granted. */
     commit: (operation: () => boolean) => boolean;
@@ -46,17 +46,18 @@ export function sameEditAuthority(before: ResourceMetadata, after: ResourceMetad
         && before.editLock?.owner === after.editLock?.owner && before.editLock?.origin === after.editLock?.origin;
 }
 
-/** One retained view context. Observable interruptions latch even if the original state returns. */
-export function captureViewRequest<T extends TabTarget | undefined>(workspace: Workspace, target: T, view: DocumentView,
-    options: CapturedViewOptions = {}): CapturedViewRequest<T> | undefined {
-    return captureRequest(workspace, target, view, options, true);
+type CaptureOwner = Pick<TextEditor, "workspace" | "tab" | "view" | "signal">;
+
+/** Capture a request until the editor closes or its source changes. */
+export function captureViewRequest(editor: CaptureOwner, options: CapturedViewOptions = {}): CapturedViewRequest | undefined {
+    return captureRequest(editor, options, true);
 }
 
-export function captureRequest<T extends TabTarget | undefined>(workspace: Workspace, target: T, view: DocumentView,
-    options: CapturedViewOptions, selectionBound: boolean): CapturedViewRequest<T> | undefined {
+export function captureRequest({ workspace, tab: target, view, signal }: CaptureOwner,
+    options: CapturedViewOptions, selectionBound: boolean): CapturedViewRequest | undefined {
     const { editOrigin, available = () => true } = options;
-    const capturedTarget = target && Object.freeze({ ...target });
-    if (!workspace.ownsDocumentView(view, capturedTarget) || !available()) return;
+    const tab = target && { ...target };
+    if (signal.aborted || !workspace.ownsDocumentView(view, tab) || !available()) return;
     const document = workspace.observeDocument(view.documentId).getSnapshot(); if (!document) return;
     const resource = workspace.resourceForDocument(document.id), permission = resource.metadata.getSnapshot();
     if (permission.state !== "ready" || editOrigin !== undefined && (!permission.capabilities.edit.includes(editOrigin) || permission.editLock !== null)) return;
@@ -71,7 +72,7 @@ export function captureRequest<T extends TabTarget | undefined>(workspace: Works
         if (deferred) queueMicrotask(release); else release();
     };
     const matches = () => {
-        return lease.active() && workspace.ownsDocumentView(view, capturedTarget)
+        return !signal.aborted && lease.active() && workspace.ownsDocumentView(view, tab)
             && workspace.observeDocument(document.id).getSnapshot()?.revision === document.revision
             && (!selectionBound || view.getSnapshot().selectionSet === selectionSet && folding.index.sameProjection(view.folding.getSnapshot().index))
             && sameEditAuthority(permission, resource.metadata.getSnapshot()) && available();
@@ -82,9 +83,10 @@ export function captureRequest<T extends TabTarget | undefined>(workspace: Works
         return active;
     };
     const changed = () => { isCurrent(); };
-    stops.push(...observeViewSource(workspace, view, capturedTarget, changed), resource.metadata.subscribe(changed));
+    stops.push(...observeViewSource(workspace, view, tab, changed), resource.metadata.subscribe(changed));
+    signal.addEventListener("abort", () => cancel(), { once: true, signal: abort.signal });
     if (!isCurrent()) return;
-    return Object.freeze({ target: capturedTarget, view, document, selectionSet, folding, signal: abort.signal, isCurrent,
+    return Object.freeze({ view, document, selectionSet, folding, signal: abort.signal, isCurrent,
         cancel: () => cancel(), commit: operation => {
             if (!isCurrent()) return false;
             detach();

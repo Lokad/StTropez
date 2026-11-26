@@ -29,11 +29,8 @@ export function startAnalysis(
     editor: TextEditor,
     analyze: (buffer: TextBuffer, signal: AbortSignal) => Promise<string>
 ) {
-    const capture = captureViewRequest(editor.workspace, editor.tab, editor.view, {
-        available: () => !editor.signal.aborted
-    });
+    const capture = captureViewRequest(editor);
     if (!capture) return;
-    editor.signal.addEventListener("abort", capture.cancel, { once: true, signal: capture.signal });
     const settled = (async () => {
         try {
             const value = await analyze(capture.document.buffer, capture.signal);
@@ -71,7 +68,7 @@ to the runtime. [Public entries](api.md)
 ### Mutable state and lifetime
 
 The resource owns revisions, permissions and history. Each document view keeps its selections and folds when
-detached. The mounted editor owns native input, queued edits, layout and the caret. A provider owns its
+detached. The mounted editor owns native input, layout and the caret. A provider owns its
 connection and synchronized documents. The host owns state shared across mounts.
 [Input and recovery](editor.md) · [Transactions](workspace.md#transactions-and-history)
 

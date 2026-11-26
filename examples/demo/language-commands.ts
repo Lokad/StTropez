@@ -16,7 +16,7 @@ type Command = keyof typeof shortcuts;
 export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, output: HTMLElement,
     execute: (command: Command) => void, reportError: (error: unknown) => void) {
     type Feedback = (command: "complete" | "signature", message: string, finished: boolean) => void;
-    let pending: CapturedViewRequest<TextEditor["tab"]> | undefined;
+    let pending: CapturedViewRequest | undefined;
     let phase: "starting" | "ready" | "failed" = "starting";
     let resume: (() => void) | undefined, receive: Feedback | undefined;
     const show = (message: string) => { output.textContent = message; output.hidden = !message; };
@@ -33,7 +33,7 @@ export function mountLanguageCommands(scope: CleanupScope, editor: TextEditor, o
     scope.defer(cancel);
     function capture(signal?: AbortSignal) {
         if (signal?.aborted || editor.signal.aborted) return;
-        const source = captureViewRequest(editor.workspace, editor.tab, editor.view, { available: () => {
+        const source = captureViewRequest(editor, { available: () => {
             const input = editor.activity();
             return editor.element.isConnected && !editor.getSnapshot().disabled && !input.disposed
                 && input.input === "idle";

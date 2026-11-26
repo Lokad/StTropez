@@ -38,7 +38,7 @@ export type HoverController = Observable<HoverSnapshot> & Readonly<{
 
 const idle: HoverSnapshot = Object.freeze({ status: "idle", message: "", revision: null, range: null, text: "", diagnostics: emptyList });
 type Inspection = { revision: number; selection: SelectionSet; folds: FoldIndex; offset: number;
-    stops: (() => void)[]; timer?: number; capture?: CapturedViewRequest<TextEditor["tab"]>; symbol?: LspHoverResult; failure?: ReturnType<typeof failed> };
+    stops: (() => void)[]; timer?: number; capture?: CapturedViewRequest; symbol?: LspHoverResult; failure?: ReturnType<typeof failed> };
 
 /** A mounted view owns the range, provider reply and diagnostic messages displayed together. */
 export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options: HoverControllerOptions): HoverController {
@@ -177,7 +177,7 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
             }
             release();
             owned = undefined;
-            const capture = captureViewRequest(workspace, tab, view, { available });
+            const capture = captureViewRequest(editor, { available });
             if (!capture) return refused("unavailable-view");
             const current: Inspection = { revision: capture.document.revision, selection: capture.selectionSet,
                 folds: capture.folding.index, offset, capture, stops: [] };

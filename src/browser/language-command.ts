@@ -33,13 +33,13 @@ export type LanguageCommands = Observable<readonly ChangedDocument[]> & Readonly
 
 /** Retain the requesting view and its exact edit targets until the caller releases the operation. */
 export function captureEditCommand(editor: TextEditor, options: LanguageCommandOptions, expire: () => void, selectionBound = true) {
-    const { workspace, view, tab } = editor;
+    const { view } = editor;
     function available(id: DocumentId) {
         const activity = editor.activity();
         return editorReadyForRequest(editor, activity)
             && (options.canCapture?.(id) ?? true);
     }
-    const capture = () => captureRequest(workspace, tab, view, { available: () => available(view.documentId) }, selectionBound);
+    const capture = () => captureRequest(editor, { available: () => available(view.documentId) }, selectionBound);
     const first = capture();
     if (!first) return;
     let source = first;

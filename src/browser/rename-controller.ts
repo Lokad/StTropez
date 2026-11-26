@@ -33,7 +33,7 @@ export type RenameControllerOptions = Readonly<{
     documents?: () => readonly DocumentSnapshot[]; canCapture?: (id: DocumentId) => boolean; prepareRequest?: () => LspPrepare | undefined;
 }>;
 export type RenameController = ReturnType<typeof mountRename>;
-type Job = { source: CapturedViewRequest<TextEditor["tab"]>; project: ReturnType<typeof retainEditProject>;
+type Job = { source: CapturedViewRequest; project: ReturnType<typeof retainEditProject>;
     client: LspRenameClient; invalid: boolean; timer?: number; edit?: LspWorkspaceEdit; review?: LspWorkspaceEdit };
 const idle: RenameSnapshot = Object.freeze({ status: "idle", message: "", preview: null, changes: emptyList });
 

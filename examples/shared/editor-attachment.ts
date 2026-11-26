@@ -3,19 +3,16 @@ import { CleanupScope } from "./cleanup-scope.ts";
 
 /** A pending host command belongs to one mounted editor and expires when composition starts. */
 export function captureEditorCommand(editor: TextEditor, editOrigin?: "human") {
-    const source = captureViewRequest(editor.workspace, editor.tab, editor.view, {
+    const source = captureViewRequest(editor, {
         ...(editOrigin && { editOrigin }),
         available: () => {
             const activity = editor.activity(), state = editor.getSnapshot();
-            return !editor.signal.aborted && editor.element.isConnected && !state.disabled
+            return editor.element.isConnected && !state.disabled
                 && !activity.disposed && activity.input === "idle"
                 && (!editOrigin || state.readOnlyReason === null);
         },
     });
-    if (source) {
-        editor.signal.addEventListener("abort", source.cancel, { once: true, signal: source.signal });
-        editor.onEditIntent(kind => { if (kind === "compositionstart") source.cancel(); }, source.signal);
-    }
+    if (source) editor.onEditIntent(kind => { if (kind === "compositionstart") source.cancel(); }, source.signal);
     return source;
 }
 

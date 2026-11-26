@@ -19,7 +19,7 @@ export type RenamePopupOptions = Readonly<{
     onNotice?: (message: string) => void;
 }>;
 
-type Source = CapturedViewRequest<TextEditor["tab"]>;
+type Source = CapturedViewRequest;
 type Review = Observable<RenameSnapshot> & {
     cancel(): void;
     submit(name: string, review: boolean): Promise<boolean>;

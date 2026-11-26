@@ -1512,7 +1512,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, identity: D
             if (!canCaptureInsertion()) return;
             syncSelection(); view.folding.revealSelection(currentFolding());
             let captured: CapturedInsertion | undefined;
-            captured = captureInsertion(workspace, target, view, canCaptureInsertion, (plan, expected) => apply(plan.edits, plan.selectionSet, kind, { expectedRevision: expected }),
+            captured = captureInsertion(editor, canCaptureInsertion, (plan, expected) => apply(plan.edits, plan.selectionSet, kind, { expectedRevision: expected }),
                 () => { if (hostInsertion === captured) hostInsertion = undefined;
                     if (pasteOwner && pasteOwner.pending === captured) delete pasteOwner.pending; });
             hostInsertion = captured; return captured;

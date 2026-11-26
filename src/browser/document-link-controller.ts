@@ -36,7 +36,7 @@ export type DocumentLinkController = Observable<DocumentLinkSnapshot> & Readonly
 type Watched = { item: LspDocumentLink; isCurrent(): boolean };
 type Job = {
     watched?: Watched | undefined;
-    client: LspLinkClient; project: ReturnType<typeof retainDocuments>; source?: CapturedViewRequest<TextEditor["tab"]>;
+    client: LspLinkClient; project: ReturnType<typeof retainDocuments>; source?: CapturedViewRequest;
     reply?: Awaited<ReturnType<LspLinkClient["run"]>["result"]>; connection?: ReturnType<LspWorkspace["getSnapshot"]>;
     invalid: boolean; timer?: number; failure?: ReturnType<typeof failed>;
 };

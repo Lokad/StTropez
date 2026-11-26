@@ -5,7 +5,7 @@ import { shortcutHint } from "../../../examples/shared/shortcut-hint.ts";
 export function registerCommandPalette(editor: TextEditor): () => void {
     let dismiss: (() => void) | undefined;
     function open() {
-        const capture = captureViewRequest(editor.workspace, editor.tab, editor.view);
+        const capture = captureViewRequest(editor);
         if (!capture) return false;
         const doc = editor.element.ownerDocument, dialog = doc.createElement("dialog"), filter = doc.createElement("input");
         const list = doc.createElement("select"), run = doc.createElement("button"), cancel = doc.createElement("button");

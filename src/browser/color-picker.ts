@@ -7,7 +7,7 @@ import { listenUntil, onAbort } from "./listen.ts";
 import { reviewPanel } from "./review-controls.ts";
 import type { TextEditor } from "./text-editor.ts";
 
-type Capture = CapturedViewRequest<TextEditor["tab"]>;
+type Capture = CapturedViewRequest;
 
 const channels = ["red", "green", "blue"] as const;
 const hex = (color: LspColor) => "#" + channels

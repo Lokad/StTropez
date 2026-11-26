@@ -99,15 +99,7 @@ after a mouse or pen rests (default 300 ms). Keys cancel dwell until the pointer
 ### Shortcuts
 
 `Mod` is Cmd on Apple and Ctrl elsewhere. The word modifier is Option on Apple and Ctrl elsewhere.
-`editor.keymap.getShortcuts(id)` includes host bindings. For defaults, use the platform table.
-
-```ts
-import { defaultEditorShortcuts, type TextEditorCommand } from "sttropez/browser";
-
-export function defaultKeys(command: TextEditorCommand, platform: keyof typeof defaultEditorShortcuts) {
-    return defaultEditorShortcuts[platform].filter(([, id]) => id === command).map(([keys]) => keys);
-}
-```
+`editor.keymap.getShortcuts(id)` lists the active shortcuts, including host bindings.
 
 | Navigation and selection | Action |
 | --- | --- |

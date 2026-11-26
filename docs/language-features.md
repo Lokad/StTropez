@@ -8,19 +8,21 @@ fixes. [Provider setup](language-server.md)
 Set the document URI and language ID, then choose controls.
 
 ```ts
-import { attachEditorLanguage, type TextEditor } from "sttropez/browser";
+import { attachEditorLanguage, type EditorLanguageAttachment, type EditorLanguageOptions, type TextEditor } from "sttropez/browser";
 import type { LspWorkspace } from "sttropez/protocol";
 
-export function attachLanguage(editor: TextEditor, provider: LspWorkspace) {
-    return attachEditorLanguage(editor, provider, {
-        completion: { list: true },
-        diagnostics: {},
-        hover: { popup: true },
-        signature: { popup: true },
-        rename: { popup: true },
-        codeActions: { popup: true },
-        colors: { picker: true },
-    });
+const controls = {
+    completion: { list: true },
+    diagnostics: {},
+    hover: { popup: true },
+    signature: { popup: true },
+    rename: { popup: true },
+    codeActions: { popup: true },
+    colors: { picker: true },
+} satisfies EditorLanguageOptions;
+
+export function attachLanguage(editor: TextEditor, provider: LspWorkspace): EditorLanguageAttachment<typeof controls> {
+    return attachEditorLanguage(editor, provider, controls);
 }
 ```
 

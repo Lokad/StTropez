@@ -35,7 +35,7 @@ export type SignatureController = Observable<SignatureSnapshot> & Readonly<{
     request: () => Promise<Outcome<SignatureSnapshot>>; cancel: () => void; dispose: () => void;
 }>;
 type Call = ReturnType<LspSignatureClient["run"]>;
-type Request = { capture: CapturedViewRequest<TextEditor["tab"]>; call?: Call; help?: NonNullable<Awaited<Call["result"]>>;
+type Request = { capture: CapturedViewRequest; call?: Call; help?: NonNullable<Awaited<Call["result"]>>;
     timer?: number; typing?: boolean; argumentKey?: string };
 const idle: SignatureSnapshot = Object.freeze({ status: "idle", message: "", anchor: null, signature: null, activeSignature: 0, signatureCount: 0 });
 const manual = Object.freeze({ triggerKind: 1, isRetrigger: false } as const);
@@ -116,7 +116,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
             signature: help.signatures[index]!, activeSignature: index, signatureCount: help.signatures.length });
     }
     function captureRequest(): Request | undefined {
-        const capture = captureViewRequest(workspace, tab, view, { available });
+        const capture = captureViewRequest(editor, { available });
         if (!capture) return;
         const current: Request = { capture }; job = current; armed = true;
         onAbort(capture.signal, () => expire(current));

@@ -11,13 +11,14 @@ function fixture(t: TestContext) {
         await Promise.resolve(); view.dispose(); workspace.tabs.close(tab); workspace.releaseResource(source.id, true);
         assert.deepEqual({ leases: workspace.diagnostics().leases, subscriptions: workspace.diagnostics().subscriptions }, { leases: 0, subscriptions: 0 });
     });
-    return { workspace, source, tab, view, target: workspace.tabs.capture(tab) };
+    const mount = new AbortController();
+    return { workspace, source, tab, view, mount, editor: { workspace, view, tab: workspace.tabs.capture(tab), signal: mount.signal } };
 }
 
 test("read captures survive expanded fold metadata and defer abort handlers beyond observer delivery", async t => {
     const f = fixture(t); f.workspace.setCapabilities(f.source.id, { edit: ["host"], save: true });
-    const captured = captureViewRequest(f.workspace, f.target, f.view); assert.ok(captured);
-    assert.equal(captureViewRequest(f.workspace, f.target, f.view, { editOrigin: "human" }), undefined);
+    const captured = captureViewRequest(f.editor); assert.ok(captured);
+    assert.equal(captureViewRequest(f.editor, { editOrigin: "human" }), undefined);
     assert.ok(Object.isFrozen(captured)); assert.equal(captured.document.id, f.source.documentId);
     f.view.folding.setRanges(f.view.folding.getSnapshot(), [{ id: "body", from: 0, to: captured.document.buffer.length, collapsed: false }]);
     assert.notEqual(f.view.folding.getSnapshot().generation, captured.folding.generation); assert.equal(captured.isCurrent(), true);
@@ -35,7 +36,7 @@ test("read captures survive expanded fold metadata and defer abort handlers beyo
 
 test("a capture commits once, retains its source during the operation and cleans up thrown operations", t => {
     const f = fixture(t), before = f.workspace.diagnostics();
-    const captured = captureViewRequest(f.workspace, f.target, f.view, { editOrigin: "human" }); assert.ok(captured);
+    const captured = captureViewRequest(f.editor, { editOrigin: "human" }); assert.ok(captured);
     assert.equal(captured.commit(() => {
         assert.equal(captured.isCurrent(), false); assert.equal(captured.signal.aborted, false);
         assert.equal(f.workspace.diagnostics().subscriptions, before.subscriptions);
@@ -45,21 +46,29 @@ test("a capture commits once, retains its source during the operation and cleans
     }), true);
     assert.equal(captured.signal.aborted, true); assert.equal(f.workspace.diagnostics().leases, before.leases);
     assert.equal(captured.commit(() => { throw new Error("Repeated operation"); }), false);
-    const failure = captureViewRequest(f.workspace, f.target, f.view); assert.ok(failure);
+    const failure = captureViewRequest(f.editor); assert.ok(failure);
     assert.throws(() => failure.commit(() => { throw new Error("Host operation failed"); }), /Host operation failed/);
     assert.equal(failure.signal.aborted, true); assert.equal(failure.isCurrent(), false);
     assert.equal(f.workspace.diagnostics().leases, before.leases); assert.equal(f.workspace.diagnostics().subscriptions, before.subscriptions);
 });
 
-test("captures snapshot their target, reject foreign views and latch a failed host guard", async t => {
-    const f = fixture(t), other = fixture(t), target = { ...f.target }; let available = true;
-    const captured = captureViewRequest(f.workspace, target, f.view, { available: () => available }); assert.ok(captured);
-    target.id = other.tab; target.generation++;
-    assert.equal(captured.target.id, f.tab); assert.equal(captured.target.generation, f.target.generation);
-    assert.ok(Object.isFrozen(captured.target)); assert.equal(captured.isCurrent(), true);
+test("disposing a mount expires its request when the next editor reuses the same view", async t => {
+    const f = fixture(t), other = fixture(t);
     const before = f.workspace.diagnostics().leases;
-    assert.equal(captureViewRequest(f.workspace, f.target, other.view), undefined); assert.equal(f.workspace.diagnostics().leases, before);
-    available = false; assert.equal(captured.isCurrent(), false); available = true; assert.equal(captured.isCurrent(), false);
-    assert.equal(captured.commit(() => { throw new Error("Stale operation ran"); }), false);
-    await Promise.resolve(); assert.equal(captured.signal.aborted, true);
+    assert.equal(captureViewRequest({ ...f.editor, view: other.view }), undefined);
+    const first = captureViewRequest(f.editor)!;
+    f.mount.abort();
+    assert.equal(first.signal.aborted, true);
+    assert.equal(f.workspace.diagnostics().leases, before);
+    const replacement = { ...f.editor, signal: new AbortController().signal };
+    let available = true;
+    const current = captureViewRequest(replacement, { available: () => available })!;
+    assert.equal(first.commit(() => { throw new Error("Expired mount ran"); }), false);
+    assert.equal(current.isCurrent(), true);
+    available = false;
+    assert.equal(current.isCurrent(), false);
+    available = true;
+    assert.equal(current.isCurrent(), false);
+    await Promise.resolve();
+    assert.equal(current.signal.aborted, true);
 });

@@ -10,8 +10,9 @@ function fixture() {
     const tab = workspace.tabs.open({ kind: "text", documentId: source.documentId }, "left"), view = workspace.createDocumentView(source.documentId), peer = workspace.createDocumentView(source.documentId);
     const timers = new Map<number, () => void>(); let serial = 0, composing = false;
     const owner = { defaultView: { performance, setTimeout: (work: () => void) => { timers.set(++serial, work); return serial; }, clearTimeout: (id: number) => timers.delete(id) }, activeElement: null };
-    const editor = { view, element: { ownerDocument: owner }, registerPasteHandler: () => () => {},
-        captureInsertion: () => captureInsertion(workspace, workspace.tabs.capture(tab), view, () => !composing,
+    const editor = { workspace, tab: workspace.tabs.capture(tab), view, signal: new AbortController().signal,
+        element: { ownerDocument: owner }, registerPasteHandler: () => () => {},
+        captureInsertion: () => captureInsertion(editor, () => !composing,
             (plan, revision) => workspace.edit({ documentId: source.documentId, expectedRevision: revision, edits: plan.edits, selectionSet: plan.selectionSet, origin: "human", view, history: { kind: "paste" } }).applied, () => {}),
         focus: () => { throw new Error("Table paste must not focus a later editor."); } } as unknown as TextEditor;
     const tools = new HostTablePaste(), detach = tools.attach("primary", editor); tools.setEnabled(true);

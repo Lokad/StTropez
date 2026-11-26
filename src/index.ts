@@ -34,6 +34,6 @@ export type {
     ResourceMetadata, ResourceOptions, ResourceSnapshot, ResourceTarget, ResourceVisibility, SaveReceipt, SaveReview, SaveSubmission, SaveTicket, Surface, TabId, TabSnapshot, TabTarget, TextResourceHandle, TextResourceOptions, TextTransactionOptions, TextWriteResult,
     ViewId, WorkspaceOptions, WorkspaceSnapshot,
 } from "./core/workspace.ts";
-export type { AfterDelivery, Observable, ObservableListener } from "./core/observable.ts";
+export type { AfterDelivery, NotificationScope, Observable, ObservableListener } from "./core/observable.ts";
 export type { DocumentationContent, DocumentationPart } from "./core/documentation.ts";
 export type { Immutable, SnapshotValue } from "./core/values.ts";

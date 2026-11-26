@@ -1,7 +1,7 @@
 # Text viewport
 
-`mountTextViewport` draws visible rows and exposes their geometry. Use a [read-only editor](editor.md#use)
-for keyboard selection and copying across virtualized rows.
+The editor viewport draws visible rows and exposes their geometry. A [read-only editor](editor.md#use)
+supports keyboard selection and copying across virtualized rows.
 
 ## Use
 
@@ -9,17 +9,16 @@ Size the container and load the [editor stylesheet](getting-started.md#open-the-
 
 ```ts
 import type { DocumentId, Workspace } from "sttropez";
-import { mountTextViewport } from "sttropez/browser";
-import type { TextViewportOptions } from "sttropez/browser";
+import { mountTextEditor } from "sttropez/browser";
 
 export function showPreview(host: HTMLElement, workspace: Workspace, documentId: DocumentId) {
-    const options: TextViewportOptions = {
+    const editor = mountTextEditor(host, workspace, documentId, {
+        readOnly: true,
         ariaLabel: "Source preview",
         settings: { columnRulers: [80, 120], minimap: true, highlightCurrentLine: true }
-    };
-    const viewport = mountTextViewport(host, workspace, documentId, options);
-    viewport.revealOffset(0, { horizontal: "nearest", vertical: "nearest" });
-    return viewport; // Call dispose() when the host detaches this projection.
+    });
+    editor.viewport.revealOffset(0, { horizontal: "nearest", vertical: "nearest" });
+    return editor; // Dispose the editor when the preview closes.
 }
 ```
 

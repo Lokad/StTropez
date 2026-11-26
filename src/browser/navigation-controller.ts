@@ -61,7 +61,7 @@ export function mountNavigation(editor: TextEditor, owner: LspDocumentOwner, opt
     const notifications = workspace.createNotificationScope(), state = new Store(idle, notifications);
     const events = new AbortController();
     const available = () => !events.signal.aborted && editorReadyForRequest(editor) && (options.canCapture?.() ?? true);
-    const capture = () => captureViewRequest(workspace, tab, view, { available });
+    const capture = () => captureViewRequest(editor, { available });
     type Source = NonNullable<ReturnType<typeof capture>>;
     type Hover = { hit: DefinitionHit; client: LspNavigationClient; source: Source; reply?: Promise<LspDefinitionPreview>; result?: LspDefinitionPreview };
     type Request = { client: LspNavigationClient; source?: Source; stops: (() => void)[]; expired: boolean; reply?: LspNavigationResult };

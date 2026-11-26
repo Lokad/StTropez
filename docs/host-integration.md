@@ -47,18 +47,19 @@ export function attachConvertedPaste(
 
 ### Captured view requests
 
-Call `captureViewRequest(editor.workspace, editor.tab, editor.view, options)` before the first `await`. Omit
+Call `captureViewRequest(editor, options)` before the first `await`. Omit
 `editOrigin` for reads. Edits need permission and an unlocked resource. A revision, selection, visible-fold,
-authority or tab-target change expires the capture.
+authority or tab-target change expires the capture. Disposing the editor aborts outstanding requests,
+even when a new mount reuses its document view.
 
 `commit(operation)` consumes the capture or returns `false` if stale. Use `available` for host checks.
-Cancel on dismissal or disposal and release outside notification delivery.
+Cancel on dismissal and release outside notification delivery.
 [Analysis example](architecture.md#use)
 
 ### Captured insertion and structured paste
 
-`registerPasteHandler` prepares a conversion without editing. A read-only pane refuses paste. During queued
-edits or navigation, literal text goes to the eventual selection. Removing the handler cancels conversion.
+`registerPasteHandler` prepares a conversion without editing. A read-only pane refuses paste.
+Literal paste uses the current selection. Removing the handler cancels conversion.
 
 `editor.captureInsertion()` returns `undefined` while busy, composing or read-only. Typing, selection
 changes, a new capture or disposal can expire the target. Pass its `signal` to the converter. `insert(text)`
