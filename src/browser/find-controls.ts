@@ -1,22 +1,47 @@
+import { builtinKeyPriority, type EditorCommand } from "./command-registry.ts";
 import type { TextEditor } from "./text-editor.ts";
-import { builtinKeyPriority, type EditorCommands } from "./command-registry.ts";
 
-/** Find fields and editor panes invoke the same commands on their captured editor. */
-export function bindFindCommands(register: (...args: Parameters<EditorCommands["register"]>) => void,
-    open: (replace: boolean, pane: TextEditor) => void,
-    navigate: (direction: 1 | -1, pane: TextEditor) => void | boolean, queryFocused: (pane: TextEditor) => boolean,
-    text = (label: string) => label) {
-    const entries = [
-        { id: "find.open", label: "Find", keys: ["Mod+f"], run: (pane: TextEditor) => open(false, pane) },
-        { id: "find.replace", label: "Find and replace", keys: ["Mod+h"], run: (pane: TextEditor) => open(true, pane) },
-        { id: "find.next", label: "Next match", keys: ["F3"], run: (pane: TextEditor) => navigate(1, pane) },
-        { id: "find.previous", label: "Previous match", keys: ["Shift+F3"], run: (pane: TextEditor) => navigate(-1, pane) },
-    ];
-    for (const { id, label, keys, run } of entries) {
-        register({ id, label: text(label), category: text("Find"), run: (_, pane) => run(pane) }, { keys, shared: true, priority: builtinKeyPriority.editor });
+type Action = Pick<EditorCommand, "enabled" | "run">;
+export type FindCommandOptions = Readonly<{
+    open: (replace: boolean) => void;
+    navigate: (direction: 1 | -1) => boolean | void;
+    queryFocused: () => boolean;
+    replaceCurrent?: Action;
+    replaceAll?: Action;
+    insertLineBreak?: Action;
+    close?: Action;
+    text?: (label: string) => string;
+}>;
+
+/** Bind the shared Find shortcuts to one pane and the host fields that act on it. */
+export function bindFindCommands(editor: TextEditor, options: FindCommandOptions) {
+    editor.signal.throwIfAborted();
+    const handles: { dispose(): void }[] = [];
+    const text = options.text ?? (label => label);
+    const keys = builtinKeyPriority;
+    function dispose() {
+        editor.signal.removeEventListener("abort", dispose);
+        for (const handle of handles.splice(0)) handle.dispose();
     }
-    for (const [key, direction, label] of [["Enter", "next", "Select next match"], ["Shift+Enter", "previous", "Select previous match"]] as const) {
-        register({ id: "find.query." + direction, label: text(label), category: text("Find"), enabled: (_, pane) => queryFocused(pane),
-            run: (_, pane) => { pane.commands.run("find." + direction); } }, { keys: [key], shared: true, priority: builtinKeyPriority.field, repeat: false });
+    function bind(id: string, label: string, key: string, action: Action | undefined, priority: number, repeat = false) {
+        if (action) handles.push(editor.commands.register({ ...action, id: "find." + id, label: text(label), category: text("Find") },
+            { keys: [key], shared: true, priority, repeat }));
     }
+    try {
+        bind("open", "Find", "Mod+f", { run: () => options.open(false) }, keys.editor, true);
+        bind("replace", "Find and replace", "Mod+h", { run: () => options.open(true) }, keys.editor, true);
+        for (const [id, direction, shortcut, enter, label] of [
+            ["next", 1, "F3", "Enter", "Next match"], ["previous", -1, "Shift+F3", "Shift+Enter", "Previous match"],
+        ] as const) {
+            bind(id, label, shortcut, { run: () => options.navigate(direction) }, keys.editor, true);
+            bind("query." + id, "Select " + id + " match", enter,
+                { enabled: options.queryFocused, run: () => { editor.commands.run("find." + id); } }, keys.field);
+        }
+        bind("replaceCurrent", "Replace current match", "Enter", options.replaceCurrent, keys.replacement);
+        bind("replaceAll", "Replace all matches", "Ctrl+Alt+Enter", options.replaceAll, keys.editor);
+        bind("insertLineBreak", "Insert a line break in Find or Replace", "Mod+Enter", options.insertLineBreak, keys.field);
+        bind("close", "Close Find", "Escape", options.close, keys.editor);
+        editor.signal.addEventListener("abort", dispose, { once: true });
+    } catch (error) { dispose(); throw error; }
+    return { dispose };
 }

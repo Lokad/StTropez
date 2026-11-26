@@ -1,7 +1,6 @@
 import { onSourceFocus } from "../../../examples/shared/source-focus.ts";
-import { bindFindCommands } from "../../../src/browser/find-controls.ts";
 import { captureEditorCommand, scopedCommands } from "../../../examples/shared/editor-attachment.ts";
-import { createFindController, createRegexFindBackend } from "../../../src/browser/index.ts";
+import { bindFindCommands, createFindController, createRegexFindBackend } from "../../../src/browser/index.ts";
 import type { TextEditor, FindController, FindSnapshot } from "../../../src/browser/index.ts";
 import type { ComparisonBaseline, DocumentId, FoldRange, FoldRegion, FoldingSnapshot, TabId, TabTarget, Workspace } from "../../../src/index.ts";
 import type { LspProviderController, LspProviderFactory } from "../language/lsp-provider-controller.ts";
@@ -128,14 +127,15 @@ export class HostLanguageTools {
     private bindFind(session: Session, signal: AbortSignal): void {
         const current = () => this.active === session && this.ownsSession(session);
         const register = scopedCommands(session.editor, signal);
-        bindFindCommands(register, replace => {
+        const bindings = bindFindCommands(session.editor, { open: replace => {
             if (!this.ownsSession(session)) return;
             this.cancelFindCommand(); this.activate(session); this.ensureFind();
             const field = replace && !session.reference ? this.replacementElement : this.queryElement;
             field?.focus(); field?.select();
-        }, direction => {
+        }, navigate: direction => {
             if (this.ownsSession(session)) { this.activate(session); this.runFind(session, { kind: "navigate", direction }); }
-        }, () => current() && !!this.queryElement?.matches(":focus"));
+        }, queryFocused: () => current() && !!this.queryElement?.matches(":focus") });
+        signal.addEventListener("abort", bindings.dispose, { once: true });
         register({ id: "find.replaceCurrent", label: "Replace current match",
             enabled: () => current() && !!this.replacementElement?.matches(":focus:enabled"),
             run: () => this.runFind(session, { kind: "replace", text: this.cell.get().replacement }) },

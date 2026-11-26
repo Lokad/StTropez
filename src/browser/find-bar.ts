@@ -3,7 +3,6 @@ import { onAbort } from "./listen.ts";
 import { editorElement } from "./editor-element.ts";
 import { NotificationScope, Store, type Observable } from "../core/observable.ts";
 import type { TextEditor } from "./text-editor.ts";
-import { builtinKeyPriority, type EditorCommands } from "./command-registry.ts";
 import { createFindController, type FindController, type FindSnapshot } from "./find.ts";
 import { createRegexFindBackend } from "./regex-find.ts";
 import { bindFindCommands } from "./find-controls.ts";
@@ -233,15 +232,10 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
         if (disposed || editor.signal.aborted || panes.has(editor)) throw new Error("Find bar cannot attach this editor.");
         const events = new AbortController();
         const { signal } = events;
-        const handles: { dispose(): void }[] = [];
-        const register = (...args: Parameters<EditorCommands["register"]>) => {
-            handles.push(editor.commands.register(...args));
-        };
         const owns = () => target === editor && !bar.hidden;
         function detach() {
             if (signal.aborted) return;
             events.abort();
-            for (const handle of handles) handle.dispose();
             panes.delete(editor);
             if (target === editor) {
                 target = undefined;
@@ -250,33 +244,37 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
             }
         }
         try {
-            bindFindCommands(register, (replace, pane) => { setTarget(pane); open(replace); }, (direction, pane) => {
-                if (!query.value) return false;
-                setTarget(pane);
-                const current = search();
-                if (bar.hidden) cached = current?.getSnapshot();
-                current?.next(direction, { whenReady: true });
-                return true;
-            }, () => owns() && focused() === query, text);
-            register({ id: "find.replaceCurrent", label: text("Replace current match"),
-                enabled: from => owns() && (from === "button" ? !replace.disabled : focused() === replacement),
-                run: () => { if (!replace.disabled) find?.replaceCurrent(value()); } },
-                { keys: ["Enter"], shared: true, priority: builtinKeyPriority.replacement, repeat: false });
-            register({ id: "find.replaceAll", label: text("Replace all matches"),
-                enabled: () => owns() && !row.hidden && !all.disabled,
-                run: () => {
-                    replacement.focus({ preventScroll: true });
-                    find?.replaceAll(value());
-                } }, { keys: ["Ctrl+Alt+Enter"], shared: true, repeat: false, priority: builtinKeyPriority.editor });
-            register({ id: "find.insertLineBreak", label: text("Insert a line break in Find or Replace"),
-                enabled: () => owns() && (focused() === query || focused() === replacement),
-                run: () => {
-                    const input = focused() === query ? query : replacement;
-                    input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
-                    input.dispatchEvent(new Event("input", { bubbles: true }));
-                } }, { keys: ["Mod+Enter"], shared: true, priority: builtinKeyPriority.field, repeat: false });
-            register({ id: "find.close", label: text("Close Find"), category: text("Find"), enabled: owns, run: close },
-                { keys: ["Escape"], shared: true, repeat: false, priority: builtinKeyPriority.editor });
+            const bindings = bindFindCommands(editor, {
+                text,
+                open(replace) { setTarget(editor); open(replace); },
+                navigate(direction) {
+                    if (!query.value) return false;
+                    setTarget(editor);
+                    const current = search();
+                    if (bar.hidden) cached = current?.getSnapshot();
+                    current?.next(direction, { whenReady: true });
+                    return true;
+                },
+                queryFocused: () => owns() && focused() === query,
+                replaceCurrent: {
+                    enabled: from => owns() && (from === "button" ? !replace.disabled : focused() === replacement),
+                    run() { if (!replace.disabled) find?.replaceCurrent(value()); },
+                },
+                replaceAll: {
+                    enabled: () => owns() && !row.hidden && !all.disabled,
+                    run() { replacement.focus({ preventScroll: true }); find?.replaceAll(value()); },
+                },
+                insertLineBreak: {
+                    enabled: () => owns() && (focused() === query || focused() === replacement),
+                    run() {
+                        const input = focused() === query ? query : replacement;
+                        input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
+                        input.dispatchEvent(new Event("input", { bubbles: true }));
+                    },
+                },
+                close: { enabled: owns, run: close },
+            });
+            onAbort(signal, bindings.dispose);
             panes.set(editor, detach);
             editor.element.addEventListener("focusin", () => setTarget(editor), { signal });
             editor.signal.addEventListener("abort", detach, { once: true, signal });

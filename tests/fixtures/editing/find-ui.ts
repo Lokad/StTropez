@@ -1,6 +1,5 @@
-import { createFindController, createRegexFindBackend } from "../../../src/browser/index.ts";
+import { bindFindCommands, createFindController, createRegexFindBackend } from "../../../src/browser/index.ts";
 import type { TextEditor } from "../../../src/browser/index.ts";
-import { bindFindCommands } from "../../../src/browser/find-controls.ts";
 import { findStatus } from "../../../src/browser/find-status.ts";
 import { scopedCommands } from "../../../examples/shared/editor-attachment.ts";
 
@@ -33,9 +32,10 @@ export function mountFindUI(editor: TextEditor) {
         resume(); find.next(direction, { whenReady: true }); return true;
     };
     const register = scopedCommands(editor, listeners.signal);
-    bindFindCommands(register, replace => {
+    const bindings = bindFindCommands(editor, { open: replace => {
         resume(); const field = replace ? replacement : query; field.focus(); field.select();
-    }, navigate, () => owner.activeElement === query);
+    }, navigate, queryFocused: () => owner.activeElement === query });
+    listeners.signal.addEventListener("abort", bindings.dispose, { once: true });
     const panel = query.closest("section")!;
     register({ id: "find.dismiss", label: "Dismiss Find", enabled: () => panel.contains(owner.activeElement),
         run: () => { find.cancel(); editor.focus(); } }, { keys: ["Escape"], shared: true, repeat: false });

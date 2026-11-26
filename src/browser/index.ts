@@ -47,6 +47,7 @@ export type { EditorEditIntent, EditorPasteHandler, EditorRevealOptions, EditorR
 export type { CapturedInsertion } from "./captured-insertion.ts";
 export { captureViewRequest } from "./captured-view.ts";
 export type { CapturedViewRequest, CapturedViewOptions } from "./captured-view.ts";
+export { bindFindCommands, type FindCommandOptions } from "./find-controls.ts";
 export { mountFindBar, type FindBarOptions, type FindBar } from "./find-bar.ts";
 export { createFindController } from "./find.ts";
 export type { FindController, FindSnapshot, FindDiagnostics, FindReason, FindFlags, FindControllerOptions } from "./find.ts";

@@ -59,6 +59,7 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [browser/editor-commands.ts](../src/browser/editor-commands.ts) | `defaultEditorShortcuts` |
 | [browser/editor-language.ts](../src/browser/editor-language.ts) | `attachEditorLanguage` |
 | [browser/find-bar.ts](../src/browser/find-bar.ts) | `FindBar`, `FindBarOptions`, `mountFindBar` |
+| [browser/find-controls.ts](../src/browser/find-controls.ts) | `FindCommandOptions`, `bindFindCommands` |
 | [browser/find.ts](../src/browser/find.ts) | `FindController`, `FindControllerOptions`, `FindDiagnostics`, `FindFlags`, `FindReason`, `FindSnapshot`, `createFindController` |
 | [browser/folding-controller.ts](../src/browser/folding-controller.ts) | `FoldCommand`, `FoldDiscovery`, `FoldDiscoveryBatch`, `FoldDiscoveryCursor`, `FoldDiscoveryResult`, `FoldingController`, `FoldingStatus`, `createFoldingController` |
 | [browser/hover-controller.ts](../src/browser/hover-controller.ts) | `HoverController`, `HoverControllerOptions`, `HoverDiagnostics`, `HoverSnapshot` |

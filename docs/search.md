@@ -20,28 +20,24 @@ export function mountSearch(toolbar: HTMLElement, pane: TextEditor, workerUrl: U
 ```
 
 Focus or `setTarget(editor)` selects the pane. Ctrl+Alt+Enter replaces all and keeps Replace focused.
-Customize `text`, `status` and `targetLabel`. Mount custom controllers per pane.
+Customize `text`, `status` and `targetLabel`. A custom Find UI can use the same command IDs and shortcuts.
+Forward its keydown events to `editor.keymap.handle`. Supply callbacks for the fields and actions it owns.
 
 ```ts
-import { createFindController, createRegexFindBackend } from "sttropez/browser";
-import type { TextEditor } from "sttropez/browser";
+import { bindFindCommands, createFindController, createRegexFindBackend } from "sttropez/browser";
+import type { FindCommandOptions, TextEditor } from "sttropez/browser";
 
-export function attachFind(
-    editor: TextEditor, workerUrl: URL
-) {
-    const clock = editor.element.ownerDocument.defaultView;
-    if (!clock) throw new Error("The editor needs an attached browser window.");
-    return createFindController(editor, {
-        regularExpressionBackend: createRegexFindBackend({
-            clock,
-            createWorker: () => new Worker(workerUrl, { type: "module" })
-        })
-    });
+export function attachFind(editor: TextEditor, workerUrl: URL, fields: Omit<FindCommandOptions, "navigate">) {
+    const find = createFindController(editor, { regularExpressionBackend: createRegexFindBackend({
+        clock: editor.element.ownerDocument.defaultView!,
+        createWorker: () => new Worker(workerUrl, { type: "module" })
+    }) });
+    const keys = bindFindCommands(editor, { ...fields, navigate: direction => find.next(direction) });
+    return { find, dispose() { keys.dispose(); find.dispose(); } };
 }
 ```
 
-For regex, serve `entries.regexWorker` from the matching [package](packaging.md). Omit the backend for
-literal search only.
+Use `entries.regexWorker` from the matching [package](packaging.md). Omit the backend for literal search.
 
 ## Contract
 
@@ -64,16 +60,6 @@ interval can return a point match, even at EOF.
 
 Use `reason` for decisions, `message` for display and `status` for progress.
 
-```ts
-import type { FindSnapshot } from "sttropez/browser";
-
-export function findNotice(state: FindSnapshot): string {
-    if (state.reason === "replaced") return `Matches replaced: ${state.replacedCount.toLocaleString()}`;
-    if (state.reason === "composition-active") return "Finish text composition first.";
-    if (state.reason === "edit-locked") return "Try again after the other edit finishes.";
-    return state.message || `${state.count} matches`;
-}
-```
 
 `replacedCount` includes accepted no-ops. `count` counts current matches. Refusals distinguish permissions,
 composition, unavailable pane or backend, cancellation, search and replacement failures. Rejected
