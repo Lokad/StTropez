@@ -20,7 +20,7 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 | `npm test` | Models, host policy and integration. Select `test:models` or `test:integration` for one group. |
 | `npm run test:browser`, `test:browsers` | Full source suite in Chromium (CI) or all three engines |
 | `npm run check` | Types, docs, models, integration, build and source Chromium |
-| `npm run inspect` | Headless screenshots and editor state |
+| `npm run inspect` | Screenshots of the demo and reference host in `artifacts/inspect/` |
 | `npm run build:demo`, `npm run test:demo` | Build and exercise the static deployment |
 | `npm run test:package` | Restore and run one consumer |
 | `npm run bench`, `bench:all` | Model and editing benchmarks or all four suites |

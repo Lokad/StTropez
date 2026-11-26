@@ -49,7 +49,7 @@ Use `STTROPEZ_PORT` for a different source-server port and `STTROPEZ_DEMO_PORT` 
 | `npm run browsers:install` | Install the configured Playwright browser binaries |
 | `npm run test:browsers` | Source browser tests across Chromium, Firefox and WebKit |
 | `npm run test:demo` | Built static-demo tests |
-| `npm run inspect` | Headless behavioral and visual inspection |
+| `npm run inspect` | Headless screenshots of the demo and reference host |
 | `npm run bench` | Model and keyboard-input measurements |
 | `npm run pack:nuget` | Build and pack the local assets-only NuGet archive |
 | `npm run test:package` | Restore the NuGet package and run the browser smoke test |
