@@ -281,11 +281,13 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
             const resolved = value.item, acceptance = captured.acceptance;
             if (!resolved) {
                 captured.acceptance = undefined; captured.resolution = undefined;
-                captured.visible = Object.freeze(captured.visible.filter(value => value !== item)); captured.choice = Math.min(captured.choice, Math.max(0, captured.visible.length - 1)); captured.id = workspace.allocateIdentity();
+                captured.visible = captured.visible.filter(value => value !== item);
+                captured.choice = Math.min(captured.choice, Math.max(0, captured.visible.length - 1));
+                captured.id = workspace.allocateIdentity();
                 publish(captured.visible.length ? "ready" : "empty", value.reason); resolveSelected(captured); return;
             }
             const previous = captured.visible;
-            captured.visible = Object.freeze(previous.map(value => value === item ? resolved : value));
+            captured.visible = previous.map(value => value === item ? resolved : value);
             captured.resolution = undefined;
             // The decoder forbids label changes during resolution; the published labels still apply.
             if (labelItems === previous) labelItems = captured.visible;
@@ -350,7 +352,10 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         if (!current(captured) || !bindingCurrent(captured) || editor.getSnapshot().readOnlyReason) { closeList("expired"); return false; }
         stopListRefresh(captured);
         if (!item.resolve && !captured.resolution) return apply(captured, mode);
-        captured.acceptance = Object.freeze({ id: captured.id, item, mode }); resolveSelected(captured); publish("accepting"); return true;
+        captured.acceptance = { id: captured.id, item, mode };
+        resolveSelected(captured);
+        publish("accepting");
+        return true;
     };
     const chooseCompletion = (index: number, completionId?: number): boolean => {
         const captured = job;

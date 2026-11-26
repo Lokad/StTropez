@@ -67,7 +67,9 @@ export class TextHistory {
         return Object.freeze({ undoDepth, redoDepth: (doc?.slots.size ?? 0) - undoDepth });
     }
     takeChangedDocuments(): readonly string[] {
-        const ids = Object.freeze([...this.#changed]); this.#changed.clear(); return ids;
+        const ids = [...this.#changed];
+        this.#changed.clear();
+        return ids;
     }
     diagnostics(): Readonly<{ groups: number; changes: number; changedUnits: number }> {
         return Object.freeze({ groups: this.#retained.size, changes: this.#steps, changedUnits: this.#units });
@@ -105,15 +107,17 @@ export class TextHistory {
             const run = appendStep(previous.run ?? { size: 1, step: textStep(old) }, textStep(first));
             let joined: TextStep | undefined;
             const step = () => joined ??= finishSteps(run);
-            const change = Object.freeze({ ...first, before: old.before,
+            const change: HistoryChange = { ...first, before: old.before,
                 wholeText: first.wholeText || old.wholeText,
                 get mapping() { return step().mapping; }, get parts() { return step().parts; },
-                units: old.units + first.units, selections: Object.freeze(old.selections.map((view, i) => Object.freeze({ ...view, after: first.selections[i]!.after }))) });
-            entry = Object.freeze({ ...previous, id: ++this.#nextId, changes: Object.freeze([change]), steps: previous.steps + 1, units: change.units, run });
+                units: old.units + first.units,
+                selections: old.selections.map((view, i) => ({ ...view, after: first.selections[i]!.after })),
+            };
+            entry = { ...previous, id: ++this.#nextId, changes: [change], steps: previous.steps + 1, units: change.units, run };
             this.#discard(doc.remove(--doc.cursor));
         } else {
             const units = changes.reduce((sum, change) => sum + change.units, 0);
-            entry = Object.freeze({ id: ++this.#nextId, origin, kind, group: group ?? null, changes: Object.freeze([...changes]), steps: 1, units });
+            entry = { id: ++this.#nextId, origin, kind, group: group ?? null, changes: [...changes], steps: 1, units };
             ids.forEach(id => this.#changed.add(id));
         }
         this.#retained.add(entry); this.#steps += entry.steps; this.#units += entry.units;

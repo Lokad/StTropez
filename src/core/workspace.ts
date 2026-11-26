@@ -138,10 +138,11 @@ type PreparedView = Readonly<{ view: ViewRecord; state: DocumentViewSnapshot; fo
 type PreparedText = Readonly<{ record: ResourceRecord; buffer: TextBuffer; mapping: PositionMapping; parts?: HistoryChange["parts"];
     wholeText?: boolean | undefined; state: ResourceSnapshot; views: readonly PreparedView[]; viewMapping: DocumentViewMapping }>;
 function historyChange(text: PreparedText, units: number, initiatingView: string | null = null): HistoryChange {
-    const selections = Object.freeze(text.views.map(({ view, state }) => Object.freeze({ viewId: view.handle.id,
-        before: view.state.get().selectionSet, after: state.selectionSet })));
-    return Object.freeze({ documentId: text.record.handle.id, before: text.record.buffer!, after: text.buffer,
-        mapping: text.mapping, parts: text.parts, wholeText: text.wholeText, units, initiatingView, selections });
+    const selections = text.views.map(({ view, state }) => ({
+        viewId: view.handle.id, before: view.state.get().selectionSet, after: state.selectionSet,
+    }));
+    return { documentId: text.record.handle.id, before: text.record.buffer!, after: text.buffer,
+        mapping: text.mapping, parts: text.parts, wholeText: text.wholeText, units, initiatingView, selections };
 }
 type ResourceRecord = {
     handle: TextResourceHandle; language: DocumentLanguage | null;
