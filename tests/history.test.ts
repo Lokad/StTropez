@@ -429,7 +429,7 @@ test("canonical saves and deferred receipts remain exact through undo and redo, 
     redo(); assert.equal(document().text(), "next"); assert.equal(source.metadata.getSnapshot().dirty, false);
     const view = workspace.createDocumentView(source.documentId, { anchor: 4, head: 4 });
     const loadedRevision = document().revision;
-    const load = workspace.operations.beginLoad(source); assert.equal(view.setSelection(loadedRevision, { anchor: 0, head: 0 }), false);
+    const load = workspace.beginLoad(source); assert.equal(view.setSelection(loadedRevision, { anchor: 0, head: 0 }), false);
     load.accept({ value: "reloaded", serverVersion: "v3" });
     assert.equal(document().text(), "reloaded"); assert.equal(state.getSnapshot().undoDepth, 0); assert.equal(view.getSnapshot().selection.head, 0); view.dispose();
 });

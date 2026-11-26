@@ -37,9 +37,8 @@ test("source notes follow every edit in a workspace batch", () => {
     save.start();
     save.accept({ serverVersion: "saved" });
     save.finish();
-    const reload = workspace.operations.beginLoad(resource);
+    const reload = workspace.beginLoad(resource);
     reload.accept({ value: "different text", serverVersion: "external" });
-    reload.finish();
     assert.deepEqual(notes.state.getSnapshot(), { revision: workspace.document(documentId).revision, notes: [] });
     workspace.releaseResource(resource.id, true);
     assert.deepEqual(notes.state.getSnapshot(), { revision: null, notes: [] });

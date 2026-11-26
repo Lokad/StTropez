@@ -1,6 +1,4 @@
 import { isNonNegativeInteger } from "./bounds.ts";
-import { createWorkspaceOperations } from "./workspace-operations.ts";
-import type { WorkspaceOperations } from "./workspace-operations.ts";
 import { createWorkspaceTabs } from "./workspace-tabs.ts";
 import type { WorkspaceTabs } from "./workspace-tabs.ts";
 import type { TextEdit } from "./changes.ts";
@@ -89,13 +87,8 @@ export type TabTarget = Readonly<{ workspace: symbol; id: TabId; generation: num
 export type ResourceTarget = Readonly<{ workspace: symbol; id: ResourceId }>;
 export type ResourceLease = Readonly<{ resourceId: ResourceId; active: () => boolean; release: () => void }>;
 export type EditLease = ResourceLease & Readonly<{ origin: EditOrigin }>;
-export type Operation = Readonly<{
-    target: ResourceTarget; revision: number; generation: number;
-    isCurrent: () => boolean; isCancelled: () => boolean; presentationCurrent: () => boolean;
-    cancel: () => void; finish: () => void;
-}>;
-export type LoadOperation<T> = Operation & Readonly<{
-    accept: (loaded: LoadedResource<T>) => boolean; fail: (message: string) => boolean;
+export type ResourceLoad<T> = Readonly<{
+    accept: (loaded: LoadedResource<T>) => boolean; fail: (message: string) => boolean; dispose: () => void;
 }>;
 export type SaveSubmission<T> = Readonly<{ id: string; target: ResourceTarget; key: ResourceKey;
     revision: number; value: Immutable<T>; expectedServerVersion: string | null }>;
@@ -159,11 +152,10 @@ type ResourceRecord = {
     state: Store<ResourceSnapshot<SnapshotValue>>; metadata: Store<ResourceMetadata>;
     document: Store<DocumentSnapshot | undefined>; saved: SnapshotValue | undefined;
     buffer: TextBuffer | null; savedBuffer: TextBuffer | null; change: DocumentChange | null; history: Store<HistorySnapshot>;
-    views: Map<ViewId, ViewRecord>; beforeLoad?: ResourceSnapshot<SnapshotValue>;
+    views: Map<ViewId, ViewRecord>; loading?: ResourceLease; beforeLoad?: ResourceSnapshot<SnapshotValue>;
     leases: Set<symbol>;
     saveReservations: number; reloadReservations: number; saving: string | null; editLease: EditLease | null;
 };
-const loadLane = Symbol("resource load");
 const defaultCapabilities: Capabilities = { edit: ["human", "agent", "host"], save: true };
 function capabilities(value: Capabilities): Capabilities {
     return Object.freeze({ edit: Object.freeze([...new Set(value.edit)]), save: value.save });
@@ -206,15 +198,11 @@ export class Workspace {
     readonly #deferredReleases = new Map<ResourceId, boolean>();
     readonly #queuedReleases = new Set<ResourceId>();
     readonly #documents = new Map<DocumentId, ResourceRecord>();
-    #requests?: WorkspaceOperations;
     #layout?: ReturnType<typeof createWorkspaceTabs>;
     readonly #state: Store<number>;
     #snapshot: WorkspaceSnapshot | undefined;
     readonly getSnapshot: () => WorkspaceSnapshot;
     readonly subscribe: Observable<WorkspaceSnapshot>["subscribe"];
-    get operations(): WorkspaceOperations {
-        return this.#requests ??= createWorkspaceOperations(this, this.#scope, handle => this.#load(handle));
-    }
     get tabs(): WorkspaceTabs {
         this.#layout ??= createWorkspaceTabs(this, this.#scope, this.#lifetime, changed => this.#publish(changed), id => this.#scheduleRelease(id));
         return this.#layout.api;
@@ -665,33 +653,38 @@ export class Workspace {
         const record = this.#requireResource(id);
         return Object.freeze({ leases: record.leases.size + record.views.size, saves: record.saveReservations, tabs: this.#layout?.count(id) ?? 0 });
     }
-    #load<T extends SnapshotValue>(handle: ResourceHandle<T>): LoadOperation<T> {
+    beginLoad<T extends SnapshotValue>(handle: ResourceHandle<T>): ResourceLoad<T> {
         this.#scope.assertWritable();
         const record = this.#handles.get(handle);
         if (!record || record.state.get().state === "released") throw new Error("Unknown resource.");
         if (record.metadata.get().dirty || record.saveReservations || record.editLease || record.reloadReservations) throw new Error("Cannot refresh local, locked or pending work.");
-        const operation = this.operations.begin(handle.id, loadLane);
+        const lease = this.acquire(handle.id);
+        record.loading?.release();
+        record.loading = lease;
         const state = record.state.get();
         // Superseding refreshes share the last settled value, even while the resource shows loading.
         record.beforeLoad ??= state;
-        const stop = (end: () => void) => {
-            const before = operation.isCurrent() ? record.beforeLoad : undefined;
-            end();
-            if (!before) return;
+        const dispose = () => {
+            this.#scope.assertWritable();
+            if (record.loading !== lease) return;
+            const before = record.beforeLoad!;
             delete record.beforeLoad;
+            delete record.loading;
+            lease.release();
             const current = record.state.get();
             if (current.state !== "loading") return;
             const restored = before.state === "loading" ? { state: "failed" as const, revision: before.revision } : before;
             const failure = before.state === "loading" ? "Load ended without content." : before.metadata.failure;
             this.#commitRecord(record, { ...restored, metadata: { ...current.metadata, state: restored.state, failure } });
         };
-        const finish = () => stop(operation.finish);
         this.#commitRecord(record, { state: "loading", revision: state.revision, metadata: { ...state.metadata, state: "loading", failure: null } });
-        return Object.freeze({ ...operation, cancel: () => stop(operation.cancel), finish, accept: (loaded: LoadedResource<T>) => {
+        return Object.freeze({ dispose, accept: (loaded: LoadedResource<T>) => {
             try {
                 this.#scope.assertWritable();
-                if (!operation.isCurrent()) return false;
+                if (record.loading !== lease) return false;
                 const value = snapshotValue(loaded.value);
+                const serverVersion = loaded.serverVersion ?? null;
+                if (record.loading !== lease) return false;
                 if (record.documentId !== null && typeof value !== "string") throw new TypeError("Text resource requires a string.");
                 const current = record.state.get();
                 record.saved = record.documentId === null ? value : undefined;
@@ -699,7 +692,7 @@ export class Workspace {
                     record.buffer = TextBuffer.from(value as string); record.savedBuffer = record.buffer; record.change = null; this.#history.forget(record.documentId);
                 }
                 const changed = new Set<Store<unknown>>(), revision = current.revision + 1;
-                this.#setRecord(record, readySnapshot({ ...current.metadata, state: "ready", dirty: false, serverVersion: loaded.serverVersion ?? null, failure: null, saveStatus: "idle" },
+                this.#setRecord(record, readySnapshot({ ...current.metadata, state: "ready", dirty: false, serverVersion, failure: null, saveStatus: "idle" },
                     revision, record.buffer ?? value), changed);
                 for (const view of record.views.values()) {
                     view.folds.set(foldingSnapshot(record.buffer!, revision, view.folds.get().generation + 1), changed);
@@ -707,16 +700,16 @@ export class Workspace {
                 }
                 this.#syncHistory(changed); this.#publish(changed);
                 return true;
-            } finally { finish(); }
+            } finally { dispose(); }
         }, fail: (message: string) => {
             try {
                 this.#scope.assertWritable();
-                if (!operation.isCurrent()) return false;
+                if (record.loading !== lease) return false;
                 const current = record.state.get();
                 this.#commitRecord(record, { state: "failed", revision: current.revision,
                     metadata: { ...current.metadata, state: "failed", failure: message } });
                 return true;
-            } finally { finish(); }
+            } finally { dispose(); }
         } });
     }
 
@@ -873,7 +866,7 @@ export class Workspace {
     releaseResource(id: ResourceId, discard = false): void {
         this.#scope.assertWritable();
         const record = this.#requireResource(id), owners = this.ownership(id), state = record.state.get();
-        if (owners.tabs || owners.leases) throw new Error("Resource still has tabs or operation leases.");
+        if (owners.tabs || owners.leases) throw new Error("Resource still has tabs or leases.");
         if (state.metadata.dirty && !discard) throw new Error("Explicit discard is required to release unsaved work.");
         record.saved = undefined; record.buffer = null; record.savedBuffer = null; record.change = null;
         if (record.documentId !== null) this.#history.forget(record.documentId);

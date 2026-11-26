@@ -1,5 +1,5 @@
 import { anchoredRange } from "../../../src/index.ts";
-import type { DocumentView, Operation, ResourceLease, ResourceTarget, TextBuffer } from "../../../src/index.ts";
+import type { DocumentView, ResourceTarget, TextBuffer } from "../../../src/index.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 import type { HostController } from "./controller.ts";
 import { instructionEdit, instructionLimit, parseInstruction } from "./instruction-syntax.ts";
@@ -9,7 +9,7 @@ export type InstructionCapture = Readonly<{ target: ResourceTarget; generation: 
 type Span = Readonly<{ from: number; to: number }>;
 type State = Readonly<{ active: boolean; located: boolean; generation: number; revision: number; from: number; to: number; line: number;
     values: Readonly<Record<InstructionField, string>>; canEdit: boolean; validation: string | null; message: string; pendingCopy: boolean }>;
-type Copy = Readonly<{ operation: Operation; sourceLease: ResourceLease; source: ResourceTarget; revision: number; version: string | null; authority: string;
+type Copy = Readonly<{ destination: ResourceTarget; source: ResourceTarget; revision: number; version: string | null; authority: string;
     sourceRevision: number; values: Readonly<Record<InstructionField, string>>; stale: () => boolean; stop: () => void }>;
 
 /** One explicit host instruction anchor. The document remains the sole field-value authority. */
@@ -101,8 +101,8 @@ export class TransferInstruction {
         if (this.disposed || !this.parsed || this.parsed.validation || !this.span) return; this.cancelCopy();
         const t = this.host.transfer.resource, s = t.getSnapshot(); if (s.state !== "ready" || !s.metadata.capabilities.edit.includes("human") || s.metadata.editLock !== null) return;
         const authority = () => { const m = t.metadata.getSnapshot(); return JSON.stringify([m.state, m.capabilities.edit, m.editLock]); }, stamp = authority(); let stale = false;
-        const operation = this.host.workspace.operations.begin(t.id, "instruction-copy"), sourceLease = this.host.workspace.acquire(this.host.source.id);
-        this.copy = { operation, sourceLease, source: this.host.workspace.captureResource(this.host.source.id), revision: s.revision, version: s.metadata.serverVersion, authority: stamp,
+        const destination = this.host.workspace.captureResource(t.id);
+        this.copy = { destination, source: this.host.workspace.captureResource(this.host.source.id), revision: s.revision, version: s.metadata.serverVersion, authority: stamp,
             sourceRevision: this.revision, values: this.parsed.values, stale: () => stale, stop: t.subscribe(() => { if (authority() !== stamp) stale = true; }) };
         this.publish({ pendingCopy: true, message: "Instruction values captured. Finish the explicit copy into transfer settings." });
     };
@@ -110,13 +110,12 @@ export class TransferInstruction {
         const copy = this.copy; if (!copy || this.disposed) return; this.copy = undefined; copy.stop();
         try {
             const t = this.host.transfer.resource, s = t.getSnapshot();
-            if (!copy.operation.isCurrent() || !this.host.workspace.resolveResource(copy.source) || copy.stale() || s.state !== "ready" || s.revision !== copy.revision || s.metadata.serverVersion !== copy.version) throw new Error("Copy expired");
+            if (this.host.workspace.resolveResource(copy.destination) !== t || !this.host.workspace.resolveResource(copy.source) || copy.stale() || s.state !== "ready" || s.revision !== copy.revision || s.metadata.serverVersion !== copy.version) throw new Error("Copy expired");
             const result = this.host.workspace.updateResource(t, { expectedRevision: copy.revision, origin: "human", value: { ...s.value(), ...copy.values } }); if (!result.applied) throw new Error("Copy unavailable");
             this.publish({ pendingCopy: false, message: "Captured instruction copied into transfer settings. Nothing was saved or run." });
         } catch { this.publish({ pendingCopy: false, message: "Instruction copy expired. Later transfer edits are retained; capture again." }); }
-        finally { copy.operation.finish(); copy.sourceLease.release(); }
     };
-    readonly cancelCopy = (): void => { const copy = this.copy; this.copy = undefined; copy?.stop(); copy?.operation.cancel(); copy?.operation.finish(); copy?.sourceLease.release(); this.publish({ pendingCopy: false }); };
+    readonly cancelCopy = (): void => { const copy = this.copy; this.copy = undefined; copy?.stop(); this.publish({ pendingCopy: false }); };
     copyDescription(): string | null { const copy = this.copy; return copy ? `Copy from source revision ${copy.sourceRevision}: destination ${JSON.stringify(copy.values.destination.slice(0, 80))}${copy.values.destination.length > 80 ? "…" : ""}, batch ${JSON.stringify(copy.values.batchSize)}.` : null; }
     readonly clear = (): void => { this.cancelCopy(); this.stops.forEach(stop => stop()); this.stops = []; this.span = undefined; this.parsed = undefined; this.buffer = undefined; this.anchors = new WeakMap(); this.publish({ active: false, located: false, canEdit: false }); };
     debug() { return { active: this.cell.get().active, from: this.span?.from ?? null, to: this.span?.to ?? null, lineReadUnits: this.reads,

@@ -140,20 +140,20 @@ test("a non-text panel traverses load failure, retry, ownership and release with
     const workspace = new Workspace();
     const form = workspace.createResource<{ path: string }>({ scope: "probe", resource: "form", variant: "working" }, "Form");
     const tab = workspace.tabs.open({ kind: "panel", resourceId: form.id, panelType: "form" }, "left");
-    const first = workspace.operations.beginLoad(form);
+    const first = workspace.beginLoad(form);
     workspace.tabs.move(tab, "right"); assert.equal(first.fail("Temporary failure"), true);
     assert.equal(form.getSnapshot().state, "failed"); assert.equal(workspace.getSnapshot().documents.length, 0);
-    workspace.operations.beginLoad(form).finish();
+    workspace.beginLoad(form).dispose();
     assert.equal(form.metadata.getSnapshot().failure, "Temporary failure");
-    const retry = workspace.operations.beginLoad(form), value = { path: "loaded.csv" };
+    const retry = workspace.beginLoad(form), value = { path: "loaded.csv" };
     workspace.tabs.close(tab); assert.throws(() => workspace.releaseResource(form.id));
     assert.equal(retry.accept({ value, serverVersion: "f1" }), true);
     value.path = "later host mutation";
     const ready = form.getSnapshot(); assert.ok(ready.state === "ready"); assert.equal(ready.value().path, "loaded.csv");
     assert.equal(workspace.getSnapshot().documents.length, 0);
     const ordinary = workspace.acquire(form.id), protectedWork = workspace.acquire(form.id, { preventReload: true });
-    assert.throws(() => workspace.operations.beginLoad(form)); protectedWork.release(); protectedWork.release();
-    const refresh = workspace.operations.beginLoad(form); refresh.accept({ value: { path: "refreshed.csv" } });
+    assert.throws(() => workspace.beginLoad(form)); protectedWork.release(); protectedWork.release();
+    const refresh = workspace.beginLoad(form); refresh.accept({ value: { path: "refreshed.csv" } });
     assert.equal(workspace.ownership(form.id).leases, 1); ordinary.release();
     workspace.releaseResource(form.id); assert.equal(form.getSnapshot().state, "released");
 });
@@ -216,27 +216,32 @@ test("resource-key allocation and duplicate checks do not traverse the workspace
     } finally { Map.prototype.values = values; }
 });
 
-test("loads distinguish readiness, ignore superseded responses and retain cancelled ownership until settlement", () => {
+test("loads distinguish readiness, ignore superseded responses and release ownership on disposal", () => {
     const workspace = new Workspace();
     const handle = workspace.createTextResource({ scope: "probe", resource: "loading", variant: "working" }, "Loading");
     const tab = workspace.tabs.open({ kind: "text", documentId: handle.documentId }, "left");
     assert.equal(handle.getSnapshot().state, "loading");
     assert.throws(() => workspace.document(handle.documentId));
     assert.equal(workspace.edit({ documentId: handle.documentId, expectedRevision: 0, origin: "human", edits: [] }).applied, false);
-    const abandoned = workspace.operations.beginLoad(handle); abandoned.cancel();
+    const abandoned = workspace.beginLoad(handle); abandoned.dispose();
     assert.equal(handle.getSnapshot().state, "failed"); assert.ok(handle.metadata.getSnapshot().failure);
-    assert.equal(workspace.ownership(handle.id).leases, 1);
-    abandoned.finish(); assert.equal(workspace.ownership(handle.id).leases, 0);
-    const first = workspace.operations.beginLoad(handle), second = workspace.operations.beginLoad(handle);
+    abandoned.dispose(); assert.equal(workspace.ownership(handle.id).leases, 0);
+    const first = workspace.beginLoad(handle), second = workspace.beginLoad(handle);
     workspace.tabs.move(tab, "right"); workspace.tabs.close(tab);
-    assert.equal(first.isCancelled(), true);
+    assert.equal(workspace.ownership(handle.id).leases, 1);
     assert.throws(() => workspace.releaseResource(handle.id));
     assert.equal(second.fail("Synthetic failure"), true);
     assert.equal(handle.getSnapshot().state, "failed");
-    const retry = workspace.operations.beginLoad(handle);
+    const retry = workspace.beginLoad(handle);
     const reopened = workspace.tabs.open({ kind: "text", documentId: handle.documentId }, "right");
     assert.equal(retry.accept({ value: "ready", serverVersion: "v1" }), true);
     assert.equal(first.accept({ value: "stale", serverVersion: "old" }), false);
+    const interrupted = workspace.beginLoad(handle);
+    assert.equal(interrupted.accept({ value: "older", get serverVersion() {
+        workspace.beginLoad(handle).accept({ value: "ready", serverVersion: "v2" });
+        return "v1";
+    } }), false);
+    assert.equal(handle.metadata.getSnapshot().serverVersion, "v2");
     assert.equal(workspace.document(handle.documentId).text(), "ready");
     assert.equal(workspace.ownership(handle.id).leases, 0);
     const target = workspace.captureResource(handle.id);
@@ -250,18 +255,15 @@ test("loads distinguish readiness, ignore superseded responses and retain cancel
 test("abandoning superseded refreshes restores the saved panel value with current permissions", () => {
     const { workspace, form } = fixture(), before = form.getSnapshot();
     assert.ok(before.state === "ready");
-    const older = workspace.operations.beginLoad(form), latest = workspace.operations.beginLoad(form);
-    older.finish(); assert.equal(form.getSnapshot().state, "loading");
-    const other = workspace.operations.begin(form.id, "load");
-    assert.ok(latest.isCurrent());
+    const older = workspace.beginLoad(form), latest = workspace.beginLoad(form);
+    older.dispose(); assert.equal(form.getSnapshot().state, "loading");
     workspace.setCapabilities(form.id, { edit: [], save: false });
-    latest.finish();
+    latest.dispose();
     const after = form.getSnapshot();
     assert.ok(after.state === "ready"); assert.equal(after.value, before.value);
     assert.equal(after.revision, before.revision); assert.equal(after.metadata.serverVersion, "c0");
     assert.deepEqual(after.metadata.capabilities, { edit: [], save: false });
     assert.equal(older.accept({ value: { path: "late", nested: { enabled: false } } }), false);
-    assert.ok(other.isCurrent()); other.finish();
     assert.equal(workspace.ownership(form.id).leases, 0);
 });
 
@@ -286,7 +288,7 @@ test("text reload resets every view's folds and selection at the accepted docume
         }
     });
     for (const value of ["", "a\nb\nc\nd\ne\n", "short"]) {
-        assert.equal(workspace.operations.beginLoad(resource).accept({ value }), true);
+        assert.equal(workspace.beginLoad(resource).accept({ value }), true);
         const document = workspace.document(resource.documentId);
         for (const [i, view] of views.entries()) {
             const folds = view.folding.getSnapshot();
@@ -357,7 +359,7 @@ test("capabilities reject all edit origins and prevent stale refresh from erasin
     assert.throws(() => workspace.captureSave(source));
     workspace.setCapabilities(source.id, { edit: ["human"], save: true });
     edit("new work");
-    assert.throws(() => workspace.operations.beginLoad(source));
+    assert.throws(() => workspace.beginLoad(source));
     assert.equal(workspace.document(source.documentId).text(), "new work");
 });
 
@@ -388,7 +390,7 @@ test("two queued saves capture exact contents; canonical replies and close/reope
     edit("second"); const second = commands.save(workspace.captureSave(source), port);
     edit("human correction"); workspace.tabs.move(tab, "right"); workspace.tabs.close(tab);
     assert.throws(() => workspace.releaseResource(source.id, true));
-    assert.throws(() => workspace.operations.beginLoad(source));
+    assert.throws(() => workspace.beginLoad(source));
     await Promise.resolve(); assert.equal(calls.length, 1); assert.equal(calls[0]!.value, "first");
     responses[0]!.resolve({ kind: "saved", serverVersion: "v1", canonical: "FIRST" });
     const receipt = await first;
@@ -439,23 +441,14 @@ test("Run captures source/configuration/settings before awaiting and retains bot
     assert.equal(workspace.ownership(source.id).leases, 0); assert.equal(workspace.ownership(form.id).leases, 0);
 });
 
-test("invalid host values publish nothing and mismatched operation presentations acquire no ownership", () => {
-    const { workspace, source, form, tab } = fixture();
+test("invalid host values publish nothing", () => {
+    const { workspace, form } = fixture();
     const before = form.getSnapshot();
     const cycle: { self?: unknown } = {}; cycle.self = cycle;
     for (const value of [cycle, new Date(), { callback: () => {} }, { get field() { throw new Error("Accessor must not execute"); } }, [Number.NaN]]) {
         assert.throws(() => workspace.updateResource(form, { expectedRevision: 0, origin: "host", value: value as never }));
         assert.equal(form.getSnapshot(), before);
     }
-    assert.throws(() => workspace.operations.begin(form.id, "preview", workspace.tabs.capture(tab)));
-    assert.equal(workspace.ownership(form.id).leases, 0);
-    const operation = workspace.operations.begin(source.id, "preview", workspace.tabs.capture(tab));
-    workspace.tabs.move(tab, "right"); assert.equal(operation.presentationCurrent(), true);
-    workspace.tabs.replace(tab, { kind: "panel", resourceId: form.id, panelType: "form" });
-    assert.equal(operation.isCurrent(), true); assert.equal(operation.presentationCurrent(), false);
-    operation.cancel(); assert.equal(operation.isCurrent(), false);
-    assert.equal(workspace.ownership(source.id).leases, 1);
-    operation.finish(); operation.finish(); assert.equal(workspace.ownership(source.id).leases, 0);
 });
 
 test("save permission is rechecked before queued submission, and host error recovery retains the document", async () => {

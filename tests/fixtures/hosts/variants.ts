@@ -1,4 +1,4 @@
-import type { ComparisonBaseline, Observable, Operation, TabTarget, TextResourceHandle, Workspace } from "../../../src/index.ts";
+import type { ComparisonBaseline, Observable, TabTarget, TextResourceHandle, Workspace } from "../../../src/index.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 
 export type ReviewVariant = Readonly<{ id: string; kind: "saved" | "server" | "draft" | "history"; label: string; version: string }>;
@@ -15,16 +15,14 @@ export class ReviewVariants {
     private readonly source: TextResourceHandle;
     private readonly ports: VariantPorts;
     private readonly cell: HostCell<VariantReviewSnapshot>;
-    private readonly lane: string;
     private readonly history = new Map<string, ComparisonBaseline>();
-    private readonly loads: { operation: Operation; reference: ReferencePublication; currentRequest: () => boolean; baseline: ComparisonBaseline; choice: ReviewVariant }[] = [];
+    private readonly loads: { presentation: TabTarget; reference: ReferencePublication; currentRequest: () => boolean; baseline: ComparisonBaseline; choice: ReviewVariant }[] = [];
     private draft: ComparisonBaseline | undefined;
     private serial = 0;
     private disposed = false;
     readonly state: Observable<VariantReviewSnapshot>;
     constructor(workspace: Workspace, source: TextResourceHandle, ports: VariantPorts) {
         if (workspace.resourceForDocument(source.documentId) !== source) throw new Error("Variant source belongs to another workspace.");
-        this.lane = `review-variant:${workspace.allocateIdentity()}`;
         this.workspace = workspace; this.source = source; this.ports = ports;
         this.history.set(`history-${++this.serial}`, captureBaseline(ports.saved()));
         this.cell = new HostCell<VariantReviewSnapshot>({ generation: 0, choices: this.choices(), selected: null, requested: null, status: "idle", pending: 0, message: "Choose an immutable version to review." });
@@ -63,34 +61,33 @@ export class ReviewVariants {
         const presentation = this.ports.presentation(), tab = this.workspace.tabs.resolve(presentation);
         if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.source.documentId) return false;
         this.ports.present();
-        const operation = this.workspace.operations.begin(this.source.id, this.lane, presentation);
-        this.loads.push({ operation, baseline: captureBaseline(baseline), choice, reference: this.ports.reference.getSnapshot(),
+        this.loads.push({ presentation, baseline: captureBaseline(baseline), choice, reference: this.ports.reference.getSnapshot(),
             currentRequest: this.ports.beginReferenceRequest() });
         this.cell.set({ ...this.cell.get(), generation: this.cell.get().generation + 1, choices: this.choices(), requested: choice, status: "loading", pending: this.loads.length,
             message: "Loading the captured version. Working text stays editable." }); return true;
     }
     private current(load: (typeof this.loads)[number]): boolean {
-        return !this.disposed && load.currentRequest() && load.operation.presentationCurrent() && this.ports.reference.getSnapshot() === load.reference;
+        return !this.disposed && load.currentRequest() && this.workspace.tabs.resolve(load.presentation) !== undefined && this.ports.reference.getSnapshot() === load.reference;
     }
     readonly finishNext = (): boolean => {
         const load = this.loads.shift(); if (!load) return false;
         try {
             if (!this.current(load)) {
-                if (!this.disposed && load.operation.isCurrent()) this.cell.set({ ...this.cell.get(), requested: null, status: "expired", message: "The captured review changed. Working text was retained." });
+                if (!this.disposed && this.loads.length === 0) this.cell.set({ ...this.cell.get(), requested: null, status: "expired", message: "The captured review changed. Working text was retained." });
                 return false;
             }
             this.ports.publish(load.baseline);
             this.cell.set({ ...this.cell.get(), selected: load.choice, requested: null, status: "ready", message: "Reviewing the captured version. Save and Run still use the working source." }); return true;
-        } finally { load.operation.finish(); if (!this.disposed) this.cell.set({ ...this.cell.get(), pending: this.loads.length }); }
+        } finally { if (!this.disposed) this.cell.set({ ...this.cell.get(), pending: this.loads.length }); }
     };
     readonly failNext = (): void => {
         const load = this.loads.shift(); if (!load) return;
         try { if (this.current(load)) this.cell.set({ ...this.cell.get(), requested: null, status: "failed", message: "Version loading failed. The current reference and working text were retained." }); }
-        finally { load.operation.finish(); if (!this.disposed) this.cell.set({ ...this.cell.get(), pending: this.loads.length }); }
+        finally { if (!this.disposed) this.cell.set({ ...this.cell.get(), pending: this.loads.length }); }
     };
     readonly cancel = (): void => {
         if (this.disposed) return;
-        for (const load of this.loads.splice(0)) { load.operation.cancel(); load.operation.finish(); }
+        this.loads.length = 0;
         this.cell.set({ ...this.cell.get(), requested: null, status: "idle", pending: 0, message: "Version loading cancelled. Working text was retained." });
     };
     dispose(): void {

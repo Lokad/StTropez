@@ -284,8 +284,8 @@ test("cancelling a refresh makes the same selection editable before the stale re
         const host = document.createElement("main"); document.body.append(host);
         const editor = mountTextEditor(host, workspace, source.documentId);
         editor.view.setSelection(0, { anchor: 11, head: 5 });
-        const refresh = workspace.operations.beginLoad(source);
-        return { cancel: refresh.cancel, late: () => refresh.accept({ value: "obsolete" }), dispose: editor.dispose };
+        const refresh = workspace.beginLoad(source);
+        return { cancel: refresh.dispose, late: () => refresh.accept({ value: "obsolete" }), dispose: editor.dispose };
     });
     const input = page.getByRole("textbox", { name: "Source" });
     await expect(input).toBeDisabled(); await fixture.evaluate(f => f.cancel());

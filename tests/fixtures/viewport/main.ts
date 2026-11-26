@@ -44,7 +44,7 @@ const unsubscribe = documentState.subscribe(status); status();
 const fixture = { ready: true, load, edit, background,
     bindLanguage: (uri: string) => workspace.setDocumentLanguage(source.documentId, { uri, languageId: "typescript" }),
     get settled() { return !disposed && viewportSettled(views.primary) && viewportSettled(views.secondary); },
-    reload: (value: string) => workspace.operations.beginLoad(source).accept({ value }),
+    reload: (value: string) => workspace.beginLoad(source).accept({ value }),
     select: (which: "primary" | "secondary", ranges: readonly Selection[], primary = 0) => views[which].view.setSelections(workspace.document(source.documentId).revision, ranges, primary),
     capture: (which: "primary" | "secondary") => views[which].captureView(),
     restore: (which: "primary" | "secondary", state: ViewState) => views[which].restoreView(state),

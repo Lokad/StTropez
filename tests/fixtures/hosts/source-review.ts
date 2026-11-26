@@ -1,5 +1,5 @@
 import { TextBuffer } from "../../../src/index.ts";
-import type { ComparisonBaseline, Observable, ObservableListener, Operation, SaveReview, SaveSubmission, TabTarget, TextResourceHandle, Workspace } from "../../../src/index.ts";
+import type { ComparisonBaseline, Observable, ObservableListener, SaveReview, SaveSubmission, TabTarget, TextResourceHandle, Workspace } from "../../../src/index.ts";
 import type { SavePort, HostSaveQueue } from "../save-queue.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 import { ReviewVariants } from "./variants.ts";
@@ -29,7 +29,7 @@ export class HostSourceReview {
     private conflictReference: ComparisonBaseline | undefined;
     private conflictPresentation: TabTarget | undefined;
     private referenceRequest = 0;
-    private readonly conflictReads: { operation: Operation; presentation: TabTarget; conflictId: number; buffer: TextBuffer; version: string;
+    private readonly conflictReads: { presentation: TabTarget; conflictId: number; buffer: TextBuffer; version: string;
         reference: Reference; currentRequest: () => boolean }[] = [];
     readonly variants: ReviewVariants;
     private disposed = false;
@@ -88,7 +88,6 @@ export class HostSourceReview {
                     }
                     this.ports.saved(result.receipt.submission.revision);
                 } else if (!this.disposed && result.kind === "conflict" && captured) {
-                    for (const read of this.conflictReads) read.operation.cancel();
                     this.conflictReference = undefined; this.conflictPresentation = undefined;
                     this.conflictCell.set({ id: ++this.conflictSerial, submittedRevision: captured.revision, expectedVersion: captured.expectedServerVersion,
                         observedVersion: result.serverVersion, review: "unloaded", reviewVersion: null, message: "Local edits are retained. Review the remote source before retrying." });
@@ -98,8 +97,10 @@ export class HostSourceReview {
     readonly reviewSaveConflict = (expected: SaveConflict | null = this.conflictCell.get()): void => {
         if (this.disposed || expected !== this.conflictCell.get()) return;
         const conflict = this.conflictCell.get(); if (!conflict) return;
-        const presentation = this.ports.presentation(), operation = this.workspace.operations.begin(this.source.id, "save-conflict-review", presentation);
-        this.conflictReads.push({ operation, presentation, conflictId: conflict.id, ...this.ports.server(),
+        const presentation = this.ports.presentation();
+        const tab = this.workspace.tabs.resolve(presentation);
+        if (tab?.surface.kind !== "text" || tab.surface.documentId !== this.source.documentId) return;
+        this.conflictReads.push({ presentation, conflictId: conflict.id, ...this.ports.server(),
             reference: this.referenceCell.get(), currentRequest: this.beginReferenceRequest() });
         this.conflictReference = undefined; this.conflictPresentation = undefined;
         this.conflictCell.set({ ...conflict, review: "loading", reviewVersion: null, message: "Reading a captured remote snapshot; local typing can continue." });
@@ -110,8 +111,8 @@ export class HostSourceReview {
         try {
             const conflict = this.conflictCell.get();
             if (this.disposed || !conflict || conflict.id !== read.conflictId) return false;
-            if (!read.currentRequest() || this.referenceCell.get() !== read.reference || !read.operation.presentationCurrent()) {
-                if (read.operation.isCurrent()) this.conflictCell.set({ ...conflict, review: "expired", message: "The captured source tab or review choice changed. Review the remote source again." });
+            if (!read.currentRequest() || this.referenceCell.get() !== read.reference || !this.workspace.tabs.resolve(read.presentation)) {
+                if (this.conflictReads.length === 0) this.conflictCell.set({ ...conflict, review: "expired", message: "The captured source tab or review choice changed. Review the remote source again." });
                 return false;
             }
             const baseline = Object.freeze({ buffer: read.buffer, version: `reference:conflict-${read.version}` });
@@ -119,7 +120,7 @@ export class HostSourceReview {
             this.publish(baseline); this.variants.referenceChanged();
             this.conflictCell.set({ ...conflict, review: "ready", reviewVersion: read.version, message: "Compare and edit the working source, then save the reviewed source." });
             this.ports.present(); return true;
-        } catch (error) { this.ports.reportError(error); return false; } finally { read.operation.finish(); }
+        } catch (error) { this.ports.reportError(error); return false; }
     };
     private presentationSnapshot(): SaveConflictPresentation {
         const conflict = this.conflictCell.get(), reference = this.referenceCell.get().baseline, metadata = this.source.metadata.getSnapshot();
@@ -148,7 +149,7 @@ export class HostSourceReview {
     }
     dispose(): void {
         if (this.disposed) return; this.disposed = true; this.variants.dispose();
-        this.conflictReads.splice(0).forEach(read => { read.operation.cancel(); read.operation.finish(); });
+        this.conflictReads.length = 0;
         // Derived availability changes on disposal even when the conflict payload stays the same.
         this.conflictCell.set(this.conflictCell.get());
     }

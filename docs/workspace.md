@@ -173,11 +173,11 @@ history through it in every participant.
 
 ### Loading and resource lifetime
 
-Load through `operations.beginLoad(handle)`. Call `accept({ value, serverVersion })` or `fail(message)`,
-then `finish()`. A newer load supersedes the old one. Acceptance resets selections, folds and linked
-history. Cancelling a refresh restores the prior revision.
+Call `workspace.beginLoad(handle)` before starting a read. Complete it with `accept({ value, serverVersion })`
+or `fail(message)`. Call `dispose()` to abandon it and restore the previous state. A superseded read releases
+its lease immediately and ignores late replies. Acceptance resets selections, folds and linked history.
 
-Tabs, views, operations and leases retain resources. `acquire(id, { preventReload: true })` blocks refresh.
+Tabs, views and leases retain resources. `acquire(id, { preventReload: true })` blocks refresh.
 Exclusive writers pass their origin and edit lease. Use `releaseResource` after last use or
 `releaseResourceWhenUnowned` to defer release. A dirty edit cancels release when discard is forbidden.
 
@@ -185,32 +185,24 @@ Exclusive writers pass their origin and edit lease. Use `releaseResource` after 
 
 ### Keep a delayed reply on the right tab
 
-Capture the tab and buffer first. A newer operation on its lane supersedes it. Check operation, generation
-and revision before publishing.
+Capture the original editor and document. Before displaying a reply, check the editor's lifetime, the
+document revision and the host's cancellation signal.
 
 ```ts
-import type { TabId, TabTarget, TextBuffer, Workspace } from "sttropez";
+import type { TextBuffer } from "sttropez";
+import type { TextEditor } from "sttropez/browser";
 
-export async function computeForTab<T>(
-    workspace: Workspace, tabId: TabId,
-    compute: (buffer: TextBuffer, cancelled: () => boolean) => Promise<T>,
-    publish: (result: T, target: TabTarget) => void
+export async function analyze<T>(
+    editor: TextEditor, signal: AbortSignal,
+    compute: (buffer: TextBuffer, signal: AbortSignal) => Promise<T>,
+    display: (result: T) => void
 ) {
-    const target = workspace.tabs.capture(tabId);
-    const tab = workspace.tabs.resolve(target);
-    if (tab?.surface.kind !== "text") return false;
-    const document = workspace.document(tab.surface.documentId);
-    const operation = workspace.operations.begin(document.resourceId, "analysis", target);
-    try {
-        const result = await compute(document.buffer, operation.isCancelled);
-        if (!operation.presentationCurrent() ||
-            workspace.observeDocument(document.id).getSnapshot()?.revision !== operation.revision)
-            return false;
-        publish(result, target);
-        return true;
-    } finally {
-        operation.finish();
-    }
+    const document = editor.workspace.observeDocument(editor.view.documentId);
+    const source = document.getSnapshot();
+    if (!source || signal.aborted || editor.signal.aborted) return;
+    const result = await compute(source.buffer, signal);
+    if (signal.aborted || editor.signal.aborted || !editor.workspace.ownsDocumentView(editor.view, editor.tab)) return;
+    if (document.getSnapshot()?.revision === source.revision) display(result);
 }
 ```
 
