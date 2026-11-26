@@ -39,6 +39,10 @@ Each editor shows one language popup. A keyboard or menu command replaces the ac
 While typing, signature help takes precedence over automatic completion. Pointer hover waits until
 the editor has no active popup. Escape dismisses the current popup. The Find bar has its own lifetime.
 
+A hover card offers Code actions at the inspected position, Edit color on a swatch and Open link when
+the attachment supplies those controls and a link opener. `hover.popup.actions(point, state)` can
+return host buttons with a `label` and a `run` callback. Stale buttons expire with the card.
+
 Borders, secondary text, fields and hovered rows derive from the surface and text colors. The selected
 row uses the selection color. In forced colors, the current completion, quick fix and pressed Find
 toggle use the system highlight and an outline.

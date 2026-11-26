@@ -200,6 +200,61 @@ test("pointer inspection yields to the picker and one Escape closes it", async (
     await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);');
 });
 
+test("hover actions use the inspected position and expire with the card", async ({ page }) => {
+    await page.routeWebSocket("**/lsp-fixture", client => {
+        const server = client.connectToServer();
+        client.onMessage(packet => {
+            const request = JSON.parse(packet.toString());
+            if (request.method === "textDocument/hover" && request.params.position.character === 18) {
+                client.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: null }));
+            } else if (request.method === "textDocument/documentLink") {
+                const range = { start: { line: 0, character: 6 }, end: { line: 0, character: 12 } };
+                client.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: [{ range, target: "file:///guide" }] }));
+            } else server.send(packet);
+        });
+    });
+    await page.goto("/controls/");
+    const source = page.getByRole("textbox", { name: "colors.ts" });
+    await expect(page.locator(".st-color-swatch")).toBeVisible();
+    async function inspect(offset: number) {
+        await page.evaluate(async offset => {
+            const path = "/controls/app.js";
+            const { editor } = await import(path) as typeof import("../fixtures/controls/main.ts");
+            editor.reveal({ from: offset, to: offset }, { select: true, focus: true });
+            editor.commands.run("hover.inspect");
+        }, offset);
+    }
+    const card = page.locator(".st-hover");
+    await inspect(18);
+    const custom = card.getByRole("button", { name: "Inspect offset" });
+    await custom.click();
+    const root = page.locator(".st-editor");
+    await expect(root).toHaveAttribute("data-inspected-offset", "18");
+    const old = await custom.elementHandle();
+    await page.evaluate(async () => {
+        const path = "/controls/app.js";
+        const { editor } = await import(path) as typeof import("../fixtures/controls/main.ts");
+        editor.reveal({ from: 3, to: 3 }, { select: true });
+    });
+    await expect(card).toBeHidden();
+    await inspect(18);
+    await card.getByRole("button", { name: "Edit color" }).click();
+    await expect(card).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Color picker" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await inspect(6);
+    await custom.click();
+    await old!.evaluate(button => (button as HTMLButtonElement).click());
+    await expect(root).toHaveAttribute("data-inspected-offset", "6");
+    await old!.dispose();
+    await card.getByRole("button", { name: "Open link" }).click();
+    await expect(root).toHaveAttribute("data-opened-link", "file:///guide");
+    await card.getByRole("button", { name: "Code actions" }).click();
+    await expect(page.getByRole("region", { name: "Quick fixes" })).toBeVisible();
+    await expect(card).toBeHidden();
+    await source.press("Escape");
+});
+
 test("clicking an allowed command action runs it once", async ({ page }) => {
     const executed: string[] = [];
     page.on("websocket", socket => socket.on("framesent", frame => {

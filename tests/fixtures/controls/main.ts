@@ -24,7 +24,12 @@ const language = attachEditorLanguage(editor, provider, {
     },
     completion: { list: true },
     signature: { popup: true },
-    hover: { popup: true },
+    links: { paint: true },
+    hover: { popup: {
+        canOpenLink: uri => uri.startsWith("file:///"),
+        openLink: uri => { editor.element.dataset.openedLink = uri; },
+        actions: point => [{ label: "Inspect offset", run() { editor.element.dataset.inspectedOffset = String(point.offset); } }],
+    } },
 });
 window.addEventListener("pagehide", event => {
     if (event.persisted) return;

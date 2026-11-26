@@ -62,7 +62,7 @@ Each heading is an import path. Follow a source link to read the declarations fo
 | [browser/find.ts](../src/browser/find.ts) | `FindController`, `FindControllerOptions`, `FindDiagnostics`, `FindFlags`, `FindReason`, `FindSnapshot`, `createFindController` |
 | [browser/folding-controller.ts](../src/browser/folding-controller.ts) | `FoldCommand`, `FoldDiscovery`, `FoldDiscoveryBatch`, `FoldDiscoveryCursor`, `FoldDiscoveryResult`, `FoldingController`, `FoldingStatus`, `createFoldingController` |
 | [browser/hover-controller.ts](../src/browser/hover-controller.ts) | `HoverController`, `HoverControllerOptions`, `HoverDiagnostics`, `HoverSnapshot` |
-| [browser/hover-popup.ts](../src/browser/hover-popup.ts) | `HoverPopupOptions` |
+| [browser/hover-popup.ts](../src/browser/hover-popup.ts) | `HoverPopupAction`, `HoverPopupOptions` |
 | [browser/input-events.ts](../src/browser/input-events.ts) | `EditRefusedDetail`, `InputConflictDetail`, `editRefusedEvent`, `inputConflictEvent` |
 | [browser/language-command.ts](../src/browser/language-command.ts) | `ChangedDocument`, `LanguageCommandOptions`, `LanguageCommands` |
 | [browser/lsp-highlights.ts](../src/browser/lsp-highlights.ts) | `LspHighlightController`, `LspHighlightSnapshot` |

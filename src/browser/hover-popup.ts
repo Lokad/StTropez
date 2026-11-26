@@ -7,12 +7,14 @@ import { mountAnchoredOverlay, type OverlayPosition } from "./anchored-overlay.t
 import { mountDocumentation, type DocumentationOptions } from "./documentation.ts";
 import { revealSelectionHead } from "./input-caret.ts";
 import { editorElement } from "./editor-element.ts";
-import type { HoverController } from "./hover-controller.ts";
+import type { HoverController, HoverSnapshot } from "./hover-controller.ts";
 import { observePointerDwell } from "./pointer-dwell.ts";
 import type { TextEditor } from "./text-editor.ts";
 
+export type HoverPopupAction = Readonly<{ label: string; run: () => void }>;
 export type HoverPopupOptions = DocumentationOptions & Readonly<{
     closeHint?: string;
+    actions?: (point: OverlayPosition, state: HoverSnapshot) => readonly HoverPopupAction[];
     beforeInspect?: (trigger: "pointer" | "keyboard") => boolean;
 }>;
 
@@ -26,7 +28,8 @@ export function mountHoverPopup(editor: TextEditor, hover: HoverController, opti
     const content = mountDocumentation(popup, options);
     const hint = doc.createElement("small");
     hint.textContent = options.closeHint ?? "Esc to close";
-    popup.append(hint);
+    const actions = doc.createElement("footer");
+    popup.append(actions, hint);
     const events = new AbortController();
     const { signal } = events;
     const listen = listenUntil(signal);
@@ -39,17 +42,39 @@ export function mountHoverPopup(editor: TextEditor, hover: HoverController, opti
         onHide: reason => { if (reason === "focus-leave" || reason === "expired") cancel(); },
     });
     const surface = transientSurface(editor, cancel);
+    let displayed: HoverSnapshot | undefined;
+    let actionPoint: OverlayPosition | undefined;
     function render() {
         const state = hover.getSnapshot();
-        const visible = state.status === "ready" || state.status === "failed" || (!pointer && state.status === "pending");
-        if (!anchor || !visible) {
+        const point = anchor;
+        if (displayed !== state || actionPoint !== point) {
+            displayed = state;
+            actionPoint = point;
+            actions.replaceChildren();
+            if (point && (state.status === "ready" || state.status === "empty")) {
+                const captured = view.getSnapshot();
+                for (const action of options.actions?.(point, state) ?? []) {
+                    const button = doc.createElement("button");
+                    button.type = "button";
+                    button.textContent = action.label;
+                    button.onclick = () => {
+                        if (signal.aborted || anchor !== point || view.getSnapshot() !== captured
+                            || hover.getSnapshot() !== state || !actions.contains(button)) return;
+                        action.run();
+                    };
+                    actions.append(button);
+                }
+            }
+        }
+        const visible = state.status === "ready" || state.status === "failed" || actions.childElementCount || (!pointer && state.status === "pending");
+        if (!point || !visible) {
             if (state.status !== "pending") { anchor = undefined; surface.release(); }
             content.setContent(emptyList);
             overlay.hide();
             return;
         }
-        content.setContent(state.content ?? [{ kind: "plaintext", value: state.message }]);
-        overlay.show(!pointer && state.range ? { revision: anchor.revision, ...state.range } : anchor);
+        content.setContent(state.status === "empty" ? emptyList : state.content ?? [{ kind: "plaintext", value: state.message }]);
+        overlay.show(!pointer && state.range ? { revision: point.revision, ...state.range } : point);
     }
     function cancel() {
         surface.release();
@@ -125,6 +150,7 @@ export function mountHoverPopup(editor: TextEditor, hover: HoverController, opti
             && !(event.target instanceof win.Element && event.target.closest("button"))) origin?.focus({ preventScroll: true });
     });
     listen(popup, "keydown", event => {
+        if (event.target instanceof win.HTMLButtonElement && (event.key === "Enter" || event.key === " ")) return;
         if (editor.keymap.handle(event)) {
             if (!anchor && origin?.isConnected) origin.focus({ preventScroll: true });
         } else if (event.target === popup && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229

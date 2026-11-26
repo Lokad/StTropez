@@ -5,6 +5,7 @@ import type { LspWorkspace } from "../protocol/lsp-workspace.ts";
 import { mountCompletion, type CompletionController, type CompletionControllerOptions } from "./completion-controller.ts";
 import { mountDiagnostic, type DiagnosticController, type DiagnosticControllerOptions } from "./diagnostic-controller.ts";
 import { mountHover, type HoverController, type HoverControllerOptions } from "./hover-controller.ts";
+import type { HoverPopupAction } from "./hover-popup.ts";
 import { mountDocumentColors, type DocumentColorController, type DocumentColorControllerOptions } from "./document-color-controller.ts";
 import { mountDocumentLinks, type DocumentLinkController, type DocumentLinkControllerOptions } from "./document-link-controller.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -46,7 +47,7 @@ type Attachment<O extends Options> = Readonly<{ [K in keyof O]: K extends keyof 
 
 type Mounts = {
     [K in keyof Features]: (editor: TextEditor, owner: LspDocumentOwner, options: NonNullable<Options[K]>,
-        features: Partial<Features>) => Features[K];
+        features: Partial<Features>, attachment: Options) => Features[K];
 };
 const mounts: Mounts = {
     commands: mountLanguageCommands,
@@ -54,8 +55,34 @@ const mounts: Mounts = {
     navigation: mountNavigation,
     rename: mountRename,
     diagnostics: mountDiagnostic,
-    hover: (editor, owner, options, features) => mountHover(editor, owner, features.diagnostics && !options.diagnostics
-        ? { ...options, diagnostics: features.diagnostics } : options),
+    hover(editor, owner, settings, features, options) {
+        const diagnostics = settings.diagnostics ?? features.diagnostics;
+        const popup = settings.popup === true ? {} : settings.popup;
+        if (!popup) return mountHover(editor, owner, { ...settings, ...(diagnostics && { diagnostics }) });
+        return mountHover(editor, owner, { ...settings, ...(diagnostics && { diagnostics }), popup: {
+            ...popup, actions(point, state) {
+                const actions: HoverPopupAction[] = [];
+                if (state.status === "ready" && options.codeActions?.popup && editor.commands.get("quickfix.show")?.enabled) {
+                    actions.push({ label: "Code actions", run() {
+                        const { selection } = editor.view.getSnapshot();
+                        if ((point.offset < Math.min(selection.head, selection.anchor) || point.offset > Math.max(selection.head, selection.anchor))
+                            && !editor.reveal({ from: point.offset, to: point.offset }, { expectedRevision: point.revision, select: true })) return;
+                        editor.commands.run("quickfix.show");
+                    } });
+                }
+                const mark = options.colors?.picker && features.colors?.colorAt(point.offset);
+                if (mark) actions.push({ label: "Edit color", run: () => { features.colors?.openPicker(mark); } });
+                const link = features.links?.linkAt(point.offset);
+                const openLink = popup.openLink;
+                if (link && openLink && (link.target === null ? link.canResolve : popup.canOpenLink?.(link.target) !== false)) {
+                    actions.push({ label: "Open link", run: () => { void link.open(uri => {
+                        if (features.hover?.getSnapshot() === state && popup.canOpenLink?.(uri) !== false) openLink(uri);
+                    }); } });
+                }
+                return actions.concat(popup.actions?.(point, state) ?? []);
+            },
+        } });
+    },
     completion: mountCompletion,
     signature: mountSignature,
     occurrences: mountOccurrences,
@@ -80,7 +107,7 @@ export function attachEditorLanguage<O extends Options>(editor: TextEditor, prov
     const features: Partial<Features> = {};
     function mount<K extends keyof Features>(key: K) {
         const settings = options[key];
-        if (settings) features[key] = mounts[key](editor, binding.owner, settings, features);
+        if (settings) features[key] = mounts[key](editor, binding.owner, settings, features, options);
     }
     function dispose() {
         if (disposed) return;

@@ -177,14 +177,14 @@
     --_st-control-shadow: 0 8px 28px color-mix(in srgb, var(--_st-control-border) 35%, transparent);
     color: var(--_st-control-text);
 }
-:is(.st-signature, .st-find-bar, .st-rename, .st-code-actions, .st-color-picker) :is(button, input, select) {
+:is(.st-signature, .st-find-bar, .st-rename, .st-code-actions, .st-color-picker, .st-hover footer) :is(button, input, select) {
     color: var(--_st-control-text); background-color: var(--_st-control-surface); border-color: var(--_st-control-border);
 }
-:is(.st-signature, .st-find-bar, .st-rename, .st-code-actions, .st-color-picker) :where(button:enabled:hover) {
+:is(.st-signature, .st-find-bar, .st-rename, .st-code-actions, .st-color-picker, .st-hover footer) :where(button:enabled:hover) {
     background-color: var(--_st-control-hover);
 }
-:is(.st-signature, .st-find-bar, .st-rename, .st-code-actions, .st-color-picker) button:disabled { opacity: .55; }
-:is(.st-signature, .st-find-bar, .st-rename, .st-code-actions, .st-color-picker) :focus-visible {
+:is(.st-signature, .st-find-bar, .st-rename, .st-code-actions, .st-color-picker, .st-hover footer) button:disabled { opacity: .55; }
+:is(.st-signature, .st-find-bar, .st-rename, .st-code-actions, .st-color-picker, .st-hover footer) :focus-visible {
     outline: 2px solid var(--st-focus-ring, currentColor); outline-offset: -2px;
 }
 .st-hover, .st-signature { width: min(420px, calc(100vw - 16px)); max-height: 290px; padding: 12px 16px; border: 1px solid var(--_st-control-border);
@@ -217,6 +217,9 @@
 .st-completion button:hover { background: var(--_st-control-hover); }
 .st-completion button[aria-selected="true"] { background: var(--st-completion-selected, var(--_st-control-selected)); color: var(--_st-control-text); }
 .st-completion pre { flex: none; margin: 0; padding: 10px 12px; border-top: 1px solid var(--_st-control-border); font: 12px/1.5 var(--st-font, monospace); color: var(--_st-control-secondary); white-space: pre-wrap; max-height: 100px; overflow: auto; }
+
+.st-hover footer { display: flex; flex-wrap: wrap; gap: 4px; }
+.st-hover footer:not(:empty) { margin-block: 4px; }
 
 .st-rename[hidden] { display: none; }
 .st-rename { display: flex; flex-direction: column;

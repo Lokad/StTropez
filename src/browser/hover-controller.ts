@@ -124,8 +124,9 @@ export function mountHover(editor: TextEditor, owner: LspDocumentOwner, options:
             const { error } = current.failure;
             status("failed", error instanceof Error ? error.message : String(error));
         } else {
-            release();
-            status("empty", "No information at this position.");
+            // An action-only card still belongs to this source selection.
+            if (!(typeof options.popup === "object" && options.popup.actions)) release();
+            status("empty", "No information at this position.", revision);
         }
     }
     async function read(current: Inspection, capture: NonNullable<Inspection["capture"]>): Promise<Outcome<HoverSnapshot>> {
