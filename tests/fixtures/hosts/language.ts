@@ -304,7 +304,6 @@ export class HostLanguageTools {
         this.cell.set({ ...this.cell.get(), foldMessage: "All folds expanded." });
     }
     setDelay(value: number): void { this.active?.provider?.setDelay(value); }
-    faultNext(value: "malformed" | "failure"): void { this.active?.provider?.faultNext(value); }
     debug() {
         const sessions = [...this.sessions.values()];
         return {

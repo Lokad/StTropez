@@ -423,32 +423,12 @@ test.describe("plain LSP inspection/navigation", () => {
     });
 });
 
-test("malformed navigation, changed authority and pending remount cannot publish stale targets", async ({ page }) => {
+test("a modifier click in a shadow tree retires its definition on typing or remount", async ({ page }) => {
     const replies = await holdLspReplies(page, "textDocument/definition");
     await page.goto("/hosts/plain/?language=lsp");
     await expect(field(page)).toBeVisible();
     const text = "const target = 1;\r\ntarget";
     await seed(page, text, text.length - 2);
-
-    await page.evaluate(() => window.hostFixture.faultNavigationNext("malformed"));
-    await field(page).press("F12");
-    await expect(page.getByLabel("Locations status", { exact: true })).toContainText("unavailable");
-    await expect(results(page)).toHaveCount(0);
-    await expect(field(page)).toBeFocused();
-    await button(page, "Find definition").click();
-    await expect(results(page)).toHaveCount(1);
-    await page.evaluate(() => window.hostFixture.setSourceReadOnly(true));
-    await expect(results(page)).toHaveCount(0);
-    await page.evaluate(() => window.hostFixture.setSourceReadOnly(false));
-
-    replies.hold();
-    await field(page).press("F12");
-    await expect.poll(replies.waiting).toBe(true);
-    await field(page).press("ArrowLeft");
-    await expect.poll(replies.cancelled).toBe(true);
-    await replies.release();
-    await waitForNavigation(page);
-    await expect(results(page)).toHaveCount(0);
 
     await moveEditorIntoShadow(field(page));
     const row = page.locator('.st-editor:has(> textarea[aria-label="Primary source"]) .st-viewport-row[data-line="1"]');

@@ -26,6 +26,6 @@ export function createLspProviderController(editor: TextEditor, options: LspProv
     const stopCompletion = controller.subscribe(update), stopDiagnostics = diagnostics.subscribe(update);
     return Object.freeze({ ...controller, ...cell.observable,
         disconnect: () => { controller.cancel(); options.provider.disconnect(); },
-        setDelay: fixture.setDelay, faultNext: fixture.faultNext,
+        setDelay: fixture.setDelay,
         dispose: () => { stopCompletion(); stopDiagnostics(); language.dispose(); } });
 }

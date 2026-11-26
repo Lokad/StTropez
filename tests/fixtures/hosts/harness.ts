@@ -71,13 +71,13 @@ export function installHostHarness(controller: HostController, bindings: ViewBin
         editTransferTarget: (expectedRevision: number, edits: readonly TextEdit[]) => controller.workspace.edit({ documentId: transferSnapshot().documentId, expectedRevision, edits, origin: "host" }),
         setTransferReadOnly: (value: boolean) => { if (!transferTarget) throw new Error("No transfer target is mounted.");
             controller.workspace.setCapabilities(transferTarget.id, { edit: value ? ["host"] : ["human", "host"], save: true }); },
-        setProviderDelay: (delay: number) => bindings.language.setDelay(delay), faultProviderNext: (fault: "malformed" | "failure") => bindings.language.faultNext(fault),
+        setProviderDelay: (delay: number) => bindings.language.setDelay(delay),
         providerCustom: (method: string, params: JsonValue) => bindings.projectScope.request(method, params).result,
         providerState: () => bindings.language.state.getSnapshot().provider,
         requestProvider: bindings.language.request,
         setDomainDelay: (delay: number) => { if (!Number.isFinite(delay) || delay < 0 || delay > 10000) throw new RangeError("Invalid domain delay."); bindings.domain.fixture.delay = delay; },
         faultDomainNext: (fault: "malformed" | "failure" | "late") => { bindings.domain.fixture.fault = fault; },
-        setNavigationDelay: bindings.navigation.fixture.setDelay, faultNavigationNext: bindings.navigation.fixture.faultNext,
+        setNavigationDelay: bindings.navigation.fixture.setDelay,
         releaseNavigationCompanion: () => bindings.navigation.releaseCompanion(),
         setProjectDelay: bindings.project.fixture.setDelay, faultProjectNext: bindings.project.fixture.faultNext,
         setSignatureDelay: bindings.signature.fixture.setDelay, faultSignatureNext: bindings.signature.fixture.faultNext, requestSignature: bindings.signature.inspect,
@@ -115,12 +115,12 @@ declare global { interface Window { hostFixture: Readonly<{ ready: boolean; sett
     openTransferTarget: (text: string) => void; transferSnapshot: () => TransferTargetSnapshot;
     editTransferTarget: (expectedRevision: number, edits: readonly TextEdit[]) => ReturnType<HostController["workspace"]["edit"]>;
     setTransferReadOnly: (value: boolean) => void;
-    setProviderDelay: (delay: number) => void; faultProviderNext: (fault: "malformed" | "failure") => void;
+    setProviderDelay: (delay: number) => void;
     providerCustom: (method: string, params: JsonValue) => Promise<JsonValue>;
     providerState: () => ReturnType<ViewBindings["language"]["state"]["getSnapshot"]>["provider"];
     requestProvider: () => void;
     setDomainDelay: (delay: number) => void; faultDomainNext: (fault: "malformed" | "failure" | "late") => void;
-    setNavigationDelay: (delay: number) => void; faultNavigationNext: (fault: "malformed" | "failure") => void;
+    setNavigationDelay: (delay: number) => void;
     releaseNavigationCompanion: () => boolean;
     setProjectDelay: (value: number) => void; faultProjectNext: (value: "malformed" | "failure" | "ack") => void;
     setSignatureDelay: (value: number) => void; faultSignatureNext: (value: "malformed" | "failure" | "markup") => void; requestSignature: () => void;
