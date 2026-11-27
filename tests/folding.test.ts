@@ -108,16 +108,16 @@ test("composed host edits replay folded moves in order and preserve later fold c
 test("copied line moves carry each view's folds through undo and redo", () => {
     const workspace = new Workspace();
     const source = workspace.createTextResource({ scope: "fold", resource: "move", variant: "text" }, "Move", {
-        value: "a\r\n  A\nb\n  B\r\nc\n  C\r\nd\r\n  D"
+        value: "a\r\n  A\nb\n  B\r\nmiddle\n  untouched\nc\n  C\r\nd\r\n  D"
     });
     const documentId = source.id;
     const main = workspace.createDocumentView(documentId);
     const peer = workspace.createDocumentView(documentId);
     const original = workspace.document(documentId);
-    const ids = ["a", "b", "c", "d"];
-    const heads = [0, original.buffer.offsetAt(4)];
+    const ids = ["a", "b", "middle", "c", "d"];
+    const heads = [0, original.buffer.offsetAt(6)];
     const ranges = ids.map((id, i) => ({
-        id, from: original.buffer.offsetAt(2 * i), to: i === 3 ? original.buffer.length : original.buffer.offsetAt(2 * i + 2)
+        id, from: original.buffer.offsetAt(2 * i), to: i === ids.length - 1 ? original.buffer.length : original.buffer.offsetAt(2 * i + 2)
     }));
     const states = () => [main, peer].map(view => view.folding.getSnapshot().regions.map(r => [r.id, r.lineFrom, r.collapsed]));
     try {
@@ -126,6 +126,7 @@ test("copied line moves carry each view's folds through undo and redo", () => {
         }
         main.setSelections(original.revision, heads.map(head => ({ head, anchor: head })), 0);
         const before = states();
+        const gap = main.folding.getSnapshot().regions[2];
         const proposal = planLanguageEdit(original.buffer, main.getSnapshot().selectionSet, "move-line-down",
             resolveLanguageConfiguration(), main.folding.getSnapshot().index);
         const plan = structuredClone(proposal);
@@ -134,7 +135,8 @@ test("copied line moves carry each view's folds through undo and redo", () => {
         const history = () => ({ documentId, expectedRevision: workspace.document(documentId).revision });
         assert.ok(apply(plan.edits).status === "done");
         const after = states();
-        assert.deepEqual(after, [main, peer].map(view => ["b", "a", "d", "c"].map((id, i) => [id, 2 * i, view === main || id === "c"])));
+        assert.equal(main.folding.getSnapshot().regions[2], gap);
+        assert.deepEqual(after, [main, peer].map(view => ["b", "a", "middle", "d", "c"].map((id, i) => [id, 2 * i, view === main || id === "c"])));
         assert.ok(workspace.undo(history()).status === "done");
         assert.deepEqual(states(), before);
         assert.ok(workspace.redo(history()).status === "done");

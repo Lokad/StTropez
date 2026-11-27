@@ -100,10 +100,7 @@ export function movedCollapsedRegions(regions: readonly FoldRegion[]): FoldRegio
     return outer;
 }
 
-function movedFold(buffer: TextBuffer, previous: TextBuffer, r: FoldRegion, swaps: readonly LineSwap[]): FoldRegion | null | undefined {
-    const at = partitionPoint(swaps.length, i => swaps[i]!.first <= r.lineFrom);
-    const swap = swaps[at - 1];
-    if (!swap || r.lineFrom >= swap.end) return;
+function movedFold(buffer: TextBuffer, previous: TextBuffer, r: FoldRegion, swap: LineSwap): FoldRegion | null {
     // Its header moved independently of some of its body. Discovery can rebuild this fold.
     if (r.lineTo > swap.end || r.lineFrom < swap.middle && r.lineTo > swap.middle) return null;
     const shift = r.lineFrom < swap.middle ? swap.end - swap.middle : swap.first - swap.middle;
@@ -136,9 +133,22 @@ export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, reg
         }
         headers.set(next.lineFrom, mapped.length); mapped.push(next);
     };
+    let swapIndex = 0;
     for (const r of regions) {
-        const moved = swaps && movedFold(buffer, previous, r, swaps);
-        if (moved !== undefined) { if (moved) reordered!.push(moved); continue; }
+        if (swaps) {
+            while (swapIndex < swaps.length && swaps[swapIndex]!.end <= r.lineFrom) swapIndex++;
+            const swap = swaps[swapIndex];
+            // Whole-line rotations preserve the offsets and row numbers of disjoint folds.
+            if (!swap || r.lineTo <= swap.first) {
+                reordered!.push(r);
+                continue;
+            }
+            if (r.lineFrom >= swap.first) {
+                const moved = movedFold(buffer, previous, r, swap);
+                if (moved) reordered!.push(moved);
+                continue;
+            }
+        }
         let next: FoldRegion | undefined;
         if (edges && r.to <= edges.prefix) next = r;
         else if (edges && r.from >= suffix) next = units === 0 && lines === 0 ? r : shiftRegion(r, units, lines);
