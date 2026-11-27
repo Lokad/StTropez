@@ -65,12 +65,12 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
         control.type = "button";
         control.textContent = text(caption);
         control.title = text(label);
-        control.setAttribute("aria-label", control.title);
+        control.ariaLabel = control.title;
         control.onclick = action;
         return control;
     }
     const expand = button(bar, "replace-toggle", "Replace…", () => {
-        showReplacement(row.hidden);
+        showReplacement(!!row.hidden);
         (row.hidden ? query : replacement).focus({ preventScroll: true });
     });
     const query = field(bar, "find-query", "Find text", "Find in this file");
