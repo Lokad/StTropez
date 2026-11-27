@@ -439,6 +439,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     const triggers = () => new Set(scope.featureOptions(completionMethod, binding).flatMap(option => Array.isArray(option.triggerCharacters)
         ? option.triggerCharacters.filter((value): value is string => typeof value === "string" && value.length > 0 && value.length <= 8).slice(0, 64) : []));
     const scheduleAuto = () => {
+        if (connectionPhase() === "disconnected" || connectionPhase() === "disposed") { cancelAuto(); return; }
         if (options.automatic === false || !inputIntent || autoFrame !== undefined) return;
         autoFrame = clock.requestAnimationFrame(() => {
             autoFrame = undefined;

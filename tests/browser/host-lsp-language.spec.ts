@@ -172,6 +172,7 @@ test.describe("plain selected LSP features", () => {
         await expect(apply).toBeDisabled(); await expect(links.locator("li")).toHaveCount(0);
         expect((await snapshot(page)).bindings.links.state.connected).toBe(false); expect((await snapshot(page)).bindings.colors.state.choices).toHaveLength(0);
         await expect(button(page, "Reconnect color provider")).toBeEnabled();
+        const completionRequests = methods.filter(method => method === "textDocument/completion").length;
         await field(page).press("Control+End"); await field(page).pressSequentially("H"); await ready(page); await exact(page, raw + "H");
         await expect(completionStatus).toContainText("provider disconnected");
         expect(methods.filter(method => method === "initialize")).toHaveLength(1);
@@ -179,6 +180,7 @@ test.describe("plain selected LSP features", () => {
         await expect(completionStatus).toContainText("provider connected");
         await expect(swatches.first()).toBeVisible();
         await expect(paintedLinks).toHaveText("sample-utils");
+        expect(methods.filter(method => method === "textDocument/completion")).toHaveLength(completionRequests);
         await page.evaluate(at => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: at, head: at }]); }, raw.indexOf(")"));
         await signature(); await expect(popup).toBeVisible(); await button(page, "Discover module links").click(); await settledColorsAndLinks(page); await expect(links.getByRole("button")).toHaveCount(1);
         await discoverColors(); await preview(); await expect(apply).toBeEnabled(); await exact(page, raw + "H");
