@@ -13,7 +13,6 @@ export { createFoldRegions, type FoldIndex } from "./core/folding.ts";
 export type { FoldRange, FoldRegion, FoldVersion, FoldingSnapshot, DocumentFolding } from "./core/folding.ts";
 export { discoverIndentationFolds } from "./core/fold-discovery.ts";
 export type { DiscoveredFold, IndentationFoldingOptions, IndentationFoldingProgress, IndentationFoldingCursor } from "./core/fold-discovery.ts";
-export type { GraphemeSource, GraphemeRange, GraphemeOptions, GraphemeProgress, GraphemeCursor } from "./core/graphemes.ts";
 export type { DiffHunk, DiffProgress, DiffRange } from "./core/diff.ts";
 export type { ComparisonBaseline, ComparisonCapture, ComparisonController, ComparisonHunk, ComparisonSnapshot, ComparisonTicket, ComparisonReversion } from "./core/comparison.ts";
 export type { EditKind, HistoryOptions, HistorySnapshot, Selection } from "./core/history.ts";

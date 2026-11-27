@@ -13,7 +13,7 @@ import { textDifference } from "../core/changes.ts";
 import { copyCaretLines, planClipboardPaste } from "../core/clipboard-edits.ts";
 import { collapsedLineBlock } from "../core/folding.ts";
 import { isCodeWordBase, wordBoundary, wordCommandOffset } from "../core/words.ts";
-import { indexGraphemes } from "../core/graphemes.ts";
+import { graphemeBoundaries, pointAtBoundaries } from "../core/graphemes.ts";
 import { createSelectionSet, normalizeSelectionSet, planSelectionEdits, sameSelectionSet } from "../core/selections.ts";
 import { selectionOccurrences } from "../core/selection-occurrences.ts";
 import type { Affinity } from "../core/positions.ts";
@@ -22,7 +22,6 @@ import type { EditKind, Selection } from "../core/history.ts";
 import type { SelectionSet } from "../core/selections.ts";
 import type { BufferPosition, TextBuffer } from "../core/text-buffer.ts";
 import type { TextEdit } from "../core/changes.ts";
-import type { GraphemeIndex } from "../core/graphemes.ts";
 import type { ViewState } from "./view-state.ts";
 import { inputContext, inputContextUnits } from "./input-context.ts";
 import { localAsciiGraphemePoint } from "../core/grapheme-point.ts";
@@ -215,7 +214,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     function cancelLineRequest(): void {
         const request = lineRequest; lineRequest = undefined; request?.abort.abort();
     }
-    let graphemeCache: Readonly<{ buffer: TextBuffer; from: number; to: number; index: GraphemeIndex }> | undefined;
+    let graphemeCache: Readonly<{ buffer: TextBuffer; from: number; to: number; boundaries: readonly number[] }> | undefined;
     const lineCopyFormat = "application/x-sttropez-lines";
     const copiedLines = (data: DataTransfer | null) => data?.getData(lineCopyFormat) === "1";
     type InputCapture = Readonly<{ revision: number; selectionSet: SelectionSet; context: InputContext; target?: NativeInsertionTarget; wholeLines?: boolean }>;
@@ -516,11 +515,9 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         if (side < 0 && line > 0 && offset === buffer.offsetAt(line)) line--;
         const from = buffer.offsetAt(line), to = lineBoundary(buffer, line + 1);
         if (graphemeCache?.buffer !== buffer || graphemeCache.from !== from || graphemeCache.to !== to) {
-            graphemeCache = { buffer, from, to, index: indexGraphemes(buffer, { from, to }) };
+            graphemeCache = { buffer, from, to, boundaries: graphemeBoundaries(buffer.slice(from, to), from) };
         }
-        const { index } = graphemeCache;
-        return { offset, floor: index.floor(offset), ceil: index.ceil(offset),
-            preceding: index.preceding(offset), following: index.following(offset) };
+        return pointAtBoundaries(graphemeCache.boundaries, offset);
     }
     function commandCapture(deleting: boolean): CommandCapture {
         const document = currentDocument(), { selection, selectionSet } = currentView();

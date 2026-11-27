@@ -3,29 +3,28 @@ import test from "node:test";
 import { nextSeed } from "./fixtures/workloads.ts";
 import assert from "node:assert/strict";
 import { TextBuffer } from "../src/index.ts";
-import { createGraphemeCursor } from "../src/kernels/index.ts";
+import { graphemeBoundaries, pointAtBoundaries } from "../src/core/graphemes.ts";
 import { localAsciiGraphemePoint } from "../src/core/grapheme-point.ts";
 
 function verify(text: string): number {
     // Piece seams deliberately split surrogate pairs and neighborhoods.
     let buffer = TextBuffer.from("");
     for (let from = 0; from < text.length; from += 3) buffer = buffer.replace(buffer.length, buffer.length, text.slice(from, from + 3));
-    const cursor = createGraphemeCursor(buffer); let step = cursor.next(256);
-    while (step.status === "running") step = cursor.next(256);
-    const index = step.result!, native = [0, ...[...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].map(p => p.index + p.segment.length)];
+    const boundaries = graphemeBoundaries(text);
+    const native = [0, ...[...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].map(p => p.index + p.segment.length)];
     let accepted = 0;
     for (let offset = 0; offset <= text.length; offset++) {
         const reads = bufferReads(buffer).sliceUnits, point = localAsciiGraphemePoint(buffer, offset);
         assert.ok(bufferReads(buffer).sliceUnits - reads <= 4);
         if (!point) continue; accepted++;
         assert.ok(Object.isFrozen(point));
-        assert.deepEqual(point, { offset, floor: index.floor(offset), ceil: index.ceil(offset), preceding: index.preceding(offset), following: index.following(offset) }, JSON.stringify({ text, offset }));
+        assert.deepEqual(point, pointAtBoundaries(boundaries, offset), JSON.stringify({ text, offset }));
         assert.equal(point.floor, native.filter(at => at <= offset).at(-1));
         assert.equal(point.ceil, native.find(at => at >= offset));
         assert.equal(point.preceding, native.filter(at => at < offset).at(-1) ?? null);
         assert.equal(point.following, native.find(at => at > offset) ?? null);
     }
-    assert.equal(bufferReads(buffer).textExports, 0); cursor.dispose(); return accepted;
+    assert.equal(bufferReads(buffer).textExports, 0); return accepted;
 }
 
 test("bounded ASCII point queries agree with full-context indexes and a native grapheme oracle", () => {

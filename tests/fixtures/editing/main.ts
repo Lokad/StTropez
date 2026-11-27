@@ -1,4 +1,4 @@
-import { graphemeBoundaries } from "../../../src/kernels/index.ts";
+import { graphemeBoundaries } from "../../../src/core/graphemes.ts";
 import { Workspace } from "../../../src/index.ts";
 import type { FoldRange, Selection, TextEdit } from "../../../src/index.ts";
 import { inputConflictEvent, mountAnchoredOverlay, mountFindBar, mountTextEditor, observePointerDwell, createFoldingController } from "../../../src/browser/index.ts";

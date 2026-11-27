@@ -70,11 +70,6 @@ Declarations start at `index.d.ts` in the assets directory.
 | [`FoldRange`](../src/core/folding.ts) | type | Host-owned raw anchors include a visible header and at least one complete body row. |
 | [`FoldRegion`](../src/core/folding.ts) | type |  |
 | [`FoldVersion`](../src/core/folding.ts) | type |  |
-| [`GraphemeCursor`](../src/core/graphemes.ts) | type |  |
-| [`GraphemeOptions`](../src/core/graphemes.ts) | type |  |
-| [`GraphemeProgress`](../src/core/graphemes.ts) | type |  |
-| [`GraphemeRange`](../src/core/graphemes.ts) | type |  |
-| [`GraphemeSource`](../src/core/graphemes.ts) | type |  |
 | [`HistoryOptions`](../src/core/history.ts) | type |  |
 | [`HistoryRequest`](../src/core/workspace.ts) | type |  |
 | [`HistorySnapshot`](../src/core/history.ts) | type |  |
@@ -408,11 +403,7 @@ Declarations start at `kernels/index.d.ts` in the assets directory.
 | [`applyLspWorkspaceEdit`](../src/protocol/lsp-workspace-edit.ts) | function | Apply a decoded, retained text-only edit as one shared undo command. |
 | [`bufferDifference`](../src/core/buffer-change.ts) | function | Return a replacement span after skipping storage shared by the two versions. |
 | [`composePositionMaps`](../src/core/positions.ts) | function | Known maps compile sequential semantics; opaque host mappings retain their own ordered pipeline. |
-| [`createGraphemeCursor`](../src/core/graphemes.ts) | function |  |
 | [`decodeLspDiagnostics`](../src/protocol/lsp-features.ts) | function | Place valid wire ranges against this explicit snapshot without inventing a provider version. |
-| [`graphemeBoundaries`](../src/core/graphemes.ts) | function |  |
-| [`GraphemeIndex`](../src/core/graphemes.ts) | class | Immutable extended-grapheme boundaries. |
-| [`GraphemeLimitError`](../src/core/graphemes.ts) | class |  |
 | [`JsonRpcConnection`](../src/protocol/json-rpc.ts) | class | Bidirectional JSON-RPC 2.0 over an ordered, message-delimited host transport. |
 | [`LiteralSearch`](../src/core/search.ts) | class | Non-overlapping literal UTF-16 matches over immutable pieces. |
 | [`LspSession`](../src/protocol/lsp-session.ts) | class | Host-driven LSP 3.17 session. |

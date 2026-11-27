@@ -2,20 +2,6 @@ import type { DocumentSnapshot, DocumentView } from "../src/index.ts";
 import type { JsonValue, LspDocument, LspWorkspaceScope } from "../src/protocol/index.ts";
 import type { JsonRpcConnection, LspSession } from "../src/kernels/index.ts";
 
-import type { GraphemeProgress } from "../src/index.ts";
-import type { GraphemeIndex } from "../src/kernels/index.ts";
-
-export function graphemeReadContract(index: GraphemeIndex, progress: GraphemeProgress): void {
-    // @ts-expect-error Published boundaries are immutable.
-    index.boundaries().push(0);
-    // @ts-expect-error Cluster coordinates are immutable.
-    index.clusterAt(0).from = 1;
-    // @ts-expect-error Source identity is captured.
-    index.source.kind = "buffer";
-    // @ts-expect-error Ready-only progress is immutable.
-    progress.result = null;
-}
-
 export function documentReadContract(document: DocumentSnapshot, view: DocumentView): void {
     // @ts-expect-error Buffer snapshots expose no mutable text or position properties.
     document.buffer.length = 0;
