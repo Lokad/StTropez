@@ -187,6 +187,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         try {
             if (disposed) return refused("unavailable-view");
             cancelAuto();
+            if (editor.getSnapshot().readOnlyReason) return refused("not-writable");
             if (!available() || !idle()) {
                 publish("busy");
                 return refused("unavailable-view");
@@ -615,7 +616,8 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         cell.clearSnapshotListeners();
     };
     try {
-        register("completion.request", "Show completions", ["Mod+Code:Space"], available, () => { void request(); });
+        register("completion.request", "Show completions", ["Mod+Code:Space"],
+            () => available() && !editor.getSnapshot().readOnlyReason, () => { void request(); });
         register("completion.dismiss", "Dismiss completion", ["Escape"], () => !!(snippet || job || inputIntent || autoFrame !== undefined), () => {
             if (snippet && (job || inputIntent)) {
                 cancelAuto();

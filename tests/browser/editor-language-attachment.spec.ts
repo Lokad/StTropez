@@ -183,7 +183,7 @@ test("signature help can release focus to a host field and recover from a refuse
     expect(await fixture.evaluate(f => f.owners())).toEqual({ views: 0, subscriptions: 0, leases: 0 });
 });
 
-isolatedTest("a link controller on a later pane requests links on the already open connection", async ({ page }) => {
+isolatedTest("a read-only pane can inspect links and refuses completion on the shared connection", async ({ page }) => {
     await mountShadowEditor(page, true);
     const result = await page.evaluate(async () => {
         const path = "/shadow-focus/browser.js";
@@ -192,13 +192,15 @@ isolatedTest("a link controller on a later pane requests links on the already op
         await provider!.connect();
         const epoch = provider!.getSnapshot().epoch;
         const host = document.createElement("div"); document.body.append(host);
-        const second = mountTextEditor(host, workspace, source.id);
+        const second = mountTextEditor(host, workspace, source.id, { readOnly: true });
         try {
-            const { links } = attachEditorLanguage(second, provider!, { links: {} });
+            const { links, completion } = attachEditorLanguage(second, provider!, { links: {}, completion: { list: true } });
             editor.dispose();
             await links.request();
-            return { status: links.getSnapshot().status, sameConnection: provider!.getSnapshot().epoch === epoch };
+            return { status: links.getSnapshot().status, sameConnection: provider!.getSnapshot().epoch === epoch,
+                offered: second.commands.get("completion.request")?.enabled, completion: await completion.request() };
         } finally { second.dispose(); host.remove(); await dispose(); }
     });
-    expect(result).toEqual({ status: "ready", sameConnection: true });
+    expect(result).toEqual({ status: "ready", sameConnection: true, offered: false,
+        completion: { status: "refused", reason: "not-writable" } });
 });
