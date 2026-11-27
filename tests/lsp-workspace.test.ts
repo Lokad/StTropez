@@ -229,7 +229,7 @@ async function languageFixture(t: test.TestContext) {
 }
 
 function fixture(t: test.TestContext, extra: Partial<Pick<LspWorkspaceOptions,
-    "maxDocumentUnits" | "features" | "schedule" | "rpc">> = {}) {
+    "maxDocumentUnits" | "features" | "schedule" | "rpc" | "onDiagnosticReport">> = {}) {
     const workspace = new Workspace(), source = workspace.createTextResource({ scope: "generic", resource: "source", variant: "working" }, "Source", {
         value: "a😀\r\nsource",
         language: { uri: "host+opaque:workspace/source", languageId: "generic-language" },
@@ -525,11 +525,18 @@ test("a rejected oversized update expires associations but preserves unrelated d
 });
 
 test("shared diagnostic placement preserves unknown freshness and expires on reconnect and URI reuse", async t => {
-    const f = fixture(t), a = f.provider.createScope(), b = f.provider.createScope(), left = a.attachDocument(f.source.id), right = b.attachDocument(f.source.id);
+    const reports: string[] = [];
+    const f = fixture(t, { onDiagnosticReport: (id, report) => reports.push(id + ":" + report.items.length) });
+    const a = f.provider.createScope(), b = f.provider.createScope();
+    const left = a.attachDocument(f.source.id), right = b.attachDocument(f.source.id);
     const first = a.observeDiagnostics(left), second = b.observeDiagnostics(right); await a.ensureConnected();
     const send = async (value: unknown) => { f.peers.at(-1)!.rpc.sendNotification("textDocument/publishDiagnostics", value); await a.request("test/barrier").result; };
     const capture = a.synchronized(left)!, range = { start: { line: 1, character: 0 }, end: { line: 1, character: 6 } };
     const message = { uri: capture.document.uri, diagnostics: [{ range, message: "shared warning" }] };
+    const companion = f.workspace.document(f.companion.id);
+    await send({ uri: companion.language!.uri, diagnostics: [] });
+    assert.deepEqual(reports, [f.companion.id + ":0"]);
+    assert.equal(f.workspace.ownership(companion.id).leases, 0);
     await send({ ...message, version: capture.version }); const verified = first.getSnapshot();
     assert.equal(verified, second.getSnapshot()); assert.equal(verified.result!.freshness, "versioned"); assert.equal(verified.result!.revision, f.workspace.document(f.source.id).revision);
     await send({ ...message, version: capture.version + 1 });
@@ -541,6 +548,7 @@ test("shared diagnostic placement preserves unknown freshness and expires on rec
     assert.equal(first.getSnapshot(), verified);
     await send({ ...message, uri: "host+opaque:unknown" });
     assert.equal(first.getSnapshot(), verified);
+    assert.deepEqual(reports, [f.companion.id + ":0", f.source.id + ":1"]);
     await send(message); const uncertain = first.getSnapshot(); assert.equal(uncertain.result!.version, null); assert.equal(uncertain.result!.revision, null);
     assert.equal(uncertain.result!.snapshotRevision, capture.document.revision); assert.equal(uncertain.result!.items[0]!.from, 5); assert.equal(uncertain.isCurrent(), true);
     f.edit(); assert.equal(uncertain.isCurrent(), false); assert.equal(uncertain.isPlacementCurrent(), false);
@@ -567,8 +575,10 @@ test("shared diagnostic placement preserves unknown freshness and expires on rec
     const rebound = a.observeDiagnostics(replacement);
     await send(delayed);
     assert.equal(rebound.getSnapshot().status, "empty", "A late warning belongs to the closed document.");
+    assert.ok(!reports.some(report => report.startsWith(file.id + ":")));
     await send({ ...message, version: a.synchronized(replacement)!.version, diagnostics: [{ range, message: "new warning" }] });
     assert.deepEqual(rebound.getSnapshot().result!.items.map(item => item.message), ["new warning"]);
+    assert.equal(reports.at(-1), file.id + ":1");
     assert.equal(first.getSnapshot().status, "expired");
 });
 

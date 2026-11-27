@@ -106,7 +106,12 @@ test("target checks visit the captured project once per pass and retain independ
     const snapshots = resources.map(resource => f.workspace.document(resource.id));
     f.peer.onRequest("textDocument/references", () => Array.from({ length: 40 }, (_, i) => ({ uri: `${uri}/${i}`, range })));
     let visits = 0; const observe = f.workspace.observeDocument;
-    Reflect.set(f.workspace, "observeDocument", (...args: Parameters<typeof observe>) => { visits++; return observe.apply(f.workspace, args); });
+    const projectIds = new Set(snapshots.map(doc => doc.id));
+    Reflect.set(f.workspace, "observeDocument", (id: DocumentId) => {
+        const observable = observe.call(f.workspace, id);
+        if (!projectIds.has(id)) return observable;
+        return { ...observable, getSnapshot() { visits++; return observable.getSnapshot(); } };
+    });
     t.after(() => Reflect.set(f.workspace, "observeDocument", observe));
     const result = await client.run({ document: f.document(), project: snapshots, offset: 0, kind: "references" }).result, loadingVisits = visits; visits = 0;
     assert.equal(result.isCurrent(), true); assert.equal(visits, resources.length);

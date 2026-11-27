@@ -93,6 +93,10 @@ snapshot or a session’s `{ uri, languageId }`. `requestDocument` synchronizes 
 files with closed panes. Owners share one binding and lease per document. The last release closes it.
 `scope.cancel()` expires requests. `scope.dispose()` releases documents and handlers too.
 
+Set `onDiagnosticReport(id, report)` on the provider for a project problems list. It follows workspace
+documents with a language URI, including files without an editor. Each accepted server report calls it once.
+Edits and reconnects can change decoration placement without producing a new report.
+
 Changing the URI or language ID expires replies. Reattach to open the new identity. Wire versions advance
 across URI reuse on one connection and are distinct from local revisions. Loss of open/close or
 incremental-change coverage closes the remote copy. Regaining coverage sends current text. Edits expire

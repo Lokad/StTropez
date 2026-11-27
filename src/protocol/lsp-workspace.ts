@@ -72,11 +72,13 @@ const expiredDiagnostics: LspDiagnosticState = Object.freeze({ ...emptyDiagnosti
 export type LspWorkspaceOptions = LspSessionOptions & Readonly<{
     /** Authorize an opaque URI and return a project document or read-only contents. */
     resolveTarget?: LspTargetResolver;
+    /** Follow workspace language documents and deliver each accepted server report once. */
+    onDiagnosticReport?: (document: DocumentId, report: LspDiagnostics) => void;
     maxScopes?: number;
 }>;
 
 type Handler = Parameters<LspSession["onRequest"]>[1];
-type DocumentEntry = { id: DocumentId; language: DocumentLanguage; binding: LspDocument; lease: ResourceLease; active: boolean; queued: boolean; stop: () => void; users: Set<() => void>; diagnostics: Store<LspDiagnosticState> };
+type DocumentEntry = { id: DocumentId; language: DocumentLanguage; binding: LspDocument; lease?: ResourceLease; project: boolean; source: Observable<DocumentSnapshot | undefined>; active: boolean; queued: boolean; stop: () => void; users: Set<() => void>; diagnostics: Store<LspDiagnosticState> };
 type Scope = { active: boolean; generation: number; close: () => void; interruptions: Set<() => void> };
 type CommandReply = { epoch: number; id?: number; received: boolean };
 type CommandIntent = { scope: Scope; epoch: number; generation: number; registrationGeneration: number; reply?: CommandReply;
@@ -164,7 +166,28 @@ export class LspWorkspace {
             }
             entry.diagnostics.set(Object.freeze({ status: "current", result, lastReport: result, isCurrent, isPlacementCurrent: isCurrent }), this.#changed);
             this.#queueDelivery();
+            options.onDiagnosticReport?.(entry.id, result);
         }) : undefined;
+        if (options.onDiagnosticReport && options.diagnostics !== false) {
+            const rejected = new WeakSet<DocumentSnapshot>();
+            const follow = () => {
+                for (const doc of workspace.getSnapshot().documents) {
+                    if (!doc.language) continue;
+                    const entry = this.#documents.get(doc.id);
+                    try {
+                        const binding = entry?.language === doc.language ? entry : this.#document(doc.id);
+                        binding.project = true;
+                    } catch (error) {
+                        if (!rejected.has(doc)) {
+                            rejected.add(doc);
+                            this.#report(error);
+                        }
+                    }
+                }
+            };
+            follow();
+            this.#observers.add(workspace.subscribe(afterDelivery => afterDelivery(follow)));
+        }
         this.#stopApply = options.applyEdit ? this.#session.onRequest(applyEditMethod, (value, context) => {
             const owner = this.#command;
             if (!owner?.reply || owner.reply.received || !owner.applyEdit || !this.#commandCurrent(owner) || owner.epoch !== context.epoch) return { applied: false, failureReason: "No available captured command review intent." };
@@ -207,7 +230,7 @@ export class LspWorkspace {
     #mapDiagnostics(entry: DocumentEntry): void {
         const before = entry.diagnostics.get(), result = before.result;
         if (!result) return;
-        const next = this.#workspace.observeDocument(entry.id).getSnapshot(), session = this.#session.getSnapshot();
+        const next = entry.source.getSnapshot(), session = this.#session.getSnapshot();
         if (!next || next.language !== entry.language || session.phase !== "ready") { this.#expireDiagnostics(entry); return; }
         if (next.revision === result.snapshotRevision) return;
         if (next.change?.previousRevision !== result.snapshotRevision) { this.#expireDiagnostics(entry); return; }
@@ -219,7 +242,7 @@ export class LspWorkspace {
         });
         const isPlacementCurrent = () => {
             if (!entry.active) return false;
-            const now = this.#workspace.observeDocument(entry.id).getSnapshot(), provider = this.#session.getSnapshot();
+            const now = entry.source.getSnapshot(), provider = this.#session.getSnapshot();
             return provider.phase === "ready" && provider.epoch === session.epoch
                 && now?.language === entry.language && now.revision === next.revision && now.buffer === next.buffer;
         };
@@ -246,13 +269,12 @@ export class LspWorkspace {
             if (this.#bindingCurrent(owner)) throw new Error("Provider URI is already owned by another document.");
             this.#closeDocument(owner);
         }
-        const lease = this.#workspace.acquire(current.id); let binding: LspDocument;
-        try { binding = this.#session.bindDocument({ ...info, documentId: id, revision: current.revision, buffer: current.buffer }); }
-        catch (error) { lease.release(); throw error; }
-        const entry: DocumentEntry = { id, language: info, binding, lease, active: true, queued: false, stop: () => {}, users: new Set(),
+        const binding = this.#session.bindDocument({ ...info, documentId: id, revision: current.revision, buffer: current.buffer });
+        const source = this.#workspace.observeDocument(id);
+        const entry: DocumentEntry = { id, language: info, binding, source, project: false, active: true, queued: false, stop: () => {}, users: new Set(),
             diagnostics: new Store<LspDiagnosticState>(emptyDiagnostics, this.#notifications) };
         this.#documents.set(id, entry); this.#uris.set(info.uri, entry);
-        entry.stop = this.#workspace.observeDocument(id).subscribe(() => {
+        entry.stop = source.subscribe(() => {
             this.#mapDiagnostics(entry);
             if (!entry.active || entry.queued) return; entry.queued = true;
             void Promise.resolve().then(() => { entry.queued = false; this.#synchronize(entry); });
@@ -260,16 +282,16 @@ export class LspWorkspace {
         return entry;
     }
     #bindingCurrent(entry: DocumentEntry | undefined): boolean {
-        return !!entry?.active && this.#workspace.observeDocument(entry.id).getSnapshot()?.language === entry.language;
+        return !!entry?.active && entry.source.getSnapshot()?.language === entry.language;
     }
     #live(entry: DocumentEntry): boolean {
         if (!entry.active) return false;
-        const current = this.#workspace.observeDocument(entry.id).getSnapshot(), sent = entry.binding.getSnapshot();
+        const current = entry.source.getSnapshot(), sent = entry.binding.getSnapshot();
         return current?.language === entry.language && current.revision === sent.revision && current.buffer === sent.buffer;
     }
     #synchronize(entry: DocumentEntry): void {
         if (!entry.active) return;
-        const next = this.#workspace.observeDocument(entry.id).getSnapshot();
+        const next = entry.source.getSnapshot();
         if (next?.language !== entry.language) return this.#closeDocument(entry);
         try {
             this.#updateBinding(entry.binding, entry.binding.getSnapshot().revision, next);
@@ -289,8 +311,12 @@ export class LspWorkspace {
     #closeDocument(entry: DocumentEntry): void {
         if (!entry.active) return; entry.active = false; this.#expireDiagnostics(entry); this.#documents.delete(entry.id); this.#uris.delete(entry.binding.getSnapshot().uri);
         entry.stop(); entry.binding.dispose(); for (const close of [...entry.users]) close();
-        // Workspace observers run inside commit delivery, where lease writes must be deferred.
-        void Promise.resolve().then(() => { try { entry.lease.release(); } catch (error) { this.#report(error); } });
+        this.#releaseLease(entry);
+    }
+    #releaseLease(entry: DocumentEntry): void {
+        const lease = entry.lease;
+        delete entry.lease;
+        if (lease) void Promise.resolve().then(lease.release).catch(error => this.#report(error));
     }
     commandNames(): readonly string[] {
         return this.#session.commandNames();
@@ -400,9 +426,15 @@ export class LspWorkspace {
         const attach = (id: DocumentId): LspDocument => {
             writable(); const entry = this.#document(id), existing = documents.get(id);
             if (existing && handles.get(existing) === entry) return existing;
+            entry.lease ??= this.#workspace.acquire(id);
             let active = true;
             const close = () => { if (!active) return; active = false; for (const call of documentCalls.get(document) ?? []) call.cancel(); documentCalls.delete(document);
-                handles.delete(document); documents.delete(id); entry.users.delete(close); if (entry.active && !entry.users.size) this.#closeDocument(entry); };
+                handles.delete(document); documents.delete(id); entry.users.delete(close);
+                if (entry.active && !entry.users.size) {
+                    if (entry.project) this.#releaseLease(entry);
+                    else this.#closeDocument(entry);
+                }
+            };
             const document: LspDocument = Object.freeze({ getSnapshot: entry.binding.getSnapshot, dispose: close, update: (expected, revision, buffer) => {
                 writable();
                 if (!active || !entry.active) throw staleRequest();
@@ -506,7 +538,7 @@ export class LspWorkspace {
                 const value = this.#session.synchronized(entry.binding, method); if (!value) return;
                 return Object.freeze({ document: value.document, getSnapshot: () => {
                     if (!scope.active || this.#disposed || handles.get(document) !== entry || !entry.active || !value.isBindingCurrent?.()) return;
-                    const current = this.#workspace.observeDocument(entry.id).getSnapshot();
+                    const current = entry.source.getSnapshot();
                     return current?.language === entry.language ? current : undefined;
                 } });
             },
