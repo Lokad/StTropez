@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TextBuffer, Workspace } from "../src/index.ts";
+import { runSaveBatch, TextBuffer, Workspace } from "../src/index.ts";
 import { HostSaveQueue } from "./fixtures/save-queue.ts";
 import type { SaveResponse, SaveSubmission } from "../src/index.ts";
 
@@ -325,6 +325,35 @@ test("a lost receipt preserves the queued draft and a second runner cannot relea
     assert.deepEqual(result, { kind: "conflict", serverVersion: "v2" });
     assert.equal(workspace.document(source.id).text(), "second");
     assert.equal(workspace.ownership(source.id).leases, 0);
+});
+
+test("a batch starts every ticket before writing and matches replies to their captured submissions", async () => {
+    const { workspace, source, edit } = fixture();
+    const peer = workspace.createTextResource(workspace.createResourceKey("test", "peer"), "Peer", { value: "base" });
+    const capture = () => [workspace.captureSave(source), workspace.captureSave(peer)];
+    edit("submitted");
+    const result = await runSaveBatch(capture(), ([first, second]) => {
+        assert.ok(first && second);
+        assert.equal(first.value, "submitted");
+        edit("later");
+        return new Map<SaveSubmission, SaveResponse>([
+            [second, { kind: "conflict", serverVersion: "peer" }],
+            [first, { kind: "unknown", serverVersion: "v1", storedValue: "submitted" }],
+        ]);
+    });
+    assert.deepEqual(result.map(item => item.kind), ["saved", "conflict"]);
+    assert.equal(source.metadata.getSnapshot().dirty, true);
+    assert.equal(source.metadata.getSnapshot().serverVersion, "v1");
+    assert.equal(peer.metadata.getSnapshot().saveStatus, "conflict");
+    await assert.rejects(runSaveBatch(capture(), () => new Map()), { code: "invalid-save-batch-reply" });
+    const tickets = capture();
+    workspace.setCapabilities(peer.id, { edit: [], save: false });
+    let writes = 0;
+    await assert.rejects(runSaveBatch(tickets, () => { writes++; return new Map(); }));
+    assert.equal(writes, 0);
+    assert.equal(workspace.ownership(source.id).leases, 0);
+    assert.equal(workspace.ownership(peer.id).leases, 0);
+    assert.equal(workspace.document(source.id).text(), "later");
 });
 
 test("canonical saves apply only without later edits or a revoked edit capability; failures/conflicts preserve the baseline", async () => {

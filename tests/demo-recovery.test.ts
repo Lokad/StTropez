@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import { setImmediate } from "node:timers/promises";
-import { Workspace } from "../src/index.ts";
+import { runSaveBatch, Workspace } from "../src/index.ts";
 import { DemoRecovery } from "../examples/demo/recovery.ts";
 import type { DraftStore, StoredDraft } from "../examples/shared/draft-store.ts";
 import type { DemoFile } from "../examples/demo/project.ts";
@@ -263,7 +263,7 @@ test("automatic recovery settles after Undo, reuses a protected draft and clears
     t.mock.timers.runAll(); await setImmediate();
     assert.equal(store.writes, 1);
     const tickets = f.files.map(file => f.workspace.captureSave(file.resource));
-    for (const ticket of tickets) { ticket.start(); ticket.accept({ serverVersion: "saved" }); ticket.finish(); }
+    await runSaveBatch(tickets, submissions => new Map(submissions.map(sent => [sent, { kind: "saved", serverVersion: "saved" }])));
     // A peer notice can start a read before the scheduled cleanup. Reading must not cancel it.
     await f.recovery.refresh();
     assert.equal(f.recovery.state.getSnapshot().message, "No local recovery draft.");
@@ -281,7 +281,7 @@ test("save completion awaits exact-token cleanup of an older owned draft and pre
         t.mock.timers.runAll(); await protectedDraft;
         const owned = store.row; f.edit(); // Saved text differs from the owned draft, before its next checkpoint.
         const tickets = f.files.map(file => f.workspace.captureSave(file.resource));
-        for (const ticket of tickets) { ticket.start(); ticket.accept({ serverVersion: "saved" }); ticket.finish(); }
+        await runSaveBatch(tickets, submissions => new Map(submissions.map(sent => [sent, { kind: "saved", serverVersion: "saved" }])));
         let release!: () => void, began!: () => void, settled = false;
         const removing = new Promise<void>(resolve => { began = resolve; });
         store.beforeRemove = () => new Promise(resolve => { release = resolve; began(); });

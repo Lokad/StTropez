@@ -99,6 +99,7 @@ Declarations start at `index.d.ts` in the assets directory.
 | [`ResourceSnapshot`](../src/core/workspace.ts) | type |  |
 | [`ResourceTarget`](../src/core/workspace.ts) | type | Identifies a document in its originating workspace across a delayed operation. |
 | [`ResourceVisibility`](../src/core/workspace.ts) | type |  |
+| [`runSaveBatch`](../src/core/workspace.ts) | function | Submit a fixed set of captured saves in one storage call. |
 | [`SaveReceipt`](../src/core/workspace.ts) | type | The acknowledged baseline for a write and its relation to the current working copy. |
 | [`SaveResponse`](../src/core/workspace.ts) | type |  |
 | [`SaveReview`](../src/core/workspace.ts) | type | Host-confirmed remote version for saving the explicitly reviewed local revision. |

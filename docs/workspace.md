@@ -247,6 +247,21 @@ Another writer can intervene between the read and the write. Use an atomic versi
 a concurrent save would be unacceptable.
 Failure or conflict leaves both draft and baseline intact. `ticket.run` releases the ticket on every outcome and rethrows storage errors.
 
+For a fixed set of files, `runSaveBatch(tickets, write)` starts all captures before calling storage once.
+Return a map keyed by the supplied `SaveSubmission` objects, with one `SaveResponse` per submission.
+Each receipt updates its own file. A conflict can coexist with another file's successful save.
+
+```ts
+import { runSaveBatch, type SaveSubmission, type SaveTicket } from "sttropez";
+
+export function saveProject(tickets: readonly SaveTicket[], put: (files: readonly SaveSubmission[]) => Promise<string>) {
+    return runSaveBatch(tickets, async files => {
+        const serverVersion = await put(files);
+        return new Map(files.map(file => [file, { kind: "saved" as const, serverVersion }]));
+    });
+}
+```
+
 #### Retry after review
 
 Show the competing and working copies. On approval, pass `save(review)` the captured resource, revision and

@@ -1,5 +1,5 @@
 import { done, refused } from "./outcome.ts";
-import { invalidType, invalidRange, isNonNegativeInteger } from "./bounds.ts";
+import { invalidType, invalidRange, invalidState, isNonNegativeInteger } from "./bounds.ts";
 import type { TextEdit } from "./changes.ts";
 import { compactDocumentEdit, replacementSpan, textDifference } from "./changes.ts";
 import { documentChange } from "./document-change.ts";
@@ -93,6 +93,31 @@ export type SaveTicket = Readonly<{ target: ResourceTarget; revision: number; va
 export type SaveResponse = Readonly<{ kind: "saved"; serverVersion: string; canonical?: string }
     | { kind: "conflict"; serverVersion: string }
     | { kind: "unknown"; serverVersion: string; storedValue: string }>;
+
+/** Submit a fixed set of captured saves in one storage call. Replies identify the original submissions. */
+export async function runSaveBatch(tickets: readonly SaveTicket[],
+    write: (submissions: readonly SaveSubmission[]) => ReadonlyMap<SaveSubmission, SaveResponse>
+        | Promise<ReadonlyMap<SaveSubmission, SaveResponse>>) {
+    const batch = [...tickets];
+    const submissions: SaveSubmission[] = [];
+    async function submit() {
+        if (submissions.length !== batch.length) invalidState("save batch");
+        const replies = new Map(await write(Object.freeze(submissions)));
+        if (replies.size !== batch.length || submissions.some(sent => !replies.has(sent))) invalidType("save batch reply");
+        return replies;
+    }
+    let writing: ReturnType<typeof submit> | undefined;
+    const results = await Promise.allSettled(batch.map(ticket => ticket.run(sent => {
+        submissions.push(sent);
+        // Every ticket starts synchronously. Wait for the last reservation before sending any writes.
+        writing ??= Promise.resolve().then(submit);
+        return writing.then(replies => replies.get(sent)!);
+    })));
+    return Object.freeze(results.map(result => {
+        if (result.status === "rejected") throw result.reason;
+        return result.value;
+    }));
+}
 export type EditRequest = Readonly<{
     documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; source?: string;
     history?: Readonly<{ kind: EditKind; group?: string; reset?: boolean }>; view?: DocumentView; selection?: Selection; selectionSet?: SelectionSet;
@@ -722,7 +747,7 @@ export class Workspace {
         record.saveReservations++;
         const requireStarted = () => {
             this.#scope.assertWritable();
-            if (settled || record.saving !== id || !submission) throw new Error("Save ticket is not active.");
+            if (settled || record.saving !== id || !submission) invalidState("save ticket");
             return submission;
         };
         const status = (saveStatus: ResourceMetadata["saveStatus"]) => {
@@ -732,7 +757,7 @@ export class Workspace {
         const ticket: SaveTicket = { target, revision, value, start: () => {
             this.#scope.assertWritable();
             const current = record.state.get();
-            if (finished || settled || record.saving !== null) throw new Error("Save ticket is closed or a write is in progress.");
+            if (finished || settled || record.saving !== null) invalidState("save reservation");
             if (current.state !== "ready" || !current.metadata.capabilities.save) throw new Error("Save permission has changed.");
             if (reviewedVersion !== undefined && current.metadata.serverVersion !== initial.metadata.serverVersion) throw new Error("Saved baseline changed after review capture.");
             record.saving = id;
@@ -779,7 +804,7 @@ export class Workspace {
             lease.release();
             if (!record.saveReservations && record.metadata.get().saveStatus === "saving") status("idle");
         }, run: async write => {
-            if (submission) throw new Error("Save already started.");
+            if (submission) invalidState("save ticket");
             try {
                 const sent = ticket.start();
                 const reply = await write(sent);
