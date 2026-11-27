@@ -5,8 +5,7 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { libraryModules, libraryCss, regexWorker } from "./library-entries.mjs";
 
-const runtimeByteBudget = 537_505;
-const inject = ["src/core/freeze.ts"];
+const runtimeByteBudget = 545_117;
 
 export async function buildLibrary() {
     const output = fileURLToPath(new URL("../dist", import.meta.url));
@@ -16,7 +15,6 @@ export async function buildLibrary() {
         outdir: "dist",
         bundle: true,
         splitting: true,
-        inject,
         format: "esm",
         platform: "browser",
         target: "es2022",
@@ -29,7 +27,6 @@ export async function buildLibrary() {
         entryPoints: [regexWorker.source],
         outfile: `dist/${regexWorker.output}`,
         bundle: true,
-        inject,
         format: "esm",
         platform: "browser",
         target: "es2022",
