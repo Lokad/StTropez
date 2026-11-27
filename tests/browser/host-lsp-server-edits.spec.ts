@@ -75,10 +75,12 @@ test.describe(`plain LSP server edits`, () => {
         await expect(apply).toBeEnabled(); await exact(page, raw);
         await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, true), companion);
         await done(page); await expect(apply).toBeDisabled();
-        await select(page); await register(page); await request(page); await expect(apply).toBeDisabled();
-        await page.evaluate(() => window.hostFixture.snapshot().bindings.project.state.review!.apply());
-        await done(page);
+        await select(page);
+        await register(page);
+        await button(page, "Request provider review edits").click();
         await expect(page.getByLabel("Workspace provider status", { exact: true })).toHaveText("An edit target is read-only or locked.");
+        expect((await snapshot(page)).bindings.project.state.review).toBeNull();
+        await expect(apply).toBeDisabled();
         await exact(page, raw); expect((await snapshot(page)).history).toEqual(before.history);
         await page.evaluate(id => window.hostFixture.setProjectTargetReadOnly(id, false), companion);
         for (const mode of ["typing", "remount"] as const) {
