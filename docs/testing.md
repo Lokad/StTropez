@@ -109,6 +109,15 @@ oracle. Vary rows, line length and token density within the [document limit](REA
 `normal` supplies small source, `lines-100` and `lines-10000` repeat 24-unit lines, and `unicode` mixes
 tabs, graphemes and line endings. Vary open views and background updates for workspace tests.
 
+At milestones, run `node scripts/benchmark-editing.mjs --commands-only` on an idle machine. The full editing
+benchmark includes the same check. Each command gets five fresh Chromium pages with syntax, 40 collapsed folds
+and the minimap. The 14,413-line source is 512,000 bytes with spaces and 490,382 bytes with tabs.
+Growing edits start with shorter comments so their results also fit the limit. Whole-document indentation,
+comment toggles, Undo/Redo, line movement, multi-caret word deletion and vertical navigation
+must reach the model within a 25 ms median and the first matching editor render within 33 ms. The report
+keeps individual samples in `artifacts/bench/editing/commands.json`. Capture-to-bubble dispatch also includes
+other listeners. Physical display needs a device measurement.
+
 ### Unicode regeneration
 
 Verify `<name>.txt` and `license.txt` against the [pinned inputs](../scripts/unicode-inputs.json).

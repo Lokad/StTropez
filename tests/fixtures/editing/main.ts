@@ -1,9 +1,9 @@
 import { graphemeBoundaries } from "../../../src/core/graphemes.ts";
-import { Workspace } from "../../../src/index.ts";
+import { discoverIndentationFolds, Workspace } from "../../../src/index.ts";
 import type { FoldRange, Selection, TextEdit } from "../../../src/index.ts";
 import { inputConflictEvent, mountAnchoredOverlay, mountFindBar, mountTextEditor, observePointerDwell, createFoldingController } from "../../../src/browser/index.ts";
 import type { TextEditorCommand, TextEditorEditTransform, FoldDiscovery, FoldingController, InputConflictDetail, AnchoredOverlayOptions, PointerDwellPosition } from "../../../src/browser/index.ts";
-import { corpus, corpusIds } from "../workloads.ts";
+import { commandCorpus, corpus, corpusIds } from "../workloads.ts";
 import { EditingPresentation } from "../language/presentation.ts";
 import { editorSettled } from "../readiness.ts";
 import type { CorpusId } from "../workloads.ts";
@@ -43,6 +43,17 @@ const status = () => { const current = workspace.document(source.id); pane("stat
 const unsubscribe = workspace.observeDocument(source.id).subscribe(status); status();
 const fixture = { ready: true, graphemeBoundaries, setText, edit, select, history,
     get settled() { return !disposed && editorSettled(editors.primary) && editorSettled(editors.secondary); },
+    editors,
+    prepareCommandCorpus(tabs: boolean, reserveBytes: number) {
+        const editor = editors.primary;
+        setText(commandCorpus(tabs, reserveBytes));
+        editors.secondary.dispose();
+        editor.configure({ minimap: true, language: { tabSize: 2, lineComment: "//" } });
+        foldingController = createFoldingController(editor, doc => discoverIndentationFolds(doc.buffer, {
+            tabSize: 2, group: line => line < 14_400 && line % 360 === 1 ? "collapsed" : undefined,
+        }), { delayMs: 0, initiallyCollapseGroup: "collapsed" });
+        editor.focus();
+    },
     failNextDecoration: () => { failDecoration = true; primarySyntax.invalidate(); },
     captureInsertion: () => editors.primary.captureInsertion(),
     onEditIntent: editors.primary.onEditIntent,

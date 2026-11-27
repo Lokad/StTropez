@@ -9,9 +9,187 @@ import { corpusIds } from "../tests/fixtures/workloads.ts";
  * revisionDelta: number, length: number, primary: EditingState["primary"], secondary: EditingState["secondary"]}} InputObservation */
 /** @typedef {typeof globalThis & {editingMeasurement: Promise<InputObservation>}} MeasurementGlobal */
 
+/** @typedef {{modelMs: number, firstRenderMs: number, keyDispatchMs: number}} CommandSample */
+/** @typedef {typeof globalThis & {commandResult: Promise<CommandSample>}} CommandWindow */
+
+/** @param {import("@playwright/test").Page} page */
+async function commandBudgets(page) {
+    const cases = [
+        { key: "Tab", selection: "all", reserve: 2 * 14_413 },
+        { key: "Control+z", selection: "all", setup: ["Tab"], reserve: 2 * 14_413 },
+        { key: "Control+y", selection: "all", setup: ["Tab", "Control+z"], reserve: 2 * 14_413 },
+        { key: "Shift+Tab", selection: "all" },
+        { key: "Control+/", selection: "all", reserve: 3 * 14_413 },
+        { key: "Control+/", selection: "all", setup: ["Control+/"], reserve: 3 * 14_413 },
+        { key: "Alt+ArrowDown", selection: "block" },
+        { key: "Alt+ArrowDown", selection: "carets" },
+        { key: "Control+Backspace", selection: "carets" },
+        { key: "ArrowDown", selection: "carets" },
+        { key: "PageDown", selection: "carets" },
+        { key: "Control+Alt+ArrowDown", selection: "carets" }
+    ];
+    const results = [];
+    for (const tabs of [false, true]) {
+        for (const { key, selection, setup = [], reserve = 0 } of cases) {
+            const samples = [];
+            for (let round = 0; round < 5; round++) {
+                await page.goto("/editing/");
+                await page.evaluate(({ tabs, reserve }) => window.editingFixture.prepareCommandCorpus(tabs, reserve), {
+                    tabs,
+                    reserve
+                });
+                await page.waitForFunction(() => window.editingFixture.foldStatus()?.status === "ready");
+                await page.evaluate((selection) => {
+                    const { editors } = window.editingFixture;
+                    const editor = editors.primary,
+                        doc = editor.workspace.document(editor.view.documentId);
+                    const { buffer } = doc;
+                    if (buffer.lineCount !== 14_413 || !editor.view.folding.getSnapshot().index.collapsedCount)
+                        throw new Error("Command workload requires the rich document and collapsed folds.");
+                    if (selection === "carets") {
+                        const ranges = Array.from({ length: 2_000 }, (_, index) => {
+                            const line = 2 + index * 7;
+                            const at = buffer.offsetAt(line) + Math.min(8, buffer.line(line).text.length);
+                            return { anchor: at, head: at };
+                        });
+                        editor.view.setSelections(doc.revision, ranges, 0);
+                    } else {
+                        editor.view.setSelection(
+                            doc.revision,
+                            selection === "block"
+                                ? { anchor: buffer.offsetAt(1), head: buffer.offsetAt(buffer.lineCount - 3) }
+                                : { anchor: 0, head: buffer.length }
+                        );
+                    }
+                }, selection);
+                for (const prior of setup) await page.keyboard.press(prior);
+                await page.waitForFunction(() => {
+                    const editor = window.editingFixture.editors.primary;
+                    const paint = editor.viewport.activity();
+                    return (
+                        !paint.pending &&
+                        !editor.activity().pendingCaret &&
+                        paint.selectionSet === editor.view.getSnapshot().selectionSet
+                    );
+                });
+                await page.evaluate((key) => {
+                    const editor = window.editingFixture.editors.primary;
+                    const before = editor.view.getSnapshot();
+                    const expected = key.split("+").at(-1);
+                    const edit = !["ArrowDown", "PageDown", "Control+Alt+ArrowDown"].includes(key);
+                    /** @type {CommandWindow} */ (globalThis).commandResult = new Promise((resolve, reject) => {
+                        let start = -1,
+                            commit = -1,
+                            handler = -1;
+                        const stop = new AbortController();
+                        const stopModel = editor.view.subscribe(() => {
+                            if (start < 0 || commit >= 0) return;
+                            const view = editor.view.getSnapshot();
+                            if (edit ? view.revision !== before.revision : view.selectionSet !== before.selectionSet)
+                                commit = performance.now();
+                        });
+                        const stopRender = editor.viewport.onRender(() => {
+                            if (commit < 0 || handler < 0) return;
+                            const paint = editor.viewport.activity(),
+                                view = editor.view.getSnapshot();
+                            if (paint.revision !== view.revision || paint.selectionSet !== view.selectionSet) return;
+                            const finish = performance.now();
+                            close();
+                            resolve({
+                                modelMs: commit - start,
+                                firstRenderMs: finish - start,
+                                keyDispatchMs: handler - start
+                            });
+                        });
+                        const timeout = setTimeout(() => {
+                            close();
+                            reject(new Error("Command produced no matching render: " + key));
+                        }, 5_000);
+                        function close() {
+                            clearTimeout(timeout);
+                            stop.abort();
+                            stopModel();
+                            stopRender();
+                        }
+                        window.addEventListener(
+                            "keydown",
+                            (event) => {
+                                if (event.key === expected || (expected === "/" && event.code === "Slash"))
+                                    start = performance.now();
+                            },
+                            { capture: true, signal: stop.signal }
+                        );
+                        window.addEventListener(
+                            "keydown",
+                            () => {
+                                if (start >= 0 && handler < 0) handler = performance.now();
+                            },
+                            { signal: stop.signal }
+                        );
+                    });
+                }, key);
+                await page.keyboard.press(key);
+                samples.push(await page.evaluate(() => /** @type {CommandWindow} */ (globalThis).commandResult));
+                const units = await page.evaluate(() => window.editingFixture.snapshot().document?.length);
+                assert.ok(units !== undefined && units <= 512_000, "Command exceeded the ASCII workload limit.");
+            }
+            const result = {
+                tabs,
+                setup,
+                initialBytes: (tabs ? 490_382 : 512_000) - reserve,
+                key,
+                selection,
+                samples,
+                modelMs: distribution(samples.map((s) => s.modelMs)).p50,
+                firstRenderMs: distribution(samples.map((s) => s.firstRenderMs)).p50
+            };
+            results.push(result);
+            console.log(
+                tabs ? "tabs" : "spaces",
+                key,
+                selection,
+                result.modelMs.toFixed(1),
+                result.firstRenderMs.toFixed(1)
+            );
+        }
+    }
+    return results;
+}
+
 const source = await sourceIdentity(),
     harness = await openHarness();
 try {
+    const commands = await commandBudgets(harness.page);
+    await mkdir("artifacts/bench/editing", { recursive: true });
+    await writeFile(
+        "artifacts/bench/editing/commands.json",
+        JSON.stringify(
+            {
+                source,
+                browser: harness.browser.version(),
+                environment: environment(),
+                modelBudgetMs: 25,
+                firstRenderBudgetMs: 33,
+                cases: commands
+            },
+            null,
+            2
+        )
+    );
+    assert.equal((await sourceIdentity()).sha256, source.sha256);
+    const overBudget = commands.filter((item) => item.modelMs > 25 || item.firstRenderMs > 33);
+    assert.deepEqual(
+        overBudget.map((item) => [item.tabs, item.key, item.selection, item.modelMs, item.firstRenderMs]),
+        [],
+        "Five cold keydown-to-model / first-render medians must fit 25 / 33 ms."
+    );
+    if (!process.argv.includes("--commands-only")) await typingMeasurements();
+    assert.deepEqual(harness.errors, []);
+} finally {
+    await harness.close();
+}
+
+async function typingMeasurements() {
     await harness.page.goto("/editing/");
     const ready = () =>
         harness.page.waitForFunction(() => {
@@ -221,6 +399,4 @@ try {
             2
         )
     );
-} finally {
-    await harness.close();
 }

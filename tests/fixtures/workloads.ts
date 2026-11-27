@@ -16,6 +16,41 @@ export function corpus(id: CorpusId): string {
     }
 }
 
+/** 14,413 lines of nested source. The space-indented form is exactly 512,000 UTF-8 bytes. */
+export function commandCorpus(tabs: boolean, reserveBytes: number): string {
+    const sections: string[][] = [];
+    let bytes = 0;
+    for (let index = 0; index < 1_201; index++) {
+        const section = [
+            `// Source record ${index}: `,
+            `function evaluate${index}(records) {`,
+            "  let total = 0;",
+            "  for (const record of records) {",
+            "    if (record.enabled) {",
+            "      total += record.quantity;",
+            "    }",
+            "    if (record.adjustment) {",
+            "      total += record.adjustment;",
+            "    }",
+            "  }",
+            "  return total; }",
+        ];
+        bytes += section.join("\n").length + 1;
+        sections.push(section);
+    }
+    // Vary the comment lengths within one byte while keeping the same rows and nesting in both forms.
+    const padding = 512_000 - bytes - reserveBytes;
+    const note = "include enabled quantities and adjustments in the running total. ";
+    const lines: string[] = [];
+    for (const [index, section] of sections.entries()) {
+        const count = Math.floor(padding / sections.length) + Number(index < padding % sections.length);
+        section[0] += note.repeat(Math.ceil(count / note.length)).slice(0, count);
+        lines.push(...section);
+    }
+    const spaces = lines.join("\n") + "\n";
+    return tabs ? spaces.replace(/^(?:  )+/gm, value => "\t".repeat(value.length / 2)) : spaces;
+}
+
 /** Advance the deterministic 32-bit state; callers own seeds and range mappings. */
 export function nextSeed(seed: number): number {
     return (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
