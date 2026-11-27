@@ -105,6 +105,15 @@ test("rediscovery keeps the moved block collapsed through repeated moves, Undo a
     assert.ok(workspace.redo({ documentId: id, expectedRevision: document().revision }).status === "done");
     check(1);
     assert.equal(document().text(), original);
+    move("move-line-down");
+    for (const at of [document().buffer.length, 0]) {
+        assert.equal(workspace.edit({ documentId: id, expectedRevision: document().revision, origin: "host",
+            edits: [{ from: at, to: at, insert: "x" }] }).status, "done");
+        check(2);
+    }
+    move("move-line-up");
+    check(1);
+    assert.equal(document().text(), "x" + original + "x");
     peer.dispose();
     view.dispose();
 });

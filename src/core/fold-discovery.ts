@@ -118,7 +118,7 @@ export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly Dis
             || value.group !== undefined && !value.group) invalidRange("discovered fold range");
         return { ...value, ...(discoveredRows.get(buffer)?.get(value) ?? { lineFrom: buffer.lineAt(value.from), lineTo: buffer.lineAt(value.to - 1) + 1 }) };
     });
-    const moved = movedCollapsedRegions(buffer, previous);
+    const moved = movedCollapsedRegions(previous);
     const retained = moved.length ? new Map<number, FoldRegion>() : undefined;
     if (retained) {
         // A line move transports the visible header and its exact hidden text. A parser can temporarily

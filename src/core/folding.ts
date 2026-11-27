@@ -48,8 +48,8 @@ export function sameFoldRegions(a: readonly FoldRegion[], b: readonly FoldRegion
     return a === b || a.length === b.length && a.every((r, i) => { const s = b[i]!; return r.id === s.id && r.from === s.from && r.to === s.to && r.collapsed === s.collapsed && r.lineFrom === s.lineFrom && r.lineTo === s.lineTo && r.group === s.group; });
 }
 function shiftRegion(r: FoldRegion, units: number, lines: number): FoldRegion {
-    return Object.freeze({ ...r, from: r.from + units, to: r.to + units,
-        lineFrom: r.lineFrom + lines, lineTo: r.lineTo + lines });
+    return carryMovedFold(r, Object.freeze({ ...r, from: r.from + units, to: r.to + units,
+        lineFrom: r.lineFrom + lines, lineTo: r.lineTo + lines }));
 }
 function compareRegions(a: FoldRegion, b: FoldRegion): number {
     return a.lineFrom - b.lineFrom || b.lineTo - a.lineTo;
@@ -85,14 +85,17 @@ export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange
     const result = owned.has(previous) && sameFoldRegions(previous, next) ? previous : next.length ? retain(next) : empty;
     prepareFoldRanges(buffer, result, result); return result;
 }
-const movedCollapsed = new WeakMap<TextBuffer, WeakSet<FoldRegion>>();
+const movedCollapsed = new WeakSet<FoldRegion>();
 
-export function movedCollapsedRegions(buffer: TextBuffer, regions: readonly FoldRegion[]): FoldRegion[] {
-    const moved = movedCollapsed.get(buffer);
+function carryMovedFold(previous: FoldRegion, next: FoldRegion) {
+    if (next.collapsed && movedCollapsed.has(previous)) movedCollapsed.add(next);
+    return next;
+}
+
+export function movedCollapsedRegions(regions: readonly FoldRegion[]): FoldRegion[] {
     const outer: FoldRegion[] = [];
-    if (!moved) return outer;
     for (const region of regions) {
-        if (moved.has(region) && region.lineFrom >= (outer.at(-1)?.lineTo ?? 0)) outer.push(region);
+        if (movedCollapsed.has(region) && region.lineFrom >= (outer.at(-1)?.lineTo ?? 0)) outer.push(region);
     }
     return outer;
 }
@@ -110,14 +113,7 @@ function movedFold(buffer: TextBuffer, previous: TextBuffer, r: FoldRegion, swap
     const to = r.to === lineBoundary(previous, r.lineTo) ? end : Math.min(end, r.to + delta);
     // An empty last source row at EOF has no character that can anchor a fold body.
     const next = region(buffer, r.id, r.from + delta, to, r.collapsed, r.group);
-    if (next?.collapsed) {
-        let moved = movedCollapsed.get(buffer);
-        if (!moved) {
-            moved = new WeakSet();
-            movedCollapsed.set(buffer, moved);
-        }
-        moved.add(next);
-    }
+    if (next?.collapsed) movedCollapsed.add(next);
     return next ?? null;
 }
 
@@ -158,7 +154,8 @@ export function mapFoldRegions(buffer: TextBuffer, mapping: PositionMapping, reg
                         const contentEnd = mapping.map(lineContentEnd(previous, r.lineTo - 1), "before");
                         keepEnd = !contentEnd.deleted && contentEnd.offset === to.offset;
                     }
-                    next = Object.freeze({ ...r, from: from.offset, to: to.offset, lineFrom, lineTo, collapsed: r.collapsed && !from.deleted && keepEnd });
+                    next = carryMovedFold(r, Object.freeze({ ...r, from: from.offset, to: to.offset,
+                        lineFrom, lineTo, collapsed: r.collapsed && !from.deleted && keepEnd }));
                 }
             }
         }
