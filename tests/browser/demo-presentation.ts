@@ -169,7 +169,9 @@ export async function runDemoPresentationContinuity(page: Page, url: string) {
     const painted = await page.waitForFunction(() => {
         const root = document.querySelector("#editor .st-viewport"); if (!root) return;
         const box = root.getBoundingClientRect();
+        const first = Math.floor(root.scrollTop / parseFloat(getComputedStyle(root).lineHeight));
         const row = [...root.querySelectorAll<HTMLElement>(".st-viewport-row")].find(row => row.textContent?.startsWith("//")
+            && Math.abs(Number(row.dataset.line) - first) < box.height / parseFloat(getComputedStyle(root).lineHeight)
             && row.getBoundingClientRect().top > box.top + 30 && row.getBoundingClientRect().bottom < box.bottom - 30);
         if (!row) return;
         const at = row.getBoundingClientRect(); return { x: at.left + 30, y: at.top + at.height / 2,

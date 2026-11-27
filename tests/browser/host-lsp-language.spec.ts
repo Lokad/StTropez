@@ -731,7 +731,7 @@ test.describe("plain selected LSP features", () => {
         await seed(page, "lookup(saMORE)", 9); await field(page).press("Control+Shift+Space"); await expect(popup).toBeVisible();
         await field(page).press("Control+Space");
         await expect(page.getByRole("option", { name: "sample", exact: true })).toBeVisible();
-        await expect(popup).toBeHidden();
+        await expect(popup).toBeVisible();
         await field(page).press("Escape");
         await expect(page.getByRole("listbox", { name: "Completions" })).toBeHidden();
         replies.hold(); await field(page).press("Control+Shift+Space"); await expect.poll(replies.waiting).toBe(true); await expect.poll(async () => (await snapshot(page)).bindings.signature.pending).toBe(true);

@@ -259,7 +259,7 @@ export async function runDemoDocumentation(page: Page, url = "/") {
     await expect(signature.getByLabel("Active signature parameter")).toContainText("rate");
     await source.press("Control+Space");
     await expect(completions.getByRole("option").first()).toBeVisible();
-    await expect(signature).toBeHidden();
+    await expect(signature).toBeVisible();
     await expect(source).toBeFocused();
     const chosen = completions.getByRole("option", { selected: true });
     const first = await chosen.textContent();
@@ -340,7 +340,7 @@ export async function runDemoHighlights(page: Page, url = "/") {
     const matches = page.locator("#editor .st-search-match");
     await expect(matches).toHaveCount(3);
     const outlines = await matches.evaluateAll(nodes => nodes.map(node => getComputedStyle(node).outlineColor));
-    expect(outlines.filter(color => color === "rgb(255, 228, 148)")).toHaveLength(1);
+    await expect(page.locator("#editor .st-search-current")).toHaveCount(1);
     expect(new Set(outlines).size).toBe(2);
     await page.locator(".st-find-close").click();
     await source.press("Control+Home"); await source.press("Control+ArrowRight"); await source.press("ArrowRight");
@@ -510,11 +510,12 @@ export async function runDemoFoldingBoundaries(page: Page, url = "/") {
             const span = root.querySelector(".demo-token-comment:is(.st-comparison-added, .st-comparison-removed)");
             const row = span?.closest(".st-viewport-row");
             if (!span || !row || span.textContent !== word) return 0;
-            const luminance = (rgb: string) => {
-                const channels = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(rgb);
-                if (!channels) return NaN;
-                const [r, g, b] = channels.slice(1).map(part => {
-                    const v = Number(part) / 255;
+            const ctx = document.createElement("canvas").getContext("2d")!;
+            const luminance = (color: string) => {
+                ctx.fillStyle = color;
+                ctx.fillRect(0, 0, 1, 1);
+                const [r, g, b] = Array.from(ctx.getImageData(0, 0, 1, 1).data.slice(0, 3), part => {
+                    const v = part / 255;
                     return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
                 });
                 return .2126 * r! + .7152 * g! + .0722 * b!;

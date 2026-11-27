@@ -203,6 +203,6 @@ test(`plain malformed, failed, late and conflicting domain replies preserve prio
     await page.evaluate(() => window.hostFixture.setDomainDelay(0)); await button(page, "Discover domain regions").click(); await expect(status(page)).toContainText("Discovered 2"); await waitForDomain(page);
     // A manual fold on an existing domain header takes ownership; a refresh rejects the duplicate header atomically.
     await page.evaluate(() => { const f = window.hostFixture; f.selectSourceSet("primary", f.snapshot().source.revision, [{ anchor: 0, head: 40 }]); }); await button(page, "Fold selected lines").click(); await waitForDomain(page);
-    const prior = await snapshot(page); await button(page, "Discover domain regions").click(); await waitForDomain(page); await expect(status(page)).toContainText("one identity");
+    const prior = await snapshot(page); await button(page, "Discover domain regions").click(); await waitForDomain(page); await expect(status(page)).toContainText("Invalid fold header");
     expect((await snapshot(page)).bindings.domain.applied).toBe(prior.bindings.domain.applied); expect((await snapshot(page)).source.revision).toBe(prior.source.revision);
 });

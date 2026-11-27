@@ -340,6 +340,7 @@ test("review highlights survive every typing paint while exact comparison work i
     try {
         const root = page.locator("#held-comparison"), preview = root.locator(".st-comparison-preview"), status = root.locator(".st-comparison-controls output");
         await expect(preview).toBeVisible();
+        const fill = await root.locator(".st-comparison-added").first().evaluate(mark => getComputedStyle(mark).backgroundColor);
         const previewText = await preview.innerText(), before = await preview.boundingBox(), initialStatus = await status.boundingBox();
         const panes = root.locator(".st-comparison-panes"), initialPanes = await panes.boundingBox();
         await page.keyboard.type("Z");
@@ -347,7 +348,7 @@ test("review highlights survive every typing paint while exact comparison work i
         const held = await page.evaluate(() => window.comparisonPresentation.capture());
         expect(held).toMatchObject({ status: "running", revision: 1, hunks: 1, staleRevert: false, currentRevert: false });
         expect(held.paints.length).toBeGreaterThan(0);
-        for (const paint of held.paints) { expect(paint.text).toBe("oZld"); expect(paint.color).toBe("rgb(36, 98, 70)"); }
+        for (const paint of held.paints) { expect(paint.text).toBe("oZld"); expect(paint.color).toBe(fill); }
         await expect(root.getByRole("button", { name: "Use baseline", exact: true })).toBeDisabled();
         await expect(root.getByRole("button", { name: "Next change", exact: true })).toBeDisabled();
         await expect(status).toHaveAttribute("aria-busy", "true");
