@@ -1,4 +1,5 @@
 import { locationExcerpt } from "./location-excerpt.ts";
+import { showControlNotice } from "./control-notice.ts";
 import { mountAnchoredOverlay } from "./anchored-overlay.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
 import { choiceRows, moveChoice } from "./choice-rows.ts";
@@ -85,7 +86,10 @@ export function mountLocationChooser(editor: TextEditor, navigation: NavigationC
                 search.result = outcome.value;
                 if (outcome.value.count === 1) choose(search, 0);
                 else if (outcome.value.count) render(search);
-                else status.textContent = strings.text(kind === "definition" ? "No definition found." : "No references found.");
+                else {
+                    hide();
+                    showControlNotice(editor, strings.text(kind === "definition" ? "No definition found." : "No references found."));
+                }
             }
         }
         return outcome;

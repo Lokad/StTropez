@@ -1,5 +1,6 @@
 import { transientSurface } from "./transient-surface.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
+import { showControlNotice } from "./control-notice.ts";
 import type { CodeActionChoice, CodeActionController, CodeActionPreview } from "./code-action-controller.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { mountAnchoredOverlay } from "./anchored-overlay.ts";
@@ -85,12 +86,16 @@ export function mountCodeActionPopup(editor: TextEditor, owner: LspDocumentOwner
     function render() {
         if (!open) return;
         const { status: phase, message, preview, choice, choices: items } = actions.getSnapshot();
-        if (phase === "idle" || phase === "expired" || phase === "applied" && !command) {
+        const finished = phase === "executed" || phase === "applied" && command
+            || phase === "ready" && !items.length;
+        if (finished || phase === "idle" || phase === "expired" || phase === "applied") {
             open = false;
             surface.release();
             const focused = panel.matches(":focus-within");
             overlay.hide();
             if (focused) editor.focus();
+            if (finished) showControlNotice(editor, text(message));
+            return;
         }
         if (phase === "ready") command = !!preview?.command;
         status.textContent = text(message);

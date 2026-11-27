@@ -24,8 +24,8 @@ const provider = new BrowserLspWorkspace(workspace, {
     connect: signal => openWebSocketTransport(new URL("/lsp-fixture", location.href.replace(/^http/, "ws")).href, { signal }),
 });
 const language = attachEditorLanguage(editor, provider, {
-    navigation: { chooser: { capture: kind => at => {
-        editor.reveal({ from: at.from, to: kind === "definition" ? at.from : at.to },
+    navigation: { chooser: { capture: () => at => {
+        editor.reveal({ from: at.from, to: at.from },
             { select: true, focus: true, expectedRevision: at.document.revision });
     } } },
     rename: { popup: true },

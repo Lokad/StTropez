@@ -26,7 +26,7 @@ export function mountDemoSymbols(
             documents: () => project.files.map((file) => workspace.document(file.resource.id)),
             chooser: {
                 fileLabel: (at) => fileAt(at.document.documentId)?.name ?? at.document.uri,
-                capture(kind, offset) {
+                capture(_kind, offset) {
                     const origin = project.navigation.capture(editor, offset);
                     if (!origin) return;
                     return (at) => {
@@ -37,7 +37,7 @@ export function mountDemoSymbols(
                                     documentId: file.resource.id,
                                     revision: at.document.revision,
                                     from: at.from,
-                                    to: kind === "definition" ? at.from : at.to
+                                    to: at.from
                                 },
                                 origin
                             );

@@ -391,7 +391,7 @@ test("several definitions offer a choice and a single reference opens directly",
     const selection = () => source.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd]);
     await expect.poll(selection).toEqual([last, last]);
     await source.press("Shift+F12");
-    await expect.poll(selection).toEqual([6, 12]);
+    await expect.poll(selection).toEqual([6, 6]);
     await expect(list).toBeHidden();
 });
 
@@ -410,17 +410,20 @@ test("clicking an allowed command action runs it once", async ({ page }) => {
     await expect(action).toBeEnabled();
     expect(executed).toEqual([]);
     await action.click();
-    await expect(panel.getByLabel("Quick-fix status")).toHaveText("Command completed.");
+    await expect(panel).toBeHidden();
+    await expect(page.locator(".st-control-notice")).toHaveText("Command completed.");
     expect(executed).toEqual(["fixture.status"]);
-    await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);');
+    await source.press("Control+End");
+    await source.press("Enter");
+    await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);\n');
 });
 
-test("Enter in a quick-fix list with no available action leaves the source intact", async ({ page }) => {
+test("an empty quick fix or navigation result leaves Enter with the editor", async ({ page }) => {
     await page.routeWebSocket("**/lsp-fixture", client => {
         const server = client.connectToServer();
         client.onMessage(packet => {
             const request = JSON.parse(packet.toString());
-            if (request.method === "textDocument/codeAction") {
+            if (["textDocument/codeAction", "textDocument/definition", "textDocument/references"].includes(request.method)) {
                 client.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: [] }));
             } else server.send(packet);
         });
@@ -428,12 +431,13 @@ test("Enter in a quick-fix list with no available action leaves the source intac
     await page.goto("/controls/");
     await expect(page.locator(".st-color-swatch")).toBeVisible();
     const source = page.getByRole("textbox", { name: "colors.ts" });
-    await source.press("Control+.");
-    const panel = page.getByRole("region", { name: "Quick fixes" });
-    await expect(panel.getByLabel("Quick-fix status")).toHaveText(/no .*actions/i);
-    await page.keyboard.press("Enter");
-    await expect(panel).toBeVisible();
-    await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);');
-    await page.keyboard.press("Escape");
-    await expect(panel).toBeHidden();
+    await source.press("Control+End");
+    for (const [key, message] of [["Control+.", /no .*actions/i], ["F12", /no definition/i],
+        ["Shift+F12", /no references/i]] as const) {
+        await source.press(key);
+        await expect(page.locator(".st-control-notice")).toHaveText(message);
+        await expect(page.locator(".st-locations, .st-code-actions").filter({ visible: true })).toHaveCount(0);
+        await page.keyboard.press("Enter");
+    }
+    await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);\n\n\n');
 });

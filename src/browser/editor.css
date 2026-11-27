@@ -122,6 +122,9 @@
 .st-viewport-row .st-selected-line-break { display: inline-block; width: 0; height: 1lh; vertical-align: top; }
 .st-viewport-row .st-selected-line-break[data-ornament="point"]::after { height: 100%; width: 1ch; border: 0; background: var(--st-selection, #24496b); }
 .st-editor { cursor: text; }
+.st-control-notice { position: absolute; z-index: 4; bottom: 8px; right: 20px; max-width: 80%; padding: 4px 8px;
+    pointer-events: none; color: var(--st-foreground, #e1e7ef); background: var(--st-background, #131b27);
+    border: 1px solid currentColor; }
 .st-editor .st-viewport-layer { user-select: none; }
 .st-input-context { position: absolute; width: 1px; min-height: 1px; box-sizing: border-box; padding: 0; margin: 0; border: 0; resize: none; overflow: hidden;
     font: inherit; line-height: inherit; tab-size: inherit; direction: ltr; opacity: 0; }

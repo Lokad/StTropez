@@ -18,13 +18,13 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
                     at.document.documentId === editor.view.documentId
                         ? editor.workspace.document(editor.view.documentId).title
                         : at.document.uri,
-                capture: (kind) => (at) => {
+                capture: () => (at) => {
                     if (at.document.documentId !== editor.view.documentId) {
                         result.value = at.document.uri;
                         return;
                     }
                     editor.reveal(
-                        { from: at.from, to: kind === "definition" ? at.from : at.to },
+                        { from: at.from, to: at.from },
                         {
                             select: true,
                             focus: true,
