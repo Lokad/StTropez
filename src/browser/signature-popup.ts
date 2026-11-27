@@ -6,11 +6,12 @@ import { editorElement } from "./editor-element.ts";
 import type { SignatureSnapshot } from "./signature-controller.ts";
 import type { TextEditor } from "./text-editor.ts";
 
-export type SignaturePopupOptions = DocumentationOptions & Readonly<{
+export type SignaturePopupOptions = Readonly<{
     overloadControls?: boolean;
 }>;
 
-export function mountSignaturePopup(editor: TextEditor, source: Observable<SignatureSnapshot>, options: SignaturePopupOptions) {
+export function mountSignaturePopup(editor: TextEditor, source: Observable<SignatureSnapshot>,
+    options: SignaturePopupOptions & DocumentationOptions) {
     const owner = editor.element.ownerDocument;
     const popup = editorElement(owner, "div", "signature");
     const label = owner.createElement("pre");

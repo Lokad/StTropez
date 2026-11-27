@@ -138,11 +138,12 @@ export function mountDemoLanguage(
                     ...demoActionPolicy(workspace, file, language, idle),
                     occurrences: {},
                     autoConnect: false,
+                    linkPolicy: links,
                     completion: { filterManualCompletions: true, canCapture: valid, list: true },
-                    signature: { popup: links, canCapture: valid },
+                    signature: { popup: true, canCapture: valid },
                     hover: {
                         canCapture: idle,
-                        popup: links,
+                        popup: true,
                         diagnostics: {
                             subscribe: language.state.subscribe,
                             getSnapshot() {

@@ -364,6 +364,20 @@ test("hover actions use the inspected position and expire with the card", async 
     await expect(page.getByRole("region", { name: "Quick fixes" })).toBeVisible();
     await expect(card).toBeHidden();
     await source.press("Escape");
+    const runAt = (id: string, at: number) => page.evaluate(async ({ command, offset }) => {
+        const path = "/controls/app.js";
+        const { editor } = await import(path) as typeof import("../fixtures/controls/main.ts");
+        editor.reveal({ from: offset, to: offset }, { select: true, focus: true });
+        delete editor.element.dataset.openedLink;
+        if (!editor.commands.get(command)?.enabled) return false;
+        editor.commands.run(command);
+        return true;
+    }, { command: id, offset: at });
+    expect(await runAt("link.open", 6)).toBe(true);
+    await expect(root).toHaveAttribute("data-opened-link", "file:///guide");
+    expect(await runAt("color.edit", 6)).toBe(false);
+    expect(await runAt("color.edit", 18)).toBe(true);
+    await expect(page.getByRole("dialog", { name: "Color picker" })).toBeVisible();
 });
 
 test("several definitions offer a choice and a single reference opens directly", async ({ page }) => {

@@ -3,6 +3,7 @@ import { requireLanguageView } from "./captured-view.ts";
 import { retainLspDocument, type LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspWorkspace } from "../protocol/lsp-workspace.ts";
 import type { DocumentId } from "../core/workspace.ts";
+import type { DocumentationOptions } from "./documentation.ts";
 import { mountCompletion, type CompletionController, type CompletionControllerOptions } from "./completion-controller.ts";
 import { mountDiagnostic, type DiagnosticController, type DiagnosticControllerOptions } from "./diagnostic-controller.ts";
 import { mountHover, type HoverController, type HoverControllerOptions } from "./hover-controller.ts";
@@ -21,6 +22,7 @@ import { mountRename, type RenameController, type RenameControllerOptions } from
 export type EditorLanguageOptions = {
     /** With false, the host opens the connection before a language request can run. */
     autoConnect?: boolean;
+    linkPolicy?: DocumentationOptions;
     reviewCommandEdit?: CommandEditReviewer;
     navigation?: NavigationControllerOptions;
     rename?: RenameControllerOptions;
@@ -56,10 +58,21 @@ type Mounts = {
     [K in keyof Features]: (editor: TextEditor, owner: LspDocumentOwner, options: NonNullable<EditorLanguageOptions[K]>,
         features: Partial<Features>, attachment: EditorLanguageOptions) => Features[K];
 };
+function linkAction(features: Partial<Features>, policy: DocumentationOptions | undefined, at: number,
+    current?: () => boolean) {
+    const link = features.links?.linkAt(at);
+    const open = policy?.openLink;
+    if (!link || !open || (link.target === null ? !link.canResolve : policy?.canOpenLink?.(link.target) === false)) return;
+    return { from: link.from, to: link.to, open() {
+        void link.open(uri => { if (current?.() !== false && policy?.canOpenLink?.(uri) !== false) open(uri); });
+    } };
+}
 const mounts: Mounts = {
     commands: (editor, owner, settings, _, host) => mountLanguageCommands(editor, owner, settings, host.reviewCommandEdit),
     codeActions: (editor, owner, settings, _, host) => mountCodeActions(editor, owner, settings, host.reviewCommandEdit),
-    navigation: mountNavigation,
+    navigation: (editor, owner, settings, features, host) => mountNavigation(editor, owner, {
+        ...settings, linkAt: settings.linkAt ?? (at => linkAction(features, host.linkPolicy, at)),
+    }),
     rename: mountRename,
     diagnostics: (editor, owner, settings, _, host) => mountDiagnostic(editor, owner, settings, host.autoConnect),
     hover(editor, owner, settings, features, options) {
@@ -67,7 +80,7 @@ const mounts: Mounts = {
         const popup = settings.popup === true ? {} : settings.popup;
         if (!popup) return mountHover(editor, owner, { ...settings, ...(diagnostics && { diagnostics }) });
         return mountHover(editor, owner, { ...settings, ...(diagnostics && { diagnostics }), popup: {
-            ...popup, actions(point, state) {
+            ...popup, ...options.linkPolicy, actions(point, state) {
                 const actions: HoverPopupAction[] = [];
                 if (state.status === "ready" && options.codeActions?.popup && editor.commands.get("quickfix.show")?.enabled) {
                     actions.push({ label: editor.strings.text("Code actions"), run() {
@@ -79,19 +92,16 @@ const mounts: Mounts = {
                 }
                 const mark = options.colors?.picker && features.colors?.colorAt(point.offset);
                 if (mark) actions.push({ label: editor.strings.text("Edit color"), run: () => { features.colors?.openPicker(mark); } });
-                const link = features.links?.linkAt(point.offset);
-                const openLink = popup.openLink;
-                if (link && openLink && (link.target === null ? link.canResolve : popup.canOpenLink?.(link.target) !== false)) {
-                    actions.push({ label: editor.strings.text("Open link"), run: () => { void link.open(uri => {
-                        if (features.hover?.getSnapshot() === state && popup.canOpenLink?.(uri) !== false) openLink(uri);
-                    }); } });
-                }
+                const link = linkAction(features, options.linkPolicy, point.offset, () => features.hover?.getSnapshot() === state);
+                if (link) actions.push({ label: editor.strings.text("Open link"), run: link.open });
                 return actions.concat(popup.actions?.(point, state) ?? []);
             },
         } });
     },
     completion: (editor, owner, settings, _, host) => mountCompletion(editor, owner, settings, host.autoConnect),
-    signature: mountSignature,
+    signature: (editor, owner, settings, _, host) => mountSignature(editor, owner, settings.popup ? {
+        ...settings, popup: { ...(settings.popup === true ? {} : settings.popup), ...host.linkPolicy },
+    } : settings),
     occurrences: mountOccurrences,
     colors: mountDocumentColors,
     links: mountDocumentLinks,
@@ -113,6 +123,12 @@ export function attachEditorLanguage<O extends EditorLanguageOptions>(editor: Te
     binding.users++;
     let disposed = false;
     const features: Partial<Features> = {};
+    const commands: { dispose(): void }[] = [];
+    function atCaret(id: string, label: string, action: (at: number) => (() => void) | undefined) {
+        const selected = () => action(editor.view.getSnapshot().selection.head);
+        commands.push(editor.commands.register({ id, label, owner: "editor", category: "Language",
+            enabled: () => !!selected(), run: () => selected()?.() }));
+    }
     function mount<K extends keyof Features>(key: K) {
         const settings = options[key];
         if (!settings) return;
@@ -126,6 +142,7 @@ export function attachEditorLanguage<O extends EditorLanguageOptions>(editor: Te
         if (disposed) return;
         scope.assertWritable();
         disposed = true;
+        for (const command of commands) command.dispose();
         for (const feature of Object.values(features).reverse()) feature.dispose();
         if (!--binding.users) {
             providers.delete(provider);
@@ -135,6 +152,13 @@ export function attachEditorLanguage<O extends EditorLanguageOptions>(editor: Te
     }
     try {
         for (const key of Object.keys(mounts) as (keyof Features)[]) mount(key);
+        if (features.links && options.linkPolicy?.openLink) {
+            atCaret("link.open", "Open link", at => linkAction(features, options.linkPolicy, at)?.open);
+        }
+        if (options.colors?.picker) atCaret("color.edit", "Edit color", at => {
+            const mark = !editor.getSnapshot().readOnlyReason && features.colors?.colorAt(at);
+            if (mark) return () => { features.colors?.openPicker(mark); };
+        });
         onAbort(editor.signal, dispose);
         return Object.freeze({ ...features, dispose }) as EditorLanguageAttachment<O>;
     } catch (error) {

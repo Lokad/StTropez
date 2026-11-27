@@ -12,12 +12,12 @@ import { observePointerDwell } from "./pointer-dwell.ts";
 import type { TextEditor } from "./text-editor.ts";
 
 export type HoverPopupAction = Readonly<{ label: string; run: () => void }>;
-export type HoverPopupOptions = DocumentationOptions & Readonly<{
+export type HoverPopupOptions = Readonly<{
     actions?: (point: OverlayPosition, state: HoverSnapshot) => readonly HoverPopupAction[];
     beforeInspect?: (trigger: "pointer" | "keyboard") => boolean;
 }>;
 
-export function mountHoverPopup(editor: TextEditor, hover: HoverController, options: HoverPopupOptions) {
+export function mountHoverPopup(editor: TextEditor, hover: HoverController, options: HoverPopupOptions & DocumentationOptions) {
     const { element, view, commands } = editor;
     const doc = element.ownerDocument;
     const win = doc.defaultView!;
