@@ -1,5 +1,5 @@
 import { emptyList } from "../core/empty-list.ts";
-import { invalidRange, isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
+import { invalidType, invalidRange, isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
 import { applyEditMethod, codeActionMethod, colorPresentationMethod, completionMethod,
     definitionMethod, didChangeMethod, didCloseMethod, didOpenMethod, documentColorMethod,
     documentHighlightMethod, documentLinkMethod, executeCommandMethod, foldingRangeMethod,
@@ -372,7 +372,7 @@ export class LspSession {
     /** Read capabilities without binding, synchronizing or reserving a document. */
     queryFeatureOptions(method: LspDocumentFeature, document: LspSelectorDocument): readonly Readonly<Record<string, JsonValue>>[] {
         const { uri, languageId } = document;
-        if (!isLspUri(uri) || !isLspIdentityPart(languageId)) throw new TypeError("Invalid LSP document identity.");
+        if (!isLspUri(uri) || !isLspIdentityPart(languageId)) invalidType("LSP document identity");
         const bound = this.#documents.get(uri), same = bound?.snapshot.languageId === languageId;
         if (same && this.#failed(bound)) return emptyList;
         const entry: SelectorEntry = same ? bound : { snapshot: Object.freeze({ uri, languageId }) };
@@ -410,7 +410,7 @@ export class LspSession {
     }
     bindDocument(snapshot: LspDocumentSnapshot): LspDocument {
         this.#writable(); const { uri, languageId, documentId, revision, buffer } = snapshot;
-        if (!isLspUri(uri) || ![languageId, documentId].every(isLspIdentityPart) || !isNonNegativeInteger(revision)) throw new TypeError("Invalid LSP document identity.");
+        if (!isLspUri(uri) || ![languageId, documentId].every(isLspIdentityPart) || !isNonNegativeInteger(revision)) invalidType("LSP document identity");
         if (this.#documents.has(uri) || this.#documents.size >= this.#maxDocuments) throw new Error("LSP URI is already bound or document limit exceeded."); this.#size(buffer.length, 0);
         const entry: Entry = { snapshot: Object.freeze({ uri, languageId, documentId, revision, buffer }) };
         const handle: LspDocument = Object.freeze({ getSnapshot: () => entry.snapshot,
@@ -658,7 +658,7 @@ export class LspSession {
     }
     async shutdown(): Promise<void> {
         this.#writable(); const rpc = this.#ready(), epoch = this.#epoch; do { await this.flush(); this.#ready(epoch); } while (this.#dirty.size || this.#scheduled || this.#pumping); this.#publish("stopping");
-        try { const result = await rpc.request("shutdown").result; if (result !== null) throw new TypeError("Invalid LSP shutdown result."); if (this.#current(epoch)) rpc.notify("exit"); }
+        try { const result = await rpc.request("shutdown").result; if (result !== null) invalidType("LSP shutdown result"); if (this.#current(epoch)) rpc.notify("exit"); }
         finally { if (this.#current(epoch)) this.#drop(new Error("LSP session shut down.")); }
     }
     disconnect(): void { this.#writable(); this.#drop(new Error("LSP session disconnected.")); }

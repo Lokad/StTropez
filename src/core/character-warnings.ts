@@ -1,4 +1,4 @@
-import { invalidRange, isNonNegativeInteger, isOffsetRange, isPositiveInteger } from "./bounds.ts";
+import { invalidType, invalidRange, isNonNegativeInteger, isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import { defaultIgnorable } from "./default-ignorable.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { highSurrogate, lowSurrogate } from "./utf16.ts";
@@ -40,7 +40,7 @@ export class CharacterWarnings {
         }
         const allowed = new Set<number>();
         for (const character of options.allow ?? []) {
-            if (!character.length || character.length !== (character.codePointAt(0)! > 0xffff ? 2 : 1)) throw new TypeError("Allow-list entries must be single characters.");
+            if (!character.length || character.length !== (character.codePointAt(0)! > 0xffff ? 2 : 1)) invalidType("allowed character");
             allowed.add(character.codePointAt(0)!);
         }
         this.#allowed = allowed;

@@ -1,4 +1,4 @@
-import { invalidRange, isIndex, isOffsetRange, isPositiveInteger } from "./bounds.ts";
+import { invalidType, invalidRange, isIndex, isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { unchangedPositionEdges } from "./positions.ts";
 import type { PositionMapping } from "./positions.ts";
@@ -67,8 +67,8 @@ export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange
             unchanged = false;
             return Object.freeze({ ...known, collapsed });
         }
-        if (!r.id.length || r.id.length > 256 || ids.has(r.id)) throw new TypeError("Expected unique fold identities.");
-        if (r.group !== undefined && !r.group) throw new TypeError("Expected a nonempty fold group.");
+        if (!r.id.length || r.id.length > 256 || ids.has(r.id)) invalidType("fold identity");
+        if (r.group !== undefined && !r.group) invalidType("fold group");
         ids.add(r.id); const value = region(buffer, r.id, r.from, r.to, collapsed, r.group);
         if (!value) invalidRange("fold body"); return value;
     });

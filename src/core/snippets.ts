@@ -1,5 +1,5 @@
 import { emptyList } from "./empty-list.ts";
-import { invalidRange, isNonNegativeInteger } from "./bounds.ts";
+import { invalidType, invalidRange, isNonNegativeInteger } from "./bounds.ts";
 import { applyTextEdits, validateTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { PositionMap } from "./positions.ts";
@@ -18,7 +18,7 @@ class UnsupportedSnippet extends Error {}
 
 /** Numbered stops, literal defaults/choices and mirrors; no variables, nesting or transforms. */
 export function parseSnippet(source: string, maxExpandedUnits = Number.MAX_SAFE_INTEGER): SnippetParseResult {
-    if (!isNonNegativeInteger(maxExpandedUnits)) throw new TypeError("Invalid snippet input or expansion limit.");
+    if (!isNonNegativeInteger(maxExpandedUnits)) invalidType("snippet input or expansion limit");
     const fail = (reason: string): never => { throw new UnsupportedSnippet(reason); };
     type Part = string | { index: number };
     const parts: Part[] = [], definitions = new Map<number, { text: string; choices: readonly string[] }>();

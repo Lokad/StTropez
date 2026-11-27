@@ -1,3 +1,4 @@
+import { invalidType } from "../core/bounds.ts";
 import { mountAnchoredOverlay } from "./anchored-overlay.ts";
 import { revealSelectionHead } from "./input-caret.ts";
 import { builtinKeyPriority } from "./command-registry.ts";
@@ -35,12 +36,12 @@ async function preparedName(owner: LspDocumentOwner, source: Source, offset: num
         if (!source.isCurrent() || reply === null) return null;
         const captured = scope.synchronized(binding);
         if (!captured || captured.document.buffer !== source.document.buffer) return null;
-        if (typeof reply !== "object" || Array.isArray(reply)) throw new TypeError("Invalid rename target.");
+        if (typeof reply !== "object" || Array.isArray(reply)) invalidType("rename target");
         if ("defaultBehavior" in reply && reply.defaultBehavior === true) return fallback;
         const { from, to } = lspRangeOffsets(captured.index, "range" in reply ? reply.range : reply);
         if (from === to || offset < from || offset > to) return null;
         if ("placeholder" in reply) {
-            if (typeof reply.placeholder !== "string") throw new TypeError("Invalid rename placeholder.");
+            if (typeof reply.placeholder !== "string") invalidType("rename placeholder");
             return reply.placeholder.length <= nameLimit ? reply.placeholder : "";
         }
         return to - from <= nameLimit ? source.document.buffer.slice(from, to) : "";

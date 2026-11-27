@@ -1,7 +1,7 @@
 import { done, refused, stale, type Outcome } from "../core/outcome.ts";
 import { resolveControlStrings, type ControlStrings } from "./control-strings.ts";
 import { listenUntil } from "./listen.ts";
-import { invalidRange, isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
+import { invalidType, invalidRange, isNonNegativeInteger, isPositiveInteger } from "../core/bounds.ts";
 import { mountInputCaret } from "./input-caret.ts";
 import { autoClosedPairs } from "./auto-closed-pairs.ts";
 import { automaticIndentation } from "./automatic-indentation.ts";
@@ -136,7 +136,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     const matching = (value: boolean | BracketMatchOptions) => value === false ? false : bracketMatchLimits(value === true ? {} : value);
     const classifyWarnings = (value: boolean | CharacterWarningOptions) => value === false ? undefined : new CharacterWarnings(value === true ? {} : value);
     const pastePolicy = (value: string) => {
-        if (value !== "local" && value !== "preserve") throw new TypeError("Invalid paste line-ending policy.");
+        if (value !== "local" && value !== "preserve") invalidType("paste line-ending policy");
         return value;
     };
     const strings = resolveControlStrings(options.strings);
@@ -327,7 +327,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     function reveal(target: RevealTarget, options: EditorRevealOptions = {}): Outcome<EditorRevealRange> {
         const { align = "nearest", select = false, focus: takeFocus = false, expectedRevision } = options;
         validateRevealAlignment(align);
-        if (typeof select !== "boolean" || typeof takeFocus !== "boolean") throw new TypeError("Invalid reveal flags.");
+        if (typeof select !== "boolean" || typeof takeFocus !== "boolean") invalidType("reveal flags");
         if (expectedRevision !== undefined && !isNonNegativeInteger(expectedRevision))
             invalidRange("reveal revision");
         if (disposed || !live()) return stale;

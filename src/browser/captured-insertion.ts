@@ -1,3 +1,4 @@
+import { invalidType } from "../core/bounds.ts";
 import { onAbort } from "./listen.ts";
 import { planSelectionEdits } from "../core/selections.ts";
 import type { SelectionEditPlan, SelectionSet } from "../core/selections.ts";
@@ -24,7 +25,7 @@ export function captureInsertion(editor: TextEditor, available: () => boolean,
                 if (typeof text !== "string") {
                     if (!Array.isArray(text) || text.length !== selectionSet.ranges.length
                         || !selectionSet.ranges.every((_, index) => typeof text[index] === "string"))
-                        throw new TypeError("Expected one string per captured selection.");
+                        invalidType("selection replacements");
                 }
                 if (text === "" || Array.isArray(text) && text.every(part => part === "")) { cancel(); return false; }
                 const plan = planSelectionEdits(document.buffer.length, selectionSet, text);

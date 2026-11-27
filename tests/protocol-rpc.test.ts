@@ -69,7 +69,7 @@ test("over-budget response envelopes reject their known calls immediately withou
         assert.ok(rejected.every(error => error instanceof RpcError && /JSON.*limit/.test(error.message)));
         assert.equal(wire.sent.length, sent); assert.equal(rpc.snapshot().disposed, false);
     }
-    assert.throws(() => rpc.notify("large", Array(100).fill(0)), /bounded JSON/);
+    assert.throws(() => rpc.notify("large", Array(100).fill(0)), { code: "invalid-rpc-json-value" });
     wire.receive({ jsonrpc: "2.0", id: unrelated.id, result: "still usable" }); assert.equal(await unrelated.result, "still usable");
     assert.equal(timer.count(), 0); assert.deepEqual(failures, []);
     const deep = rpc.request("deep"); let depthError: unknown; void deep.result.catch(error => { depthError = error; });

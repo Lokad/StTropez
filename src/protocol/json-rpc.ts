@@ -1,4 +1,4 @@
-import { invalidRange, isPositiveInteger } from "../core/bounds.ts";
+import { invalidType, invalidRange, isPositiveInteger } from "../core/bounds.ts";
 import { wireLimits, rpcCodes, cancelledRequest, closedConnection, RpcError, isRecord, isJson, freezeParsedJson } from "./wire.ts";
 import type { JsonValue } from "./wire.ts";
 export type RpcId = string | number | null;
@@ -27,7 +27,7 @@ type Incoming = { context: RpcRequestContext; cancel: () => void };
 const has = (value: Message, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 const idValue = (value: unknown): value is RpcId => value === null || typeof value === "string" || typeof value === "number" && Number.isSafeInteger(value);
 function methodName(method: string): void {
-    if (!method || method.startsWith("rpc.")) throw new TypeError("Invalid application RPC method.");
+    if (!method || method.startsWith("rpc.")) invalidType("application RPC method");
 }
 const failure = (id: RpcId, code: number, message: string, data?: JsonValue) => ({ jsonrpc: "2.0", id,
     error: { code, message, ...(data === undefined ? {} : { data }) } });
@@ -64,7 +64,7 @@ export class JsonRpcConnection {
     #report(error: Error): void { try { this.#options.onError?.(error); } catch { /* Host diagnostics cannot interrupt protocol cleanup. */ } }
     #release(stop: () => void): void { try { stop(); } catch (error) { this.#report(error instanceof Error ? error : new Error("RPC cleanup failed.")); } }
     #encode(value: unknown): string {
-        if (!isJson(value, this.#maxJsonNodes)) throw new TypeError("RPC messages must contain bounded JSON values.");
+        if (!isJson(value, this.#maxJsonNodes)) invalidType("RPC JSON value");
         const encoded = JSON.stringify(value); if (encoded.length > this.#maxMessageUnits) invalidRange("RPC message size"); return encoded;
     }
     #emit(value: unknown): boolean {
@@ -83,7 +83,7 @@ export class JsonRpcConnection {
         if (this.#pending.size >= this.#maxPending) throw new RpcError(rpcCodes.pendingLimit, "Too many pending RPC requests.");
         if (!isPositiveInteger(timeoutMs)) invalidRange("RPC deadline");
         const id = ++this.#serial, message = { jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) };
-        if (params !== undefined && !isRecord(params) && !Array.isArray(params)) throw new TypeError("RPC parameters must be structured.");
+        if (params !== undefined && !isRecord(params) && !Array.isArray(params)) invalidType("RPC parameters");
         const encoded = this.#encode(message);
         let resolve!: (value: JsonValue) => void, reject!: (error: Error) => void;
         const result = new Promise<JsonValue>((yes, no) => { resolve = yes; reject = no; });
@@ -102,7 +102,7 @@ export class JsonRpcConnection {
     }
     notify(method: string, params?: unknown): void {
         methodName(method); if (this.#disposed) throw closedConnection();
-        if (params !== undefined && !isRecord(params) && !Array.isArray(params)) throw new TypeError("RPC parameters must be structured.");
+        if (params !== undefined && !isRecord(params) && !Array.isArray(params)) invalidType("RPC parameters");
         const message = { jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) };
         if (!this.#send(this.#encode(message))) throw closedConnection("RPC transport is closed.");
     }

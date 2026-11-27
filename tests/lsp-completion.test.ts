@@ -80,7 +80,7 @@ test("prefix adoption cancels an old resolve while a replacement resolves the re
     f.peer.onRequest("completionItem/resolve", () => ({ ...wire, detail: "fresh" }));
     const result = await client.resolve(rebased, rebased.items[0]!).result;
     answer.resolve({ ...wire, detail: "late" }); await settled(); assert.equal(result.item!.detail, "fresh"); assert.ok(result.batch.isCurrent());
-    assert.throws(() => client.resolve(result.batch, initial.items[0]!), /captured unresolved/);
+    assert.throws(() => client.resolve(result.batch, initial.items[0]!), { code: "invalid-completion-choice" });
 });
 
 test("shortening a typed prefix cancels resolution and stops at the provider's original query", async t => {

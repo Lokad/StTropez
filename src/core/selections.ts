@@ -1,4 +1,4 @@
-import { invalidRange, isIndex, isNonNegativeInteger, isOffset } from "./bounds.ts";
+import { invalidType, invalidRange, isIndex, isNonNegativeInteger, isOffset } from "./bounds.ts";
 import type { TextEdit } from "./changes.ts";
 import type { Affinity, PositionMapping } from "./positions.ts";
 import { unchangedPositionEdges } from "./positions.ts";
@@ -190,7 +190,7 @@ export function orderedSelections(length: number, { ranges, primary }: Selection
 /** Plan one original-coordinate replacement per normalized range; text may differ per range. */
 export function planSelectionEdits(length: number, selections: SelectionSet, replacement: string | readonly string[]): SelectionEditPlan {
     const value = orderedSelections(length, selections);
-    if (typeof replacement !== "string" && replacement.length !== value.ranges.length) throw new TypeError("Expected replacement text for every selection.");
+    if (typeof replacement !== "string" && replacement.length !== value.ranges.length) invalidType("selection replacements");
     let delta = 0;
     const carets: Selection[] = [], edits = value.ranges.map((range, index) => {
         const from = Math.min(range.anchor, range.head), to = Math.max(range.anchor, range.head), insert = typeof replacement === "string" ? replacement : replacement[index]!;

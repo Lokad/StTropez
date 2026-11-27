@@ -19,8 +19,15 @@ export function isOffsetRange(from: number, to: number, length = Number.MAX_SAFE
     return isOffset(from, to) && isOffset(to, length);
 }
 
-/** Keep the readable RangeError and give hosts a stable code for the rejected argument. */
-export function invalidRange(subject: string): never {
+function invalid(subject: string, kind: ErrorConstructor): never {
     const code = "invalid-" + subject.toLowerCase().replaceAll(" ", "-");
-    throw Object.assign(new RangeError(`Invalid ${subject}.`), { code });
+    throw Object.assign(new kind(`Invalid ${subject}.`), { code });
+}
+
+export function invalidRange(subject: string): never {
+    return invalid(subject, RangeError);
+}
+
+export function invalidType(subject: string): never {
+    return invalid(subject, TypeError);
 }

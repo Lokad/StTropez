@@ -76,7 +76,7 @@ test("workspace-edit preflight and core validation refuse a bad last target with
         reject(withLast({ ...last!, target: { ...last!.target, document: { ...last!.target.document, ...patch } } }), stale);
     }
     reject(withLast({ ...last!, edits: [{ from: 0, to: 1000, insert: "invalid" }] }), /range|bound|length/i);
-    reject({ ...plan, documents: [...plan.documents, first!] }, /once/);
+    reject({ ...plan, documents: [...plan.documents, first!] }, /edit document identity/);
     f.workspace.setCapabilities(f.resources[1]!.id, { edit: ["host"], save: true });
     reject(plan, /read-only/);
     f.workspace.setCapabilities(f.resources[1]!.id, { edit: ["human"], save: true });

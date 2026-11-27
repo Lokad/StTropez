@@ -1,3 +1,4 @@
+import { invalidType } from "../core/bounds.ts";
 import { colorPresentationMethod, documentColorMethod, documentLinkMethod, signatureHelpMethod } from "./lsp-methods.ts";
 import { wireLimits, jsonSnapshot, staleRequest } from "./wire.ts";
 import { createLspClient, lspFeatureHandle, type LspFeatureClient, type LspDocumentRequest, type LspPositionRequest } from "./lsp-client.ts";
@@ -35,7 +36,7 @@ export function signatureClient(provider: LspWorkspace | LspDocumentOwner): LspS
             const { offset, context = { triggerKind: 1, isRetrigger: false } } = request;
             const wireContext = jsonSnapshot(context);
             if (context.triggerCharacter !== undefined && (!context.triggerCharacter.length || context.triggerCharacter.length > 8)
-                || JSON.stringify(wireContext).length > wireLimits.signatureContextUnits) throw new TypeError("Invalid signature help context.");
+                || JSON.stringify(wireContext).length > wireLimits.signatureContextUnits) invalidType("signature help context");
             const retrigger = context.isRetrigger, inherit = context.activeSignatureHelp === undefined;
             if (!retrigger) previous = undefined;
             return lane.request(request, signatureHelpMethod, capture => {
@@ -76,7 +77,7 @@ export function linkClient(provider: LspWorkspace | LspDocumentOwner,
                 : decodeLspDocumentLinks(result.response, capture,
                     lane.options(request.document, documentLinkMethod).some(option => option.resolveProvider === true)));
             return Object.freeze({ items, isCurrent, resolve: async (item: LspDocumentLink, prepareResolve?: LspPrepare) => {
-                if (!items.includes(item) || !item.resolve) throw new TypeError("Choose a captured resolvable document link.");
+                if (!items.includes(item) || !item.resolve) invalidType("document link choice");
                 const value = await result.follow(documentLinkMethod, "documentLink/resolve", item.resolve, prepareResolve);
                 return result.decode(() => decodeLspResolvedDocumentLink(value, item, capture));
             } });
@@ -89,7 +90,7 @@ export function colorClient(provider: LspWorkspace | LspDocumentOwner): LspColor
             const { capture, isCurrent } = result;
             const items = result.decode(() => decodeLspDocumentColors(result.response, capture));
             return Object.freeze({ items, isCurrent, presentations: async (item: LspDocumentColor, color: LspColor, preparePresentation?: LspPrepare, onCancel?: LspConnectContext["onCancel"]) => {
-                if (!items.includes(item)) throw new TypeError("Choose a captured document color.");
+                if (!items.includes(item)) invalidType("document color choice");
                 const value = await result.follow(colorPresentationMethod, colorPresentationMethod, {
                     textDocument: { uri: capture.document.uri }, color: decodeLspColor(color), range: { start: capture.index.at(item.from), end: capture.index.at(item.to) } }, preparePresentation, onCancel);
                 return result.decode(() => decodeLspColorPresentations(value, item, capture));

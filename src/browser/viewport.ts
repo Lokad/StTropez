@@ -1,6 +1,6 @@
 import { listenUntil } from "./listen.ts";
 import { editorElement } from "./editor-element.ts";
-import { invalidRange, isIndex, isNonNegativeInteger, isOffset, isPositiveInteger } from "../core/bounds.ts";
+import { invalidType, invalidRange, isIndex, isNonNegativeInteger, isOffset, isPositiveInteger } from "../core/bounds.ts";
 import { clientBox, cssZoom, minimapWidth } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import { Store, type Observable } from "../core/observable.ts";
@@ -182,7 +182,7 @@ function viewportSettings(previous: ViewportSettings, changes?: Partial<Viewport
         const value = changes[key];
         if (value === undefined) continue;
         if (key === "minimapLabel") {
-            if (typeof value !== "function") throw new TypeError("Invalid minimap label.");
+            if (typeof value !== "function") invalidType("minimap label");
             next.minimapLabel = value;
             continue;
         }
@@ -199,7 +199,7 @@ function viewportSettings(previous: ViewportSettings, changes?: Partial<Viewport
     if (labels !== undefined && labels !== previous.foldLabels) {
         if (!labels || typeof labels !== "object" || Array.isArray(labels)
             || [labels.action, labels.summary].some(value => value !== undefined && typeof value !== "function")) {
-            throw new TypeError("Invalid fold labels.");
+            invalidType("fold labels");
         }
         if (labels.action !== previous.foldLabels.action || labels.summary !== previous.foldLabels.summary) {
             next.foldLabels = Object.freeze({ ...labels });

@@ -1,3 +1,4 @@
+import { invalidType } from "../core/bounds.ts";
 import { completionMethod } from "./lsp-methods.ts";
 import type { LspDocumentOwner } from "./lsp-client.ts";
 import { cancelledRequest, staleRequest } from "./wire.ts";
@@ -57,7 +58,7 @@ export function completionClient(provider: LspWorkspace | LspDocumentOwner): Lsp
         run: (options: LspCompletionRequest): LspCall<LspCompletionBatch> => {
             const { document, offset } = options;
             const context = Object.freeze({ ...(options.context ?? { triggerKind: 1 }) });
-            if (context.triggerKind === 2 && (!context.triggerCharacter.length || context.triggerCharacter.length > 8)) throw new TypeError("Invalid completion trigger context.");
+            if (context.triggerKind === 2 && (!context.triggerCharacter.length || context.triggerCharacter.length > 8)) invalidType("completion trigger context");
             const indentation = options.indentation && Object.freeze({ ...options.indentation }),
                 fallback = options.fallback && (typeof options.fallback === "function" ? options.fallback : Object.freeze({ ...options.fallback }));
             if (options.retain) {
@@ -91,7 +92,7 @@ export function completionClient(provider: LspWorkspace | LspDocumentOwner): Lsp
         },
         resolve: (value: LspCompletionBatch, item: LspCompletion, prepare?: LspPrepare): LspCall<LspCompletionResolution> => {
             const batch = requireBatch(value);
-            if (!value.items.includes(item) || !item.resolve) throw new TypeError("Choose a captured unresolved completion.");
+            if (!value.items.includes(item) || !item.resolve) invalidType("completion choice");
             cancelPending();
             const call = client.request({ document: value.document, prepare }, completionMethod, () => {
                 if (!current(batch)) throw staleRequest(); return item.resolve as Record<string, JsonValue>;

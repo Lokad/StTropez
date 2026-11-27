@@ -1,5 +1,5 @@
 import { emptyList } from "../core/empty-list.ts";
-import { invalidRange, isOffsetRange } from "../core/bounds.ts";
+import { invalidType, invalidRange, isOffsetRange } from "../core/bounds.ts";
 import { splitsTextPair, textExcerpt } from "../core/utf16.ts";
 import { wireLimits, staleRequest } from "./wire.ts";
 import type { DocumentId, DocumentSnapshot, DocumentView, EditOrigin, EditRequest, Workspace } from "../core/workspace.ts";
@@ -39,7 +39,7 @@ export function applyLspWorkspaceEdit(workspace: Workspace, edit: LspWorkspaceEd
             || document.revision !== captured.revision || document.buffer !== captured.buffer) {
             throw staleRequest();
         }
-        if (identities.has(document.id)) throw new TypeError("An LSP edit must name each document once.");
+        if (identities.has(document.id)) invalidType("edit document identity");
         identities.add(document.id);
         if (!edits.length) continue;
         const metadata = workspace.resource(document.id).metadata.getSnapshot();

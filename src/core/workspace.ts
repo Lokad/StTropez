@@ -1,5 +1,5 @@
 import { done, refused } from "./outcome.ts";
-import { invalidRange, isNonNegativeInteger } from "./bounds.ts";
+import { invalidType, invalidRange, isNonNegativeInteger } from "./bounds.ts";
 import type { TextEdit } from "./changes.ts";
 import { compactDocumentEdit, replacementSpan, textDifference } from "./changes.ts";
 import { documentChange } from "./document-change.ts";
@@ -122,13 +122,13 @@ function singleRevision(result: BatchEditResult): EditResult {
 }
 function textWriteRequest(documentId: DocumentId, expectedRevision: number, options: TextTransactionOptions): Omit<EditRequest, "edits"> {
     const { history, kind = "replace", origin, source, view } = options;
-    if (history !== "record" && history !== "reset") throw new TypeError("Invalid text history policy.");
+    if (history !== "record" && history !== "reset") invalidType("text history policy");
     return { documentId, expectedRevision, origin, history: { kind, reset: history === "reset" },
         ...(source !== undefined && { source }), ...(view && { view }) };
 }
 function replaceDocumentBuffer(before: TextBuffer, text: string | TextBuffer) {
     if (typeof text === "string") return before.apply(compactDocumentEdit(before, [{ from: 0, to: before.length, insert: text }]));
-    if (!(text instanceof TextBuffer)) throw new TypeError("Expected text or a text buffer.");
+    if (!(text instanceof TextBuffer)) invalidType("document text");
     const span = replacementSpan(before, text), changedUnits = span.to - span.from + span.insertedLength;
     return { buffer: changedUnits ? text : before, mapping: replacementMap(before.length, span), changedUnits };
 }
@@ -164,7 +164,7 @@ function sameMetadata(a: ResourceMetadata, b: ResourceMetadata): boolean {
 function documentLanguage(value: DocumentLanguage | null | undefined): DocumentLanguage | null {
     if (value == null) return null;
     const { uri, languageId } = value;
-    if (typeof uri !== "string" || !uri || typeof languageId !== "string" || !languageId) throw new TypeError("Expected a document URI and language ID.");
+    if (typeof uri !== "string" || !uri || typeof languageId !== "string" || !languageId) invalidType("document language");
     return Object.freeze({ uri, languageId });
 }
 /** Tuple encoding preserves exact string components, including delimiters and empty values. */
@@ -241,7 +241,7 @@ export class Workspace {
         if (this.#resourceKeys.has(identity)) throw new Error("Resource already exists in this workspace.");
         const { value, visibility = "workspace" } = options;
         if (value !== undefined && typeof value !== "string" && !(value instanceof TextBuffer)) {
-            throw new TypeError("Text resource requires a string or buffer.");
+            invalidType("document text");
         }
         const buffer = typeof value === "string" ? TextBuffer.from(value) : value ?? null;
         const id = `resource-${++this.#nextId}` as DocumentId;
@@ -411,7 +411,7 @@ export class Workspace {
         return done(Object.freeze({ changed: revision !== expectedRevision, revision }));
     }
     transact(id: DocumentId, expectedRevision: number, action: (tx: TextTransaction) => void, options: TextTransactionOptions): EditResult {
-        if (typeof action !== "function") throw new TypeError("Expected a synchronous text transaction callback.");
+        if (typeof action !== "function") invalidType("transaction callback");
         const request = textWriteRequest(id, expectedRevision, options);
         return singleRevision(this.#applyDocuments([{ ...request, edits: [] }], action));
     }
@@ -425,11 +425,11 @@ export class Workspace {
         const ids = new Set<DocumentId>(), first = requests[0]!;
         const { kind = "replace", group, reset = false } = first.history ?? {};
         validateHistoryGroup(group);
-        if (typeof reset !== "boolean") throw new TypeError("History reset must be a boolean.");
+        if (typeof reset !== "boolean") invalidType("history reset");
         if (reset && group !== undefined) throw new Error("A history reset cannot join an undo group.");
         const prepared = [];
         for (const request of requests) {
-            if (request.source !== undefined && typeof request.source !== "string") throw new TypeError("Edit source must be a string.");
+            if (request.source !== undefined && typeof request.source !== "string") invalidType("edit source");
             if (ids.has(request.documentId)) throw new Error("A document may appear only once in a transaction."); ids.add(request.documentId);
             const policy = request.history;
             if (request.origin !== first.origin || (policy?.kind ?? "replace") !== kind || policy?.group !== group
@@ -440,7 +440,7 @@ export class Workspace {
             const view = request.view === undefined ? undefined : record.views.get(request.view.id);
             if ((request.view && view?.handle !== request.view) || ((request.selection || request.selectionSet) && !view)) throw new Error("Selection target must be a live view of this document.");
             if (request.selection && request.selectionSet) throw new Error("Choose a single selection or a selection set.");
-            if ("text" in request && "edits" in request) throw new TypeError("Supply replacement text or range edits.");
+            if ("text" in request && "edits" in request) invalidType("edit request");
             const before = record.buffer!;
             const result: StagedText = action ? this.#scope.read(() => stageTextTransaction(before, action))
                 : "text" in request ? replaceDocumentBuffer(before, request.text) : before.apply(compactDocumentEdit(before, request.edits));
@@ -478,7 +478,7 @@ export class Workspace {
     redo(request: HistoryRequest): BatchEditResult { return this.#moveHistory(request, "redo"); }
     #moveHistory(request: HistoryRequest, direction: "undo" | "redo"): BatchEditResult {
         this.#scope.assertWritable();
-        if (request.source !== undefined && typeof request.source !== "string") throw new TypeError("Edit source must be a string.");
+        if (request.source !== undefined && typeof request.source !== "string") invalidType("edit source");
         const record = this.#records.get(request.documentId), origin = request.origin ?? "human";
         if (!record) return refused("missing-document");
         const refusal = this.#validateEdit(record, request.expectedRevision, origin); if (refusal) return refusal;
@@ -629,7 +629,7 @@ export class Workspace {
                 const value = loaded.value;
                 const serverVersion = loaded.serverVersion ?? null;
                 if (record.loading !== lease) return false;
-                if (typeof value !== "string") throw new TypeError("Text resource requires a string.");
+                if (typeof value !== "string") invalidType("loaded text");
                 const current = record.state.get();
                 record.buffer = TextBuffer.from(value);
                 record.savedBuffer = record.buffer;
@@ -667,7 +667,7 @@ export class Workspace {
         this.#scope.assertWritable();
         if (!versions.length) invalidRange("saved documents");
         if ((options.source !== undefined && typeof options.source !== "string") || (options.history !== "record" && options.history !== "reset"))
-            throw new TypeError("Invalid saved text options.");
+            invalidType("saved text options");
         const documents = new Set<DocumentId>(), history: HistoryChange[] = [];
         const prepared: (PreparedText | Pick<PreparedText, "record" | "buffer" | "state">)[] = [];
         for (const version of versions) {
@@ -679,7 +679,7 @@ export class Workspace {
             if (!record.buffer || state.state !== "ready" || record.saveReservations || record.reloadReservations) return refused("not-ready");
             if (version.expectedRevision !== undefined && version.expectedRevision !== state.revision) return staleRevision;
             if (state.metadata.dirty && !state.metadata.capabilities.edit.includes("host")) return refused("read-only");
-            if (version.serverVersion !== null && typeof version.serverVersion !== "string") throw new TypeError("Invalid saved text version.");
+            if (version.serverVersion !== null && typeof version.serverVersion !== "string") invalidType("saved text version");
             const before = record.buffer, { buffer, mapping, changedUnits: units } = replaceDocumentBuffer(before, version.text);
             const metadata: ResourceMetadata = { ...state.metadata, serverVersion: version.serverVersion, dirty: false, saveStatus: "idle", failure: null };
             if (!units) {
@@ -710,7 +710,7 @@ export class Workspace {
         if (!record || initial?.state !== "ready" || !initial.metadata.capabilities.save) throw new Error("Resource is not ready or cannot be saved.");
         const reviewedVersion = review?.expectedServerVersion;
         if (review !== undefined) {
-            if (!isNonNegativeInteger(review.expectedRevision)) throw new TypeError("Reviewed save requires a revision and server version.");
+            if (!isNonNegativeInteger(review.expectedRevision)) invalidType("reviewed save version");
             if (!review.target || this.resolveResource(review.target) !== handle) throw new Error("Reviewed save belongs to another resource or workspace.");
             if (initial.revision !== review.expectedRevision || record.saveReservations !== 0) throw new Error("Reviewed save has changed or another save is pending.");
         }
@@ -742,7 +742,7 @@ export class Workspace {
         }, accept: (response: Readonly<{ serverVersion: string; canonical?: string }>, options: Readonly<{ applyCanonical?: boolean }> = {}) => {
             const submitted = requireStarted();
             const savedValue = response.canonical === undefined ? value : response.canonical;
-            if (typeof savedValue !== "string") throw new TypeError("Canonical text must be a string.");
+            if (typeof savedValue !== "string") invalidType("canonical text");
             const current = record.state.get();
             if (current.state !== "ready") throw new Error("Saved resource is no longer ready.");
             const savedBuffer = savedValue === value ? capturedBuffer : TextBuffer.from(savedValue);

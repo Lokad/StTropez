@@ -1,5 +1,5 @@
 import { emptyList } from "../core/empty-list.ts";
-import { invalidRange, isPositiveInteger } from "../core/bounds.ts";
+import { invalidType, invalidRange, isPositiveInteger } from "../core/bounds.ts";
 import { applyEditMethod, didChangeMethod, executeCommandMethod } from "./lsp-methods.ts";
 import { wireLimits, isLspUri, isLspIdentityPart, ProtocolDecodeError, rpcCodes, cancelledRequest, staleRequest, closedConnection, RpcError } from "./wire.ts";
 import type { DocumentId, DocumentLanguage, DocumentSnapshot, ResourceLease, Workspace } from "../core/workspace.ts";
@@ -333,7 +333,7 @@ export class LspWorkspace {
             const now = this.#session.getSnapshot();
             return scopeCurrent() && now.phase === "ready" && now.epoch === session.epoch && now.registrationVersion(didChangeMethod) === session.registrationVersion(didChangeMethod);
         };
-        if (!isLspUri(uri)) throw new TypeError("Invalid target URI.");
+        if (!isLspUri(uri)) invalidType("target URI");
         if (!connected() || !context.isCurrent()) throw staleRequest();
         // A server command gets its edit scope from the host. An open sibling does not extend that scope.
         const open = context.purpose === "edit" && !context.source ? undefined : this.#workspace.documentForUri(uri);
@@ -353,13 +353,13 @@ export class LspWorkspace {
             if ("document" in source) {
                 doc = source.document;
                 if (doc.language?.uri !== uri) throw new TypeError("Resolved document does not match the requested URI.");
-                if (!isLspIdentityPart(doc.language.languageId)) throw new TypeError("Invalid target language ID.");
+                if (!isLspIdentityPart(doc.language.languageId)) invalidType("target language ID");
                 if (this.#workspace.document(doc.id) !== doc) throw staleRequest();
                 if (doc.buffer.length > limit) invalidRange("LSP target size");
                 lease = this.#workspace.acquire(doc.id);
             } else {
                 if (context.purpose === "edit") throw new TypeError("An editable target requires a project document.");
-                if (!isLspIdentityPart(source.languageId) || !(typeof source.text === "string" || source.text instanceof TextBuffer)) throw new TypeError("Invalid read-only target.");
+                if (!isLspIdentityPart(source.languageId) || !(typeof source.text === "string" || source.text instanceof TextBuffer)) invalidType("read-only target");
                 if (source.text.length > limit) invalidRange("LSP target size");
                 const buffer = typeof source.text === "string" ? TextBuffer.from(source.text) : source.text;
                 const resource = this.#workspace.createTextResource(this.#workspace.createResourceKey("lsp", uri), uri, {

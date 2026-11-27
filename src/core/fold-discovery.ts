@@ -1,4 +1,4 @@
-import { invalidRange, isOffsetRange, isPositiveInteger } from "./bounds.ts";
+import { invalidType, invalidRange, isOffsetRange, isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import type { FoldRange, FoldRegion } from "./folding.ts";
 import { movedCollapsedRegions, prepareFoldRanges } from "./folding.ts";
@@ -38,9 +38,9 @@ function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work:
     let prefixUnits = 1;
     for (const value of options.markers ?? []) {
         const marker = { ...value }; work.workUnits++;
-        if (!marker.start || !marker.end || !marker.group) throw new TypeError("Invalid fold markers.");
+        if (!marker.start || !marker.end || !marker.group) invalidType("fold markers");
         bulk(work, marker.start.length + marker.end.length);
-        if (/[\r\n]/.test(marker.start + marker.end)) throw new TypeError("Invalid fold markers.");
+        if (/[\r\n]/.test(marker.start + marker.end)) invalidType("fold markers");
         prefixUnits = Math.max(prefixUnits, marker.start.length + 1, marker.end.length + 1); markers.push(marker);
         if (checkpoint(work)) yield;
     }
@@ -157,7 +157,7 @@ export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly Dis
         let id = old?.group === item.group ? old?.id : undefined;
         const collapsed = !id && item.initiallyCollapsed === true;
         if (!id) { do { id = `discovered-${++serial}`; } while (ids.has(id)); ids.add(id); }
-        if (id.length > 256 || assigned.has(id)) throw new TypeError("Expected unique fold identities.");
+        if (id.length > 256 || assigned.has(id)) invalidType("fold identity");
         assigned.add(id);
         const range = Object.freeze({ id, from: item.from, to: item.to,
             ...(item.group === undefined ? {} : { group: item.group }), ...(collapsed ? { collapsed } : {}) });

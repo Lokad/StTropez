@@ -1,4 +1,4 @@
-import { invalidRange, isNonNegativeInteger } from "./bounds.ts";
+import { invalidType, invalidRange, isNonNegativeInteger } from "./bounds.ts";
 import { appendStep, finishSteps, type StepRun, type TextStep } from "./text-transaction.ts";
 import type { SelectionSet } from "./selections.ts";
 export type { Selection } from "./selections.ts";
@@ -45,7 +45,7 @@ class DocumentHistory {
     }
 }
 export function validateHistoryGroup(group: string | undefined): void {
-    if (group !== undefined && !group) throw new TypeError("Expected a nonempty history group.");
+    if (group !== undefined && !group) invalidType("history group");
 }
 
 /** Workspace-local history units shared by the participating documents. No I/O or clock policy. */

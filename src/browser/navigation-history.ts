@@ -1,3 +1,4 @@
+import { invalidType } from "../core/bounds.ts";
 import { isMountedEditor } from "./captured-view.ts";
 import { Store } from "../core/observable.ts";
 import type { Observable } from "../core/observable.ts";
@@ -90,7 +91,7 @@ export function createNavigationHistory(workspace: Workspace): NavigationHistory
     }
     function travel(from: Entry[], to: Entry[]): Travel {
         return (current, present, { focus = false } = {}) => {
-            if (typeof focus !== "boolean") throw new TypeError("Invalid navigation focus option.");
+            if (typeof focus !== "boolean") invalidType("navigation focus option");
             if (disposed) return "empty";
             if (navigating || current && (!live(current) || busy(current))) return "busy";
             scope.assertWritable();
