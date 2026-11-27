@@ -171,6 +171,40 @@ test("Escape in Find closes it before a prepared rename", async ({ page }) => {
     await expect(name).toBeHidden();
 });
 
+test("completion inside an argument shares the caret with signature help", async ({ page }) => {
+    await page.goto("/controls/");
+    const source = page.getByRole("textbox", { name: "colors.ts" });
+    const signature = page.getByRole("tooltip", { name: "Signature help" });
+    const list = page.locator(".st-completion");
+    await expect(page.locator(".st-color-swatch").first()).toBeVisible();
+    await page.addStyleTag({ content: "main { margin-top: 300px; }" });
+    await source.press("Control+End");
+    await source.pressSequentially(" lookup(");
+    await expect(signature).toContainText("lookup");
+    await source.pressSequentially("accent.");
+    for (const manual of [false, true]) {
+        if (manual) await source.press("Control+Space");
+        await expect(list.getByRole("option").first()).toBeVisible();
+        await expect(signature).toContainText("lookup");
+        const row = page.locator(".st-viewport-row").filter({ hasText: "lookup(" });
+        await expect.poll(async () => {
+            const [hint, caret, choices] = await Promise.all([signature, row, list].map(el => el.boundingBox()));
+            return !!hint && !!caret && !!choices && hint.y + hint.height <= caret.y
+                && caret.y + caret.height <= choices.y + 1;
+        }).toBe(true);
+        await expect(source).toBeFocused();
+        await source.press("Escape");
+        await expect(list).toBeHidden();
+        await expect(signature).toBeVisible();
+    }
+    await source.press("Control+Space");
+    await expect(list).toBeVisible();
+    await source.press("Control+.");
+    await expect(page.locator(".st-code-actions")).toBeVisible();
+    await expect(list).toBeHidden();
+    await expect(signature).toBeHidden();
+});
+
 test("accepting a completion keeps its visible line at the same scroll position", async ({ page }) => {
     await page.goto("/controls/");
     const source = page.getByRole("textbox", { name: "colors.ts" });

@@ -35,9 +35,9 @@ export function addControls(toolbar: HTMLElement, editor: TextEditor, provider: 
 
 ## Contract
 
-Each editor shows one language popup. A keyboard or menu command replaces the active popup.
-While typing, signature help takes precedence over automatic completion. Pointer hover waits until
-the editor has no active popup. Escape dismisses the current popup. The Find bar has its own lifetime.
+Inside a call, signature help can stay open while you choose a completion. Opening another language
+popup dismisses both. Pointer hover waits until the editor has no active popup. Escape dismisses
+one popup at a time. The Find bar has its own lifetime.
 
 A hover card offers Code actions at the inspected position, Edit color on a swatch and Open link when
 the attachment supplies those controls and a link opener. `hover.popup.actions(point, state)` can

@@ -68,7 +68,7 @@ export function mountSignature(editor: TextEditor, owner: LspDocumentOwner, opti
     function release() {
         const previous = job; job = undefined; releaseRequest(previous);
     }
-    const surface = options.popup ? transientSurface(editor, cancel) : undefined;
+    const surface = options.popup ? transientSurface(editor, cancel, "signature") : undefined;
     function end(afterBlur = false) {
         surface?.release();
         const previous = job;

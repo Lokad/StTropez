@@ -52,7 +52,7 @@ test("real type inspection works from Code, keyboard and pointer without changin
     await expect(page.locator("#files")).not.toContainText("●");
 });
 
-test("real signature help follows typed arguments until explicit completion replaces it", async ({ page }) => {
+test("real signature help follows typed arguments while choosing a completion", async ({ page }) => {
 
     await page.goto("/"); await expect(page.locator("#language-status")).toHaveText("Language ready", { timeout: 30_000 });
     const source = page.getByRole("textbox", { name: "main.ts", exact: true }), popup = page.getByRole("tooltip", { name: "Signature help", exact: true });
@@ -62,7 +62,8 @@ test("real signature help follows typed arguments until explicit completion repl
     await source.pressSequentially("cart, "); await expect(popup.getByLabel("Active signature parameter")).toContainText("discount");
     await source.press("Control+Space"); await expect(page.locator(".st-completion")).toBeVisible();
     await source.pressSequentially("Mat"); await expect(page.getByRole("option", { name: "Math", exact: true })).toBeVisible();
-    await source.press("Escape"); await expect(page.locator(".st-completion")).toBeHidden(); await expect(popup).toBeHidden(); await expect(find).toBeVisible();
+    await source.press("Escape"); await expect(page.locator(".st-completion")).toBeHidden(); await expect(popup).toBeVisible();
+    await source.press("Escape"); await expect(popup).toBeHidden(); await expect(find).toBeVisible();
     await source.press("Escape"); await expect(find).toBeHidden(); await expect(source).toBeFocused();
     const cursor = page.locator("#cursor"), at = await cursor.innerText();
     const line = Number(/^Ln (\d+),/.exec(at)![1]);

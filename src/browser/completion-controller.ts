@@ -152,7 +152,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
     const surface = options.list ? transientSurface(editor, () => {
         cancelAuto();
         closeList("idle");
-    }) : undefined;
+    }, "completion") : undefined;
     const release = (retain = false) => {
         if (!retain) surface?.release();
         const old = job; job = undefined; if (!old) return; old.call?.cancel(); old.resolution?.call?.cancel(); old.resolution = undefined;
