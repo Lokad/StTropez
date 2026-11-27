@@ -3,9 +3,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { planLanguageEdit, resolveLanguageConfiguration } from "../src/core/language-edits.ts";
 import { TextBuffer } from "../src/index.ts";
-import { createSelectionSet } from "../src/core/selections.ts";
+import { createSelectionSet, planSelectionEdits } from "../src/core/selections.ts";
 import { parseSnippet, offsetSnippetStops, planSnippetEdit, planSnippetChoice, snippetChoiceText, planLinkedFieldEdit } from "../src/core/snippets.ts";
-import { planSelectionEdits } from "../src/kernels/index.ts";
 import type { SnippetStop } from "../src/index.ts";
 
 test("snippets expand forward mirrors, literal defaults, escaped choices and numeric/final stops", () => {

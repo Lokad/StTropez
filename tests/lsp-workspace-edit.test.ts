@@ -3,8 +3,8 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { Workspace, TextBuffer } from "../src/index.ts";
 import type { DocumentSnapshot, TextEdit } from "../src/index.ts";
-import { applyLspWorkspaceEdit } from "../src/kernels/index.ts";
-import { readLspEditNotes, LspLineIndex, RpcError } from "../src/protocol/index.ts";
+import { applyLspWorkspaceEdit, readLspEditNotes } from "../src/protocol/lsp-workspace-edit.ts";
+import { LspLineIndex, RpcError } from "../src/protocol/index.ts";
 import type { LspWorkspaceEdit } from "../src/protocol/index.ts";
 
 function fixture(t: TestContext, text = "alpha\nbeta") {

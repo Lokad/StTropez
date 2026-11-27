@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { LspCommandScope, LspHostCommandContext } from "../src/protocol/index.ts";
-import { applyLspWorkspaceEdit } from "../src/kernels/index.ts";
+import { applyLspWorkspaceEdit } from "../src/protocol/lsp-workspace-edit.ts";
 import { retainLspDocument } from "../src/protocol/lsp-client.ts";
 import { actionClient } from "../src/protocol/lsp-actions.ts";
 import { clientFixture, protocol, settled } from "./helpers/lsp-client.ts";

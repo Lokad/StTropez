@@ -40,8 +40,7 @@ nonnegative columns. Versions share unchanged storage. `equals` can scan all uns
 ### Edits
 
 `{ from, to, insert }` edits use starting-buffer coordinates. Sort by position, use disjoint ranges and
-string insertions. Same-offset insertions follow array order. `validateTextEdits(length, edits)` checks a
-batch.
+string insertions. Same-offset insertions follow array order.
 
 `apply(edits)` returns `{ buffer, mapping, changedUnits }`. Equal replacements drop out. A no-op returns the
 original buffer, identity map and zero changed units. Otherwise it counts removed plus inserted units.
@@ -60,8 +59,7 @@ old end maps past the replacement, subject to another edit there.
 ranges and keeps endpoints ordered. `onDelete: "invalidate"` yields `undefined` when all original content
 disappears or a point position is deleted.
 
-The map from `apply` describes effective edits. `new PositionMap(oldLength, edits)` describes the supplied
-batch. `composePositionMaps(...maps)` joins one or more in revision order with matching lengths. `invert()`
+The map from `apply` describes effective edits. `composePositionMaps(...maps)` joins one or more in revision order with matching lengths. `invert()`
 maps surviving positions back. Optional `createMapper()` reuses traversal for ordered lookups and restarts
 on backward ones.
 
@@ -72,22 +70,8 @@ ranges and primary index from `view.getSnapshot().selectionSet`. Overlaps, dupli
 touching a range merge. Adjacent nonempty ranges stay separate. Merging keeps the primary member’s direction
 and affinities, otherwise the first supplied member’s.
 
-Carets default to `"after"`. Nonempty ranges exclude edge insertions. `mapSelectionSet(mapping, set)` maps
-and normalizes an immutable set. Give `planSelectionEdits` one string or one per normalized range. Commit
-the returned edits and carets together. [Document views](workspace.md#document-views)
-
-```ts
-import { planSelectionEdits } from "sttropez/kernels";
-import type { SelectionSet, TextBuffer } from "sttropez";
-
-export function replaceSelections(
-    buffer: TextBuffer, selections: SelectionSet, replacement: string | readonly string[]
-) {
-    const plan = planSelectionEdits(buffer.length, selections, replacement);
-    const change = buffer.apply(plan.edits);
-    return { ...change, selectionSet: plan.selectionSet };
-}
-```
+Carets default to `"after"`. Nonempty ranges exclude edge insertions. The view maps its carets and selections
+through every document edit. [Document views](workspace.md#document-views)
 
 ### Conservative change spans and diagnostics
 

@@ -380,7 +380,6 @@ Declarations start at `protocol/index.d.ts` in the assets directory.
 | [`LspWorkspaceScope`](../src/protocol/lsp-workspace.ts) | type | Own document bindings, requests and subscriptions that share a workspace connection. |
 | [`LspWorkspaceSnapshot`](../src/protocol/lsp-workspace.ts) | type |  |
 | [`ProtocolDecodeError`](../src/protocol/wire.ts) | class | Malformed or unsupported provider data; distinct from host validation and callbacks. |
-| [`readLspEditNotes`](../src/protocol/lsp-workspace-edit.ts) | function | Read notes for [first, end) across the edit's documents in provider order. |
 | [`RpcCall`](../src/protocol/json-rpc.ts) | type |  |
 | [`RpcError`](../src/protocol/wire.ts) | class |  |
 | [`RpcId`](../src/protocol/json-rpc.ts) | type |  |
@@ -395,16 +394,10 @@ Declarations start at `kernels/index.d.ts` in the assets directory.
 
 | Export | Kind | Purpose |
 | --- | --- | --- |
-| [`applyLspWorkspaceEdit`](../src/protocol/lsp-workspace-edit.ts) | function | Apply a decoded, retained text-only edit as one shared undo command. |
 | [`bufferDifference`](../src/core/buffer-change.ts) | function | Return a replacement span after skipping storage shared by the two versions. |
 | [`composePositionMaps`](../src/core/positions.ts) | function | Known maps compile sequential semantics; opaque host mappings retain their own ordered pipeline. |
 | [`decodeLspDiagnostics`](../src/protocol/lsp-features.ts) | function | Place valid wire ranges against this explicit snapshot without inventing a provider version. |
 | [`JsonRpcConnection`](../src/protocol/json-rpc.ts) | class | Bidirectional JSON-RPC 2.0 over an ordered, message-delimited host transport. |
 | [`LiteralSearch`](../src/core/search.ts) | class | Non-overlapping literal UTF-16 matches over immutable pieces. |
 | [`LspSession`](../src/protocol/lsp-session.ts) | class | Host-driven LSP 3.17 session. |
-| [`LspWorkspaceEditOptions`](../src/protocol/lsp-workspace-edit.ts) | type |  |
-| [`mapSelectionSet`](../src/core/selections.ts) | function | Map each range using its endpoint affinities, then merge overlapping ranges. |
-| [`planSelectionEdits`](../src/core/selections.ts) | function | Plan one original-coordinate replacement per normalized range; text may differ per range. |
-| [`PositionMap`](../src/core/positions.ts) | class | An immutable indexed map for one batch. |
 | [`TextDiff`](../src/core/diff.ts) | class |  |
-| [`validateTextEdits`](../src/core/changes.ts) | function |  |
