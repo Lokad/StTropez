@@ -25,7 +25,8 @@ type Dirty = (row: Fragment) => boolean;
 const all = () => true;
 
 function sameRange(a: InlineDecoration, b: InlineDecoration): boolean {
-    if (a.from !== b.from || a.to !== b.to || a.className !== b.className || a.before !== b.before || a.afterLine !== b.afterLine) return false;
+    if (a.from !== b.from || a.to !== b.to || a.className !== b.className || a.before !== b.before
+        || a.afterLine !== b.afterLine || a.afterLineColumn !== b.afterLineColumn || a.afterLineTitle !== b.afterLineTitle) return false;
     if (a.properties === b.properties) return true;
     const aKeys = Object.keys(a.properties ?? {}) as `--${string}`[];
     return aKeys.length === Object.keys(b.properties ?? {}).length && aKeys.every(key => a.properties?.[key] === b.properties?.[key]);

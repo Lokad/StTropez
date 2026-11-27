@@ -1,8 +1,8 @@
-import { isOffsetRange } from "../core/bounds.ts";
+import { isNonNegativeInteger, isOffsetRange } from "../core/bounds.ts";
 import type { InlineDecoration } from "./viewport.ts";
 
 export type RowPart = Readonly<{ text: string; className: string; properties?: InlineDecoration["properties"];
-    ornament?: "point" | "before" | "afterLine" | "fold"; label?: string }>;
+    ornament?: "point" | "before" | "afterLine" | "aligned" | "fold"; label?: string; title?: string | undefined }>;
 type Boundary = { at: number; id: number; add: boolean };
 const classes = new Set<string>();
 export function applyDecorationProperties(element: HTMLElement, properties: InlineDecoration["properties"]): void {
@@ -26,7 +26,8 @@ function validInlineClasses(name: string): boolean {
 /** Sweep intersecting boundaries; selections are already clipped to this row fragment.
  * Active ids retain host class order and duplicates, with selection styling last. */
 export function decorationParts(text: string, from: number, to: number, length: number,
-    decorations: readonly InlineDecoration[] | undefined, selections: readonly Readonly<{ from: number; to: number }>[], lineStart?: number): RowPart[] {
+    decorations: readonly InlineDecoration[] | undefined, selections: readonly Readonly<{ from: number; to: number }>[],
+    lineStart?: number, columnWidth = 0): RowPart[] {
     if (!decorations?.length && !selections.length) return [{ text, className: "" }];
     const styles: InlineDecoration[] = [], events: Boundary[] = [];
     const marks = new Map<number, RowPart[]>(), annotations: RowPart[] = [];
@@ -39,8 +40,13 @@ export function decorationParts(text: string, from: number, to: number, length: 
         const start = range.from, end = range.to;
         if (!isOffsetRange(start, end, length)) continue;
         const name = range.className; if (!validInlineClasses(name)) continue;
-        if (range.afterLine && lineStart !== undefined && end >= lineStart && end <= to) annotations.push({
-            text: "", className: name, ornament: "afterLine", label: range.afterLine, properties: range.properties });
+        if (range.afterLine && lineStart !== undefined && end >= lineStart && end <= to) {
+            const column = range.afterLineColumn;
+            const aligned = isNonNegativeInteger(column);
+            annotations.push({ text: "", className: name, ornament: aligned ? "aligned" : "afterLine",
+                label: range.afterLine, title: range.afterLineTitle, properties: aligned ? { ...range.properties,
+                    "--st-label-left": (column - (from - lineStart)) * columnWidth + "px" } : range.properties });
+        }
         if (start >= from && start <= to) {
             if (range.before && validDecorationClass(range.before)) mark(start, { text: "", className: range.before, ornament: "before", properties: range.properties });
             if (start === end && !range.afterLine) {

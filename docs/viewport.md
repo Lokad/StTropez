@@ -65,7 +65,8 @@ export function markColor(editor: TextEditor, revision: number, from: number, to
 ```
 
 Size `.color-swatch` and set `background: var(--swatch-color)`. A point marks a caret stop. `afterLine` adds
-a label. Neither contributes clipboard text. Inline classes accept space-separated tokens up to 64
+a label. Set `afterLineColumn` to align labels at a zero-based column, leaving room for longer source lines.
+`afterLineTitle` supplies a native tooltip. Clipboard text contains only the source. Inline classes accept tokens up to 64
 characters each, 256 total.
 
 `set(revision, ranges)` copies ranges, throws on invalid offsets and returns `false` for a stale revision or

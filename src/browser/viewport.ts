@@ -120,7 +120,8 @@ function matchesRowChildren(element: HTMLElement, parts: readonly RowChild[]): b
         if (!node || node.textContent !== part.text) return false;
         if (!part.className) return node.nodeType === Node.TEXT_NODE;
         const span = node as HTMLSpanElement;
-        if (node.nodeName !== "SPAN" || span.className !== part.className || span.dataset.ornament !== part.ornament || span.dataset.label !== part.label) return false;
+        if (node.nodeName !== "SPAN" || span.className !== part.className || span.dataset.ornament !== part.ornament
+            || span.dataset.label !== part.label || span.title !== (part.title ?? "")) return false;
         if (part.properties || span.style.length) {
             const valid = Object.entries(part.properties ?? {}).filter(([name, value]) => /^--[\w-]+$/.test(name) && typeof value === "string" && value.length);
             if (valid.length !== span.style.length || valid.some(([name, value]) => span.style.getPropertyValue(name) !== value)) return false;
@@ -138,6 +139,7 @@ function rowNode(owner: Document, part: RowChild): Node {
     if (part.properties) applyDecorationProperties(span, part.properties);
     if (part.ornament) { span.dataset.ornament = part.ornament; span.setAttribute("aria-hidden", "true"); }
     if (part.label !== undefined) span.dataset.label = part.label;
+    if (part.title) span.title = part.title;
     return span;
 }
 function renderRowChildren(element: HTMLElement, parts: readonly RowChild[]): boolean {
@@ -146,7 +148,8 @@ function renderRowChildren(element: HTMLElement, parts: readonly RowChild[]): bo
     return true;
 }
 export type InlineDecoration = Readonly<{ from: number; to: number; className: string;
-    properties?: Readonly<Record<`--${string}`, string>>; before?: string; afterLine?: string }>;
+    properties?: Readonly<Record<`--${string}`, string>>; before?: string;
+    afterLine?: string; afterLineColumn?: number; afterLineTitle?: string }>;
 /** The visible UTF-16 fragment of a source line, identified by document and revision. */
 export type PresentedLine = Readonly<{ documentId: DocumentId; revision: number; line: number; lineStart: number; from: number; to: number; text: string }>;
 /** Return decorations for one requested fragment using absolute document offsets. */
@@ -525,7 +528,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
         const changed = element.className !== className; element.className = className;
         const inline = decorations.present(presented, false, item.endsLine);
         const marks = selectedBreak ? [...inline, { from: item.to, to: item.to, className: "st-selected-line-break" }] : inline;
-        const parts = decorationParts(item.text, item.from, item.to, document.buffer.length, marks, selections, item.endsLine ? item.start : undefined);
+        const parts = decorationParts(item.text, item.from, item.to, document.buffer.length, marks, selections,
+            item.endsLine ? item.start : undefined, columnWidth);
         const fold = item.endsLine && index?.headerAt(item.line);
         if (fold && fold.collapsed) {
             const count = fold.lineTo - fold.lineFrom - 1;

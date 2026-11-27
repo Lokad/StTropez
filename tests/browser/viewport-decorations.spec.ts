@@ -83,8 +83,21 @@ test("a retained diagnostic, swatch and point follow typing and history in a scr
         layer.set(0, [{ ...range, properties: { "--color": "rgb(189, 44, 31)" } }, { from: point, to: point, className: "missing-again" }]);
         editor.viewport.flush();
         const changed = [...visited];
+        const color = getComputedStyle(swatch).backgroundColor;
         const text = host.querySelector('.st-viewport-row[data-line="500"]')!.textContent;
-        const label = host.querySelector<HTMLElement>('[data-ornament="afterLine"]')!;
+        const pointMark = { from: point, to: point, className: "missing-again" };
+        const annotation = { ...range, properties: { "--color": "rgb(189, 44, 31)" }, afterLineColumn: 30,
+            afterLineTitle: "Diagnostic details" };
+        layer.set(0, [annotation, pointMark]);
+        editor.viewport.flush();
+        const label = host.querySelector<HTMLElement>('[data-ornament="aligned"]')!;
+        const row = label.closest<HTMLElement>(".st-viewport-row")!.getBoundingClientRect();
+        const box = label.getBoundingClientRect();
+        const column = (box.left - row.left) / editor.viewport.getSnapshot().columnWidth;
+        const tooltip = document.elementFromPoint(box.left + 2, box.top + box.height / 2)?.closest("[title]");
+        layer.set(0, [{ ...annotation, afterLineColumn: 1, afterLineTitle: "Updated" }, pointMark]);
+        editor.viewport.flush();
+        const updated = host.querySelector<HTMLElement>('[data-ornament="aligned"]')!;
         const stamp = () => {
             const line = host.querySelector<HTMLElement>('.st-viewport-row[data-line="500"]')!;
             const span = line.querySelector<HTMLElement>(".test-diagnostic:not([data-ornament])");
@@ -99,11 +112,14 @@ test("a retained diagnostic, swatch and point follow typing and history in a scr
             });
             return workspace.edit({ documentId: id, expectedRevision: doc.revision, edits, origin: "human" }).status === "done";
         }, clearMarks: () => { layer.dispose(); editor.viewport.flush(); return layer.set(workspace.document(id).revision, []); } });
-        return { visits, changed, text, label: label.dataset.label, markup: !!label.querySelector("b"),
+        return { visits, changed, text, label: label.dataset.label, markup: !!label.querySelector("b"), column,
+            tooltip: tooltip?.getAttribute("title"), title: updated.title, afterSource: updated.getBoundingClientRect().left > row.right,
             width: parseFloat(getComputedStyle(host.querySelector(".missing-again")!, "::after").width), replaced: !mark.isConnected,
-            color: getComputedStyle(swatch).backgroundColor };
+            color };
     });
     expect(painted).toMatchObject({ visits: [500, 501], changed: [501], replaced: true, text: "paint red", label: "<b>error</b>", markup: false, color: "rgb(189, 44, 31)" });
+    expect(painted).toMatchObject({ tooltip: "Diagnostic details", title: "Updated", afterSource: true });
+    expect(painted.column).toBeCloseTo(30, 1);
     expect(painted.width).toBeGreaterThan(1);
     const input = page.getByRole("textbox", { name: "Layer source", exact: true });
     const inspect = () => page.evaluate(() => (window as unknown as { inspectMarks(): {

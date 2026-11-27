@@ -78,6 +78,9 @@
 .st-color-swatch { width: .8em; height: .8em; margin-inline-end: .2em; background: var(--st-swatch-color); outline: 1px solid currentColor; }
 .st-interactive-swatches .st-viewport-row .st-color-swatch[data-ornament] { pointer-events: auto; cursor: pointer; }
 .st-viewport-row [data-ornament="afterLine"]::after { content: attr(data-label); margin-left: .75em; }
+.st-viewport-row [data-ornament="aligned"] { position: absolute; left: max(calc(100% + .75em), var(--st-label-left)); top: 0; }
+.st-viewport-row [data-ornament="aligned"]::after { content: attr(data-label); }
+.st-viewport-row :is([data-ornament="afterLine"], [data-ornament="aligned"])[title] { pointer-events: auto; }
 .st-occurrence-text { background: var(--st-occurrence-text, #8a8a8a33); }
 .st-occurrence-read, .st-occurrence-write { background: var(--st-occurrence-read, #649ed638); }
 .st-occurrence-write { outline: 1px solid var(--st-occurrence-border, #649ed6); outline-offset: -1px; }
