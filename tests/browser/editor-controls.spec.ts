@@ -385,6 +385,7 @@ test("several definitions offer a choice and a single reference opens directly",
     await source.press("F12");
     const list = page.getByRole("region", { name: "Symbol locations" });
     await expect(list.getByRole("option")).toHaveCount(2);
+    await expect(list.getByRole("option").first()).toHaveText(/^colors\.ts/);
     await source.press("ArrowDown");
     await source.press("Enter");
     const last = (await source.inputValue()).lastIndexOf("accent");

@@ -25,7 +25,6 @@ export function mountDemoSymbols(
             canCapture: valid,
             documents: () => project.files.map((file) => workspace.document(file.resource.id)),
             chooser: {
-                fileLabel: (at) => fileAt(at.document.documentId)?.name ?? at.document.uri,
                 capture(_kind, offset) {
                     const origin = project.navigation.capture(editor, offset);
                     if (!origin) return;

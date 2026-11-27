@@ -14,10 +14,6 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
         links: { paint: true },
         navigation: {
             chooser: {
-                fileLabel: (at) =>
-                    at.document.documentId === editor.view.documentId
-                        ? editor.workspace.document(editor.view.documentId).title
-                        : at.document.uri,
                 capture: () => (at) => {
                     if (at.document.documentId !== editor.view.documentId) {
                         result.value = at.document.uri;

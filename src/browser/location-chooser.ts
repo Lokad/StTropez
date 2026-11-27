@@ -7,6 +7,7 @@ import { editorElement } from "./editor-element.ts";
 import { failed, refused, stale } from "../core/outcome.ts";
 import type { NavigationController, NavigationDestination, NavigationResult } from "./navigation-controller.ts";
 import type { TextEditor } from "./text-editor.ts";
+import type { DocumentId } from "../core/workspace.ts";
 
 type Kind = "definition" | "references";
 export type LocationChooserOptions = Readonly<{
@@ -49,7 +50,10 @@ export function mountLocationChooser(editor: TextEditor, navigation: NavigationC
         rows.set(result.count, search.index, (index, button) => {
             const target = result.locationAt(index)!;
             const excerpt = locationExcerpt(target);
-            const file = options.fileLabel?.(target) ?? target.document.uri;
+            const { documentId, uri } = target.document;
+            const title = editor.workspace.document(documentId as DocumentId).title;
+            const file = options.fileLabel?.(target) ?? (title && title !== uri ? title :
+                uri.split(/[?#]/, 1)[0]!.split(/[/:]/).filter(Boolean).at(-1) ?? uri);
             button.textContent = strings.location(file, excerpt.line, excerpt.column);
             button.dataset.location = String(index);
             const code = doc.createElement("code"), mark = doc.createElement("mark");
