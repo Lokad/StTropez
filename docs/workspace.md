@@ -349,6 +349,4 @@ export function restrictPair(workspace: Workspace, first: DocumentId, second: Do
 Validate schemas, enforce permissions and storage preconditions, and confirm draft discard. Release
 subscriptions, views and leases on close.
 
-## Not covered
-
 Undo lasts for the workspace session. [Durability limits](README.md#support-matrix)

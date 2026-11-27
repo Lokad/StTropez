@@ -49,8 +49,8 @@ test("documentation links resolve rendered headings, references and repository p
     assert.equal(html.diagnostics[0]?.code, "html");
 });
 
-test("documentation policy checks examples, support links and authored prose while retaining real identifiers and commands", () => {
-    const valid = "# API\n\nPurpose.\n\n## Mount an editor\n\n```ts\nexport const now = 'pilot';\n```\n\n## Contract\n\n`mountTextEditor`, `?language=lsp`, `bench:comparison` and `now` keep their names.\nThe budget is 4 ms; F12 opens developer tools.\n\n## Disposal\n\nDispose resources.\n\n## Not covered\n\nSee [support](README.md#support-matrix).";
+test("documentation policy checks examples and authored prose while retaining real identifiers and commands", () => {
+    const valid = "# API\n\nPurpose.\n\n## Mount an editor\n\n```ts\nexport const now = 'pilot';\n```\n\n## Contract\n\n`mountTextEditor`, `?language=lsp`, `bench:comparison` and `now` keep their names.\nThe budget is 4 ms; F12 opens developer tools.\n\n## Disposal\n\nDispose resources.";
     assert.deepEqual(auditPage(parseDocumentation("docs/api.md", valid), { api: true }), []);
     const prose = parseDocumentation("docs/api.md", "# API\n\nThe operation\nprevi**ous**ly returned data.\n\nM3 delivered 12 tests passed on 2026-11-16 at commit abc1234.");
     const issues = auditPage(prose);
@@ -59,7 +59,7 @@ test("documentation policy checks examples, support links and authored prose whi
     assert.equal(auditPage(prose, { vocabulary: false }).length, 0);
     const sample = "# Host\n\nA read-only `editor`.\n\n| Key |\n| --- |\n| text |\n\n```sh\nexample script\n```";
     assert.equal(proseWords(parseDocumentation("docs/editor.md", sample)), 3);
-    assert.deepEqual(auditPage(parseDocumentation("docs/api.md", "# API"), { api: true }).map(issue => issue.code), ["example", "support"]);
+    assert.deepEqual(auditPage(parseDocumentation("docs/api.md", "# API"), { api: true }).map(issue => issue.code), ["example"]);
 });
 
 test("documentation compiler rejects private imports and reports invalid public API calls at Markdown lines", async () => {

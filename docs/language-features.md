@@ -161,16 +161,17 @@ Ctrl/Cmd+hover underlines a symbol. In `onDefinition`, `navigation.request("defi
 lookup. `request("references", offset, false)` excludes declarations. Use the [location chooser](controls.md) or read `locationAt(index)` up to `count`.
 `choice.open(present)` validates the target. `resultLifetime: "view"` expires results on selection or fold changes.
 
-A host menu can open a unique definition immediately. With multiple results, keep the captured choices
-until the user picks one. Pass `"references"` and `false` to omit the declaration.
+Wire the chooser to your document-opening code for F12 and Shift+F12. It opens one destination directly
+and offers a list for multiple results. Its callback receives the captured document and UTF-16 offsets.
+Use `from` and `to` for the selection. `targetRange` includes the enclosing symbol when the provider supplies it.
 
 ```ts
-import type { NavigationController, NavigationDestination } from "sttropez/browser";
+import { attachEditorLanguage, type TextEditor, type NavigationDestination } from "sttropez/browser";
+import type { LspWorkspace } from "sttropez/protocol";
 
-export async function openUniqueDefinition(navigation: NavigationController, offset: number,
-    present: (destination: NavigationDestination) => void) {
-    const reply = await navigation.request("definition", offset);
-    if (reply.status === "done" && reply.value.count === 1) reply.value.locationAt(0)?.open(present);
+export function attachNavigation(editor: TextEditor, provider: LspWorkspace,
+    open: (destination: NavigationDestination) => void) {
+    return attachEditorLanguage(editor, provider, { navigation: { chooser: { capture: () => open } } });
 }
 ```
 
@@ -336,7 +337,3 @@ Completion `getDiagnostics()` times handlers. [Interaction clocks](README.md#mea
 
 Authorize links, target loads and command edits. Bind approval to the reviewed preview. Report files changed
 before a command failure and keep Save available.
-
-## Not covered
-
-[Supported language features](README.md#support-matrix)

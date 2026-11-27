@@ -173,13 +173,8 @@ export function auditPage(page, { api = false, vocabulary = true } = {}) {
                     line: (node.position?.start.line ?? 1) + text.slice(0, match.index).split("\n").length - 1
                 });
         }
-    if (api) {
-        if (!page.examples.length)
-            issues.push(diagnostic(page, undefined, "example", "Expected a checked code example."));
-        if (!page.links.some((link) => link.url === "README.md#support-matrix")) {
-            issues.push(diagnostic(page, undefined, "support", "Link to the support matrix in docs/README.md."));
-        }
-    }
+    if (api && !page.examples.length)
+        issues.push(diagnostic(page, undefined, "example", "Expected a checked code example."));
     return issues;
 }
 

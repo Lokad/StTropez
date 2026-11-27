@@ -253,7 +253,3 @@ change capabilities or reconnect to resync. Delivery is uncertain after transpor
 
 Supply credentials, transport settings and limits. Authorize URIs and commands, validate custom messages and
 review edits. Retain request targets across awaits. Release scopes, handlers and leases on detach.
-
-## Not covered
-
-[Unsupported methods and provider qualification](README.md#support-matrix)

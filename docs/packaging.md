@@ -103,7 +103,3 @@ declarations and creates an archive in `artifacts/nuget/feed/`. `npm run test:pa
 
 Pin a trusted feed and version. Ship `LICENSE.txt` and `UNICODE-LICENSE.txt`. Own URLs and caching. Test
 imports, CSS and worker at the deployed path.
-
-## Not covered
-
-[Distribution support](README.md#support-matrix)

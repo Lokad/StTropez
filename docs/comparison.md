@@ -168,6 +168,4 @@ recompute. Alignment waits for input and gestures to settle. A ready diff can pr
 Retain the baseline. Target Save and Run at the working resource regardless of focus. Finish tickets and
 dispose the comparison before releasing retained views.
 
-## Not covered
-
 The host supplies three-way merging and conflict resolution. [Review support](README.md#support-matrix)

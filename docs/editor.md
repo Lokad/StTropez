@@ -437,7 +437,3 @@ install their bindings when attached. Popup commands act while their control is 
 
 Bind commands to their pane. Submit revision-checked edits after notifications. Dispose the editor
 on detach. [React mounting](getting-started.md#mount-an-editor-in-react)
-
-## Not covered
-
-[Dead keys, AltGr, clipboard and touch](README.md#support-matrix)

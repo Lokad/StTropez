@@ -112,7 +112,3 @@ comparison.
 Own endpoints, credentials, persistence and service execution. Dispose pane subscriptions with their mount
 and release retained targets when a request finishes or is cancelled.
 [Editor ownership](editor.md#mounting-and-presentation) · [Save and conflicts](workspace.md#save-and-conflicts)
-
-## Not covered
-
-[Browser and device support](README.md#support-matrix)

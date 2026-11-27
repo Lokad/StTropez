@@ -208,6 +208,4 @@ Frames reuse unchanged rows.
 Size and style the host. Keep controls outside the viewport subtree. Dispose the mount on detach and release
 retained views and resources.
 
-## Not covered
-
 Rows use unwrapped, left-to-right geometry. [Layout and device support](README.md#support-matrix)

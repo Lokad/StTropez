@@ -424,6 +424,4 @@ Create the view with `workspace.createDocumentView(file.id)`. Pass the same ref 
 across renders and dispose the view when retiring the pane.
 [React fixture](../tests/fixtures/hosts/react-main.tsx)
 
-## Not covered
-
-[Device support](README.md#support-matrix) · [Runnable examples](examples.md#development-routes)
+[Runnable examples](examples.md#development-routes) · [Device support](README.md#support-matrix)

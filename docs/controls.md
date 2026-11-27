@@ -9,7 +9,7 @@ The comparison fills a container with a definite height. For a floating Find bar
 `placement: "overlay"` to `mountFindBar` and position a common ancestor of its host and the editor
 with `position: relative`. Opening Find then keeps the editor's height and scroll position.
 
-## Use
+## Mount controls
 
 ```css
 .workbench {
@@ -39,7 +39,7 @@ export function addControls(toolbar: HTMLElement, editor: TextEditor, provider: 
 }
 ```
 
-## Contract
+## Popup behavior
 
 Inside a call, signature help can stay open while you choose a completion. Opening another language
 popup dismisses both. Pointer hover waits until the editor has no active popup. Escape dismisses
@@ -53,12 +53,29 @@ return host buttons with a `label` and a `run` callback. Stale buttons expire wi
 One result opens directly. For several, the chooser shows file, line and excerpt. Use arrows or Page Up/Down,
 Enter to open and Escape to dismiss. `fileLabel` names host URIs. Results expire on focus or selection changes.
 
-Pass the same `ControlStrings` table as `{ strings }` to `mountTextEditor`, `mountTextComparison`
-and an external `mountFindBar`. Both review panes inherit it. Use `text(label)` for fixed captions.
-Command menus read `commandLabel(id, fallback)` when queried, so the host can update its labels.
-Use `reviewChanges(count)` for plural forms, `resultPage(first, last, total)` for page ranges and
-`location(file, line, column)` for one-based positions. Find and completion formatters receive
-their snapshots. Omitted formatters use English. Source excerpts and provider titles keep their text.
+Use `codeActions.popup.beforeOpen` to decline a request by returning false. Rename calls
+`rename.popup.beforeOpen` before capturing the source. To display an empty rename result in your own status
+area, supply `rename.popup.onNotice(message)`. The hover popup calls `beforeInspect("pointer" | "keyboard")`
+before starting a lookup. Return false to suppress it.
+
+## Labels and messages
+
+Pass the same `strings` object to `mountTextEditor`, `mountTextComparison` and an external `mountFindBar`.
+Both review panes inherit it. Each entry is optional and defaults to English.
+
+| Formatter | What the host supplies |
+| --- | --- |
+| `text(label)` | A translation of the fixed English caption, including button titles and field labels such as Find, Replace and Close. Return the supplied caption for an unknown label. |
+| `commandLabel(id, fallback)` | A command-menu label, read when the menu asks for it. |
+| `findStatus`, `resultPosition`, `resultPage` | Search progress, the selected result, and the visible page range. |
+| `completionStatus`, `omittedCompletions` | Completion counts and filtering hints, and a description of omitted choices. |
+| `reviewChanges`, `readOnlyFile`, `location`, `truncated` | Pluralized change counts, file notices, one-based positions and truncated excerpts. |
+| `heading`, `excerpt`, `statusText`, `restoreHint` | Review pane headings, hunk excerpts, status and the restore tooltip. |
+
+## Theme
+
+The root and state selectors in the table are styling hooks for hosts. Use commands or observable state to
+control behavior. The viewport measures its own row, gutter and minimap dimensions.
 
 Borders, secondary text, fields and hovered rows derive from the surface and text colors. The selected
 row uses the selection color. In forced colors, the current completion, quick fix and pressed Find
@@ -88,7 +105,3 @@ Choose a foreground that is legible on both the background and selection. Give a
 outside the editor the same theme. Set native `color-scheme` on the host for browser-owned UI such as
 the select menu. Dispose controls when their host goes away. See [Find](search.md) and
 [language features](language-features.md) for command and provider behavior.
-
-## Not covered
-
-See the [support matrix](README.md#support-matrix) for platform qualification.

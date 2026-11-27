@@ -149,7 +149,3 @@ the input. Clicking the hidden-line count expands while preserving selection. Co
 Combine outline sources before `setRanges`. Abort superseded work. Publish after workspace notifications and
 dispose subscriptions and controllers on detach. Retain the `DocumentView` for remount.
 [View restoration](viewport.md#scrolling-and-saved-views)
-
-## Not covered
-
-[Display limits](README.md#support-matrix)

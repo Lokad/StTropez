@@ -103,7 +103,3 @@ range yields nothing. Close abandoned iterators. `diagnostics()` walks a tree an
 
 Keep document ID and revision with captured text. Check both and edit permission before applying a result.
 Bound batches, schedule cursor advances and release unused versions.
-
-## Not covered
-
-[Device input and visual layout](README.md#support-matrix)

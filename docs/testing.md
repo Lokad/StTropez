@@ -183,6 +183,4 @@ run. [Playwright navigation](https://playwright.dev/docs/navigations#backforward
 Run focused regressions while editing. Batch broad browser and consumer qualification. Measure changes on
 the keystroke or frame path. [Contributor rules](../AGENTS.md)
 
-## Not covered
-
 [Physical input and display support](README.md#support-matrix)

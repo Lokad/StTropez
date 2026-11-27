@@ -75,6 +75,4 @@ Set `--st-font` on the host. Use `@font-face` or load a `FontFace` into the edit
 and remove it after use. [Unicode license](../licenses/Unicode-3.0.txt) ·
 [Regeneration](testing.md#unicode-regeneration)
 
-## Not covered
-
 [Physical keyboard and font checks](README.md#support-matrix)
