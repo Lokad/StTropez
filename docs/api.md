@@ -302,6 +302,7 @@ Declarations start at `protocol/index.d.ts` in the assets directory.
 | --- | --- | --- |
 | [`createLspCommandRunner`](../src/protocol/lsp-command.ts) | function | One confirmed command per session. |
 | [`createLspFoldingClient`](../src/protocol/lsp-folding.ts) | function |  |
+| [`createRpcTransportPair`](../src/protocol/json-rpc.ts) | function | In-memory client and server endpoints for scripting a provider with a host-controlled delivery queue. |
 | [`DocumentationContent`](../src/core/documentation.ts) | type |  |
 | [`DocumentationPart`](../src/core/documentation.ts) | type | Provider/host content retains its format; literal text is never inferred to be Markdown. |
 | [`JsonValue`](../src/protocol/wire.ts) | type |  |

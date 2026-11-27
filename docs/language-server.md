@@ -53,6 +53,25 @@ export function attachLanguage(
 }
 ```
 
+### Scripting a provider in a host test
+
+Create one transport pair per connection attempt. Pass the client endpoint to the workspace and register
+the responses your test needs on the server. Use `queueMicrotask` for ordered delivery, or supply a queue
+your test advances explicitly. Disposing either endpoint closes both.
+
+```ts
+import { createRpcTransportPair, type RpcScheduler } from "sttropez/protocol";
+import { JsonRpcConnection } from "sttropez/kernels";
+
+export function hoverFixture(schedule: RpcScheduler) {
+    const { client, server } = createRpcTransportPair(queueMicrotask);
+    const peer = new JsonRpcConnection(server, { schedule });
+    peer.onRequest("initialize", () => ({ capabilities: { hoverProvider: true, positionEncoding: "utf-16" } }));
+    peer.onRequest("textDocument/hover", () => ({ contents: "Fixture documentation" }));
+    return { transport: client, dispose: () => peer.dispose() };
+}
+```
+
 ## Contract
 
 <a id="transport-and-session"></a>

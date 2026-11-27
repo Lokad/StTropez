@@ -7,6 +7,36 @@ export type RpcTransport = Readonly<{
     subscribe: (listener: Readonly<{ message: (message: string) => void; close: (reason: Error) => void }>) => () => void;
     dispose: () => void;
 }>;
+/** In-memory client and server endpoints for scripting a provider with a host-controlled delivery queue. */
+export function createRpcTransportPair(enqueue: (deliver: () => void) => void) {
+    type Listener = Parameters<RpcTransport["subscribe"]>[0];
+    const listeners: ({ listener: Listener } | undefined)[] = [];
+    let closed = false;
+    function endpoint(side: number): RpcTransport {
+        return Object.freeze({
+            send(frame: string) {
+                if (closed) throw closedConnection("Closed transport");
+                const peer = listeners[1 - side];
+                if (peer) enqueue(() => { if (listeners[1 - side] === peer) peer.listener.message(frame); });
+            },
+            subscribe(listener: Listener) {
+                if (closed || listeners[side]) throw new Error("Transport endpoint unavailable.");
+                const subscription = { listener };
+                listeners[side] = subscription;
+                return () => { if (listeners[side] === subscription) listeners[side] = undefined; };
+            },
+            dispose() {
+                if (closed) return;
+                closed = true;
+                const [client, server] = listeners.splice(0);
+                const error = closedConnection();
+                try { client?.listener.close(error); } finally { server?.listener.close(error); }
+            },
+        });
+    }
+    return Object.freeze({ client: endpoint(0), server: endpoint(1) });
+}
+
 /** Hosts supply scheduling; this module imports no platform, networking or storage APIs. */
 export type RpcScheduler = (delayMs: number, callback: () => void) => () => void;
 export type RpcOptions = Readonly<{ schedule: RpcScheduler; timeoutMs?: number; maxPending?: number; maxMessageUnits?: number;

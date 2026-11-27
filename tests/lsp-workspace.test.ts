@@ -7,9 +7,9 @@ import { colorClient, linkClient, signatureClient } from "../src/protocol/lsp-la
 import { TextDocument } from "vscode-languageserver-protocol/node.js";
 import type { DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams } from "vscode-languageserver-protocol/node.js";
 import { referencePeer } from "./fixtures/protocol/reference-peer.ts";
-import type { LspWorkspaceOptions, LspRequestContext, RpcScheduler, RpcTransport } from "../src/protocol/index.ts";
+import type { LspWorkspaceOptions, LspRequestContext, RpcScheduler } from "../src/protocol/index.ts";
 import { Workspace } from "../src/index.ts";
-import { LspWorkspace, createLspCommandRunner, createLspFoldingClient, RpcError } from "../src/protocol/index.ts";
+import { LspWorkspace, createRpcTransportPair, createLspCommandRunner, createLspFoldingClient, RpcError } from "../src/protocol/index.ts";
 import { latch } from "./helpers/latch.ts";
 import { bufferReads } from "./buffer-reads.ts";
 const settled = async () => { await setImmediate(); await setImmediate(); };
@@ -241,11 +241,15 @@ function fixture(t: test.TestContext, extra: Partial<Pick<LspWorkspaceOptions,
     const timers = new Set<ReturnType<typeof setTimeout>>(), errors: string[] = [], peers: ReturnType<typeof peer>[] = [];
     const schedule: RpcScheduler = (ms, callback) => { const timer = setTimeout(() => { timers.delete(timer); callback(); }, ms); timers.add(timer); return () => { clearTimeout(timer); timers.delete(timer); }; };
     function peer() {
-        type Listener = Parameters<RpcTransport["subscribe"]>[0]; const listeners: (Listener | undefined)[] = [undefined, undefined], sent: string[] = []; let closed = false;
-        const ports = [0, 1].map(index => ({ send(text: string): void { assert.equal(this, ports[index]); if (closed) throw Error("Closed transport"); if (!index) { const method: unknown = JSON.parse(text).method; if (typeof method === "string") sent.push(method); } queueMicrotask(() => { if (!closed) listeners[1 - index]?.message(text); }); },
-            subscribe(listener: Listener): () => void { assert.equal(this, ports[index]); listeners[index] = listener; return () => { if (listeners[index] === listener) listeners[index] = undefined; }; },
-            dispose: () => { if (closed) return; closed = true; for (const listener of listeners) listener?.close(Error("Closed")); listeners.fill(undefined); } }));
-        const rpc = referencePeer(ports[1]!), documents = new Map<string, TextDocument>(), events: { method: string; uri?: string }[] = [], changes: DidChangeTextDocumentParams[] = [];
+        const pair = createRpcTransportPair(queueMicrotask);
+        const sent: string[] = [];
+        const transport = { ...pair.client, send(frame: string) {
+            assert.equal(this, transport);
+            const method: unknown = JSON.parse(frame).method;
+            if (typeof method === "string") sent.push(method);
+            pair.client.send(frame);
+        } };
+        const rpc = referencePeer(pair.server), documents = new Map<string, TextDocument>(), events: { method: string; uri?: string }[] = [], changes: DidChangeTextDocumentParams[] = [];
         rpc.onRequest("initialize", () => { events.push({ method: "initialize" }); return { capabilities: { positionEncoding: "utf-16", textDocumentSync: 2, hoverProvider: true, definitionProvider: true, executeCommandProvider: { commands: ["test.edit"] } } }; });
         rpc.onNotification("textDocument/didOpen", (p: DidOpenTextDocumentParams) => { assert.ok(!documents.has(p.textDocument.uri)); documents.set(p.textDocument.uri, TextDocument.create(p.textDocument.uri, p.textDocument.languageId, p.textDocument.version, p.textDocument.text)); events.push({ method: "open", uri: p.textDocument.uri }); });
         rpc.onNotification("textDocument/didChange", (p: DidChangeTextDocumentParams) => { changes.push(p); const before = documents.get(p.textDocument.uri)!; let text = before.getText();
@@ -253,7 +257,7 @@ function fixture(t: test.TestContext, extra: Partial<Pick<LspWorkspaceOptions,
             documents.set(before.uri, TextDocument.create(before.uri, before.languageId, p.textDocument.version, text)); events.push({ method: "change", uri: before.uri }); });
         rpc.onNotification("textDocument/didClose", (p: DidCloseTextDocumentParams) => { assert.ok(documents.delete(p.textDocument.uri)); events.push({ method: "close", uri: p.textDocument.uri }); });
         rpc.onRequest("test/barrier", () => null); rpc.onRequest("textDocument/definition", () => []); rpc.onRequest("textDocument/hover", () => ({ contents: "shared provider" }));
-        rpc.listen(); return { rpc, documents, events, changes, sent, transport: ports[0]! };
+        rpc.listen(); return { rpc, documents, events, changes, sent, transport };
     }
     const provider = new LspWorkspace(workspace, { ...extra, features: extra.features ?? ["textDocument/hover", "textDocument/definition", "workspace/executeCommand"], applyEdit: true, diagnostics: true, schedule: extra.schedule ?? schedule,
         connect: async () => { const next = peer(); peers.push(next); return next.transport; },

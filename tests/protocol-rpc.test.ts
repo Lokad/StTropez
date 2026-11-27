@@ -8,8 +8,28 @@ import type { JsonValue } from "../src/protocol/wire.ts";
 import { referencePeer } from "./fixtures/protocol/reference-peer.ts";
 import { channel } from "./helpers/rpc-channel.ts";
 
-import { JsonRpcConnection } from "../src/protocol/json-rpc.ts";
+import { createRpcTransportPair, JsonRpcConnection } from "../src/protocol/json-rpc.ts";
 import { RpcError, rpcCodes } from "../src/protocol/wire.ts";
+
+test("queued test frames belong to the receiving subscription and end with their connection", () => {
+    const deliveries: (() => void)[] = [], frames: string[] = [];
+    const { client, server } = createRpcTransportPair(deliver => deliveries.push(deliver));
+    const listener = { message: (frame: string) => frames.push(frame), close: () => frames.push("closed") };
+    const stop = server.subscribe(listener);
+    client.send("retired");
+    stop();
+    server.subscribe(listener);
+    stop();
+    client.send("current");
+    for (const deliver of deliveries.splice(0)) deliver();
+    assert.deepEqual(frames, ["current"]);
+    client.send("pending");
+    server.dispose();
+    client.dispose();
+    deliveries[0]!();
+    assert.deepEqual(frames, ["current", "closed"]);
+    assert.throws(() => client.send("late"), RpcError);
+});
 
 function clock() {
     const timers = new Set<() => void>();
