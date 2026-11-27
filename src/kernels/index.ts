@@ -1,6 +1,6 @@
 export { validateTextEdits } from "../core/changes.ts";
 export { PositionMap, composePositionMaps } from "../core/positions.ts";
-export { BufferChangeCursor } from "../core/buffer-change.ts";
+export { bufferDifference } from "../core/buffer-change.ts";
 export { LiteralSearch } from "../core/search.ts";
 export { GraphemeIndex, GraphemeLimitError, createGraphemeCursor, graphemeBoundaries } from "../core/graphemes.ts";
 export { TextDiff } from "../core/diff.ts";

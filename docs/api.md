@@ -17,7 +17,6 @@ Declarations start at `index.d.ts` in the assets directory.
 | [`BracketMatchOptions`](../src/core/bracket-matching.ts) | type |  |
 | [`BracketMatchResult`](../src/core/bracket-matching.ts) | type |  |
 | [`BufferChange`](../src/core/text-buffer.ts) | type |  |
-| [`BufferChangeProgress`](../src/core/buffer-change.ts) | type |  |
 | [`BufferChangeSpan`](../src/core/buffer-change.ts) | type |  |
 | [`BufferLine`](../src/core/text-buffer.ts) | type |  |
 | [`BufferPosition`](../src/core/text-buffer.ts) | type |  |
@@ -407,7 +406,7 @@ Declarations start at `kernels/index.d.ts` in the assets directory.
 | Export | Kind | Purpose |
 | --- | --- | --- |
 | [`applyLspWorkspaceEdit`](../src/protocol/lsp-workspace-edit.ts) | function | Apply a decoded, retained text-only edit as one shared undo command. |
-| [`BufferChangeCursor`](../src/core/buffer-change.ts) | class | Charges one structural node-pair decision per unit, with checkpoints every 256 units. |
+| [`bufferDifference`](../src/core/buffer-change.ts) | function | Return a replacement span after skipping storage shared by the two versions. |
 | [`composePositionMaps`](../src/core/positions.ts) | function | Known maps compile sequential semantics; opaque host mappings retain their own ordered pipeline. |
 | [`createGraphemeCursor`](../src/core/graphemes.ts) | function |  |
 | [`decodeLspDiagnostics`](../src/protocol/lsp-features.ts) | function | Place valid wire ranges against this explicit snapshot without inventing a provider version. |

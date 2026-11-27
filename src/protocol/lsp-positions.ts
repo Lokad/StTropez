@@ -2,7 +2,7 @@ import { invalidRange } from "../core/bounds.ts";
 import { emptyList } from "../core/empty-list.ts";
 import { isLspUint } from "./wire.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
-import { BufferChangeCursor } from "../core/buffer-change.ts";
+import { bufferDifference } from "../core/buffer-change.ts";
 import { partitionPoint } from "../core/bound-search.ts";
 import type { TextEdit } from "../core/changes.ts";
 
@@ -39,11 +39,10 @@ async function scan(buffer: TextBuffer, from: number, to: number, cooperate: Lsp
     }
     return Uint32Array.from(bare);
 }
-async function replacement(before: TextBuffer, after: TextBuffer, cooperate: LspCooperate) {
-    const cursor = new BufferChangeCursor(before, after); let from = 0, to = 0, end = 0;
-    try { for (;;) { const step = cursor.next(); if (step.status === "ready") {
-                const span = step.result!; from = Math.max(0, span.from - 1); to = Math.min(before.length, span.to + 1); end = span.insertTo + to - span.to; break;
-            } await cooperate(); } } finally { cursor.dispose(); }
+function replacement(before: TextBuffer, after: TextBuffer) {
+    const span = bufferDifference(before, after);
+    let from = Math.max(0, span.from - 1), to = Math.min(before.length, span.to + 1);
+    let end = span.insertTo + to - span.to;
     if (interior(before, from) || interior(after, from)) from--;
     if (interior(before, to) || interior(after, end)) { to++; end++; }
     return { from, to, insertFrom: from, insertTo: end };
@@ -88,7 +87,8 @@ async function spans(before: TextBuffer, after: TextBuffer, cooperate: LspCooper
             return result;
         }
     }
-    return [await replacement(before, after, cooperate)];
+    await cooperate();
+    return [replacement(before, after)];
 }
 function textChange(before: LspLineIndex, after: TextBuffer, span: Span): LspTextChange {
     return Object.freeze({ range: Object.freeze({ start: before.at(span.from), end: before.at(span.to) }), text: after.slice(span.insertFrom, span.insertTo) });

@@ -134,31 +134,9 @@ choice yields no plan.
 
 ### Conservative change spans and diagnostics
 
-`BufferChangeCursor` finds shared storage at both ends. Replace `[from, to)` with
-`after.chunks(insertFrom, insertTo)` to reconstruct `after`. Separately stored equal text can yield a
-whole-document replacement.
-
-```ts
-import { BufferChangeCursor } from "sttropez/kernels";
-import type { BufferChangeSpan, TextBuffer } from "sttropez";
-
-export function* planTransfer(before: TextBuffer, after: TextBuffer): Generator<void, BufferChangeSpan> {
-    const cursor = new BufferChangeCursor(before, after);
-    try {
-        for (;;) {
-            const step = cursor.next(256);
-            if (step.status === "ready" && step.result) return step.result;
-            yield; // The caller schedules the next advance.
-        }
-    } finally {
-        cursor.dispose();
-    }
-}
-```
-
-Read `snapshot()` for progress and the `ready` result. Failed advances record and throw their cause.
-`dispose()` releases iterators and result. `next()` accepts a safe integer ≥256 (default 256). A unit
-compares two nodes. Budget checks can overshoot by 255.
+Use `bufferDifference(before, after)` from `sttropez/kernels` to find storage shared at both ends.
+Replace `[from, to)` with `after.chunks(insertFrom, insertTo)` to reconstruct the newer buffer.
+Separately stored equal text can yield a whole-document replacement.
 
 `sharedEdge(other, "start" | "end", range?)` yields cumulative proven lengths, possibly repeated. An empty
 range yields nothing. Close abandoned iterators. `diagnostics()` walks a tree and

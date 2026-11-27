@@ -5,7 +5,7 @@ export type { Affinity, AnchoredRange, MappedPosition, PositionMapping } from ".
 export { importText, exportText } from "./core/newlines.ts";
 export type { ImportedText, LineEnding } from "./core/newlines.ts";
 export { TextBuffer } from "./core/text-buffer.ts";
-export type { BufferChangeSpan, BufferChangeProgress } from "./core/buffer-change.ts";
+export type { BufferChangeSpan } from "./core/buffer-change.ts";
 export type { BufferChange, BufferLine, BufferPosition, BufferRetention } from "./core/text-buffer.ts";
 export type { SearchMatch, SearchStep, LiteralSearchOptions } from "./core/search.ts";
 export type { FindBackend, FindQueryCapture, FindSearchCursor, FindPlanCursor, FindPlanStep } from "./core/find.ts";
