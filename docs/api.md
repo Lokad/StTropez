@@ -141,7 +141,7 @@ Declarations start at `browser/index.d.ts` in the assets directory.
 | [`AnchoredOverlay`](../src/browser/anchored-overlay.ts) | type |  |
 | [`AnchoredOverlayOptions`](../src/browser/anchored-overlay.ts) | type |  |
 | [`attachEditorLanguage`](../src/browser/editor-language.ts) | function | Independently mounted panels on the same editor and provider share its source binding. |
-| [`attachLineTokenizer`](../src/browser/line-tokenizer.ts) | function | Color one editor, retaining the unchanged prefix and discovering distant lexical states in bounded tasks. |
+| [`attachLineTokenizer`](../src/browser/line-tokenizer.ts) | function | Color one editor and reuse unchanged lines when their incoming lexer state agrees. |
 | [`bindFindCommands`](../src/browser/find-controls.ts) | function | Bind the shared Find shortcuts to one pane and the host fields that act on it. |
 | [`BracketHighlights`](../src/browser/bracket-highlights.ts) | type |  |
 | [`BracketHighlightSnapshot`](../src/browser/bracket-highlights.ts) | type |  |

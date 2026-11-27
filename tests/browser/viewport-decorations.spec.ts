@@ -167,24 +167,37 @@ test("a distant pane receives the correct incoming lexical state after editing o
             const jumpReads = reads.length;
             await waitForPaint("plain");
             reads.length = 0;
+            for (const [from, insert] of [[0, "new\n"], [4, "x"]] as const) {
+                workspace.edit({ documentId: file.id, expectedRevision: workspace.document(file.id).revision,
+                    origin: "host", edits: [{ from, to: from, insert }] });
+                editor.viewport.flush();
+                const row = host.querySelector('.st-viewport-row[data-line="1200"]');
+                if (row?.querySelector(".plain")?.textContent !== "body") throw new Error("Mapped row lost its color");
+            }
+            await new Promise(resolve => setTimeout(resolve, 50));
+            const neutralReads = reads.length;
+            reads.length = 0;
             const from = workspace.document(file.id).buffer.offsetAt(1_000);
-            workspace.edit({ documentId: file.id, expectedRevision: 0, origin: "human", edits: [{ from, to: from, insert: "/*" }] });
+            workspace.edit({ documentId: file.id, expectedRevision: 2, origin: "human", edits: [{ from, to: from, insert: "/*" }] });
             await waitForPaint("block");
             const keptPrefix = reads.length > 0 && Math.min(...reads) === from;
-            workspace.undo({ documentId: file.id, expectedRevision: 1 });
+            workspace.undo({ documentId: file.id, expectedRevision: 3 });
             await waitForPaint("plain");
+            workspace.undo({ documentId: file.id, expectedRevision: 4 });
+            workspace.undo({ documentId: file.id, expectedRevision: 5 });
             const load = workspace.beginLoad(file);
             load.accept({ value: "/*" + text });
             jump();
             await waitForPaint("block");
             editor.dispose();
-            return { jumpReads, keptPrefix, subscriptions: workspace.diagnostics().subscriptions };
+            return { jumpReads, neutralReads, keptPrefix, subscriptions: workspace.diagnostics().subscriptions };
         } finally {
             editor.dispose();
             host.remove();
         }
     });
     expect(result.jumpReads).toBeLessThan(1_200);
+    expect(result.neutralReads).toBeLessThan(10);
     expect(result.keptPrefix).toBe(true);
     expect(result.subscriptions).toBe(0);
 });
