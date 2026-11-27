@@ -24,6 +24,15 @@ test("demo rules preserve lexical authority through new lines, stale earlier edi
     const opener = (from: number) => rules.configuration().allowPair!({ buffer: capture, from, to: from + 2,
         pair: { open: "/*", close: "*/" }, operation: "open" });
     assert.equal(opener(markers.indexOf("/*")), false); assert.equal(opener(markers.lastIndexOf("/*")), true);
+
+    const header = "// documentation\n".repeat(500);
+    const before = TextBuffer.from(header + "total.toFixed()");
+    rules.accept(before, analyzeTypeScript(before.slice(0, before.length)).spans);
+    const atArgument = before.length - 1;
+    const typed = TextBuffer.from(header + "total.toFixed(2)");
+    rules.edited(before, typed, atArgument);
+    assert.equal(rules.configuration().allowPair!({ buffer: typed, from: atArgument + 1, to: atArgument + 1,
+        pair: { open: "(", close: ")" }, operation: "close" }), true);
 });
 
 test("demo pairing bounds synchronous reads on large unknown prefixes without exporting text", () => {

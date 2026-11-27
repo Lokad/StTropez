@@ -10,7 +10,13 @@ export class DemoEditingRules {
     accept(buffer: TextBuffer, spans: Uint32Array): void {
         this.base = buffer;
         this.spans = spans;
-        this.current = undefined;
+        this.current = buffer;
+        this.prefix = buffer.length;
+    }
+    edited(previous: TextBuffer, next: TextBuffer, from: number): void {
+        if (previous !== this.current) return;
+        this.prefix = Math.min(this.prefix, from);
+        this.current = next;
     }
     clear(): void {
         this.base = undefined;

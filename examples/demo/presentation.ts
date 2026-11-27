@@ -120,6 +120,9 @@ export class DemoPresentation {
             return;
         const previous = this.capture,
             change = capture.change;
+        if (previous?.key === capture.key && change?.previousRevision === previous.revision) {
+            this.editing.edited(previous.buffer, capture.buffer, change.edits[0]?.from ?? previous.buffer.length);
+        }
         if (
             this.unchanged &&
             previous?.key === capture.key &&
