@@ -179,6 +179,8 @@ its lease immediately and ignores late replies. Acceptance resets selections, fo
 
 Views and leases retain resources. `acquire(id, { preventReload: true })` blocks refresh.
 Use `releaseResource` after last use or `releaseResourceWhenUnowned` to defer release. A dirty edit cancels release when discard is forbidden.
+Pass `{ releaseLanguageUri: true }` to free the URI while existing views finish closing. Add `discard: true`
+only when the host has decided to discard unsaved work.
 
 <a id="delayed-work-and-presentation"></a>
 

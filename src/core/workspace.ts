@@ -801,11 +801,13 @@ export class Workspace {
     }
 
     /** Release now, or after the last view or lease is released. Unsaved changes cancel a non-discarding release. */
-    releaseResourceWhenUnowned(id: DocumentId, discard = false): void {
+    releaseResourceWhenUnowned(id: DocumentId, { discard = false, releaseLanguageUri = false }:
+        Readonly<{ discard?: boolean; releaseLanguageUri?: boolean }> = {}): void {
         this.#scope.assertWritable(); const record = this.#requireDocument(id), owners = this.ownership(id);
         if (record.metadata.get().dirty && !discard) throw new Error("Explicit discard is required to release unsaved work.");
         if (!owners.leases) { this.releaseResource(id, discard); return; }
         this.#deferredReleases.set(id, discard);
+        if (releaseLanguageUri) this.setDocumentLanguage(id, null);
     }
     #scheduleRelease(id: DocumentId): void {
         if (!this.#deferredReleases.has(id) || this.#queuedReleases.has(id)) return;

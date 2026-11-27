@@ -393,8 +393,8 @@ button("Close", () => {
     split.dispose();
     notesTab?.editor.dispose();
     editor.dispose();
-    workspace.releaseResourceWhenUnowned(file.id, dirty);
-    workspace.releaseResourceWhenUnowned(notes.id, dirty);
+    workspace.releaseResourceWhenUnowned(file.id, { discard: dirty });
+    workspace.releaseResourceWhenUnowned(notes.id, { discard: dirty });
     toolbar.replaceChildren();
 });
 ```

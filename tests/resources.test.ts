@@ -238,7 +238,8 @@ test("deferred resource release follows final ownership and preserves later unsa
     workspace.edit({ documentId: edited.id, expectedRevision: 0, origin: "human", edits: [{ from: 0, to: 0, insert: "keep " }] });
     held.release(); await Promise.resolve(); assert.equal(workspace.resolveResource(editedTarget), edited);
     assert.equal(workspace.document(edited.id).text(), "keep base"); assert.throws(() => workspace.releaseResourceWhenUnowned(edited.id), /Explicit discard/);
-    workspace.releaseResourceWhenUnowned(edited.id, true); assert.equal(edited.getSnapshot().state, "released");
+    workspace.releaseResourceWhenUnowned(edited.id, { discard: true });
+    assert.equal(edited.getSnapshot().state, "released");
     assert.equal(workspace.diagnostics().documents, 0); assert.equal(workspace.diagnostics().leases, 0);
 });
 

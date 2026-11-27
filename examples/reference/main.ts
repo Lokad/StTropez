@@ -363,5 +363,5 @@ window.addEventListener("pagehide", (event) => {
     find.dispose();
     provider.dispose();
     view.dispose();
-    workspace.releaseResourceWhenUnowned(file.id, true);
+    workspace.releaseResourceWhenUnowned(file.id, { discard: true });
 });
