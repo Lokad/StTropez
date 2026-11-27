@@ -2,7 +2,7 @@ import type { HostPane } from "./layout.ts";
 import { registerCommandPalette } from "./command-palette.ts";
 import { focusSource, onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { editRefusedEvent, inputConflictEvent, mountTextEditor, mountTextComparison } from "../../../src/browser/index.ts";
-import type { ReferenceViewState, TextEditor, TextComparison, ViewState } from "../../../src/browser/index.ts";
+import type { ComparisonViewState, TextEditor, TextComparison, ViewState } from "../../../src/browser/index.ts";
 import type { ComparisonReversion, ComparisonTicket, DocumentId, DocumentView, Selection, Observable } from "../../../src/index.ts";
 import type { HostController } from "./controller.ts";
 import { EditingPresentation } from "../language/presentation.ts";
@@ -54,26 +54,21 @@ export class ViewBindings {
     readonly colors: HostDocumentColors;
     private readonly tools: readonly ViewTool[];
     private reviewScope: CleanupScope | undefined;
-    private referenceState: ReferenceViewState | undefined;
+    private reviewState: ComparisonViewState | undefined;
     private reviewStatus: HTMLOutputElement | undefined;
     private readonly reviewTickets: ComparisonTicket[] = [];
     private readonly discardTickets: { ticket: ComparisonReversion; variantGeneration: number }[] = [];
     private referenceSerial = 0;
     private reviewResult = "No reference command";
     private referenceGeneration = -1;
-    private reviewScrollLinked = false;
-    private reviewRowsAligned = false;
     readonly primary: (host: HTMLDivElement | null) => void;
     readonly secondary: (host: HTMLDivElement | null) => void;
     readonly comparison = (host: HTMLDivElement | null): void => {
         for (const ticket of this.reviewTickets.splice(0)) ticket.cancel();
         for (const { ticket } of this.discardTickets.splice(0)) ticket.cancel();
         if (this.review) {
-            const review = this.review.getSnapshot();
-            this.reviewScrollLinked = review.scrollLinked;
-            this.reviewRowsAligned = review.alignment.enabled;
-            this.referenceState = this.review.captureReferenceView();
-            if (this.review.controller.getSnapshot().working) this.retainState("comparison", this.review.panes.working.view.documentId, this.review.panes.working.captureView());
+            this.reviewState = this.review.captureView();
+            if (this.reviewState) this.retainState("comparison", this.review.panes.working.view.documentId, this.reviewState.working);
         }
         const previous = this.reviewScope; this.reviewScope = undefined; previous?.dispose();
         if (!host) return;
@@ -90,7 +85,7 @@ export class ViewBindings {
             const view = this.retainedView("comparison", this.controller.source.id);
             const presentation = new EditingPresentation(), referencePresentation = new EditingPresentation();
             const review = mountTextComparison(host, this.controller.workspace, view.documentId,
-                baseline, { ariaLabel: "Source review", view, requestLine: linePrompt(host.ownerDocument), scrollLinked: this.reviewScrollLinked, rowsAligned: this.reviewRowsAligned });
+                baseline, { ariaLabel: "Source review", view, requestLine: linePrompt(host.ownerDocument) });
             this.review = review;
             scope.defer(() => { if (this.review === review) this.review = undefined; review.dispose(); });
             host.addEventListener(editRefusedEvent, event => {
@@ -106,8 +101,9 @@ export class ViewBindings {
             reference.decorations.addProvider({ order: 0, provide: referencePresentation.decorate });
             scope.defer(this.language.attachReference("reference", reference, referencePresentation, () => review.controller.getSnapshot().baseline));
             const state = this.states.get("comparison")?.get(view.documentId);
-            if (state) review.panes.working.restoreView(state, { selection: "current" });
-            if (!review.restoreReferenceView(this.referenceState)) this.referenceState = undefined;
+            if (!review.restoreView(this.reviewState, { selection: "current" }) && state) {
+                review.panes.working.restoreView(state, { selection: "current" });
+            }
             const documentId = review.panes.working.view.documentId;
             review.panes.working.element.addEventListener(inputConflictEvent, event => this.controller.captureInputConflict(documentId, (event as CustomEvent<unknown>).detail), { signal: listeners.signal });
             this.registerPaneCommands(review.panes.working, pane, scope);
@@ -243,7 +239,7 @@ export class ViewBindings {
         for (const ticket of this.reviewTickets.splice(0)) ticket.cancel();
         try {
             if (review.controller.replaceBaseline(next)) {
-                this.referenceState = undefined;
+                this.reviewState = undefined;
                 this.referenceGeneration = publication.generation;
             }
         } catch (error) { this.controller.reportError(error); }
@@ -339,7 +335,7 @@ export class ViewBindings {
     dispose(): void {
         this.stopInputCapture(); this.stopDocumentCleanup();
         this.comparison(null); this.unmount(); this.colors.dispose(); this.links.dispose(); this.actions.dispose(); this.rename.dispose(); this.signature.dispose(); this.project.dispose(); this.navigation.dispose(); this.domain.dispose(); for (const selections of this.selections.values()) for (const view of selections.values()) view.dispose();
-        this.selections.clear(); this.states.clear(); this.referenceState = undefined; this.language.dispose();
+        this.selections.clear(); this.states.clear(); this.reviewState = undefined; this.language.dispose();
         this.locationHistory.dispose(); this.lspOwner?.dispose();
         this.controller.collectLoadedDocument();
     }

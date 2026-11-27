@@ -123,9 +123,12 @@ Unavailable capture can throw. Stale completion returns `false`. Complete, cance
 ### Baseline views and decoration
 
 Attach colors, folds and Find to `panes.reference` and `panes.working` using each pane’s revision. Refresh
-preserves the reference editor, reruns Find and maps surviving folds. Use `captureReferenceView()` before leaving a review and `restoreReferenceView(saved)` after remounting it.
-The saved selection, folds and scroll anchors apply to the same working document, reference identity, buffer
-and version. Restoration returns `false` if any changed. The private baseline is read-only and stays out of the public inventory. [Decorations](viewport.md#decoration-layers)
+preserves the reference editor, reruns Find and maps surviving folds.
+
+Call `comparison.captureView()` before unmounting. After remounting, `comparison.restoreView(saved)` restores
+the alignment, scroll linking and working view. It returns false for a different working resource. The reference
+selection, folds and scroll anchors apply only to the captured reference identity, buffer and version.
+Pass `{ selection: "current" }` to keep the working view’s live caret. [Decorations](viewport.md#decoration-layers)
 
 Only changed source rows get tinted. Insertions and deletions mark a point on the empty side. Theme
 backgrounds with `--st-comparison-baseline-line` and `--st-comparison-working-line`, gutters with the

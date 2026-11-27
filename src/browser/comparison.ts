@@ -12,7 +12,7 @@ import { splitsSurrogatePair } from "../core/utf16.ts";
 import type { DiffHunk, DiffRange } from "../core/diff.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import type { DocumentId, DocumentView, ResourceKey, TextResourceHandle, Workspace } from "../core/workspace.ts";
-import type { ViewState } from "./view-state.ts";
+import type { ViewRestoreOptions, ViewState } from "./view-state.ts";
 import { mountEditor } from "./text-editor.ts";
 import type { EditorSettings, TextEditor, TextEditorOptions } from "./text-editor.ts";
 import type { InlineDecoration, PresentedLine, TextViewport } from "./viewport.ts";
@@ -46,17 +46,18 @@ export type TextComparisonSnapshot = Readonly<{
 /** Diff step durations and the current scroll and row-alignment state. */
 export type TextComparisonDiagnostics = Readonly<{ generation: number; steps: number; advances: number; maxStepMs: number; totalStepMs: number; scrollLinked: boolean; pendingScroll: boolean; rowsAligned: boolean; alignment: ComparisonAlignmentSnapshot; disposed: boolean }>;
 export type TextComparisonHunk = ComparisonHunk & Readonly<{ select: () => boolean }>;
-/** Scroll, folds and selection retained for the same working resource and reference baseline. */
-export type ReferenceViewState = Readonly<{
-    working: ResourceKey; reference: DocumentId | null; baseline: ComparisonBaseline; view: ViewState;
+/** Both pane views and layout for one working resource. The reference view belongs to its captured baseline. */
+export type ComparisonViewState = Readonly<{
+    resource: ResourceKey; working: ViewState; reference: DocumentId | null; baseline: ComparisonBaseline;
+    referenceView: ViewState; scrollLinked: boolean; rowsAligned: boolean;
 }>;
 /** Two review panes with hunk navigation and guarded reversion against the captured baseline. */
 export type TextComparison = Observable<TextComparisonSnapshot> & Readonly<{
     element: HTMLDivElement; controller: ComparisonController; commands: EditorCommands;
     panes: Readonly<{ working: TextEditor; reference: TextEditor }>; activePane: () => TextEditor;
     getDiagnostics: () => TextComparisonDiagnostics;
-    captureReferenceView: () => ReferenceViewState | undefined;
-    restoreReferenceView: (saved: ReferenceViewState | undefined) => boolean;
+    captureView: () => ComparisonViewState | undefined;
+    restoreView: (saved: ComparisonViewState | undefined, options?: ViewRestoreOptions) => boolean;
     setScrollLinked: (linked: boolean) => void;
     setRowsAligned: (aligned: boolean) => void;
     navigateHunk: (direction: -1 | 1) => boolean;
@@ -369,17 +370,22 @@ export function mountTextComparison(host: HTMLElement, workspace: Workspace, doc
         ] as const) commands.register({ id, label, owner: "editor", category: strings.text("Comparison"),
             enabled: () => stateStore.get().canNavigate, run: (_, pane) => navigateFrom(pane, direction) }, { keys: [key], priority: builtinKeyPriority.editor });
         const review: TextComparison = Object.freeze({ element: root, controller, commands, panes: editors, activePane, ...stateStore.observable, navigateHunk, revertSelectedHunk, hunkAt, setScrollLinked, setRowsAligned,
-            captureReferenceView() {
+            captureView() {
                 const state = controller.getSnapshot();
                 if (!state.working || !state.baseline) return;
-                return Object.freeze({ working: state.working.key, reference: referenceId,
-                    baseline: state.baseline, view: reference.captureView() });
+                return Object.freeze({ resource: state.working.key, working: working.captureView(), reference: referenceId,
+                    baseline: state.baseline, referenceView: reference.captureView(),
+                    scrollLinked: scroll.snapshot().linked, rowsAligned: alignment.snapshot().enabled });
             },
-            restoreReferenceView(saved: ReferenceViewState | undefined) {
+            restoreView(saved: ComparisonViewState | undefined, options?: ViewRestoreOptions) {
                 const state = controller.getSnapshot();
-                if (!saved || saved.working !== state.working?.key || saved.reference !== referenceId
-                    || saved.baseline.buffer !== state.baseline?.buffer || saved.baseline.version !== state.baseline.version) return false;
-                const { folding, verticalAnchor, horizontalAnchor, ...position } = saved.view;
+                if (!saved || saved.resource !== state.working?.key) return false;
+                setRowsAligned(saved.rowsAligned);
+                setScrollLinked(saved.scrollLinked);
+                working.restoreView(saved.working, options);
+                if (saved.reference !== referenceId || saved.baseline.buffer !== state.baseline?.buffer
+                    || saved.baseline.version !== state.baseline.version) return true;
+                const { folding, verticalAnchor, horizontalAnchor, ...position } = saved.referenceView;
                 const revision = reference.view.getSnapshot().revision;
                 return !!reference.restoreView({ ...position,
                     ...(folding && { folding: { ...folding, documentId: reference.view.documentId, revision } }),

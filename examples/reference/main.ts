@@ -1,5 +1,5 @@
 import { discoverIndentationFolds, TextBuffer, Workspace, type SaveReview, type SaveTicket } from "sttropez";
-import type { ReferenceViewState, TextComparison } from "sttropez/browser";
+import type { ComparisonViewState, TextComparison } from "sttropez/browser";
 import {
     BrowserLspWorkspace,
     isEditorIdle,
@@ -68,15 +68,12 @@ const provider = new BrowserLspWorkspace(workspace, {
 });
 const project = provider.createScope();
 let languageEnabled = false;
-let reviewLayout = { scrollLinked: false, rowsAligned: false };
-let savedReference: ReferenceViewState | undefined;
+let savedReview: ComparisonViewState | undefined;
 
 function mount(review: boolean) {
     let comparison: TextComparison | undefined;
     if (review) {
-        comparison = mountTextComparison(pane, workspace, file.id, baseline, { view, settings, ...reviewLayout });
-        comparison.restoreReferenceView(savedReference);
-        savedReference = undefined;
+        comparison = mountTextComparison(pane, workspace, file.id, baseline, { view, settings });
     }
     const editor =
         comparison?.panes.working ?? mountTextEditor(pane, workspace, file.id, { ariaLabel: name, view, settings });
@@ -186,16 +183,14 @@ function focusActivePane() {
 function switchView(review: boolean) {
     if (Boolean(current.comparison) !== review) {
         if (!readyForHostAction()) return;
-        const position = current.editor.captureView();
-        const { comparison } = current;
-        if (comparison) {
-            const state = comparison.getSnapshot();
-            reviewLayout = { scrollLinked: state.scrollLinked, rowsAligned: state.alignment.enabled };
-            savedReference = comparison.captureReferenceView();
-        }
+        const captured = current.comparison?.captureView();
+        const working = captured?.working ?? current.editor.captureView();
+        if (captured) savedReview = captured;
         current.dispose();
         current = mount(review);
-        current.editor.restoreView(position);
+        if (!savedReview || !current.comparison?.restoreView({ ...savedReview, working })) {
+            current.editor.restoreView(working);
+        }
     }
     document.querySelector("#source")!.setAttribute("aria-pressed", String(!review));
     document.querySelector("#changes")!.setAttribute("aria-pressed", String(review));

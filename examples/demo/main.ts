@@ -12,7 +12,7 @@ import type {
     EditorCommands,
     TextEditor,
     TextComparison,
-    ReferenceViewState,
+    ComparisonViewState,
     FoldingController,
     DecorationLayer,
     DecorationProvider,
@@ -177,7 +177,7 @@ function editingConfiguration(rules = presentation.editing) {
 }
 
 function renderOutput(): void {
-    if (panel !== "javascript" || element("workspace").classList.contains("collapsed")) return;
+    if (comparison || panel !== "javascript" || element("workspace").classList.contains("collapsed")) return;
     const host = element("panel-content");
     if (project?.sample.id === "host") {
         if (!host.querySelector(".host-output-note")) {
@@ -210,7 +210,7 @@ function renderOutput(): void {
     }
 }
 function renderProblems(): void {
-    if (!project || panel !== "problems") return;
+    if (!project || comparison || panel !== "problems") return;
     const captured = project,
         state = captured.language.state.getSnapshot(),
         host = element("panel-content");
@@ -585,13 +585,13 @@ function refusePendingEdit(pending = editorBusy()): boolean {
     return true;
 }
 const savedViews = new WeakMap<DemoFile, ReturnType<TextEditor["captureView"]>>();
-const savedReferences = new WeakMap<DemoFile, ReferenceViewState>();
+const savedReviews = new WeakMap<DemoFile, ComparisonViewState>();
 
 function rememberView(): void {
     if (!active || !editor) return;
-    savedViews.set(active, editor.captureView());
-    const reference = comparison?.captureReferenceView();
-    if (reference) savedReferences.set(active, reference);
+    const review = comparison?.captureView();
+    if (review) savedReviews.set(active, review);
+    savedViews.set(active, review?.working ?? editor.captureView());
 }
 
 function mountFile(file: DemoFile, focus?: "working" | "reference"): void {
@@ -639,7 +639,6 @@ function mountFile(file: DemoFile, focus?: "working" | "reference"): void {
         editor = comparison.panes.working;
         const reference = comparison.panes.reference,
             plain = hostLanguage();
-        if (!comparison.restoreReferenceView(savedReferences.get(file))) savedReferences.delete(file);
         let tokens: DecorationProvider | undefined;
         const syntax: DemoPresentation | undefined = plain
             ? undefined
@@ -686,7 +685,10 @@ function mountFile(file: DemoFile, focus?: "working" | "reference"): void {
     diagnosticsLayer = editor.decorations.add({ order: 40 });
     element("character-warning-details").replaceChildren();
     const saved = savedViews.get(file);
-    if (saved) editor.restoreView(saved, { selection: "current" });
+    const review = savedReviews.get(file);
+    if (saved && !(review && comparison?.restoreView({ ...review, working: saved }, { selection: "current" }))) {
+        editor.restoreView(saved, { selection: "current" });
+    }
     folding = mountDemoFolding(project, editor, () => editingConfiguration().tabSize!);
     stopFolding = foldMenu.bind(editor, folding, comparison ? "Your changes" : "Source");
     viewListeners = new AbortController();

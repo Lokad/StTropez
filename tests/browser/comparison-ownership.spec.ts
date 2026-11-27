@@ -152,19 +152,33 @@ test("a document reference follows edits in its source editor and stays read-onl
         const host = document.createElement("section"); host.id = "follow-document"; document.body.append(host);
         const source = mountTextEditor(host, workspace, baseline, { ariaLabel: "Reference source editor" });
         const review = mountTextComparison(host, workspace, working, baseline);
+        review.setRowsAligned(true);
+        review.setScrollLinked(false);
+        for (const pane of Object.values(review.panes)) {
+            pane.view.setSelection(pane.view.getSnapshot().revision, { anchor: 1, head: 1 });
+        }
+        const captured = review.captureView();
         const other = mountTextComparison(host, workspace, baseline, baseline);
-        const restoredToOther = other.restoreReferenceView(review.captureReferenceView());
+        const restoredToOther = other.restoreView(captured);
         other.dispose();
+        const differentBaseline = mountTextComparison(host, workspace, working, working);
+        const restored = differentBaseline.restoreView(captured);
+        const state = differentBaseline.getSnapshot();
+        const partial = { restored, aligned: state.alignment.enabled, linked: state.scrollLinked,
+            working: differentBaseline.panes.working.view.getSnapshot().selection.head,
+            reference: differentBaseline.panes.reference.view.getSnapshot().selection.head };
+        differentBaseline.dispose();
         host.addEventListener("release", () => { review.dispose(); source.dispose(); host.remove(); }, { once: true });
-        return { followsReference: review.panes.reference.view.documentId === baseline, restoredToOther };
+        return { followsReference: review.panes.reference.view.documentId === baseline, restoredToOther, partial };
     });
-    expect(result).toEqual({ followsReference: true, restoredToOther: false });
+    expect(result).toEqual({ followsReference: true, restoredToOther: false,
+        partial: { restored: true, aligned: true, linked: false, working: 1, reference: 0 } });
     const host = page.locator("#follow-document"), source = host.getByRole("textbox", { name: "Reference source editor" });
     const reference = host.getByRole("textbox", { name: "Comparison baseline source" });
     await expect(host.locator(".st-comparison-controls output")).toHaveText("No changes");
     await source.press("End"); await source.pressSequentially("b");
     await expect(host.locator(".st-comparison-removed")).toHaveText("b");
-    await expect(host.locator(".st-comparison-controls output")).toHaveText("1 change");
+    await expect(host.locator(".st-comparison-controls output")).toHaveText("Change 1 of 1");
     await reference.pressSequentially("x");
     await expect(reference).toHaveAttribute("readonly", "");
     await expect(host.locator(".st-comparison-removed")).toHaveText("b");

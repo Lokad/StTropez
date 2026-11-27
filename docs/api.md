@@ -155,6 +155,7 @@ Declarations start at `browser/index.d.ts` in the assets directory.
 | [`ColorPresentationChoice`](../src/browser/document-color-controller.ts) | type |  |
 | [`ColorPresentationReview`](../src/browser/document-color-controller.ts) | type |  |
 | [`ComparisonAlignmentSnapshot`](../src/browser/comparison-alignment.ts) | type |  |
+| [`ComparisonViewState`](../src/browser/comparison.ts) | type | Both pane views and layout for one working resource. |
 | [`CompletionChoice`](../src/browser/completion-controller.ts) | type |  |
 | [`CompletionController`](../src/browser/completion-controller.ts) | type |  |
 | [`CompletionControllerOptions`](../src/browser/completion-controller.ts) | type |  |
@@ -258,7 +259,6 @@ Declarations start at `browser/index.d.ts` in the assets directory.
 | [`PointerDwellOptions`](../src/browser/pointer-dwell.ts) | type |  |
 | [`PointerDwellPosition`](../src/browser/pointer-dwell.ts) | type |  |
 | [`PresentedLine`](../src/browser/viewport.ts) | type | The visible UTF-16 fragment of a source line, identified by document and revision. |
-| [`ReferenceViewState`](../src/browser/comparison.ts) | type | Scroll, folds and selection retained for the same working resource and reference baseline. |
 | [`RegexFindBackendOptions`](../src/browser/regex-find.ts) | type |  |
 | [`RenameController`](../src/browser/rename-controller.ts) | type |  |
 | [`RenameControllerOptions`](../src/browser/rename-controller.ts) | type |  |
