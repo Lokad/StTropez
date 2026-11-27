@@ -36,9 +36,11 @@ export async function runDemoActions(page: Page, url = "/") {
         await actions.getByRole("button", { name: "Run action", exact: true }).click();
     };
     await command("Demo host: add review note");
-    await expect(actions.getByLabel("Quick-fix status")).toContainText("Review note added as one undoable edit");
+    const notice = page.locator("#editor .st-control-notice");
+    await expect(notice).toContainText("Review note added as one undoable edit");
     await expect(page.locator("#editor")).toContainText("// Reviewed by the demo host command.");
-    await actions.getByRole("button", { name: "Cancel fix", exact: true }).click(); await source.press("Control+z");
+    await expect(source).toBeFocused();
+    await source.press("Control+z");
     await expect(page.locator("#editor")).not.toContainText("// Reviewed by the demo host command.");
     await command("Demo host: refactor, then fail (recovery demo)");
     await expect(actions.getByLabel("Quick-fix status")).toContainText("deliberately failed");
@@ -47,8 +49,9 @@ export async function runDemoActions(page: Page, url = "/") {
     await actions.getByRole("button", { name: "Cancel fix", exact: true }).click(); await source.press("Control+z");
     await expect(page.locator("#editor")).toContainText("import { exampleRate }");
     await command("Demo host: refactor, then check");
-    await expect(actions.getByLabel("Quick-fix status")).toContainText("Project check passed after the two-file rename");
-    await actions.getByRole("button", { name: "Cancel fix", exact: true }).click(); await source.press("Control+z");
+    await expect(notice).toContainText("Project check passed after the two-file rename");
+    await expect(source).toBeFocused();
+    await source.press("Control+z");
     await expect(page.locator("#editor")).toContainText("import { exampleRate }");
     await source.press("Control+Home"); await source.press("Control+.");
     const choice = actions.getByRole("button", { name: "Demo refactor: rename exampleRate across files", exact: true });

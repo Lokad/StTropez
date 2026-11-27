@@ -185,8 +185,9 @@ test("a clean position offers no fabricated fix and Escape preserves source and 
     await source.press("Control+Home");
     await source.dispatchEvent("keydown", { key: ";", code: "Comma", ctrlKey: true });
     const popup = page.getByRole("region", { name: "Quick fixes", exact: true });
-    await expect(popup).toContainText("No available actions for this range.");
-    await expect(popup.getByRole("button", { name: "Apply fix", exact: true })).toBeDisabled();
-    await popup.getByRole("button", { name: "Cancel fix" }).press("Escape");
+    await expect(page.locator("#editor .st-control-notice")).toHaveText("No available actions for this range.");
+    await expect(popup).toBeHidden();
+    await expect(source).toBeFocused();
+    await source.press("Escape");
     await expect(popup).toBeHidden(); await expect(source).toBeFocused(); await expect(page.locator("#files")).not.toContainText("●");
 });

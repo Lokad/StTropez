@@ -40,7 +40,7 @@ test("real definition and reference navigation open the captured file and range 
     if (await pricing.count()) await page.locator('[data-file="main.ts"]').click();
     await page.getByRole("textbox", { name: "main.ts", exact: true }).press("Control+End");
     await page.locator("#code-menu summary").click(); await page.getByRole("button", { name: "Go to definition", exact: true }).click();
-    await expect(locations).toContainText("No definition found.");
+    await expect(page.locator("#editor .st-control-notice")).toHaveText("No definition found.");
     await source.press("Escape");
     await expect(locations).toBeHidden(); await expect(source).toBeFocused();
     await symbol(page); await source.press("Shift+F12");
@@ -147,9 +147,6 @@ test("symbol commands keep an already visible declaration on the same screen row
         if (key === "F2") {
             await expect(page.getByLabel("New name")).toHaveValue("symbol80");
             await page.getByLabel("New name").press("Escape");
-        } else if (key === "Shift+F12") {
-            await expect.poll(() => source.evaluate((input: HTMLTextAreaElement) => input.value.slice(input.selectionStart, input.selectionEnd))).toBe("symbol80");
-            await source.press("ArrowLeft");
         } else {
             await expect(page.locator("#cursor")).toHaveText("Ln 81, Col 7");
         }
