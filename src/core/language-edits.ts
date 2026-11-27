@@ -195,30 +195,38 @@ function lineGroups(buffer: TextBuffer, selections: SelectionSet, adjacent: bool
     return groups;
 }
 
+/** Sequential line commands share buffer reads across neighboring short rows. */
+function lineWindow(buffer: TextBuffer, limit: number, read: (from: number, to: number) => string) {
+    let base = 0, text = "";
+    const slice = (from: number, to: number) => {
+        if (from < base || to > base + text.length) {
+            base = from;
+            text = read(from, Math.min(limit, Math.max(from + 1024, to)));
+        }
+        return text.slice(from - base, to - base);
+    };
+    const next = (start: number, line: number) => {
+        slice(start, start + 1);
+        const newline = text.indexOf("\n", start - base);
+        return newline < 0 ? lineBoundary(buffer, line + 1) : base + newline + 1;
+    };
+    return { slice, next };
+}
+
 function lineComments(buffer: TextBuffer, selections: SelectionSet, command: "line-comment" | "add-line-comment" | "remove-line-comment",
     marker: string, tabSize: number, read: (from: number, to: number) => string, folds?: FoldIndex): SelectionEditPlan {
     const edits: TextEdit[] = [];
     for (const interval of lineGroups(buffer, selections, false, folds)) {
         const limit = lineBoundary(buffer, interval.last + 1);
-        let base = 0;
-        let window = "";
-        // A short row usually shares its read with several following rows.
-        function readAhead(from: number, to: number) {
-            if (from < base || to > base + window.length) {
-                base = from;
-                window = read(from, Math.min(limit, Math.max(from + 1024, to)));
-            }
-            return window.slice(from - base, to - base);
-        }
+        const { slice: readAhead, next: nextLine } = lineWindow(buffer, limit, read);
         const scan = lineColumnScanner(readAhead, tabSize);
         const lines: { start: number; offset: number; column: number; blank: boolean; markerEnd: number }[] = [];
         let minimum = Infinity;
         let allCommented = true;
         let start = buffer.offsetAt(interval.first);
         for (let line = interval.first; line <= interval.last; line++) {
-            const first = window[start - base] ?? readAhead(start, start + 1);
-            const newline = window.indexOf("\n", start - base);
-            const end = newline < 0 ? lineBoundary(buffer, line + 1) : base + newline + 1;
+            const first = readAhead(start, start + 1);
+            const end = nextLine(start, line);
             let offset = start;
             let column = 0;
             if (first === " " || first === "\t") {
@@ -377,8 +385,20 @@ function indent(buffer: TextBuffer, selections: SelectionSet, command: "indent" 
         const lines = projectedLines(first, through, folds);
         const folded = lines.first < first || lines.last > through;
         if (command !== "indent" || folded || from !== to && (first !== last || from === start && to === end)) {
-            for (let line = Math.max(lines.first, lastIndented + 1); line <= lines.last; line++) {
-                const prefix = scan(buffer.offsetAt(line), line === first ? end : lineContentEnd(reader, line), true);
+            const begin = Math.max(lines.first, lastIndented + 1);
+            if (begin > lines.last) continue;
+            const limit = lineBoundary(buffer, lines.last + 1);
+            const rows = lineWindow(buffer, limit, read);
+            const leading = lineColumnScanner(rows.slice, tabSize);
+            let rowStart = buffer.offsetAt(begin);
+            for (let line = begin; line <= lines.last; line++) {
+                const next = rows.next(rowStart, line);
+                let contentEnd = next;
+                if (line + 1 < buffer.lineCount) {
+                    contentEnd -= rows.slice(Math.max(rowStart, next - 2), next) === "\r\n" ? 2 : 1;
+                }
+                const prefix = leading(rowStart, contentEnd, true);
+                rowStart = next;
                 if ((first === last && !folded) || !prefix.indentation) {
                     if (command !== "outdent") {
                         edits.push(textEdit(prefix.offset, prefix.offset,
