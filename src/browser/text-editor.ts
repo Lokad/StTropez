@@ -222,7 +222,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     let pendingDeletion: Readonly<{ revision: number; selectionSet: SelectionSet; command: DeletionCommand }> | undefined;
     let insertion: InputCapture | undefined, composition: InputCapture | undefined;
     let projectedSet = currentSelections();
-    let activeCommand: CommandCapture | undefined;
     const apple = /Mac|iPhone|iPad|iPod/.test(win.navigator.platform);
     const registry = createCommandRegistry(apple,
         () => !disposed && !composing && !input.disabled && live() && (!comparison || comparison.epoch() !== undefined), () => {
@@ -268,8 +267,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             const document = currentDocument(), { selection: selected, selectionSet } = currentView();
             paired.sync(document); automaticIndent.sync(document);
             if (graphemeCache?.buffer !== document.buffer) graphemeCache = undefined;
-            const capture = activeCommand;
-            if (capture && (capture.revision !== document.revision || capture.selectionSet !== selectionSet || capture.deleting && input.readOnly)) activeCommand = undefined;
             // Projection is refreshed only outside composition. The captured model selection and
             // LF mapping remain together until the native edit is committed or recovered.
             // Projection limits are fixed. Only computation is reused; native state and captures still refresh.
@@ -314,7 +311,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             attemptedText, contextFrom, ...(edit ? { attemptedEdit: Object.freeze({ ...edit }) } : {}), ...(cause === undefined ? {} : { cause }) }) }));
     };
     function commandFailure(error: unknown, expectedRevision: number, attemptedText: string): void {
-        activeCommand = undefined;
         let cause = error;
         try { refresh(); }
         catch (cleanupError) { cause = new AggregateError([error, cleanupError], "Command and cleanup failed."); }
@@ -335,7 +331,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         if (expectedRevision !== undefined && !isNonNegativeInteger(expectedRevision))
             invalidRange("reveal revision");
         if (disposed || !live()) return stale;
-        if (input.disabled || resource.getSnapshot().state !== "ready" || composing || hostInsertion || activeCommand) {
+        if (input.disabled || resource.getSnapshot().state !== "ready" || composing || hostInsertion) {
             return refused("unavailable-view");
         }
         const { revision, buffer } = currentDocument();
@@ -394,7 +390,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             refresh();
             return false;
         }
-        activeCommand = undefined;
         preferred = undefined;
         let key: string | undefined;
         const before = currentView(), typed = type === "insertText" ? edits[0]?.insert : undefined;
@@ -490,7 +485,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         apply([{ from, to, insert }], selection, kind, options);
     }
     function history(direction: "undo" | "redo"): boolean {
-        if (disposed) return false; hostInsertion?.cancel(); activeCommand = undefined; group = undefined; syncSelection();
+        if (disposed) return false; hostInsertion?.cancel(); group = undefined; syncSelection();
         if (input.readOnly) { refresh(); return false; }
         if (!live()) { conflict("expired-view"); refresh(); return false; }
         const result = workspace[direction]({ documentId, expectedRevision: revision });
@@ -534,19 +529,12 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     function eachRange(capture: CommandCapture, resolve: (range: Selection) => Selection,
         complete: (ranges: readonly Selection[]) => void, layoutValid?: () => boolean): void {
         commandTurn(() => {
-            activeCommand = capture;
-            const ranges: Selection[] = [];
-            for (const range of capture.selectionSet.ranges) {
-                if (activeCommand !== capture) return;
-                ranges.push(resolve(range));
-            }
-            if (activeCommand !== capture) return;
-            activeCommand = undefined;
+            const ranges = capture.selectionSet.ranges.map(resolve);
             if (validCommand(capture) && (!layoutValid || layoutValid())) complete(ranges);
         });
     }
     function completeCaptured(capture: CommandCapture, work: () => boolean): boolean {
-        if (!validCommand(capture)) { activeCommand = undefined; return false; }
+        if (!validCommand(capture)) return false;
         return work();
     }
     function setSelectionSet(revision: number, { ranges, primary }: SelectionSet): boolean {
@@ -561,7 +549,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
                 const plan = planSelectionEdits(capture.buffer.length, selections, "");
                 return apply(plan.edits, plan.selectionSet, "delete", { type, expectedRevision: capture.revision });
             }
-            activeCommand = undefined;
             group = undefined;
             setSelectionSet(capture.revision, selections);
             revealCaret();
@@ -578,7 +565,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     function captureTextMovement(deleting: boolean): CommandCapture | undefined {
         if (deleting && input.readOnly) return;
         revealSelectionForMovement();
-        activeCommand = undefined;
         syncSelection();
         preferred = undefined;
         return commandCapture(deleting);
@@ -642,7 +628,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         return { anchor: Math.max(from, low.floor), head: Math.min(to, high.ceil) };
     }
     function selectWord(offset: number, add = false): void {
-        activeCommand = undefined; if (disposed || composing || input.disabled || !live()) return;
+        if (disposed || composing || input.disabled || !live()) return;
         stopDrag(); group = undefined; preferred = undefined; focus(); syncSelection();
         const capture = commandCapture(false);
         commandTurn(() => {
@@ -655,7 +641,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         });
     }
     function prepareSelectionCommand(): void {
-        activeCommand = undefined;
         syncSelection();
         group = undefined;
         preferred = undefined;
@@ -697,7 +682,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         return [style, root.clientWidth, root.clientHeight, state.width, state.height, state.lineHeight, state.columnWidth, viewport.activity().rowGeneration, currentFolding().generation].join("|");
     }
     function beginNavigation(prepare: (capture: CommandCapture, style: string) => void): void {
-        activeCommand = undefined;
         commandTurn(() => {
             const capture = commandCapture(false);
             if (validCommand(capture)) prepare(capture, navigationStyle());
@@ -708,7 +692,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         syncSelection(); group = undefined;
     }
     function moveToBoundary(key: "Home" | "End", extend: boolean, documentBoundary = false): boolean {
-        prepareMovement(); preferred = undefined; activeCommand = undefined;
+        prepareMovement(); preferred = undefined;
         const capture = commandCapture(false), buffer = capture.buffer, firstNonblank = new Map<number, number>();
         if (!validCommand(capture)) return false;
         eachRange(capture, range => {
@@ -730,7 +714,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         prepareMovement(); preferred = undefined;
         beginNavigation((capture, style) => {
             viewport.flush();
-            if (!validCommand(capture) || navigationStyle() !== style) { activeCommand = undefined; return; }
+            if (!validCommand(capture) || navigationStyle() !== style) return;
             const layout = navigationLayout(style);
             const direction = key === "ArrowLeft" ? -1 : 1;
             eachRange(capture, range => {
@@ -752,7 +736,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             viewport.flush();
             const buffer = capture.buffer, selected = capture.selection;
             if (!viewport.coordsAt(selected.head, selected.headAffinity)) { revealCaret(selected); viewport.flush(); }
-            if (!validCommand(capture) || navigationStyle() !== style) { activeCommand = undefined; return; }
+            if (!validCommand(capture) || navigationStyle() !== style) return;
             const state = viewport.getSnapshot(), layout = navigationLayout(style);
             const prior = preferred?.selections === capture.selectionSet && preferred.revision === capture.revision && preferred.layout === layout ? preferred.columns : undefined;
             const movement = createVerticalMovement(navigation, state, buffer, capture.selectionSet,
@@ -780,7 +764,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     }
     function languageCommand(command: EditingCommand | Readonly<{ character: string }>): boolean {
         if (disposed || composing || input.disabled || input.readOnly || !hasCommentSyntax(command)) return false;
-        activeCommand = undefined; syncSelection();
+        syncSelection();
         const capture = commandCapture(true), overtyped: number[] = [];
         const folds = typeof command === "string" && command !== "newline" && command !== "block-comment"
             ? currentFolds() : undefined;
@@ -840,7 +824,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             case "select-to-document-start": return moveToBoundary("Home", true, true);
             case "select-to-document-end": return moveToBoundary("End", true, true);
             case "select-all":
-                hostInsertion?.cancel(); activeCommand = undefined; group = undefined; preferred = undefined;
+                hostInsertion?.cancel(); group = undefined; preferred = undefined;
                 view.folding.revealSelection(currentFolding());
                 view.setSelection(revision, { anchor: 0, head: currentDocument().buffer.length });
                 refresh(); return true;
@@ -887,7 +871,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
                 let navigate: ((caret: number) => number | undefined) | undefined;
                 eachRange(capture, range => {
                     navigate ??= brackets!.navigation(capture.buffer, capture.selectionSet.ranges.length,
-                        () => activeCommand === capture);
+                        () => validCommand(capture));
                     const destination = navigate(range.head);
                     return destination === undefined ? range : moved(range, destination, false);
                 }, ranges => finishRanges(capture, ranges));
@@ -990,7 +974,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         registry.reset();
         escapeState(false);
         hostInsertion?.cancel();
-        activeCommand = undefined;
 
         pendingDeletion = undefined;
         insertion = undefined;
@@ -1065,7 +1048,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         if (command || binding === "escape") group = undefined;
         if (command?.kind === "history") { event.preventDefault(); history(command.direction); return; }
         if (binding === "escape") {
-            activeCommand = undefined; preferred = undefined;
+            preferred = undefined;
             const state = currentView();
             if (state.selectionSet.ranges.length > 1) { event.preventDefault(); view.setSelection(revision, state.selection); refresh(); }
             else if (!event.repeat) escapeState(true);
@@ -1107,7 +1090,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     });
     const textDrag = mountTextDragDrop({ workspace, view, viewport, input,
         available: () => !disposed && !composing && !input.disabled,
-        beforeStart: () => { stopDrag(); activeCommand = undefined; preferred = undefined; group = undefined; },
+        beforeStart: () => { stopDrag(); preferred = undefined; group = undefined; },
         afterDrop: () => { revealCaret(); focus(); refresh(); },
         rejected: reason => { conflict(reason); refresh(); } });
     let mousePress: { event: PointerEvent; armed: boolean; revision: number; selectionSet: SelectionSet } | undefined;
@@ -1150,7 +1133,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         if (disposed || composing || input.disabled || !live()) return;
         // The transparent native context can overlap source text; its default hit test uses context coordinates.
         const point = pointerHit(event); if (!point) return;
-        native.preventDefault(); stopDrag(); activeCommand = undefined; preferred = undefined; focus(); group = undefined;
+        native.preventDefault(); stopDrag(); preferred = undefined; focus(); group = undefined;
         const state = currentView();
         const columns = !gutter && event.pointerType === "mouse"
             && (event.button === 1 && !point.padding || event.button === 0 && event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey);
@@ -1257,16 +1240,13 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         }
         if (projection.count === count) return;
         const { ranges, select } = projection;
-        activeCommand = capture;
         commandTurn(() => {
-            while (ranges.length < count && activeCommand === capture) {
+            while (ranges.length < count) {
                 const line = folds.lineAt(unit.originRow + direction * ranges.length);
                 const range = select(line);
                 if (!range) break;
                 ranges.push(range);
             }
-            if (activeCommand !== capture) return;
-            activeCommand = undefined;
             if (ranges.length < count || !validCommand(capture) || drag?.unit !== unit || navigationLayout() !== layout) {
                 delete unit.projection;
                 return;
@@ -1307,7 +1287,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
                 refresh();
             };
             if (unit.kind === "line") { applyUnits(unit.range, wholeLine(currentDocument().buffer, point.offset)); return; }
-            draggedWord = true; activeCommand = undefined;
+            draggedWord = true;
             const capture = commandCapture(false);
             commandTurn(() => {
                 const origin = unit.range ?? wordRange(capture.buffer, unit.origin) ?? { anchor: unit.origin, head: unit.origin };
@@ -1336,9 +1316,8 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         if (drag?.unit?.kind === "column") {
             if (event?.type === "pointerup" && validDrag()) {
                 drag = { ...drag, x: event.clientX, y: event.clientY }; updateDragHead(true);
-            } else if (event?.type !== "pointerup" && activeCommand) activeCommand = undefined;
+            }
         }
-        if (drag?.unit?.kind === "word" && (event?.type === "pointercancel" || event?.type === "lostpointercapture")) activeCommand = undefined;
         dragScrolling.stop();
         const pointer = drag?.pointer, padding = drag?.padding; drag = undefined;
         if (pointer !== undefined && root.hasPointerCapture(pointer)) root.releasePointerCapture(pointer);
@@ -1351,14 +1330,14 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     listen(root, "lostpointercapture", stopDrag);
     function canCaptureInsertion(): boolean {
         return !disposed && root.isConnected && !readOnly && !input.disabled && !input.readOnly && !composing
-            && !activeCommand && !insertion && !drag;
+            && !insertion && !drag;
     }
     for (const type of ["copy", "cut", "paste"] as const) listen(input, type, event => {
-        if (event.defaultPrevented) { activeCommand = undefined; group = undefined; if (type !== "copy") stopDrag(); return; }
+        if (event.defaultPrevented) { group = undefined; if (type !== "copy") stopDrag(); return; }
         if (input.disabled || composing || !event.clipboardData) return;
         if (type === "paste" && !event.cancelable) return;
         if (type !== "copy" && input.readOnly) { refuseEdit(event); return; }
-        event.preventDefault(); activeCommand = undefined; syncSelection(); group = undefined;
+        event.preventDefault(); syncSelection(); group = undefined;
         if (type !== "copy") view.folding.revealSelection(currentFolding());
         const selections = currentSelections();
         if (type === "paste") {
@@ -1410,7 +1389,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     };
     const subscriptions = [viewport.onRender(scheduleCaret), source.subscribe(refresh), view.subscribe(observeCaret),
         view.folding.subscribe(() => { const revision = currentFolding().revision;
-            if (revision === observedFoldRevision) { activeCommand = undefined; stopDrag(); preferred = undefined; }
+            if (revision === observedFoldRevision) { stopDrag(); preferred = undefined; }
             observedFoldRevision = revision; refresh(); }), resource.metadata.subscribe(refresh)];
 
     let activitySnapshot: TextEditorActivity | undefined;
@@ -1426,7 +1405,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     }
     refresh();
     brackets = mountBracketHighlights(workspace, view, viewport, input, () => language,
-        () => !disposed && !composing && !hostInsertion && !activeCommand, bracketOptions);
+        () => !disposed && !composing && !hostInsertion, bracketOptions);
     warnings = mountCharacterWarnings(workspace, view, viewport, warningOptions);
     let cachedSettings: ResolvedEditorSettings | undefined, cachedViewport: ViewportSettings | undefined;
     const settings = (): ResolvedEditorSettings => {
@@ -1485,7 +1464,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
                 registry.reset();
                 if (language.pairs.length !== nextLanguage.pairs.length || language.pairs.some((pair, i) =>
                     pair.open !== nextLanguage.pairs[i]!.open || pair.close !== nextLanguage.pairs[i]!.close)) paired.clear();
-                activeCommand = undefined; group = undefined; preferred = undefined;
+                group = undefined; preferred = undefined;
             }
             if (languageChanged || nextPaste !== pasteLineEndings || nextWarnings !== warningOptions || nextBrackets !== bracketOptions)
                 cachedSettings = undefined;
@@ -1518,7 +1497,6 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
             warnings!.dispose();
             hostInsertion?.cancel();
             pasteOwner = undefined;
-            activeCommand = undefined;
             pendingDeletion = undefined;
             insertion = undefined; composition = undefined;
             graphemeCache = undefined; preferred = undefined; contextBuffer = undefined;
