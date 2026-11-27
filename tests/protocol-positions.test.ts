@@ -127,8 +127,7 @@ test("chunk-edge CRLF classification and cooperative cancellation preserve the o
     assert.deepEqual(index.at(16_385), { line: 1, character: 0 });
     const original = TextBuffer.from("row\r\n".repeat(60000)), captured = await LspLineIndex.create(original, cooperate); let fragmented = original;
     for (let i = 1; i <= 200; i++) { const at = i * 1000; fragmented = fragmented.replace(at, at, "x".repeat(65)).replace(at, at + 65, ""); }
-    const reads = bufferReads(original);
-    await assert.rejects(captured.change(fragmented, async () => { throw new Error("Cancelled traversal"); }), /Cancelled traversal/);
-    assert.deepEqual(bufferReads(original), reads); assert.equal(bufferReads(fragmented).sliceUnits, 0);
+    const result = await captured.change(fragmented, async () => { assert.fail("A shared structural edge needs no yield"); });
+    assert.deepEqual(result.index.at(1000), captured.at(1000));
     assert.deepEqual(captured.at(1000), { line: 200, character: 0 });
 });

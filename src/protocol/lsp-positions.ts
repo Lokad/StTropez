@@ -87,7 +87,6 @@ async function spans(before: TextBuffer, after: TextBuffer, cooperate: LspCooper
             return result;
         }
     }
-    await cooperate();
     return [replacement(before, after)];
 }
 function textChange(before: LspLineIndex, after: TextBuffer, span: Span): LspTextChange {
