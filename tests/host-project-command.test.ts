@@ -45,7 +45,7 @@ test("a command acknowledges a batch with a newly resolved companion and undoes 
         assert.equal(reply.applied, true);
         return "Annotated companion.";
     });
-    const language = attachEditorLanguage(editor, provider, { codeActions: { reviewCommandEdit: () => true } });
+    const language = attachEditorLanguage(editor, provider, { codeActions: {}, reviewCommandEdit: () => true });
     try {
         const list = await language.codeActions.request();
         assert.equal(list.status, "done");
@@ -103,10 +103,10 @@ test("closing the editor refuses a server edit while host approval is still unan
         answered.resolve(reply.applied);
         return null;
     });
-    const language = attachEditorLanguage(f.editor, f.provider, { codeActions: { reviewCommandEdit: () => {
+    const language = attachEditorLanguage(f.editor, f.provider, { codeActions: {}, reviewCommandEdit: () => {
         asked.resolve();
         return approval.promise;
-    } } });
+    } });
     try {
         const choices = await language.codeActions.request();
         assert.equal(choices.status, "done");
@@ -142,10 +142,10 @@ const interruptions = {
 for (const [cause, interrupt] of Object.entries(interruptions)) {
     test(`an expired command review preserves the initial undo after ${cause}`, { timeout: 5000 }, async t => {
         const f = fixture(t);
-        const { codeActions: actions, dispose } = attachEditorLanguage(f.editor, f.provider, { codeActions: {
-            documents: () => [f.document(), f.companion],
+        const { codeActions: actions, dispose } = attachEditorLanguage(f.editor, f.provider, {
+            codeActions: { documents: () => [f.document(), f.companion] },
             reviewCommandEdit: f.host.reviewActionEdit,
-        } });
+        });
         const stop = f.host.observeActions(f.editor, actions);
         const origin = f.document();
         const at = { line: 0, character: 0 };

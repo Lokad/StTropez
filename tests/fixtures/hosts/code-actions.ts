@@ -88,10 +88,10 @@ export class HostActionsTools {
             return panel.settings;
         };
         const { codeActions: controller, commands, dispose } = attachEditorLanguage(editor, provider, {
+            ...(review && { reviewCommandEdit: review.reviewActionEdit }),
             commands: {
                 documents: () => this.documents().filter(doc => doc.key.variant === "working"),
                 canCapture: this.host.canCapture,
-                ...(review && { reviewCommandEdit: review.reviewActionEdit })
             },
             codeActions: {
                 documents: this.documents,
@@ -101,7 +101,7 @@ export class HostActionsTools {
                 ...(beforeResolve && {
                     prepareResolve: session => beforeResolve(session, { module: settings().module, ...this.fixture.take() })
                 }),
-                ...(review && { canRunCommand: () => review.canRunAction(editor), reviewCommandEdit: review.reviewActionEdit })
+                ...(review && { canRunCommand: () => review.canRunAction(editor) })
             }
         });
         const stopAction = review?.observeActions(editor, controller, commands);

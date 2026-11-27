@@ -2,6 +2,7 @@ import { onAbort } from "./listen.ts";
 import { requireLanguageView } from "./captured-view.ts";
 import { retainLspDocument, type LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspWorkspace } from "../protocol/lsp-workspace.ts";
+import type { DocumentId } from "../core/workspace.ts";
 import { mountCompletion, type CompletionController, type CompletionControllerOptions } from "./completion-controller.ts";
 import { mountDiagnostic, type DiagnosticController, type DiagnosticControllerOptions } from "./diagnostic-controller.ts";
 import { mountHover, type HoverController, type HoverControllerOptions } from "./hover-controller.ts";
@@ -12,12 +13,15 @@ import type { TextEditor } from "./text-editor.ts";
 import { mountSignature, type SignatureController, type SignatureControllerOptions } from "./signature-controller.ts";
 import { mountOccurrences, type LspHighlightController } from "./lsp-highlights.ts";
 import { mountCodeActions, type CodeActionController, type CodeActionControllerOptions } from "./code-action-controller.ts";
-import { mountLanguageCommands, type LanguageCommands, type LanguageCommandOptions } from "./language-command.ts";
+import { mountLanguageCommands, type CommandEditReviewer, type LanguageCommands, type LanguageCommandOptions } from "./language-command.ts";
 import { mountNavigation, type NavigationController, type NavigationControllerOptions } from "./navigation-controller.ts";
 import { mountRename, type RenameController, type RenameControllerOptions } from "./rename-controller.ts";
 
 /** Select the language features to attach to this editor and configure their UI. */
 export type EditorLanguageOptions = {
+    /** With false, the host opens the connection before a language request can run. */
+    autoConnect?: boolean;
+    reviewCommandEdit?: CommandEditReviewer;
     navigation?: NavigationControllerOptions;
     rename?: RenameControllerOptions;
     commands?: LanguageCommandOptions;
@@ -45,7 +49,7 @@ type Features = {
 };
 /** The selected controllers and one disposer for their shared attachment. */
 export type EditorLanguageAttachment<O extends EditorLanguageOptions = EditorLanguageOptions> =
-    Readonly<{ [K in keyof O]: K extends keyof Features ? Features[K] : never }>
+    Readonly<Pick<Features, keyof O & keyof Features>>
     & Readonly<{ dispose: () => void }>;
 
 type Mounts = {
@@ -53,11 +57,11 @@ type Mounts = {
         features: Partial<Features>, attachment: EditorLanguageOptions) => Features[K];
 };
 const mounts: Mounts = {
-    commands: mountLanguageCommands,
-    codeActions: mountCodeActions,
+    commands: (editor, owner, settings, _, host) => mountLanguageCommands(editor, owner, settings, host.reviewCommandEdit),
+    codeActions: (editor, owner, settings, _, host) => mountCodeActions(editor, owner, settings, host.reviewCommandEdit),
     navigation: mountNavigation,
     rename: mountRename,
-    diagnostics: mountDiagnostic,
+    diagnostics: (editor, owner, settings, _, host) => mountDiagnostic(editor, owner, settings, host.autoConnect),
     hover(editor, owner, settings, features, options) {
         const diagnostics = settings.diagnostics ?? features.diagnostics;
         const popup = settings.popup === true ? {} : settings.popup;
@@ -86,7 +90,7 @@ const mounts: Mounts = {
             },
         } });
     },
-    completion: mountCompletion,
+    completion: (editor, owner, settings, _, host) => mountCompletion(editor, owner, settings, host.autoConnect),
     signature: mountSignature,
     occurrences: mountOccurrences,
     colors: mountDocumentColors,
@@ -111,7 +115,12 @@ export function attachEditorLanguage<O extends EditorLanguageOptions>(editor: Te
     const features: Partial<Features> = {};
     function mount<K extends keyof Features>(key: K) {
         const settings = options[key];
-        if (settings) features[key] = mounts[key](editor, binding.owner, settings, features, options);
+        if (!settings) return;
+        const canCapture = "canCapture" in settings ? settings.canCapture : undefined;
+        const configured = options.autoConnect === false ? { ...settings,
+            canCapture: (id: DocumentId) => provider.getSnapshot().phase === "ready" && (canCapture?.(id) ?? true),
+        } : settings;
+        features[key] = mounts[key](editor, binding.owner, configured, features, options);
     }
     function dispose() {
         if (disposed) return;

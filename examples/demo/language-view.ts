@@ -135,9 +135,10 @@ export function mountDemoLanguage(
                     return valid() && activity.input === "idle";
                 };
                 const tools = attachEditorLanguage(editor, provider, {
-                    codeActions: demoActionPolicy(workspace, file, language, idle),
+                    ...demoActionPolicy(workspace, file, language, idle),
                     occurrences: {},
-                    completion: { autoConnect: false, filterManualCompletions: true, canCapture: valid, list: true },
+                    autoConnect: false,
+                    completion: { filterManualCompletions: true, canCapture: valid, list: true },
                     signature: { popup: links, canCapture: valid },
                     hover: {
                         canCapture: idle,

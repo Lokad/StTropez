@@ -30,10 +30,10 @@ const language = attachEditorLanguage(editor, provider, {
     } } },
     rename: { popup: true },
     colors: { picker: true },
+    reviewCommandEdit: () => false,
     codeActions: {
         popup: true,
         commandPolicy: ({ command }) => command === "fixture.status" ? { kind: "server" } : null,
-        reviewCommandEdit: () => false,
     },
     completion: { list: true },
     signature: { popup: true },

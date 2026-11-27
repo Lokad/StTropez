@@ -1,10 +1,10 @@
 import { fixtureRequests, type FixturePolicy } from "./fixture-requests.ts";
 import { attachEditorLanguage } from "../../../src/browser/index.ts";
-import type { CompletionControllerOptions, TextEditor } from "../../../src/browser/index.ts";
+import type { CompletionControllerOptions, EditorLanguageOptions, TextEditor } from "../../../src/browser/index.ts";
 import { HostCell } from "../../../examples/shared/observable.ts";
 import type { LspScopeAccess, LspWorkspace } from "../../../src/protocol/index.ts";
 
-type ProviderOptions = Pick<CompletionControllerOptions, "autoConnect" | "canCapture">;
+type ProviderOptions = Pick<EditorLanguageOptions, "autoConnect"> & Pick<CompletionControllerOptions, "canCapture">;
 export type LspProviderOptions = ProviderOptions & Readonly<{ provider: LspWorkspace;
     beforeRequest?: (session: LspScopeAccess, configuration: FixturePolicy<"malformed" | "failure">) => Promise<unknown> }>;
 export type LspProviderController = ReturnType<typeof createLspProviderController>;
@@ -14,6 +14,7 @@ export type LspProviderFactory = (editor: TextEditor, options: ProviderOptions) 
 export function createLspProviderController(editor: TextEditor, options: LspProviderOptions) {
     const fixture = fixtureRequests<"malformed" | "failure">("fixture");
     const language = attachEditorLanguage(editor, options.provider, {
+        autoConnect: options.autoConnect !== false,
         diagnostics: options,
         completion: { ...options, list: true, prepareCompletion: async session => {
             const policy = fixture.take();

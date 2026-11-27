@@ -242,8 +242,8 @@ export async function chooseFix(
 resolution. Clicking a choice applies it. Return false from `popup.quickApply` to require review.
 Commands follow host policy.
 
-Supply `documents()` for cross-file edits. Edits commit in one Undo before the command runs. Review each
-incoming edit via `reviewCommandEdit(request, context, writable)` and close approval on `context.onCancel`.
+Supply `documents()` for cross-file edits. Edits commit in one Undo before the command runs. The attachment calls
+`reviewCommandEdit(request, context)` for writable targets. Close approval on `context.onCancel`.
 Earlier edits stay undoable on later failure.
 
 For a pane menu, attach `commands: {}` and call `attachment.commands.run(name, args)` with an advertised

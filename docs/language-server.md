@@ -47,7 +47,7 @@ export function attachLanguage(
     provider: LspWorkspace,
     onError: (error: unknown) => void
 ) {
-    const language = attachEditorLanguage(editor, provider, { completion: { autoConnect: false, onError } });
+    const language = attachEditorLanguage(editor, provider, { autoConnect: false, completion: { onError } });
     language.completion.connect();
     return language;
 }
@@ -167,7 +167,7 @@ Show `provider.commandNames()` while `commandAvailable`. Discard choices on disc
 or a change to `registrationVersion("workspace/executeCommand")`.
 
 `workspaceEdits: true` enables transactional text edits. `applyEdit: true` also receives edits during a
-command. Supply `reviewCommandEdit` on its feature. A bare `LspSession` needs a `workspace/applyEdit`
+command. Supply `reviewCommandEdit` on the editor language attachment. A bare `LspSession` needs a `workspace/applyEdit`
 handler before connect. [Command review](language-features.md#code-actions-and-commands)
 
 `createLspCommandRunner(scope)` takes project snapshots, a freshness check and review callback at

@@ -46,7 +46,7 @@ export type CompletionSnapshot = Readonly<{ status: "idle" | "connecting" | "dis
     anchor: Readonly<{ revision: number; from: number; to: number }> | null;
     snippet: CompletionSnippet | null; omittedCompletions: LspCompletions["omitted"];
     choices: readonly string[]; choiceIndex: number; completionAt: (index: number) => CompletionChoice | undefined; completionIncomplete: boolean; completionDetail: string; resolving: boolean }>;
-export type CompletionControllerOptions = Readonly<{ autoConnect?: boolean; automatic?: boolean;
+export type CompletionControllerOptions = Readonly<{ automatic?: boolean;
     /** Mount a caret-anchored list. Omit for host-rendered choices. */
     list?: boolean;
     /** Narrow explicit requests using each item's captured edit prefix, as automatic requests do. */
@@ -65,7 +65,7 @@ function connectionStatus(phase: LspWorkspaceSnapshot["phase"]): CompletionSnaps
 
 /** The captured editor owns completion acceptance, snippet traversal and the optional list. */
 export function mountCompletion(editor: TextEditor, ownerConnection: LspDocumentOwner,
-    options: CompletionControllerOptions): CompletionController {
+    options: CompletionControllerOptions, autoConnect = true): CompletionController {
     const input = editorInput(editor);
     const { workspace, view } = editor, documentId = view.documentId, resource = workspace.resource(documentId);
     const listeners = new AbortController();
@@ -642,7 +642,7 @@ export function mountCompletion(editor: TextEditor, ownerConnection: LspDocument
         }
         if (options.list) list = mountCompletionList(editor, cell.observable, !!options.filterManualCompletions);
     } catch (error) { dispose(); throw error; }
-    if (options.autoConnect !== false) connect();
+    if (autoConnect) connect();
     return Object.freeze({ ...controllerObservable(cell, "Completion", () => disposed, notifications), request: () => request(),
         cancel: () => { notifications.assertWritable(); if (!disposed) cancel(); }, connect: () => { notifications.assertWritable(); connect(); },
         getDiagnostics: () => Object.freeze({ lastCompletionBeforeInputMs, lastCompletionCommandMs }),

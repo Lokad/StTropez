@@ -6,8 +6,9 @@ export function bindLanguage(editor: TextEditor, provider: LspWorkspace) {
     const choices = document.querySelector<HTMLElement>("#choices")!;
     const problems = document.querySelector<HTMLElement>("#diagnostics")!;
     const language = attachEditorLanguage(editor, provider, {
-        completion: { autoConnect: false, automatic: false, list: true },
-        diagnostics: { autoConnect: false },
+        autoConnect: false,
+        completion: { automatic: false, list: true },
+        diagnostics: {},
         hover: { popup: true },
         signature: { popup: true },
         occurrences: {},

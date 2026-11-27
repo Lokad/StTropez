@@ -27,7 +27,7 @@ export type DiagnosticSnapshot = Readonly<{
     unversionedDiagnostics: readonly string[];
 }>;
 export type DiagnosticControllerOptions = Readonly<{
-    autoConnect?: boolean; canCapture?: () => boolean; onError?: (error: unknown) => void;
+    canCapture?: () => boolean; onError?: (error: unknown) => void;
 }>;
 export type DiagnosticController = Observable<DiagnosticSnapshot> & Readonly<{
     request: () => void; cancel: () => void; dispose: () => void;
@@ -38,7 +38,7 @@ const empty: DiagnosticSnapshot = Object.freeze({ diagnostics: emptyList, diagno
 
 /** Displays pushed diagnostics for one view, including positions mapped while analysis is pending. */
 export function mountDiagnostic(editor: TextEditor, { scope, binding }: LspDocumentOwner,
-    options: DiagnosticControllerOptions): DiagnosticController {
+    options: DiagnosticControllerOptions, autoConnect = true): DiagnosticController {
     const { workspace } = editor;
     const source = scope.observeDiagnostics(binding);
     const layer = editor.decorations.add({ order: 40 });
@@ -80,7 +80,7 @@ export function mountDiagnostic(editor: TextEditor, { scope, binding }: LspDocum
         notifications.assertWritable();
         if (disposed || stop) return;
         stop = source.subscribe(update); update();
-        if (options.autoConnect !== false) void scope.ensureConnected().catch(error => { if (!disposed) options.onError?.(error); });
+        if (autoConnect) void scope.ensureConnected().catch(error => { if (!disposed) options.onError?.(error); });
     };
     const cancel = () => {
         notifications.assertWritable();

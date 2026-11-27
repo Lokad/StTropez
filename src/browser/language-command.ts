@@ -23,8 +23,8 @@ export function changedDocument(doc: DocumentSnapshot): ChangedDocument {
 export type LanguageCommandOptions = Readonly<{
     documents?: () => readonly DocumentSnapshot[];
     canCapture?: (id: DocumentId) => boolean;
-    reviewCommandEdit?: (request: LspApplyEdit, context: LspRequestContext, writable: boolean) => boolean | Promise<boolean>;
 }>;
+export type CommandEditReviewer = (request: LspApplyEdit, context: LspRequestContext) => boolean | Promise<boolean>;
 export type LanguageCommands = Observable<readonly ChangedDocument[]> & Readonly<{
     run: (name: string, args?: readonly JsonValue[]) => Promise<Outcome<readonly ChangedDocument[]>>;
     cancel: () => void;
@@ -79,7 +79,7 @@ export function captureEditCommand(editor: TextEditor, options: LanguageCommandO
 export type CapturedCommand = NonNullable<ReturnType<typeof captureEditCommand>>;
 
 export function commandTransaction(editor: TextEditor, captured: CapturedCommand, isCurrent: () => boolean,
-    reviewEdit: LanguageCommandOptions["reviewCommandEdit"], renew: boolean, notifications: NotificationScope,
+    reviewEdit: CommandEditReviewer | undefined, renew: boolean, notifications: NotificationScope,
     source: "code-action" | "server-command",
     changed?: (changes: readonly ChangedDocument[]) => void) {
     const { workspace, view } = editor;
@@ -103,15 +103,14 @@ export function commandTransaction(editor: TextEditor, captured: CapturedCommand
         snapshots: () => [...captured.project.documents.values()],
         async review(request, context) {
             captured.project.includeEdit(request.edit);
-            const writable = writableEdit(editor, request.edit);
             if (!reviewEdit || !context.isCurrent()) return { applied: false };
+            if (!writableEdit(editor, request.edit)) return { applied: false, failureReason: "not-writable" };
             let stop!: () => void;
             const cancelled = new Promise<boolean>(resolve => { stop = context.onCancel(() => resolve(false)); });
             try {
-                if (!await Promise.race([reviewEdit(request, context, writable), cancelled]) || !context.isCurrent()) {
+                if (!await Promise.race([reviewEdit(request, context), cancelled]) || !context.isCurrent()) {
                     return { applied: false };
                 }
-                if (!writable) return { applied: false, failureReason: "not-writable" };
                 write(request.edit);
                 return { applied: true };
             } finally { stop(); }
@@ -120,7 +119,8 @@ export function commandTransaction(editor: TextEditor, captured: CapturedCommand
     return { write, changes, scope };
 }
 
-export function mountLanguageCommands(editor: TextEditor, owner: LspDocumentOwner, options: LanguageCommandOptions): LanguageCommands {
+export function mountLanguageCommands(editor: TextEditor, owner: LspDocumentOwner, options: LanguageCommandOptions,
+    reviewEdit?: CommandEditReviewer): LanguageCommands {
     const events = new AbortController();
     const scope = editor.workspace.createNotificationScope();
     const changes = new Store<readonly ChangedDocument[]>(emptyList, scope);
@@ -152,7 +152,7 @@ export function mountLanguageCommands(editor: TextEditor, owner: LspDocumentOwne
             active = captured;
             captured.collectDocuments();
             publish(emptyList);
-            const transaction = commandTransaction(editor, captured, captured.current, options.reviewCommandEdit, true, scope, "server-command", publish);
+            const transaction = commandTransaction(editor, captured, captured.current, reviewEdit, true, scope, "server-command", publish);
             const receipt = await runner.run(name, args, transaction.scope);
             if (!captured.current()) return stale;
             if (receipt.decision?.applied === false) return refused(receipt.decision.failureReason ?? "declined");

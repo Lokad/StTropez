@@ -133,10 +133,13 @@ test("signature help can release focus to a host field and recover from a refuse
         const caret = text.indexOf(")"); editor.view.setSelection(0, { anchor: caret, head: caret }); editor.focus();
         const connect = (signal: AbortSignal) => openWebSocketTransport("ws://" + location.host + "/lsp-fixture", { signal });
         const provider = new BrowserLspWorkspace(workspace, { connect, maxScopes: 1 });
-        const mount = () => attachEditorLanguage(editor, provider, { signature: {}, hover: {} });
+        const mount = () => attachEditorLanguage(editor, provider, { autoConnect: false, signature: {}, hover: {} });
         let tools = mount();
+        const offline = [(await tools.signature.request()).status, (await tools.hover.request()).status,
+            provider.getSnapshot().phase];
+        await provider.connect();
         tools.signature.subscribe(() => { if (tools.signature.getSnapshot().status === "ready") field.focus(); });
-        return { status: () => tools.signature.getSnapshot().status,
+        return { offline, status: () => tools.signature.getSnapshot().status,
             tryRetired() {
                 tools.dispose();
                 const retired = new BrowserLspWorkspace(workspace, { connect }); retired.dispose();
@@ -159,6 +162,7 @@ test("signature help can release focus to a host field and recover from a refuse
             owners() { const { views, subscriptions, leases } = workspace.diagnostics(); return { views, subscriptions, leases }; } };
     });
     const source = page.getByRole("textbox", { name: "Source" }), field = page.getByRole("textbox", { name: "Host field" });
+    expect(await fixture.evaluate(f => f.offline)).toEqual(["refused", "refused", "disconnected"]);
     await source.press("Control+Shift+Space");
     await expect(field).toBeFocused();
     await page.keyboard.type("ok"); await expect(field).toHaveValue("ok");

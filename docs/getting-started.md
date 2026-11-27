@@ -354,7 +354,7 @@ suggestion.
 
 ```js file=app.js
 const language = attachEditorLanguage(editor, provider, {
-    completion: { list: true, autoConnect: false }, diagnostics: { autoConnect: false }
+    autoConnect: false, completion: { list: true }, diagnostics: {}
 });
 const { completion, diagnostics } = language;
 const languageStatus = document.createElement("output");

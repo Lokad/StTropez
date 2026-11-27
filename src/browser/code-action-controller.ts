@@ -8,7 +8,7 @@ import { actionClient, type LspActionResult } from "../protocol/lsp-actions.ts";
 import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import { isStaleRequest } from "../protocol/wire.ts";
 import type { LspCodeAction, LspCommandPolicy, LspPrepare, LspEditNotes } from "../protocol/index.ts";
-import { captureEditCommand, commandTransaction, type CapturedCommand, type ChangedDocument, type LanguageCommandOptions } from "./language-command.ts";
+import { captureEditCommand, commandTransaction, type CapturedCommand, type ChangedDocument, type CommandEditReviewer, type LanguageCommandOptions } from "./language-command.ts";
 import { writableEdit } from "./edit-project.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -59,7 +59,8 @@ export type CodeActionController = Observable<CodeActionSnapshot> & Readonly<{
 }>;
 
 /** Resolve and apply each choice against the editor that requested it. */
-export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, options: CodeActionControllerOptions): CodeActionController {
+export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, options: CodeActionControllerOptions,
+    reviewEdit?: CommandEditReviewer): CodeActionController {
     const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
     const scope = workspace.createNotificationScope(options.onError), cell = new Store(empty, scope);
     const client = actionClient(owner, options), events = new AbortController();
@@ -111,7 +112,7 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
         j.timer = win.setTimeout(() => requestFailed(j, new Error("Code action request timed out.")), 30000);
     };
     const disabled = (batch: LspActionResult, action: LspCodeAction) => action.disabled ?? (action.command
-        ? !options.reviewCommandEdit || !batch.supports(action.command) ? "This command is unavailable." : null
+        ? !reviewEdit || !batch.supports(action.command) ? "This command is unavailable." : null
         : !action.resolve && !action.edit?.documents.some(part => part.edits.length) ? "The provider returned no text changes." : null);
     async function apply(j: Job | undefined, index: number, preview: CodeActionPreview | null): Promise<Outcome<Changes>> {
         scope.assertWritable();
@@ -124,7 +125,7 @@ export function mountCodeActions(editor: TextEditor, owner: LspDocumentOwner, op
             publish({ ...cell.get(), message: "Another command is active. Try again." });
             return refused("command-unavailable");
         }
-        const transaction = commandTransaction(editor, j.capture, () => current(j), options.reviewCommandEdit, !!action.command, scope, "code-action");
+        const transaction = commandTransaction(editor, j.capture, () => current(j), reviewEdit, !!action.command, scope, "code-action");
         const changed = j.changes = transaction.changes;
         let message = "Applied the edits.";
         let failure: Outcome<never> | undefined;

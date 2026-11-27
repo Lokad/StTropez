@@ -2,7 +2,7 @@ import type { Workspace } from "../../src/index.ts";
 import type {
     CodeActionChoice,
     CodeActionController,
-    CodeActionControllerOptions,
+    EditorLanguageOptions,
     TextEditor
 } from "../../src/browser/index.ts";
 import { demoCommandPolicy } from "./action-commands.ts";
@@ -16,27 +16,29 @@ export function demoActionPolicy(
     file: DemoFile,
     language: DemoLanguage,
     valid: () => boolean
-): CodeActionControllerOptions {
+): Required<Pick<EditorLanguageOptions, "codeActions" | "reviewCommandEdit">> {
     return {
-        popup: {
-            beforeOpen: valid,
-            quickApply(choice, preview) {
-                if (preview.command || (choice.kind !== "quickfix" && !choice.kind?.startsWith("quickfix.")))
-                    return false;
-                const edits = preview.readEdits(0, 4);
-                return (
-                    !!edits &&
-                    edits.total > 0 &&
-                    edits.total <= 4 &&
-                    edits.notes.every((edit) => edit.document === file.resource.id) &&
-                    edits.notes.reduce((units, edit) => units + edit.to - edit.from + edit.insertUnits, 0) <= 256
-                );
-            }
+        codeActions: {
+            popup: {
+                beforeOpen: valid,
+                quickApply(choice, preview) {
+                    if (preview.command || (choice.kind !== "quickfix" && !choice.kind?.startsWith("quickfix.")))
+                        return false;
+                    const edits = preview.readEdits(0, 4);
+                    return (
+                        !!edits &&
+                        edits.total > 0 &&
+                        edits.total <= 4 &&
+                        edits.notes.every((edit) => edit.document === file.resource.id) &&
+                        edits.notes.reduce((units, edit) => units + edit.to - edit.from + edit.insertUnits, 0) <= 256
+                    );
+                }
+            },
+            documents: () => workspace.getSnapshot().documents.filter((doc) => doc.language !== null),
+            canCapture: valid,
+            commandPolicy: demoCommandPolicy(file, () => workspace.document(file.resource.id).language?.uri, valid),
+            prepareRequest: (session) => language.prepareActions(session, file)
         },
-        documents: () => workspace.getSnapshot().documents.filter((doc) => doc.language !== null),
-        canCapture: valid,
-        commandPolicy: demoCommandPolicy(file, () => workspace.document(file.resource.id).language?.uri, valid),
-        prepareRequest: (session) => language.prepareActions(session, file),
         reviewCommandEdit: ({ edit }) => {
             const part = edit.documents[0];
             if (edit.documents.length !== 1 || part?.target.document.documentId !== file.resource.id) return false;
