@@ -20,7 +20,7 @@ npm run test:browsers -- --project=chromium --project=firefox --project=webkit t
 | `npm run typecheck`, `npm run check:docs` | Strict projects, compiled handbook examples, links, prose and public index |
 | `npm test` | Models, host policy and integration. Pass the owning test file to `node --test` for a focused run. |
 | `npm run test:browser`, `test:browsers` | Full source suite in Chromium (CI) or all three engines |
-| `npm run check` | Types, docs, models, integration, build and source Chromium |
+| `npm run check` | Formatting, types, docs, models, integration and the library build |
 | `npm run inspect` | Screenshots of the demo and reference host in `artifacts/inspect/` |
 | `npm run build:demo`, `npm run test:demo` | Build and exercise the static deployment |
 | `npm run test:package` | Restore and run one consumer |
@@ -60,13 +60,16 @@ shared workflows, React owns attachment and render isolation, and a shadow root 
 | Folding and minimap | [Fold projection](../tests/folding.test.ts), [discovery](../tests/fold-discovery.test.ts) | [Disclosure and Undo](../tests/browser/folding.spec.ts), [minimap gestures and review](../tests/browser/minimap.spec.ts) |
 | Pane lifetime and scroll | [Navigation history](../tests/navigation-history.test.ts) | [Remount and reveal](../tests/browser/editor-view-state.spec.ts), [viewport paint](../tests/browser/viewport-presentation.spec.ts) |
 | Save and conflicts | [Review and adoption](../tests/save-review.test.ts) | [Competing reference-host tabs](../tests/browser/reference.spec.ts) |
+| Comparison | [Baselines and reversion](../tests/comparison.test.ts) | [Review panes](../tests/browser/comparison.spec.ts) |
+| Rename and code actions | [Rename](../tests/provider-rename.test.ts), [action reviews](../tests/provider-actions.test.ts) | [Controls](../tests/browser/editor-controls.spec.ts) |
+| Hover | [Inspection](../tests/hover-controller.test.ts) | [Hover actions](../tests/browser/editor-controls.spec.ts) |
+| Clipboard | [Copy and paste edits](../tests/clipboard-edits.test.ts) | [Event delegation](../tests/browser/clipboard-delegation.spec.ts) |
 
-CI runs the full Chromium suite. For Firefox and WebKit, select the affected files below when a change
-touches input routing, pointer capture, text geometry or clipboard events. These cases use page-local
-events and leave the OS clipboard alone.
+CI runs the full Chromium suite. Firefox and WebKit also exercise input routing, pointer capture, text
+geometry and page-local clipboard events. CI checks the shortcut table against the mounted commands.
 
 ```sh
-npm run test:browsers -- --project=firefox --project=webkit tests/browser/input-target.spec.ts tests/browser/editor-pointer-focus.spec.ts tests/browser/text-geometry.spec.ts tests/browser/clipboard-delegation.spec.ts
+npm run test:input-browsers
 ```
 
 For a race, [hold the reply](../tests/helpers/lsp-replies.ts), edit or close its target, then release it.

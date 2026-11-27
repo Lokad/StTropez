@@ -1238,9 +1238,9 @@ test("syntax worker retains large documents and emits only for the visible JavaS
 });
 
 // Native scrollbar drags are part of the demo's user journey, including headless Chromium.
-test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
+const scrollbarTest = test.extend({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
 
-test("minified paste keeps its selection during native scrollbar drags on both axes", async ({ page, baseURL }) => {
+scrollbarTest("minified paste keeps its selection during native scrollbar drags on both axes", async ({ page, baseURL }) => {
     await dragBundleScrollbars(page, browserDemo(baseURL!));
 });
 test("minified paste shows keyboard and pointer selections over a highlighted string", async ({ page, baseURL }) => {
@@ -1394,7 +1394,7 @@ test("browser global completion filters its catalogue after a typed prefix", asy
     await expect(source).toBeFocused(); await expect(page.locator("#editor")).toContainText("calculateTotal(cart, Math");
 });
 
-test("dragging the scrollbar paints source rows with their line numbers during analysis", async ({ page, baseURL }, info) => {
+scrollbarTest("dragging the scrollbar paints source rows with their line numbers during analysis", async ({ page, baseURL }, info) => {
     const source = await openRows(page, browserDemo(baseURL!));
     await expect(source).toBeVisible();
     const viewport = page.locator("#editor .st-viewport");

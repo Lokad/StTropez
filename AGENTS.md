@@ -19,6 +19,7 @@ StTropez is a standalone TypeScript editor and workspace foundation.
 - Support documents up to 512,000 UTF-8 bytes. Keep demo samples, test documents and benchmarks inside this bound.
 - Target French AZERTY, US QWERTY and US International keyboards. Support dead-key composition. Non-Latin input methods and right-to-left editing are outside scope.
 - Keep the built JavaScript at or below its checked size budget. Lower the budget after a structural cut of at least 1,000 bytes. Raising it requires owner approval.
+- Report the total built JavaScript before compression and name the code removed. Report gzip separately. Build-time aliases and moving code between chunks do not count as structural cuts.
 - Cover a defect once, at the layer that owns the behavior. Identify the owning test and any limits when reporting a fix. Use focused regressions during implementation. Run `npm run check` at milestones and select affected browser, package, demo and measurement checks from `docs/testing.md`.
 - Run the focused owner test locally. CI runs full Chromium and the restored consumer. Keep independent work moving while device or owner decisions are pending, and record them in the local roadmap.
 - Keep one documentation page per contract. Explain what hosts must do and why. Change prose for a fix only if it changes the host's obligations. Use headings suited to the subject and compile TypeScript examples against public entries.

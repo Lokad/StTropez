@@ -11,7 +11,7 @@ export default defineConfig({
     forbidOnly: true,
     retries: 0,
     workers: Math.min(4, availableParallelism()),
-    reporter: [["list"], ["json", { outputFile: "artifacts/browser-results.json" }]],
+    reporter: process.argv.includes("--list") ? "list" : [["list"], ["json", { outputFile: "artifacts/browser-results.json" }]],
     use: { baseURL, headless: true, viewport: { width: 1440, height: 900 },
         trace: "retain-on-failure", screenshot: "only-on-failure" },
     projects: (["chromium", "firefox", "webkit"] as const).map(browserName => ({

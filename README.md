@@ -44,7 +44,7 @@ Use `STTROPEZ_PORT` for a different source-server port and `STTROPEZ_DEMO_PORT` 
 | `npm run build` | Compiled library modules, declarations, CSS and manifest |
 | `npm run build:demo` | Static demo using the compiled library assets |
 | `npm run preview:demo` | Serve the built static demo locally |
-| `npm run check` | Types, documentation examples, models, library build and Chromium tests |
+| `npm run check` | Formatting, types, documentation examples, model and integration tests, and the library build |
 | `npm run check:docs` | Compile public TypeScript documentation examples |
 | `npm run browsers:install` | Install the configured Playwright browser binaries |
 | `npm run test:browsers` | Source browser tests across Chromium, Firefox and WebKit |
@@ -56,7 +56,8 @@ Use `STTROPEZ_PORT` for a different source-server port and `STTROPEZ_DEMO_PORT` 
 
 Package commands also require a .NET SDK capable of building the `net10.0` packaging project.
 See [testing](docs/testing.md) for focused checks, ownership, readiness, measurement policy
-and the native-device checklist. CI runs the restored-package smoke, selected Chromium tests and the built demo.
+and the native-device checklist. CI runs the restored consumer, the full Chromium suite, input workflows
+in Firefox and WebKit, and the built demo.
 
 ## Layout
 
