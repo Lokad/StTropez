@@ -89,22 +89,6 @@ export function replaceSelections(
 }
 ```
 
-### Explicit newline conversion
-
-`importText` detects LF, CRLF, CR, mixed or no endings. `"preserve"` keeps the source, `"lf"` normalizes all
-endings. `exportText` accepts `"preserve"` or a target ending. Both convert whole strings and return an
-offset map.
-
-```ts
-import { exportText, importText, TextBuffer } from "sttropez";
-import { composePositionMaps } from "sttropez/kernels";
-
-const imported = importText("a\r\nb\rc\n", "lf");
-const buffer = TextBuffer.from(imported.text);
-const exported = exportText(buffer.text(), "crlf"); // Explicit whole-text export boundary.
-export const originalToExported = composePositionMaps(imported.mapping, exported.mapping);
-```
-
 ### Snippet planning
 
 `parseSnippet` expands numbered stops, defaults, mirrors, choices and escapes. Forward references share

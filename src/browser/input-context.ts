@@ -1,6 +1,6 @@
 import { invalidRange } from "../core/bounds.ts";
 import { PositionMap, composePositionMaps } from "../core/positions.ts";
-import { importText } from "../core/newlines.ts";
+import { convertLineEndings } from "../core/newlines.ts";
 import type { Affinity } from "../core/positions.ts";
 import type { Selection } from "../core/history.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
@@ -16,7 +16,7 @@ export function inputContext(buffer: TextBuffer, selection: Selection, contextUn
     const from = Math.max(0, low - contextUnits), to = Math.min(buffer.length, high + contextUnits), compressed = high - low > selectedUnits;
     const virtual = compressed ? buffer.slice(from, low) + "\ufffc" + buffer.slice(high, to) : buffer.slice(from, to);
     const collapsed = new PositionMap(to - from, compressed ? [{ from: low - from, to: high - from, insert: "\ufffc" }] : []);
-    const imported = importText(virtual, "lf"), mapping = composePositionMaps(collapsed, imported.mapping), inverse = mapping.invert();
+    const imported = convertLineEndings(virtual, "\n"), mapping = composePositionMaps(collapsed, imported.mapping), inverse = mapping.invert();
     const toModel = (offset: number, affinity: Affinity = "before") => from + inverse.map(offset, affinity).offset;
     const toNative = (offset: number, affinity: Affinity = "before") => mapping.map(offset - from, affinity).offset;
     return Object.freeze({ text: imported.text, from, to, nativeAnchor: toNative(selection.anchor), nativeHead: toNative(selection.head), toModel, toNative });

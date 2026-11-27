@@ -59,7 +59,6 @@ Declarations start at `index.d.ts` in the assets directory.
 | [`EditRequest`](../src/core/workspace.ts) | type |  |
 | [`EditResult`](../src/core/workspace.ts) | type | Success carries the resulting document revision. |
 | [`EnterIndent`](../src/core/language-configuration.ts) | type |  |
-| [`exportText`](../src/core/newlines.ts) | function |  |
 | [`FindBackend`](../src/core/find.ts) | type | One controller owns the backend until expiry/destruction. |
 | [`FindPlanCursor`](../src/core/find.ts) | type |  |
 | [`FindPlanStep`](../src/core/find.ts) | type |  |
@@ -73,14 +72,11 @@ Declarations start at `index.d.ts` in the assets directory.
 | [`HistoryOptions`](../src/core/history.ts) | type |  |
 | [`HistoryRequest`](../src/core/workspace.ts) | type |  |
 | [`HistorySnapshot`](../src/core/history.ts) | type |  |
-| [`ImportedText`](../src/core/newlines.ts) | type |  |
-| [`importText`](../src/core/newlines.ts) | function | Import/export conversion is explicit; UTF-16 text is never silently repaired or normalized. |
 | [`IndentationFoldingCursor`](../src/core/fold-discovery.ts) | type |  |
 | [`IndentationFoldingOptions`](../src/core/fold-discovery.ts) | type |  |
 | [`IndentationFoldingProgress`](../src/core/fold-discovery.ts) | type |  |
 | [`LanguageConfiguration`](../src/core/language-configuration.ts) | type | Callbacks inspect this exact immutable buffer; language analysis and its cost belong to the host. |
 | [`LanguageEditContext`](../src/core/language-configuration.ts) | type |  |
-| [`LineEnding`](../src/core/newlines.ts) | type |  |
 | [`LiteralSearchOptions`](../src/core/search.ts) | type |  |
 | [`LoadedResource`](../src/core/workspace.ts) | type |  |
 | [`MappedPosition`](../src/core/positions.ts) | type |  |

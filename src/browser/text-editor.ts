@@ -35,7 +35,7 @@ import { mountViewport, validateRevealAlignment } from "./viewport.ts";
 import type { ComparisonPresentation, MountedViewport, RevealAlignment, RevealOptions, TextViewport, ViewportSettings } from "./viewport.ts";
 import { mountTextDragDrop } from "./text-drag-drop.ts";
 import { lineColumnScanner, planLanguageEdit, resolveLanguageConfiguration } from "../core/language-edits.ts";
-import { exportText, lineBoundary, lineContentEnd, lineEnding } from "../core/newlines.ts";
+import { convertLineEndings, lineBoundary, lineContentEnd, lineEnding } from "../core/newlines.ts";
 import type { EditingCommand, LanguageConfiguration, ResolvedLanguageConfiguration } from "../core/language-edits.ts";
 import { captureInsertion } from "./captured-insertion.ts";
 import type { CapturedInsertion } from "./captured-insertion.ts";
@@ -480,7 +480,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         }
         const buffer = currentDocument().buffer;
         const converted = kind === "paste" && pasteLineEndings !== "preserve" && /[\r\n]/.test(edit.insert)
-            ? exportText(edit.insert, lineEnding(buffer, buffer.lineAt(from)) === "\n" ? "lf" : "crlf") : undefined;
+            ? convertLineEndings(edit.insert, lineEnding(buffer, buffer.lineAt(from))) : undefined;
         const insert = converted?.text ?? edit.insert, delta = insert.length - (to - from);
         const map = (offset: number) => offset <= edit.from ? projection.toModel(offset)
             : offset >= edit.from + edit.insert.length ? projection.toModel(offset - edit.insert.length + edit.to - edit.from) + delta

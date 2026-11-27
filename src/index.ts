@@ -2,8 +2,6 @@ export { textDifference } from "./core/changes.ts";
 export type { TextEdit } from "./core/changes.ts";
 export { anchoredRange } from "./core/positions.ts";
 export type { Affinity, AnchoredRange, MappedPosition, PositionMapping } from "./core/positions.ts";
-export { importText, exportText } from "./core/newlines.ts";
-export type { ImportedText, LineEnding } from "./core/newlines.ts";
 export { TextBuffer } from "./core/text-buffer.ts";
 export type { BufferChangeSpan } from "./core/buffer-change.ts";
 export type { BufferChange, BufferLine, BufferPosition, BufferRetention } from "./core/text-buffer.ts";

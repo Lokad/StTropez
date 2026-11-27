@@ -3,7 +3,8 @@ import { unchangedPositionEdges } from "../src/core/positions.ts";
 import { documentChange } from "../src/core/document-change.ts";
 import { documentViewMapping } from "../src/core/selections.ts";
 import assert from "node:assert/strict";
-import { anchoredRange, importText, exportText, TextBuffer } from "../src/index.ts";
+import { convertLineEndings } from "../src/core/newlines.ts";
+import { anchoredRange, TextBuffer } from "../src/index.ts";
 import { applyTextEdits } from "../src/core/changes.ts";
 import { PositionMap, composePositionMaps } from "../src/kernels/index.ts";
 import type { Affinity, AnchoredRange, PositionMapping, TextEdit } from "../src/index.ts";
@@ -233,19 +234,16 @@ test("composed maps retain transient deletion, expanded anchors and safe-integer
     assert.deepEqual(huge.mapRange(anchoredRange(length, 1, length - 1, { onDelete: "invalidate" })), undefined);
 });
 
-test("newline conversion is explicit, maps CRLF offsets and preserves surrogate/combining/ZWJ text", () => {
-    const text = "a😀\r\ne\u0301\r👩‍💻\n\ud800", preserved = importText(text, "preserve"), normalized = importText(text, "lf");
-    assert.equal(preserved.text, text); assert.equal(preserved.detected, "mixed");
+test("textarea and paste newline maps preserve the LF boundary and surrounding UTF-16 text", () => {
+    const text = "a😀\r\ne\u0301\r👩‍💻\n\ud800";
+    const normalized = convertLineEndings(text, "\n");
     assert.equal(normalized.text, "a😀\ne\u0301\n👩‍💻\n\ud800");
+    assert.equal(normalized.mapping.map(4).offset, 3);
     assert.equal(normalized.mapping.map(5).offset, 4);
-    assert.equal(exportText(normalized.text, "crlf").text, "a😀\r\ne\u0301\r\n👩‍💻\r\n\ud800");
-    assert.equal(exportText(text, "preserve").text, text);
-    for (const ending of ["lf", "crlf", "cr"] as const) {
-        const exported = exportText(normalized.text, ending);
-        assert.equal(importText(exported.text, "lf").text, normalized.text);
-        assert.equal(exported.mapping.newLength, exported.text.length);
-    }
-    assert.equal(importText("\ud800\udc00\ud800", "lf").text, "\ud800\udc00\ud800");
+    const local = convertLineEndings(normalized.text, "\r\n");
+    assert.equal(local.text, "a😀\r\ne\u0301\r\n👩‍💻\r\n\ud800");
+    assert.equal(local.mapping.newLength, local.text.length);
+    assert.equal(convertLineEndings(local.text, "\n").text, normalized.text);
     const cluster = "👩‍💻e\u0301", map = new PositionMap(cluster.length, [{ from: 0, to: 0, insert: "😀" }]);
     assert.deepEqual(map.mapRange(anchoredRange(cluster.length, 0, "👩‍💻".length)), anchoredRange(cluster.length + 2, 2, 7));
 });

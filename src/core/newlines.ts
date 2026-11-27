@@ -2,9 +2,6 @@ import { applyTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { PositionMap } from "./positions.ts";
 
-export type LineEnding = "lf" | "crlf" | "cr";
-export type ImportedText = Readonly<{ text: string; detected: LineEnding | "mixed" | "none"; mapping: PositionMap }>;
-
 type LineReader = Readonly<{ lineCount: number; offsetAt(line: number): number; slice(from: number, to: number): string }>;
 
 /** Start of a row, including the exclusive boundary after the last row. */
@@ -27,23 +24,14 @@ export function lineContentEnd(buffer: LineReader & { readonly length: number },
     return next - endingBefore(buffer, next).length;
 }
 
-/** Import/export conversion is explicit; UTF-16 text is never silently repaired or normalized. */
-export function importText(text: string, policy: "preserve" | "lf"): ImportedText {
-    const kinds = new Set<LineEnding>(), edits: TextEdit[] = [];
+/** Preserve the surviving LF when mapping between raw document offsets and native textarea offsets. */
+export function convertLineEndings(text: string, ending: "\n" | "\r\n") {
+    const edits: TextEdit[] = [];
     for (const match of text.matchAll(/\r\n|\r|\n/g)) {
-        const kind: LineEnding = match[0] === "\r\n" ? "crlf" : match[0] === "\r" ? "cr" : "lf";
-        kinds.add(kind);
-        if (policy === "lf" && kind === "crlf") edits.push({ from: match.index, to: match.index + 1, insert: "" });
-        else if (policy === "lf" && kind === "cr") edits.push({ from: match.index, to: match.index + 1, insert: "\n" });
+        if (match[0] === ending) continue;
+        const from = match.index;
+        if (match[0] === "\r\n") edits.push({ from, to: from + 1, insert: "" });
+        else edits.push({ from, to: from + 1, insert: ending });
     }
-    return Object.freeze({ text: edits.length ? applyTextEdits(text, edits) : text,
-        detected: kinds.size === 0 ? "none" : kinds.size === 1 ? [...kinds][0]! : "mixed", mapping: new PositionMap(text.length, edits) });
-}
-
-export function exportText(text: string, ending: LineEnding | "preserve"): Readonly<{ text: string; mapping: PositionMap }> {
-    const edits: TextEdit[] = [], insert = ending === "crlf" ? "\r\n" : ending === "cr" ? "\r" : "\n";
-    if (ending !== "preserve") for (const match of text.matchAll(/\r\n|\r|\n/g)) {
-        if (match[0] !== insert) edits.push({ from: match.index, to: match.index + match[0].length, insert });
-    }
-    return Object.freeze({ text: edits.length ? applyTextEdits(text, edits) : text, mapping: new PositionMap(text.length, edits) });
+    return { text: edits.length ? applyTextEdits(text, edits) : text, mapping: new PositionMap(text.length, edits) };
 }
