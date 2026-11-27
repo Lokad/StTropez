@@ -241,7 +241,7 @@ Matching text acknowledges the submission and leaves later edits dirty. Differen
 conflict review. Different text at the old version leaves the save unconfirmed. If the read fails, propagate the error.
 
 With last-write-wins storage, read the version immediately before each queued write and observe peer writes.
-Another writer can still intervene between the read and the write. Use an atomic version check when overwriting
+Another writer can intervene between the read and the write. Use an atomic version check when overwriting
 a concurrent save would be unacceptable.
 Failure or conflict leaves both draft and baseline intact. `ticket.run` releases the ticket on every outcome and rethrows storage errors.
 
