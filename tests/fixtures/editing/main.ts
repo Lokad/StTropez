@@ -47,7 +47,12 @@ const fixture = { ready: true, graphemeBoundaries, setText, edit, select, histor
     captureInsertion: () => editors.primary.captureInsertion(),
     onEditIntent: editors.primary.onEditIntent,
     registerEditTransform: (transform: TextEditorEditTransform) => editors.primary.registerEditTransform(transform),
-    discoverFolds: (discover: FoldDiscovery) => { foldingController?.dispose(); foldingController = createFoldingController(editors.primary, discover, { delayMs: 0 }); },
+    discoverFolds: (discover: FoldDiscovery, initiallyCollapseGroup?: string) => {
+        foldingController?.dispose();
+        foldingController = createFoldingController(editors.primary, discover, {
+            delayMs: 0, ...(initiallyCollapseGroup && { initiallyCollapseGroup }),
+        });
+    },
     stopFoldDiscovery: () => { foldingController?.dispose(); foldingController = undefined; },
     refreshFolds: () => foldingController?.refresh(), foldStatus: () => foldingController?.getSnapshot(),
     setGroupCollapsed: (collapsed: boolean, group: string) => foldingController?.setCollapsed(collapsed, group),

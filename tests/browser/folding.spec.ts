@@ -305,11 +305,16 @@ test("initial fold choices survive refresh and a host can fold a group while typ
         f.setText(text);
         const head = text.indexOf("caret");
         f.select("primary", { anchor: head, head });
-        f.discoverFolds(() => [
-            { from: text.indexOf("first"), to: text.indexOf("second"), group: "sections", initiallyCollapsed: true },
-            { from: text.indexOf("second"), to: text.indexOf("other"), group: "sections", initiallyCollapsed: true },
-            { from: text.indexOf("other"), to: text.length, group: "other" },
-        ]);
+        let first = true;
+        f.discoverFolds(() => {
+            const ranges = [
+                { from: text.indexOf("first"), to: text.indexOf("second"), group: "sections" },
+                { from: text.indexOf("second"), to: text.indexOf("other"), group: "sections" },
+                { from: text.indexOf("other"), to: text.length, group: first ? "other" : "sections" },
+            ];
+            first = false;
+            return ranges;
+        }, "sections");
     });
     const choices = () => page.evaluate(() => window.editingFixture.folding().regions.map(r => r.collapsed));
     await expect.poll(choices).toEqual([true, false, false]);
@@ -328,7 +333,7 @@ test("initial fold choices survive refresh and a host can fold a group while typ
     const selection = await page.evaluate(() => window.editingFixture.selectionSet());
     expect(await page.evaluate(() => window.editingFixture.setGroupCollapsed(true, "sections"))).toBe(true);
     await ready(page);
-    expect(await choices()).toEqual([true, true, false]);
+    expect(await choices()).toEqual([true, true, true]);
     await expect(field).toBeFocused();
     expect(Math.abs(await viewport.evaluate(node => node.scrollTop) - 900)).toBeLessThanOrEqual(1);
     expect(await page.evaluate(() => window.editingFixture.selectionSet())).toEqual(selection);

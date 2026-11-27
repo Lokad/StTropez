@@ -30,10 +30,11 @@ export type FoldingController = Observable<FoldingStatus> & Readonly<{
 
 /** One discovery policy for one retained view. Providers own syntax; the editor owns fold projection. */
 export function createFoldingController(editor: TextEditor, discover: FoldDiscovery,
-    options: Readonly<{ delayMs?: number }> = {}): FoldingController {
+    options: Readonly<{ delayMs?: number; initiallyCollapseGroup?: string }> = {}): FoldingController {
     const { workspace, view } = editor, win = editor.element.ownerDocument.defaultView!;
     if (editor.signal.aborted || !workspace.ownsDocumentView(view)) throw new Error("Invalid fold discovery view.");
     const delay = options.delayMs ?? 100;
+    let initialGroup = options.initiallyCollapseGroup;
     if (!Number.isFinite(delay) || delay < 0) invalidRange("fold discovery delay");
     const notifications = workspace.createNotificationScope();
     const cell = new Store<FoldingStatus>(Object.freeze({ status: "pending", revision: workspace.document(view.documentId).revision,
@@ -69,11 +70,12 @@ export function createFoldingController(editor: TextEditor, discover: FoldDiscov
         if (busy()) { later(() => accept(capture, ranges, authority), 16); return; }
         try {
             const before = view.folding.getSnapshot(), buffer = capture.document.buffer;
-            const matched = reconcileFoldRanges(buffer, ranges, before.regions);
+            const matched = reconcileFoldRanges(buffer, ranges, before.regions, initialGroup);
             const regions = createFoldRegions(buffer, matched, before.regions);
             const planned = regions === before.regions ? regions
                 : revealSelectionFolds(buffer, regions, view.getSnapshot().selectionSet, before.index);
             if (!view.folding.setRanges(before, planned)) throw new Error("Fold discovery target changed.");
+            initialGroup = undefined;
             job = undefined; publish("ready");
         } catch (error) { fail(capture, error); }
     };

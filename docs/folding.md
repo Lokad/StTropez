@@ -81,13 +81,16 @@ history.
 ### Discovery
 
 `discoverIndentationFolds` includes interior blanks and excludes trailing blanks. Tab size defaults to 4
-(1–256), group to `"indentation"`. Both marker prefixes must be nonempty and single-line. They follow
+(1–256), group to `"indentation"`. A `group(headerLine, buffer)` callback can name indentation folds
+by their zero-based header line. Markers keep their declared group. Both prefixes must be nonempty and single-line. They follow
 indentation and end at whitespace or line end. Unclosed markers yield no fold.
 
 `createFoldingController` supplies a captured document and `AbortSignal` after `delayMs` (default 100,
 finite and nonnegative). Return ranges, `{ ranges, isCurrent }`, a cursor or a promise for any. The
 controller retains the outer range at a shared header and drops crossings. `initiallyCollapsed` affects new
-folds. A block growing over a visible selection endpoint opens. Pending input settles before publication.
+folds. Set `initiallyCollapseGroup` on the controller to collapse a group on its first successful
+discovery. Later discoveries preserve user choices and leave new group members expanded by default.
+A block growing over a visible selection endpoint opens. Pending input settles before publication.
 Stale replies expire and failure leaves mapped folds visible.
 
 A cursor returns ranges at `ready` via `next(budget)` and `snapshot()`. Keep options stable. The controller

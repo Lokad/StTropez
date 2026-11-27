@@ -10,7 +10,8 @@ import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 
 export type DiscoveredFold = Readonly<{ from: number; to: number; group?: string; initiallyCollapsed?: boolean }>;
 const discoveredRows = new WeakMap<TextBuffer, WeakMap<DiscoveredFold, Readonly<{ lineFrom: number; lineTo: number }>>>();
-export type IndentationFoldingOptions = Readonly<{ tabSize?: number; indentation?: boolean; group?: string;
+export type IndentationFoldingOptions = Readonly<{ tabSize?: number; indentation?: boolean;
+    group?: string | ((headerLine: number, buffer: TextBuffer) => string | undefined);
     markers?: readonly Readonly<{ start: string; end: string; group: string }>[] }>;
 export type IndentationFoldingProgress = Readonly<{
     status: KernelStatus; phase: "validate" | "scan" | "finish" | "publish";
@@ -48,8 +49,10 @@ function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work:
     const regions: { from: number; line: number; marker: number }[] = [];
     let previous: { from: number; line: number; indent: number } | undefined, lastContentEnd = 0, lastContentLine = 0;
     let rows = discoveredRows.get(buffer); if (!rows) { rows = new WeakMap(); discoveredRows.set(buffer, rows); }
-    const add = (from: number, to: number, lineFrom: number, lineTo: number, group: string) => {
+    const add = (from: number, to: number, lineFrom: number, lineTo: number, marker?: string) => {
         if (lineFrom + 1 >= lineTo) return;
+        const group = marker ?? (typeof options.group === "function" ? options.group(lineFrom, buffer) : options.group)
+            ?? "indentation";
         const range = Object.freeze({ from, to, group }); rows.set(range, { lineFrom, lineTo }); result.push(range); work.workUnits++;
     };
     const read = (from: number, to: number) => {
@@ -75,7 +78,7 @@ function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work:
             if (options.indentation !== false) {
                 while (stack.length && indent <= stack.at(-1)!.indent) {
                     const start = stack.pop()!; work.workUnits++;
-                    add(start.from, lastContentEnd, start.line, lastContentLine + 1, options.group ?? "indentation");
+                    add(start.from, lastContentEnd, start.line, lastContentLine + 1);
                     if (checkpoint(work)) yield;
                 }
                 if (previous && indent > previous.indent) stack.push(previous);
@@ -101,7 +104,7 @@ function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work:
     work.phase = "finish";
     while (stack.length) {
         const start = stack.pop()!; work.workUnits++;
-        add(start.from, lastContentEnd, start.line, lastContentLine + 1, options.group ?? "indentation");
+        add(start.from, lastContentEnd, start.line, lastContentLine + 1);
         if (checkpoint(work)) yield;
     }
     // Unclosed markers remain expanded until their matching close exists.
@@ -112,7 +115,8 @@ function* discover(buffer: TextBuffer, options: IndentationFoldingOptions, work:
 
 /** Choose one outer range per header and discard crossing discoveries deterministically.
  * Existing view anchors have already followed edits; matching their header/group preserves choice. */
-export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly DiscoveredFold[], previous: readonly FoldRegion[]): readonly FoldRange[] {
+export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly DiscoveredFold[],
+    previous: readonly FoldRegion[], initialGroup?: string): readonly FoldRange[] {
     let candidates = discovered.map(value => {
         if (!isOffsetRange(value.from, value.to, buffer.length) || value.from === value.to
             || value.group !== undefined && !value.group) invalidRange("discovered fold range");
@@ -155,7 +159,7 @@ export function reconcileFoldRanges(buffer: TextBuffer, discovered: readonly Dis
         }
         const old = prior.get(item.lineFrom);
         let id = old?.group === item.group ? old?.id : undefined;
-        const collapsed = !id && item.initiallyCollapsed === true;
+        const collapsed = !id && (item.initiallyCollapsed === true || initialGroup !== undefined && item.group === initialGroup);
         if (!id) { do { id = `discovered-${++serial}`; } while (ids.has(id)); ids.add(id); }
         if (id.length > 256 || assigned.has(id)) invalidType("fold identity");
         assigned.add(id);

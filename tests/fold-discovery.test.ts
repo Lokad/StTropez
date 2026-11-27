@@ -15,6 +15,14 @@ test("off-side discovery handles nested indentation, tab stops, interior blanks 
     const ranges = createFoldRegions(b, reconcileFoldRanges(b, finish(discoverIndentationFolds(b, policy)), []));
     assert.deepEqual(ranges.map(r => [r.lineFrom, r.lineTo, r.group]), [[0, 8, "regions"], [1, 6, "indentation"], [2, 4, "indentation"]]);
     assert.equal(bufferReads(b).textExports, 0);
+    const headings: number[] = [];
+    const classified = finish(discoverIndentationFolds(b, { ...policy, group(line, source) {
+        assert.equal(source, b);
+        headings.push(line);
+        return line === 1 ? "section" : undefined;
+    } }));
+    assert.deepEqual(headings.sort(), [1, 2]);
+    assert.deepEqual(classified.map(r => r.group).sort(), ["indentation", "regions", "section"]);
     assert.deepEqual(finish(discoverIndentationFolds(b, { ...policy, indentation: false })).map(r => r.group), ["regions"]);
     assert.throws(() => finish(discoverIndentationFolds(b, { tabSize: 0 })), /tab size/);
     const discovered = finish(discoverIndentationFolds(b, policy));
