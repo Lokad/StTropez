@@ -294,7 +294,6 @@ Declarations start at `browser/index.d.ts` in the assets directory.
 | [`TextViewportOptions`](../src/browser/viewport.ts) | type |  |
 | [`ViewportActivity`](../src/browser/viewport.ts) | type |  |
 | [`ViewportDiagnostics`](../src/browser/viewport.ts) | type |  |
-| [`ViewportInputBinding`](../src/browser/viewport.ts) | type |  |
 | [`ViewportSettings`](../src/browser/viewport.ts) | type | Presentation choices shared by source and comparison panes. |
 | [`ViewportSnapshot`](../src/browser/viewport.ts) | type |  |
 | [`ViewRestoreOptions`](../src/browser/view-state.ts) | type |  |

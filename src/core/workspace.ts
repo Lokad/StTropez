@@ -32,7 +32,8 @@ export type TextResourceOptions = Readonly<{
     visibility?: ResourceVisibility;
     capabilities?: Capabilities | undefined;
     language?: DocumentLanguage | null;
-}> & (Readonly<{ value: string | TextBuffer; serverVersion?: string | null }> | Readonly<{ value?: never; serverVersion?: never }>);
+}> & (Readonly<{ value: string | TextBuffer; serverVersion?: string | null | undefined }>
+    | Readonly<{ value?: never; serverVersion?: undefined }>);
 /** Loading, permission, dirty and save state available without reading the document text. */
 export type ResourceMetadata = Readonly<{
     id: DocumentId; key: ResourceKey; title: string;

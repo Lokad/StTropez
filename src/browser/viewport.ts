@@ -52,7 +52,7 @@ export type ViewportDiagnostics = ViewportActivity & Readonly<{ selection: Selec
     scrollTop: number; scrollLeft: number; width: number; height: number; gutterWidth: number;
     lineHeight: number; columnWidth: number; verticalExtent: number; horizontalExtent: number;
     physicalHeight: number; physicalWidth: number }>;
-export type ViewportInputBinding = Readonly<{ setComposing: (active: boolean) => boolean;
+type ViewportInputBinding = Readonly<{ setComposing: (active: boolean) => boolean;
     dispose: () => void }>;
 
 type ViewportNavigation = Readonly<{
@@ -72,7 +72,6 @@ export type TextViewport = Observable<ViewportSnapshot> & Readonly<{ element: HT
     /** Observe completed paints and consumed scheduled renders, including unchanged paints. */
     onRender: (listener: () => void) => () => void;
     /** One input owner controls composition and source-focus recovery. */
-    bindInput: (focus: () => void) => ViewportInputBinding;
     settings: () => ViewportSettings;
     configure: (changes: Partial<ViewportSettings>) => boolean;
     captureView: () => ViewState; restoreView: (state: ViewState, options?: ViewRestoreOptions) => ViewRestoreResult | null;
@@ -219,6 +218,7 @@ export function mountTextViewport(host: HTMLElement, workspace: Workspace, docum
 
 /** Internal mount: navigation and comparison publication share the viewport lifetime. */
 export type MountedViewport = Readonly<{
+    bindInput: (focus: () => void) => ViewportInputBinding;
     viewport: TextViewport; navigation: ViewportNavigation; setComparisonRows: (rows: ViewportComparisonRows | undefined) => boolean;
 }>;
 
@@ -996,6 +996,25 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
             aligned: renderedAlignmentId !== null, alignmentId: renderedAlignmentId, rowGeneration, pending, disposed });
     }
     schedule();
+    function bindInput(focus: () => void): ViewportInputBinding {
+        if (disposed || !live() || inputOwner) throw new Error("Viewport requires one current input owner.");
+        const binding = { composing: false, detach: observe("focus", focus) };
+        inputOwner = binding; root.tabIndex = -1; layer.setAttribute("aria-hidden", "true");
+        const setComposing = (value: boolean): boolean => {
+            if (disposed || inputOwner !== binding || !live() || binding.composing === value) return false;
+            binding.composing = value;
+            root.classList.toggle("st-composing", value); invalidate();
+            for (const button of foldButtons.values()) button.disabled = value;
+            return true;
+        };
+        return Object.freeze({ setComposing,
+            dispose: () => {
+                if (inputOwner !== binding) return; binding.detach(); inputOwner = undefined;
+                root.classList.remove("st-composing"); root.tabIndex = 0; layer.removeAttribute("aria-hidden");
+                for (const button of foldButtons.values()) button.disabled = false;
+                if (!disposed) invalidate();
+            } });
+    }
     const viewport: TextViewport = Object.freeze({
         decorations: decorations.handle,
         element: root,
@@ -1009,25 +1028,6 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
             observationStops.add(stop); return stop;
         },
         onRender: listener => observe("render", listener),
-        bindInput: focus => {
-            if (disposed || !live() || inputOwner) throw new Error("Viewport requires one current input owner.");
-            const binding = { composing: false, detach: observe("focus", focus) };
-            inputOwner = binding; root.tabIndex = -1; layer.setAttribute("aria-hidden", "true");
-            const setComposing = (value: boolean): boolean => {
-                if (disposed || inputOwner !== binding || !live() || binding.composing === value) return false;
-                binding.composing = value;
-                root.classList.toggle("st-composing", value); invalidate();
-                for (const button of foldButtons.values()) button.disabled = value;
-                return true;
-            };
-            return Object.freeze({ setComposing,
-                dispose: () => {
-                    if (inputOwner !== binding) return; binding.detach(); inputOwner = undefined;
-                    root.classList.remove("st-composing"); root.tabIndex = 0; layer.removeAttribute("aria-hidden");
-                    for (const button of foldButtons.values()) button.disabled = false;
-                    if (!disposed) invalidate();
-                } });
-        },
         settings: () => settings,
         configure: changes => {
             notifications.assertWritable();
@@ -1365,5 +1365,5 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
             return "nextLine" in index ? index.nextLine(at, direction) : index.lineAt(at);
         }
     });
-    return Object.freeze({ viewport, navigation, setComparisonRows });
+    return Object.freeze({ viewport, bindInput, navigation, setComparisonRows });
 }

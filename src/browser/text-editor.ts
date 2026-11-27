@@ -157,10 +157,16 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
     const currentSelections = () => currentView().selectionSet;
     const currentFolds = () => currentFolding().index;
     const live = () => workspace.ownsDocumentView(view);
-    let setComparisonRows: MountedTextEditor["setComparisonRows"], viewport: TextViewport, navigation: MountedViewport["navigation"], brackets: ReturnType<typeof mountBracketHighlights> | undefined, warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
-    try { const mounted = mountViewport(host, workspace, documentId, { ...options, view }, comparison);
-        viewport = mounted.viewport; navigation = mounted.navigation; setComparisonRows = mounted.setComparisonRows; }
-    catch (error) { if (!options.view) view.dispose(); throw error; }
+    let mounted: MountedViewport;
+    try {
+        mounted = mountViewport(host, workspace, documentId, { ...options, view }, comparison);
+    } catch (error) {
+        if (!options.view) view.dispose();
+        throw error;
+    }
+    const { viewport, bindInput, navigation, setComparisonRows } = mounted;
+    let brackets: ReturnType<typeof mountBracketHighlights> | undefined;
+    let warnings: ReturnType<typeof mountCharacterWarnings> | undefined;
     const root = viewport.element;
     root.style.tabSize = String(language.tabSize);
     const owner = host.ownerDocument, win = owner.defaultView!, input = owner.createElement("textarea");
@@ -493,7 +499,7 @@ export function mountEditor(host: HTMLElement, workspace: Workspace, documentId:
         refresh(); return result.status === "done";
     }
     const focus = () => { if (!disposed) { input.focus({ preventScroll: true }); scheduleCaret(); } };
-    const inputBinding = viewport.bindInput(focus);
+    const inputBinding = bindInput(focus);
     function planInput(buffer: TextBuffer, selections: SelectionSet, text: string, kind: EditKind, wholeLines = false) {
         return kind === "paste" ? planClipboardPaste(buffer, selections, text, wholeLines, pasteLineEndings === "preserve")
             : planSelectionEdits(buffer.length, selections, text);

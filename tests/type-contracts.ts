@@ -1,6 +1,18 @@
-import type { DocumentSnapshot, DocumentView } from "../src/index.ts";
+import type { DiscoveredFold, DocumentSnapshot, DocumentView, TextResourceOptions } from "../src/index.ts";
+import type { TextViewport } from "../src/browser/index.ts";
 import type { JsonValue, LspDocument, LspWorkspaceScope } from "../src/protocol/index.ts";
 import type { JsonRpcConnection, LspSession } from "../src/kernels/index.ts";
+
+export function providerOptions(group: string | undefined, version: string | undefined) {
+    const fold: DiscoveredFold = { from: 0, to: 8, group };
+    const file: TextResourceOptions = { value: "", serverVersion: version };
+    return { fold, file };
+}
+
+export function viewportInputOwner(viewport: TextViewport) {
+    // @ts-expect-error The mounted editor owns its input binding.
+    viewport.bindInput(() => {});
+}
 
 export function documentReadContract(document: DocumentSnapshot, view: DocumentView): void {
     // @ts-expect-error Buffer snapshots expose no mutable text or position properties.

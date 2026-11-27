@@ -21,12 +21,12 @@ test("viewport skips unchanged row work while consuming scheduled notifications 
         const host = document.createElement("section");
         host.style.cssText = "height:220px;width:800px;position:fixed;top:0;left:0"; document.body.append(host);
         let calls = 0, notices = 0, shade = "paint-a";
-        const { viewport, setComparisonRows } = mountViewport(host, workspace, source.id);
+        const { viewport, bindInput, setComparisonRows } = mountViewport(host, workspace, source.id);
         let lastGeometry = viewport.getSnapshot(), geometryChanges = 0;
         const stopGeometry = viewport.subscribe(() => { lastGeometry = viewport.getSnapshot(); geometryChanges++; });
         viewport.decorations.addProvider({ order: 0, provide: line => { calls++; return [{ from: line.from, to: line.to, className: shade }]; } });
         viewport.onRender(() => notices++);
-        const input = viewport.bindInput(() => {});
+        const input = bindInput(() => {});
         const observer = new MutationObserver(() => {}); observer.observe(viewport.element, { subtree: true, childList: true, attributes: true, characterData: true });
         const documentState = () => workspace.document(source.id);
         const settle = () => { for (let i = 0; i < 8; i++) { viewport.flush(); if (!viewport.activity().pending) return; } throw new Error("Viewport did not settle."); };

@@ -8,7 +8,7 @@ import { lineBoundary } from "./newlines.ts";
 import { kernelCursor } from "./kernel-cursor.ts";
 import type { KernelCursor, KernelStatus } from "./kernel-cursor.ts";
 
-export type DiscoveredFold = Readonly<{ from: number; to: number; group?: string; initiallyCollapsed?: boolean }>;
+export type DiscoveredFold = Readonly<{ from: number; to: number; group?: string | undefined; initiallyCollapsed?: boolean }>;
 const discoveredRows = new WeakMap<TextBuffer, WeakMap<DiscoveredFold, Readonly<{ lineFrom: number; lineTo: number }>>>();
 export type IndentationFoldingOptions = Readonly<{ tabSize?: number; indentation?: boolean;
     group?: string | ((headerLine: number, buffer: TextBuffer) => string | undefined);

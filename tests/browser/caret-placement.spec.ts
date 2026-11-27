@@ -14,7 +14,7 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} care
     const result = await page.evaluate(async ({ shadow, css }) => {
         const path = "/caret-placement/";
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
-        const { mountTextViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
+        const { mountViewport } = await import(path + "viewport.js") as typeof import("../../src/browser/viewport.ts");
         const { mountInputCaret } = await import(path + "caret.js") as typeof import("../../src/browser/input-caret.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "caret", variant: "text" }, "Caret", { value: ("0123456789".repeat(16) + "\n").repeat(1000) });
         const host = document.createElement("section");
@@ -22,9 +22,10 @@ for (const shadow of [false, true]) test(`${shadow ? "shadow" : "document"} care
         const tree = shadow ? container.attachShadow({ mode: "closed" }) : container;
         const style = document.createElement("style"); style.textContent = css; tree.append(style, host);
         host.style.cssText = "height:220px;width:800px;position:fixed;top:10px;left:10px";
-        const viewport = mountTextViewport(host, workspace, source.id), root = viewport.element, input = document.createElement("textarea");
+        const { viewport, bindInput } = mountViewport(host, workspace, source.id);
+        const root = viewport.element, input = document.createElement("textarea");
         root.classList.add("st-editor"); input.className = "st-input-context"; root.append(input);
-        const binding = viewport.bindInput(() => input.focus({ preventScroll: true }));
+        const binding = bindInput(() => input.focus({ preventScroll: true }));
         let composing = false, queries = 0, reveals = 0;
         const layer = mountInputCaret(root, input, viewport.view, { ...viewport,
             coordsAt: (...args) => { queries++; return viewport.coordsAt(...args); },

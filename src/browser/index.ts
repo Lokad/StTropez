@@ -6,7 +6,7 @@ export type { ViewRestoreOptions, ViewRestoreResult, ViewState } from "./view-st
 export { editRefusedEvent, inputConflictEvent } from "./input-events.ts";
 export type { EditRefusedDetail, InputConflictDetail } from "./input-events.ts";
 export type { DecorationLayer, DecorationLayerOptions, DecorationLayers, DecorationProvider } from "./decoration-layers.ts";
-export type { FoldLabels, InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealAlignment, RevealOptions, TextViewport, TextViewportOptions, ViewportSettings, ViewportActivity, ViewportDiagnostics, ViewportSnapshot, ViewportInputBinding } from "./viewport.ts";
+export type { FoldLabels, InlineDecoration, LineClass, LineDecorator, PresentedLine, RenderedRowBounds, RevealAlignment, RevealOptions, TextViewport, TextViewportOptions, ViewportSettings, ViewportActivity, ViewportDiagnostics, ViewportSnapshot } from "./viewport.ts";
 export { mountTextEditor } from "./text-editor.ts";
 export { mountAnchoredOverlay } from "./anchored-overlay.ts";
 export type { AnchoredOverlay, AnchoredOverlayOptions, OverlayAnchor, OverlayPosition, OverlayHideReason } from "./anchored-overlay.ts";
