@@ -153,11 +153,11 @@ test("an encoded document failure is isolated, reported once and retried after a
     t.after(() => session.dispose());
     const tooLarge = session.bindDocument(input("\u0000".repeat(1000), "fixture:large", "large")), small = session.bindDocument(input("small", "fixture:small", "small"));
     await session.connect(); await settled(); const peer = host.peers[0]!;
-    assert.equal(session.getSnapshot().phase, "ready"); assert.equal(errors.length, 1); assert.match(errors[0]!.message, /configured limit/);
+    assert.equal(session.getSnapshot().phase, "ready"); assert.equal(errors.length, 1); assert.match(errors[0]!.message, /RPC message size/);
     assert.equal(session.synchronized(tooLarge), undefined); assert.equal(peer.documents.has("fixture:large"), false);
     peer.rpc.onRequest("textDocument/hover", () => ({ contents: "healthy" }));
     assert.deepEqual(await session.requestDocument("textDocument/hover", small, () => ({})).result, { contents: "healthy" });
-    await assert.rejects(session.requestDocument("textDocument/hover", tooLarge, () => ({})).result, /configured limit/);
+    await assert.rejects(session.requestDocument("textDocument/hover", tooLarge, () => ({})).result, /RPC message size/);
     small.update(40, 41, TextBuffer.from("still small")); await session.flush(); assert.equal(errors.length, 1);
     tooLarge.update(40, 41, TextBuffer.from("repaired")); await session.flush(); await settled(); assert.equal(peer.documents.get("fixture:large")!.getText(), "repaired");
     tooLarge.update(41, 42, TextBuffer.from("\u0000".repeat(1000))); await session.flush(); await settled();
@@ -374,7 +374,7 @@ test("workspace commands require advertised bounded options, reject stale regist
     let finish: ((value: unknown) => void) | undefined, executed = 0;
     peer.rpc.onRequest("workspace/executeCommand", (params: { command: string }) => { executed++; return params.command === "status" ? { ok: true } : new Promise(resolve => { finish = resolve; }); });
     assert.deepEqual(session.commandNames(), ["status"]); assert.equal(Object.isFrozen(session.commandNames()), true); assert.equal(peer.initialize()!.capabilities.workspace!.executeCommand!.dynamicRegistration, true);
-    assert.deepEqual(await session.requestCommand("status", [{ opaque: "😀" }]).result, { ok: true }); assert.throws(() => session.requestCommand("unknown"), error => error instanceof RpcError && error.code === -32601); assert.throws(() => session.requestCommand("status", ["x".repeat(8193)]), /limit/); assert.equal(executed, 1);
+    assert.deepEqual(await session.requestCommand("status", [{ opaque: "😀" }]).result, { ok: true }); assert.throws(() => session.requestCommand("unknown"), error => error instanceof RpcError && error.code === -32601); assert.throws(() => session.requestCommand("status", ["x".repeat(8193)]), { code: "invalid-command-argument-size" }); assert.equal(executed, 1);
     await peer.rpc.sendRequest("client/registerCapability", { registrations: [{ id: "commands", method: "workspace/executeCommand", registerOptions: { commands: ["review"] } }] });
     const call = session.requestCommand("review"); const rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32801); await settled();
     await peer.rpc.sendRequest("client/unregisterCapability", { unregisterations: [{ id: "commands", method: "workspace/executeCommand" }] }); assert.equal(call.isCurrent(), false); finish!({ late: true }); await rejected;

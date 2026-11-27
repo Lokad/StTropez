@@ -406,7 +406,7 @@ export class LspSession {
     }
     #entry(handle: LspDocument): Entry { const entry = this.#handles.get(handle); if (!entry || this.#documents.get(entry.snapshot.uri) !== entry) throw staleRequest(); return entry; }
     #size(length: number, previous: number): void {
-        if (!isNonNegativeInteger(length) || length > this.#maxDocumentUnits || this.#totalUnits - previous + length > this.#maxTotalUnits) throw new RangeError("LSP document size limit exceeded.");
+        if (!isNonNegativeInteger(length) || length > this.#maxDocumentUnits || this.#totalUnits - previous + length > this.#maxTotalUnits) invalidRange("LSP document size limit");
     }
     bindDocument(snapshot: LspDocumentSnapshot): LspDocument {
         this.#writable(); const { uri, languageId, documentId, revision, buffer } = snapshot;

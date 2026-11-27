@@ -251,7 +251,7 @@ function validateCompletionEdits(length: number, edits: readonly TextEdit[]): vo
     validateTextEdits(length, edits);
     for (let i = 1; i < edits.length; i++) {
         const left = edits[i - 1]!, right = edits[i]!;
-        if (left.from === right.from && left.to === left.from && right.to === right.from) throw new RangeError("Completion inserts share a position.");
+        if (left.from === right.from && left.to === left.from && right.to === right.from) invalidRange("completion insert position");
     }
 }
 /** Inserted text starts follow the validated batch order, including an import before a replacement
@@ -259,7 +259,7 @@ function validateCompletionEdits(length: number, edits: readonly TextEdit[]): vo
 function completionLayout(length: number, edits: readonly TextEdit[]) {
     validateCompletionEdits(length, edits); const starts = new Map<TextEdit, number>(); let delta = 0;
     for (const edit of edits) { starts.set(edit, edit.from + delta); delta += edit.insert.length - (edit.to - edit.from); }
-    if (!Number.isSafeInteger(length + delta)) throw new RangeError("Completion exceeds safe positions.");
+    if (!Number.isSafeInteger(length + delta)) invalidRange("completion length");
     return { starts, length: length + delta };
 }
 function plan(length: number, primary: TextEdit, additional: readonly TextEdit[], stops: readonly SnippetStop[] | null = null): LspCompletionPlan {
@@ -458,7 +458,7 @@ export function lspCompletionPlan(item: LspCompletion, mode: "insert" | "replace
         const normalized = createSelectionSet(buffer.length, selections.ranges, selections.primary);
         if (normalized.primary !== selections.primary || normalized.ranges.length !== selections.ranges.length
             || normalized.ranges.some((range, index) => range.anchor !== range.head || range.head !== selections.ranges[index]!.head)
-            || normalized.ranges[normalized.primary]!.head !== item.offset) throw new RangeError("Completion requires the captured, ordered carets.");
+            || normalized.ranges[normalized.primary]!.head !== item.offset) invalidRange("completion carets");
     }
     const inserted = character === undefined || primary.text.endsWith(character) ? primary.text : primary.text + character;
     if (!selections || selections.ranges.length === 1) {
@@ -473,20 +473,20 @@ export function lspCompletionPlan(item: LspCompletion, mode: "insert" | "replace
     const targets = selections.ranges.map(({ head }) => {
         const delta = head - item.offset, from = primary.from + delta, insertTo = primary.insertTo + delta, replaceTo = primary.replaceTo + delta;
         if (from < 0 || replaceTo > buffer.length || [from, insertTo, replaceTo].some(at => buffer.lineAt(at) !== buffer.lineAt(head)))
-            throw new RangeError("Completion range leaves a captured caret's line.");
+            invalidRange("completion line");
         if (delta) for (let at = primary.from; at < primary.replaceTo; at += 4096) {
             const end = Math.min(at + 4096, primary.replaceTo);
-            if (buffer.slice(at, end) !== buffer.slice(at + delta, end + delta)) throw new RangeError("Completion caret replacement text differs.");
+            if (buffer.slice(at, end) !== buffer.slice(at + delta, end + delta)) invalidRange("completion replacement");
         }
         return { from, to: mode === "insert" ? insertTo : replaceTo, insert: "" };
     });
     const batch = [...item.additional, ...targets].sort((a, b) => a.from - b.from || a.to - b.to);
     validateCompletionEdits(buffer.length, batch);
     let remaining = item.insertion.maxUnits - buffer.length - batch.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), 0);
-    if (remaining < 0) throw new RangeError("Completion exceeds the document limit.");
+    if (remaining < 0) invalidRange("completion length");
     const formatted = targets.map(target => {
         const result = completionText(source, target.from, inserted, character === undefined ? item.snippet : null, { ...item.insertion, maxUnits: remaining });
-        remaining -= result.text.length; if (remaining < 0) throw new RangeError("Completion exceeds the document limit."); return result;
+        remaining -= result.text.length; if (remaining < 0) invalidRange("completion length"); return result;
     });
     const primaries = targets.map((target, index) => Object.freeze({ ...target, insert: formatted[index]!.text }));
     const edits = Object.freeze([...item.additional, ...primaries]

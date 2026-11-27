@@ -1,3 +1,4 @@
+import { invalidRange } from "../core/bounds.ts";
 import { isRecord, ProtocolDecodeError, decodeJson, wireLimits, jsonSnapshot } from "./wire.ts";
 import type { JsonValue } from "./wire.ts";
 
@@ -16,7 +17,7 @@ export function decodeLspCommand(value: unknown): LspCommand {
 export function commandArguments(args: readonly JsonValue[]): readonly JsonValue[] {
     const value = jsonSnapshot(args);
     if (!Array.isArray(value) || JSON.stringify(value).length > wireLimits.commandArgumentUnits) {
-        throw new RangeError("LSP command arguments exceed their limit.");
+        invalidRange("command argument size");
     }
     return value;
 }

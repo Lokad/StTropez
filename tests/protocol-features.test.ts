@@ -352,11 +352,11 @@ test("several-caret plans reject mismatched, overlapping, incomplete and oversiz
         createSelectionSet(14, carets.ranges, 1), createSelectionSet(14, [{ anchor: 6, head: 6 }, { anchor: 12, head: 13 }]),
         { primary: 0, ranges: [{ anchor: 6, head: 6 }, { anchor: 6, head: 6 }] }]) assert.throws(() => lspCompletionPlan(item, "replace", undefined, selections), RangeError);
     const different = (await captured("    aa\n    ab\n")).capture;
-    assert.throws(() => lspCompletionPlan(decodeLspCompletions([wire], different, 6).items[0]!, "replace", undefined, carets), /replacement text differs/);
+    assert.throws(() => lspCompletionPlan(decodeLspCompletions([wire], different, 6).items[0]!, "replace", undefined, carets), { code: "invalid-completion-replacement" });
     const additional = decodeLspCompletions([{ ...wire, additionalTextEdits: [{ range: range(1, 4, 6), newText: "extra" }] }], capture, 6).items[0]!;
     assert.throws(() => lspCompletionPlan(additional, "replace", undefined, carets), RangeError);
     const bounded = decodeLspCompletions([wire], { ...capture, maxDocumentUnits: 20 }, 6).items[0]!;
-    assert.throws(() => lspCompletionPlan(bounded, "replace", undefined, carets), /limit/);
+    assert.throws(() => lspCompletionPlan(bounded, "replace", undefined, carets), { code: "invalid-insertion-limit" });
     const overlap = (await captured("aaaaaa")).capture, ranges = createSelectionSet(6, [{ anchor: 2, head: 2 }, { anchor: 3, head: 3 }]);
     const overlapping = decodeLspCompletions([{ ...wire, textEdit: { range: range(0, 0, 4), newText: "x" } }], overlap, 2).items[0]!;
     assert.throws(() => lspCompletionPlan(overlapping, "replace", undefined, ranges), { code: "invalid-edit-ranges" });

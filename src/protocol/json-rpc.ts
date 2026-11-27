@@ -65,7 +65,7 @@ export class JsonRpcConnection {
     #release(stop: () => void): void { try { stop(); } catch (error) { this.#report(error instanceof Error ? error : new Error("RPC cleanup failed.")); } }
     #encode(value: unknown): string {
         if (!isJson(value, this.#maxJsonNodes)) throw new TypeError("RPC messages must contain bounded JSON values.");
-        const encoded = JSON.stringify(value); if (encoded.length > this.#maxMessageUnits) throw new RangeError("RPC message exceeds the configured limit."); return encoded;
+        const encoded = JSON.stringify(value); if (encoded.length > this.#maxMessageUnits) invalidRange("RPC message size"); return encoded;
     }
     #emit(value: unknown): boolean {
         if (this.#disposed) return false;

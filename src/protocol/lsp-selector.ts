@@ -1,3 +1,4 @@
+import { invalidRange } from "../core/bounds.ts";
 import { ProtocolDecodeError, isRecord } from "./wire.ts";
 /** Text-document selectors only; notebook and file-watcher registration are not advertised. */
 export type LspSelectorDocument = Readonly<{ uri: string; languageId: string }>;
@@ -93,7 +94,7 @@ export function compileLspSelector(value: unknown, pathForUri: LspUriPath = lspU
             if (filter.language !== undefined && filter.language !== "*" && filter.language !== document.languageId) return false;
             if (filter.scheme !== undefined && filter.scheme !== "*" && String(filter.scheme).toLowerCase() !== document.uri.slice(0, document.uri.indexOf(":")).toLowerCase()) return false;
             if (!patterns) return true;
-            const path = pathForUri(document.uri); if (typeof path !== "string" || path.length > 4096) throw new RangeError("Selector path exceeds its limit.");
+            const path = pathForUri(document.uri); if (typeof path !== "string" || path.length > 4096) invalidRange("selector path length");
             return patterns.some(pattern => matches(pattern, path));
         };
     });
