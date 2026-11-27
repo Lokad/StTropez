@@ -91,7 +91,8 @@ export type SaveTicket = Readonly<{ target: ResourceTarget; revision: number; va
         Promise<Readonly<{ kind: "saved"; receipt: SaveReceipt } | { kind: "conflict"; serverVersion: string }>>;
 }>;
 export type SaveResponse = Readonly<{ kind: "saved"; serverVersion: string; canonical?: string }
-    | { kind: "conflict"; serverVersion: string }>;
+    | { kind: "conflict"; serverVersion: string }
+    | { kind: "unknown"; serverVersion: string; storedValue: string }>;
 export type EditRequest = Readonly<{
     documentId: DocumentId; expectedRevision: number; edits: readonly TextEdit[]; origin: EditOrigin; source?: string;
     history?: Readonly<{ kind: EditKind; group?: string; reset?: boolean }>; view?: DocumentView; selection?: Selection; selectionSet?: SelectionSet;
@@ -780,10 +781,15 @@ export class Workspace {
         }, run: async write => {
             if (submission) throw new Error("Save already started.");
             try {
-                const reply = await write(ticket.start());
+                const sent = ticket.start();
+                const reply = await write(sent);
                 if (reply.kind === "saved") return { kind: "saved", receipt: ticket.accept(reply) };
+                if (reply.kind === "unknown") {
+                    if (reply.storedValue === sent.value) return { kind: "saved", receipt: ticket.accept(reply) };
+                    if (reply.serverVersion === sent.expectedServerVersion) throw new Error("Save could not be confirmed.");
+                }
                 ticket.conflict();
-                return reply;
+                return { kind: "conflict", serverVersion: reply.serverVersion };
             } catch (error) {
                 ticket.fail();
                 throw error;

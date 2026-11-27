@@ -310,16 +310,18 @@ test("a lost receipt preserves the queued draft and a second runner cannot relea
     assert.equal(source.metadata.getSnapshot().saveStatus, "saving");
     edit("second");
     const second = workspace.captureSave(source);
-    reply.reject(new Error("lost receipt"));
-    await assert.rejects(writing, /lost receipt/);
+    reply.resolve({ kind: "unknown", serverVersion: "v1", storedValue: stored });
+    const recovered = await writing;
+    assert.equal(recovered.kind, "saved");
     assert.equal(stored, "first");
-    assert.equal(source.metadata.getSnapshot().serverVersion, "v0");
+    assert.equal(source.metadata.getSnapshot().serverVersion, "v1");
+    assert.equal(source.metadata.getSnapshot().dirty, true);
     const result = await second.run(submission => {
         assert.equal(submission.value, "second");
-        assert.equal(submission.expectedServerVersion, "v0");
-        return { kind: "conflict", serverVersion: "v1" };
+        assert.equal(submission.expectedServerVersion, "v1");
+        return { kind: "unknown", serverVersion: "v2", storedValue: "peer" };
     });
-    assert.deepEqual(result, { kind: "conflict", serverVersion: "v1" });
+    assert.deepEqual(result, { kind: "conflict", serverVersion: "v2" });
     assert.equal(workspace.document(source.id).text(), "second");
     assert.equal(workspace.ownership(source.id).leases, 0);
 });

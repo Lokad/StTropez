@@ -33,12 +33,15 @@ export function referenceStorage(initial: string) {
         function commit(): SaveResponse {
             const latest = read();
             if (latest.text === text) return { kind: "saved", serverVersion: latest.version, canonical: text };
-            if (mode.compareVersions && latest.version !== submission.expectedServerVersion) {
+            if (latest.version !== submission.expectedServerVersion) {
                 return { kind: "conflict", serverVersion: latest.version };
             }
             const version = crypto.randomUUID();
             localStorage.setItem(key, JSON.stringify({ version, text }));
-            if (mode.fault === "lose-reply") throw new Error("The save reply was lost. Retry to check the saved copy.");
+            if (mode.fault === "lose-reply") {
+                const stored = read();
+                return { kind: "unknown", serverVersion: stored.version, storedValue: stored.text };
+            }
             return { kind: "saved", serverVersion: version, canonical: text };
         }
         return mode.compareVersions ? navigator.locks.request(key, commit) : commit();

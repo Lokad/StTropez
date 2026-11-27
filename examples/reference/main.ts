@@ -214,7 +214,7 @@ function presentPeer(copy: SavedCopy) {
     showSaveState();
 }
 function poll() {
-    if (closed || compareVersions.checked || pending) return;
+    if (closed || compareVersions.checked) return;
     try {
         const copy = storage.read();
         if (copy.version !== file.metadata.getSnapshot().serverVersion) presentPeer(copy);

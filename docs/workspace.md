@@ -216,7 +216,7 @@ revision again when the user confirms. [Selection-bound request](architecture.md
 ### Save and conflicts
 
 Share one saver per resource. Capture text on each press. Start the write after its predecessor finishes so
-it uses the latest acknowledged version. Storage must compare versions inside the write.
+it uses the latest acknowledged version. A store with compare-and-swap can atomically reject a stale version.
 
 ```ts
 import type { SaveResponse, SaveReview, SaveSubmission, TextResourceHandle, Workspace } from "sttropez";
@@ -236,6 +236,13 @@ export function createFileSaver(
 ```
 
 Capture and submission require save permission. Each press gets its own result.
+If the write reply is lost, read the stored copy and return `{ kind: "unknown", serverVersion, storedValue }`.
+Matching text acknowledges the submission and leaves later edits dirty. Different text at a new version opens
+conflict review. Different text at the old version leaves the save unconfirmed. If the read fails, propagate the error.
+
+With last-write-wins storage, read the version immediately before each queued write and observe peer writes.
+Another writer can still intervene between the read and the write. Use an atomic version check when overwriting
+a concurrent save would be unacceptable.
 Failure or conflict leaves both draft and baseline intact. `ticket.run` releases the ticket on every outcome and rethrows storage errors.
 
 #### Retry after review
