@@ -759,10 +759,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
         spacer.style.height = `${Math.min(y.extent, y.physicalExtent)}px`;
         if (requested && scrollbarPressed) settleScrollbarReveal();
         root.scrollLeft = x.toPhysical(left);
-        const physicalTop = y.toPhysical(top);
-        root.scrollTop = physicalTop;
-        // Keep old rows at their document Y until the next render replaces them.
-        surface.style.transform = `translateY(${physicalTop}px)`;
+        root.scrollTop = y.toPhysical(top);
         surface.style.setProperty("--st-gutter-width", `${gutterWidth}px`);
         surface.style.setProperty("--st-minimap-width", `${mapWidth}px`);
         layer.style.setProperty("--st-text-area-width", `${width}px`);

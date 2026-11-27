@@ -1403,12 +1403,51 @@ test("dragging the scrollbar paints source rows with their line numbers during a
         const track = await viewport.evaluate(element => {
             const root = element as HTMLElement;
             const box = root.getBoundingClientRect();
-            return { x: box.left + root.clientLeft + root.clientWidth + (root.offsetWidth - root.clientWidth) / 2,
+            const text = root.querySelector(".st-viewport-layer")!.getBoundingClientRect();
+            return { textX: Math.ceil(text.left) + 8, textY: Math.ceil(text.top) + 8,
+                x: box.left + root.clientLeft + root.clientWidth + (root.offsetWidth - root.clientWidth) / 2,
                 y: box.top + 25, middle: box.top + root.clientHeight / 2, width: root.offsetWidth - root.clientWidth };
         });
         expect(track.width).toBeGreaterThan(0);
-        await page.mouse.move(track.x, track.y); await page.mouse.down();
-        await page.mouse.move(track.x, track.middle, { steps: 20 }); await page.mouse.up();
+        await expect(viewport.locator(".st-viewport-row").first()).toBeVisible();
+        const cdp = await page.context().newCDPSession(page);
+        const frames: string[] = [];
+        cdp.on("Page.screencastFrame", frame => {
+            frames.push(frame.data);
+            void cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId }).catch(() => {});
+        });
+        try {
+            await cdp.send("Page.startScreencast", { format: "png", everyNthFrame: 1 });
+            await page.mouse.move(track.x, track.y);
+            await page.mouse.down();
+            await page.mouse.move(track.x, track.middle, { steps: 20 });
+            await page.mouse.up();
+            await cdp.send("Page.stopScreencast");
+        } finally {
+            await cdp.detach();
+        }
+        expect(frames.length).toBeGreaterThan(1);
+        const blank = await page.evaluate(async ({ frames, x, y }) => {
+            const canvas = document.createElement("canvas");
+            canvas.width = 192;
+            canvas.height = 96;
+            const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+            for (const [index, data] of frames.entries()) {
+                const image = new Image();
+                image.src = "data:image/png;base64," + data;
+                await image.decode();
+                ctx.drawImage(image, -x, -y);
+                const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+                // A glyph changes color within a scan line. Solid row backdrops and gutters do not count.
+                let ink = 0;
+                for (let p = 4; p < rgba.length; p += 4) {
+                    if (p % (canvas.width * 4) && Math.abs(rgba[p]! - rgba[p - 4]!) > 24) ink++;
+                }
+                if (ink < 10) return index;
+            }
+            return null;
+        }, { frames, x: track.textX, y: track.textY });
+        expect(blank, "Composited frame without source text").toBeNull();
     } else await viewport.evaluate(root => { root.scrollTop = root.scrollHeight / 2; });
     await expect.poll(() => viewport.evaluate(root => {
         const box = root.getBoundingClientRect();

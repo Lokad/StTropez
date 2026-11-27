@@ -29,7 +29,7 @@
     overflow-anchor: none;
 }
 .st-viewport-spacer { position: absolute; inset: 0 auto auto 0; pointer-events: none; }
-.st-viewport-surface { position: sticky; left: 0; height: 100%; overflow: clip; pointer-events: none; }
+.st-viewport-surface { position: sticky; top: 0; left: 0; height: 100%; overflow: clip; pointer-events: none; }
 .st-viewport[aria-disabled="true"] > .st-viewport-surface { display: none; }
 .st-editor:has(> .st-input-context:focus-visible) { outline: 1px solid var(--st-focus-ring, Highlight); }
 .st-editor[data-st-tab-escape]:has(> .st-input-context:focus-visible) { outline-style: dashed; }
