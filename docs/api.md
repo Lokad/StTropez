@@ -36,7 +36,6 @@ Declarations start at `index.d.ts` in the assets directory.
 | [`ComparisonReversion`](../src/core/comparison.ts) | type |  |
 | [`ComparisonSnapshot`](../src/core/comparison.ts) | type |  |
 | [`ComparisonTicket`](../src/core/comparison.ts) | type |  |
-| [`createFoldRegions`](../src/core/folding.ts) | function |  |
 | [`DiffHunk`](../src/core/diff.ts) | type |  |
 | [`DiffProgress`](../src/core/diff.ts) | type |  |
 | [`DiffRange`](../src/core/diff.ts) | type |  |
@@ -84,10 +83,8 @@ Declarations start at `index.d.ts` in the assets directory.
 | [`Observable`](../src/core/observable.ts) | type |  |
 | [`ObservableListener`](../src/core/observable.ts) | type |  |
 | [`PairingContext`](../src/core/language-configuration.ts) | type |  |
-| [`planLanguageEdit`](../src/core/language-edits.ts) | function | Plan one complete edit against the captured text, selections and folds. |
 | [`PositionMapping`](../src/core/positions.ts) | type |  |
 | [`ResolvedLanguageConfiguration`](../src/core/language-configuration.ts) | type |  |
-| [`resolveLanguageConfiguration`](../src/core/language-configuration.ts) | function |  |
 | [`ResourceKey`](../src/core/workspace.ts) | type | Persistent host key for a resource, scoped by project and variant. |
 | [`ResourceLease`](../src/core/workspace.ts) | type |  |
 | [`ResourceLoad`](../src/core/workspace.ts) | type | Accept or reject the result of one load while it owns the resource. |
@@ -406,12 +403,7 @@ Declarations start at `kernels/index.d.ts` in the assets directory.
 | [`LspSession`](../src/protocol/lsp-session.ts) | class | Host-driven LSP 3.17 session. |
 | [`LspWorkspaceEditOptions`](../src/protocol/lsp-workspace-edit.ts) | type |  |
 | [`mapSelectionSet`](../src/core/selections.ts) | function | Map each range using its endpoint affinities, then merge overlapping ranges. |
-| [`offsetSnippetStops`](../src/core/snippets.ts) | function |  |
-| [`parseSnippet`](../src/core/snippets.ts) | function | Numbered stops, literal defaults/choices and mirrors; no variables, nesting or transforms. |
 | [`planSelectionEdits`](../src/core/selections.ts) | function | Plan one original-coordinate replacement per normalized range; text may differ per range. |
-| [`planSnippetChoice`](../src/core/snippets.ts) | function |  |
-| [`planSnippetEdit`](../src/core/snippets.ts) | function | Mirror an ordinary input edit through every flat occurrence, including coincident empty stops. |
 | [`PositionMap`](../src/core/positions.ts) | class | An immutable indexed map for one batch. |
-| [`snippetChoiceText`](../src/core/snippets.ts) | function | The provider's choice text is contextual only at explicit choice acceptance. |
 | [`TextDiff`](../src/core/diff.ts) | class |  |
 | [`validateTextEdits`](../src/core/changes.ts) | function |  |

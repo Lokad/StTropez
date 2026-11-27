@@ -89,33 +89,6 @@ export function replaceSelections(
 }
 ```
 
-### Snippet planning
-
-`parseSnippet` expands numbered stops, defaults, mirrors, choices and escapes. Forward references share
-their field definition. Positive stops sort numerically. `$0` comes last and defaults to EOF. Conflicting
-defaults, variables, nesting and transforms give a rejection `reason`.
-
-```ts
-import { TextBuffer } from "sttropez";
-import { parseSnippet, planSnippetChoice } from "sttropez/kernels";
-
-const parsed = parseSnippet("call(${1:value}, $1, ${2|draft,ready|})$0", 4096);
-if (!parsed.snippet) throw new Error(parsed.reason);
-const buffer = TextBuffer.from(parsed.snippet.text);
-const active = parsed.snippet.stops.findIndex(stop => stop.index === 2);
-const plan = planSnippetChoice(buffer, parsed.snippet.stops, active, 1, 0, 4096);
-export const chosen = plan ? buffer.apply(plan.edits).buffer : buffer;
-```
-
-`offsetSnippetStops` shifts ranges to the insertion. `planSnippetEdit` takes the active stop’s array index
-and returns edits, selections and updated stops for all occurrences, preserving each indentation and newline
-length. Use `adjustNewlines` for editor-generated newlines. Paste and composition stay literal. On
-`undefined`, exit snippet mode and handle ordinary input.
-
-`snippetChoiceText` formats one occurrence. `planSnippetChoice` updates all and keeps the primary. Expansion
-and document limits accept nonnegative safe integers and default to `Number.MAX_SAFE_INTEGER`. A missing
-choice yields no plan.
-
 ### Conservative change spans and diagnostics
 
 Use `bufferDifference(before, after)` from `sttropez/kernels` to find storage shared at both ends.

@@ -2,7 +2,9 @@ import { bufferReads } from "./buffer-reads.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { reconcileFoldRanges } from "../src/core/fold-discovery.ts";
-import { TextBuffer, Workspace, createFoldRegions, discoverIndentationFolds, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
+import { createFoldRegions } from "../src/core/folding.ts";
+import { planLanguageEdit, resolveLanguageConfiguration } from "../src/core/language-edits.ts";
+import { TextBuffer, Workspace, discoverIndentationFolds } from "../src/index.ts";
 import type { IndentationFoldingCursor } from "../src/index.ts";
 
 function finish(cursor: IndentationFoldingCursor) {

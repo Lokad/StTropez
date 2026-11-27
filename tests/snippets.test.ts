@@ -1,11 +1,12 @@
 import { bufferReads } from "./buffer-reads.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TextBuffer, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
+import { planLanguageEdit, resolveLanguageConfiguration } from "../src/core/language-edits.ts";
+import { TextBuffer } from "../src/index.ts";
 import { createSelectionSet } from "../src/core/selections.ts";
-import { parseSnippet, offsetSnippetStops, planSnippetEdit, planSnippetChoice, snippetChoiceText, planSelectionEdits } from "../src/kernels/index.ts";
+import { parseSnippet, offsetSnippetStops, planSnippetEdit, planSnippetChoice, snippetChoiceText, planLinkedFieldEdit } from "../src/core/snippets.ts";
+import { planSelectionEdits } from "../src/kernels/index.ts";
 import type { SnippetStop } from "../src/index.ts";
-import { planLinkedFieldEdit } from "../src/core/snippets.ts";
 
 test("snippets expand forward mirrors, literal defaults, escaped choices and numeric/final stops", () => {
     const result = parseSnippet('$2 ${1:😀name} = ${2|one\\,two,three\\|four|}; $1$0');

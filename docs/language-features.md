@@ -103,7 +103,6 @@ completion accepts a single-line selection or disjoint carets with identical rep
 
 Tab/Shift+Tab visit snippet stops, Alt+Up/Down cycles choices and Tab finishes at `$0`. Edits update linked
 occurrences. Multiline text adopts local indentation and endings unless `insertTextMode: 1`.
-[Snippet planning](text-model.md#snippet-planning)
 
 ### Hover and documentation
 

@@ -1,5 +1,6 @@
 import { createCommandRegistry } from "../../src/browser/command-registry.ts";
-import { resolveLanguageConfiguration, type DocumentId, type Workspace } from "../../src/index.ts";
+import { resolveLanguageConfiguration } from "../../src/core/language-edits.ts";
+import { type DocumentId, type Workspace } from "../../src/index.ts";
 import { NotificationScope, Store } from "../../src/core/observable.ts";
 import { resolveControlStrings } from "../../src/browser/control-strings.ts";
 import type { TextEditor, TextEditorSnapshot } from "../../src/browser/index.ts";

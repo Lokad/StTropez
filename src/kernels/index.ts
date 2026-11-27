@@ -4,7 +4,6 @@ export { bufferDifference } from "../core/buffer-change.ts";
 export { LiteralSearch } from "../core/search.ts";
 export { TextDiff } from "../core/diff.ts";
 export { mapSelectionSet, planSelectionEdits } from "../core/selections.ts";
-export { parseSnippet, offsetSnippetStops, planSnippetEdit, snippetChoiceText, planSnippetChoice } from "../core/snippets.ts";
 export { JsonRpcConnection } from "../protocol/json-rpc.ts";
 export { LspSession } from "../protocol/lsp-session.ts";
 

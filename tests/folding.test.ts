@@ -1,9 +1,9 @@
 import test from "node:test";
 import { nextSeed } from "./fixtures/workloads.ts";
 import assert from "node:assert/strict";
-import { FoldIndex } from "../src/core/folding.ts";
-import { TextBuffer, Workspace, createFoldRegions, planLanguageEdit, resolveLanguageConfiguration } from "../src/index.ts";
-import { mapFoldRegions, revealSelectionFolds } from "../src/core/folding.ts";
+import { FoldIndex, createFoldRegions, mapFoldRegions, revealSelectionFolds } from "../src/core/folding.ts";
+import { planLanguageEdit, resolveLanguageConfiguration } from "../src/core/language-edits.ts";
+import { TextBuffer, Workspace } from "../src/index.ts";
 
 test("nested collapsed rows keep independent child state and index visible rows without losing raw lines", () => {
     const buffer = TextBuffer.from("header\r\nchild\nbody\nend\nnext\nlast"), ranges = createFoldRegions(buffer, [

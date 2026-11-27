@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TextBuffer, createFoldRegions } from "../src/index.ts";
+import { createFoldRegions } from "../src/core/folding.ts";
+import { TextBuffer } from "../src/index.ts";
 import { DomainCursor, FixtureDomainProvider, domainLimits, validateDomainResult } from "./fixtures/language/domain.ts";
 import type { DomainInput, DomainResult } from "./fixtures/language/domain.ts";
 

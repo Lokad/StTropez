@@ -232,21 +232,6 @@ Translate with `strings.commandLabel(id, fallback)`. For a host chord, choose a 
   `shared: true` and forward its event to that pane's `keymap.handle`.
 
 
-`planLanguageEdit` plans against captured text, selections and folds. The editor commits inside the key handler.
-The result contains the edits and final selections. Invalid input or a failing host rule throws.
-
-```ts
-import { planLanguageEdit, resolveLanguageConfiguration } from "sttropez";
-import type { SelectionSet, TextBuffer } from "sttropez";
-
-export function planIndent(buffer: TextBuffer, selections: SelectionSet) {
-    return planLanguageEdit(buffer, selections, "indent", resolveLanguageConfiguration({ tabSize: 2 }));
-}
-```
-
-Before applying the plan check the target, revision, selections and permissions. Preserve its
-`lineMove` information. [Transactions](workspace.md#transactions-and-history)
-
 ### Edit intent and input recovery
 
 `editor.onEditIntent(listener, signal?)` reports `beforeinput`, `compositionstart`, `paste` and `cut` before

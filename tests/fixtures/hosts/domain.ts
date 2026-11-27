@@ -1,6 +1,6 @@
 import { onSourceFocus } from "../../../examples/shared/source-focus.ts";
 import { captureEditorCommand } from "../../../examples/shared/editor-attachment.ts";
-import { createFoldRegions } from "../../../src/index.ts";
+import { createFoldRegions } from "../../../src/core/folding.ts";
 import type { DocumentId, DocumentView, FoldRange, FoldingSnapshot, ResourceLease, Workspace } from "../../../src/index.ts";
 import type { DecorationLayer, TextEditor } from "../../../src/browser/index.ts";
 import { FixtureDomainProvider, validateDomainResult } from "../language/domain.ts";

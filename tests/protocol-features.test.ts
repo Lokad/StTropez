@@ -5,9 +5,8 @@ import type { ApplyWorkspaceEditParams, CodeAction, Command, CompletionList, Pub
 import { TextBuffer } from "../src/core/text-buffer.ts";
 import { Workspace } from "../src/index.ts";
 import { createSelectionSet } from "../src/core/selections.ts";
-import {
-    composePositionMaps, planSnippetEdit, planSnippetChoice, snippetChoiceText, decodeLspDiagnostics, JsonRpcConnection,
-} from "../src/kernels/index.ts";
+import { planSnippetEdit, planSnippetChoice, snippetChoiceText } from "../src/core/snippets.ts";
+import { composePositionMaps, decodeLspDiagnostics, JsonRpcConnection } from "../src/kernels/index.ts";
 import {
     decodeLspCompletions, decodeLspResolvedCompletion, decodeLspHover, decodeLspLocations, decodeLspWorkspaceEdit,
     decodeLspApplyEdit, decodeLspSignatureHelp, decodeLspDocumentLinks, decodeLspResolvedDocumentLink, decodeLspColor,
