@@ -175,8 +175,9 @@ export async function openUniqueDefinition(navigation: NavigationController, off
 }
 ```
 
-Supply open snapshots in `documents`. For a missing URI, `resolveTarget(uri, context)` gives the operation
-and source. Authorize the URI and honor cancellation. Return `{ document: workspace.document(id) }` for a
+Supply participating snapshots in `documents`. For other URIs, the provider first looks for a unique open
+workspace file. Only an unresolved URI reaches `resolveTarget(uri, context)`. Authorize it for the requested
+operation and honor cancellation. Return `{ document: workspace.document(id) }` for a
 matching workspace file, `{ text, languageId }` for a read-only string or `TextBuffer`, or `undefined` to
 decline. Edits require matching version and permission. Supply `release()` for retained targets. Navigation
 shares duplicate loads, runs four concurrently and validates the batch before display.

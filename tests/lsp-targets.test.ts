@@ -202,20 +202,24 @@ test("rename and resolved actions retain unloaded null-version edit targets thro
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "lazy", data: { key: 1 } }]);
     f.peer.onRequest("codeAction/resolve", (value: object) => ({ ...value, edit }));
     const batch = await actions.run({ document: source, from: 6, to: 10 }).result, action = await batch.resolve(batch.actions[0]!);
-    assert.equal(action.edit!.documents[0]!.target.version, null); assert.deepEqual(purposes, ["edit", "edit"]);
-    actions.cancel(); await settled(); assert.equal(action.edit!.isCurrent(), false); assert.equal(leases[1]!.released, 1);
+    assert.equal(action.edit!.documents[0]!.target.version, null);
+    assert.equal(action.edit!.documents[0]!.target.document.documentId, f.other.id);
+    assert.deepEqual(purposes, ["edit"], "The loaded resource is now directly addressable.");
+    actions.cancel(); await settled(); assert.equal(action.edit!.isCurrent(), false);
+    assert.equal(f.workspace.diagnostics().leases, 1);
 });
 
 test("switching lazy actions releases a late unopened target and leaves the replacement edit current", async t => {
     const entered = latch<LspTargetContext>(), loaded = latch<LspTargetSource>();
     const f = clientFixture(t, undefined, async (_uri, context) => { entered.resolve(context); return loaded.promise; });
     const client = actionClient(f.provider); t.after(client.dispose);
-    const source = f.document(), lease = retained(f); t.after(() => loaded.resolve(lease.value));
+    const source = f.document();
     f.peer.onRequest("textDocument/codeAction", () => [{ title: "Unopened file", data: 1 }, { title: "Current file", data: 2 }]);
     f.peer.onRequest("codeAction/resolve", (action: { data: number }) => ({ ...action,
         edit: { changes: { [action.data === 1 ? uri : source.language!.uri]: [{ range, newText: "new" }] } } }));
     const batch = await client.run({ document: source, from: 6, to: 10 }).result;
     const first = assert.rejects(batch.resolve(batch.actions[0]!), cancelled); const context = await entered.promise;
+    const lease = retained(f); t.after(() => loaded.resolve(lease.value));
     const next = await batch.resolve(batch.actions[1]!); await first;
     assert.equal(context.isCurrent(), false); assert.equal(client.isBusy(), false);
     loaded.resolve(lease.value); await settled();

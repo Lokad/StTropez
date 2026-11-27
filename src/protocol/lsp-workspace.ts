@@ -15,7 +15,7 @@ import type { RpcCall } from "./json-rpc.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspDiagnostics } from "./lsp-features.ts";
 import type { LspDiagnostics } from "./lsp-features.ts";
-import type { LspResolvedTarget, LspTargetResolver, LspTargetContext, ResolveRetainedTarget } from "./lsp-targets.ts";
+import type { LspResolvedTarget, LspTargetResolver, LspTargetContext, LspTargetSource, ResolveRetainedTarget } from "./lsp-targets.ts";
 
 /** Preparation can synchronize the capture and send custom requests on its behalf. */
 export type LspScopeAccess = Pick<LspSession, "request" | "commandNames"> & Readonly<{ flush: () => Promise<void> }>;
@@ -307,7 +307,8 @@ export class LspWorkspace {
         };
         if (!isLspUri(uri)) throw new TypeError("Invalid target URI.");
         if (!connected() || !context.isCurrent()) throw staleRequest();
-        const source = await this.#options.resolveTarget?.(uri, context);
+        const open = this.#workspace.documentForUri(uri);
+        const source: LspTargetSource | undefined = open ? { document: open } : await this.#options.resolveTarget?.(uri, context);
         if (!source) return;
         let lease: ResourceLease | undefined, released = false;
         const release = () => {
@@ -325,12 +326,12 @@ export class LspWorkspace {
                 if (doc.language?.uri !== uri) throw new TypeError("Resolved document does not match the requested URI.");
                 if (!isLspIdentityPart(doc.language.languageId)) throw new TypeError("Invalid target language ID.");
                 if (this.#workspace.document(doc.id) !== doc) throw staleRequest();
-                if (doc.buffer.length > limit) throw new RangeError("LSP target size limit exceeded.");
+                if (doc.buffer.length > limit) invalidRange("LSP target size");
                 lease = this.#workspace.acquire(doc.id);
             } else {
                 if (context.purpose === "edit") throw new TypeError("An editable target requires a project document.");
                 if (!isLspIdentityPart(source.languageId) || !(typeof source.text === "string" || source.text instanceof TextBuffer)) throw new TypeError("Invalid read-only target.");
-                if (source.text.length > limit) throw new RangeError("LSP target size limit exceeded.");
+                if (source.text.length > limit) invalidRange("LSP target size");
                 const buffer = typeof source.text === "string" ? TextBuffer.from(source.text) : source.text;
                 const resource = this.#workspace.createTextResource(this.#workspace.createResourceKey("lsp", uri), uri, {
                     value: buffer,
@@ -370,7 +371,7 @@ export class LspWorkspace {
     }
 
     createScope(): LspWorkspaceScope {
-        this.#writable(); if (this.#scopes.size >= (this.#options.maxScopes ?? wireLimits.scopes)) throw new RangeError("Provider scope limit exceeded.");
+        this.#writable(); if (this.#scopes.size >= (this.#options.maxScopes ?? wireLimits.scopes)) invalidRange("provider scope limit");
         const scope: Scope = { active: true, generation: 0, close: () => {}, interruptions: new Set() }, documents = new Map<string, LspDocument>();
         const handles = new Map<LspDocument, DocumentEntry>(), pending = new Set<{ cancel: () => void }>(), stops = new Set<() => void>();
         const documentCalls = new Map<LspDocument, Set<{ cancel: () => void }>>();
