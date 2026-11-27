@@ -91,6 +91,28 @@ test("copying a selection vertically retains both columns through a blank row an
     }
 });
 
+test("multiple carets follow the same tab stops and accented text as a single caret", async ({ page }) => {
+    const rows = ["élève\tX", "\tçà12", "abc\tm", "a\tbcd", "\tfin"];
+    const text = rows.join("\r\n");
+    const starts = rows.map((_, i) => rows.slice(0, i).reduce((n, row) => n + row.length + 2, 0));
+    const carets = [starts[0]! + 5, starts[2]! + 4];
+    const heads = () => page.evaluate(() => window.editingFixture.selectionSet().ranges.map(r => r.head));
+    for (const tabSize of [3, 8]) {
+        const style = await page.addStyleTag({ content: ".st-viewport { tab-size: " + tabSize + "; }" });
+        const expected: number[] = [];
+        for (const at of carets) {
+            await setup(page, text, at);
+            await page.keyboard.press("ArrowDown");
+            expected.push((await heads())[0]!);
+        }
+        await setup(page, text);
+        await page.evaluate(offsets => window.editingFixture.selections(offsets.map(head => ({ head, anchor: head }))), carets);
+        await page.keyboard.press("ArrowDown");
+        expect(await heads()).toEqual(expected);
+        await style.evaluate(node => node.remove());
+    }
+});
+
 test("line selection grows on repeat and scrolling leaves its text and keyboard focus in place", async ({ page }) => {
     const source = "one\r\ntwo\nthree\n" + "row\n".repeat(200);
     await setup(page, source, 2);

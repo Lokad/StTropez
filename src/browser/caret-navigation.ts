@@ -1,6 +1,7 @@
 import type { Affinity } from "../core/positions.ts";
 import type { Selection, SelectionSet } from "../core/selections.ts";
-import type { BufferLine, TextBuffer } from "../core/text-buffer.ts";
+import type { TextBuffer } from "../core/text-buffer.ts";
+import { partitionPoint } from "../core/bound-search.ts";
 import { viewportPadding, type MountedViewport, type ViewportSnapshot } from "./viewport.ts";
 
 export type VisualColumns = Readonly<{ head: number | undefined; anchor?: number | undefined }>;
@@ -18,30 +19,50 @@ export function createVerticalMovement(navigation: MountedViewport["navigation"]
     prior: readonly (VisualColumns | undefined)[] | undefined) {
     const columns: (VisualColumns | undefined)[] = [];
     const count = page && state.lineHeight > 0 ? Math.max(1, Math.floor(state.height / state.lineHeight) - 1) : 1;
-    const cells = new Map<number, BufferLine | null>();
-    const fixed = set.ranges.length > 1 && navigation.fixedPitch();
+    type CellRow = { from: number; to: number; stops?: number[] };
+    const cells = new Map<number, CellRow | null>();
+    const tabSize = set.ranges.length > 1 ? navigation.fixedTabSize() : undefined;
     let pageDelta = 0;
 
-    // Short, printable ASCII rows share fixed-pitch geometry. Tabs and shaped text use the measured row.
+    // Only use the grid for single-cell text. Shaping, bidi and non-integral tab stops need layout.
     function fixedRow(line: number) {
-        if (!fixed) return;
+        if (tabSize === undefined) return;
         let span = cells.get(line);
         if (span === undefined) {
             const row = buffer.line(line);
-            span = row.to - row.from <= 512 && !/[^ -~]/.test(row.text) ? row : null;
+            span = null;
+            if (row.to - row.from <= 512) {
+                const text = row.text;
+                const simple = !/[^\t -~]/.test(text) || !/[^\t -~\u00c0-\u024f]/.test(text)
+                    && [...text].every(c => c <= "~" || navigation.singleCell(c));
+                if (simple && !text.includes("\t")) span = row;
+                else if (simple && Number.isSafeInteger(tabSize) && tabSize > 0) {
+                    const stops = [0];
+                    let cell = 0;
+                    for (const c of text) {
+                        cell += c === "\t" ? tabSize - cell % tabSize : 1;
+                        stops.push(cell);
+                    }
+                    span = { from: row.from, to: row.to, stops };
+                }
+            }
             cells.set(line, span);
         }
         return span;
     }
     function columnAt(line: number, offset: number, affinity: Affinity | undefined) {
         const span = fixedRow(line);
-        return span ? viewportPadding + (Math.min(span.to, offset) - span.from) * state.columnWidth
-            : navigation.columnAt(offset, affinity);
+        if (!span) return navigation.columnAt(offset, affinity);
+        const index = Math.min(span.to, offset) - span.from;
+        return viewportPadding + (span.stops?.[index] ?? index) * state.columnWidth;
     }
     function caretAt(line: number, column: number) {
         const span = fixedRow(line);
         if (!span) return navigation.caretAtColumn(line, column);
-        const index = Math.round((column - viewportPadding) / state.columnWidth);
+        const cell = (column - viewportPadding) / state.columnWidth;
+        const { stops } = span;
+        const index = stops ? partitionPoint(stops.length - 1, i => (stops[i]! + stops[i + 1]!) / 2 < cell)
+            : Math.round(cell);
         const offset = Math.max(span.from, Math.min(span.to, span.from + index));
         const affinity: Affinity = offset === span.to && offset > span.from ? "before" : "after";
         return { offset, affinity };

@@ -64,7 +64,8 @@ type ViewportNavigation = Readonly<{
     columnAt: (offset: number, affinity?: Affinity) => number | undefined;
     caretAtColumn: (line: number, column: number) => Readonly<Pick<CaretRectangle, "offset" | "affinity" | "revision">> | undefined;
     columnSelections: (anchor: number, head: number) => (line: number) => (Selection & { reaches: boolean }) | undefined;
-    fixedPitch: () => boolean;
+    fixedTabSize: () => number | undefined;
+    singleCell: (letter: string) => boolean;
 }>;
 /** The mounted document surface for scrolling, decoration layers and text geometry. */
 export type TextViewport = Observable<ViewportSnapshot> & Readonly<{ element: HTMLDivElement; view: DocumentView; decorations: DecorationLayers;
@@ -324,6 +325,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
     let restoredHorizontal: ViewState["horizontalAnchor"];
     let fragmentPlacement: Readonly<{ revision: number; line: number; from: number; to: number; left: number; shift: number }> | undefined;
     let fixedPitch = false, measuredWidth = 0, measuredFont = "", measuredRevision: number | null = null, spacerWidth = -1;
+    let tabCells = 4;
+    const letterWidths = new Map<string, boolean>();
     let selectionMetrics: { font: string; height: number; zoom: number } | undefined;
     let paintEpoch = 0;
     let painted: Readonly<{ key: readonly unknown[]; horizontalAnchor: typeof horizontalAnchor; placement: typeof fragmentPlacement }> | undefined;
@@ -604,6 +607,8 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
         if (font !== measuredFont) {
             measuredWidth = 0;
             measuredFont = font;
+            tabCells = Number(style.tabSize);
+            letterWidths.clear();
             const narrow = parseFloat(win.getComputedStyle(narrowProbe).width);
             fixedPitch = Math.abs(narrow - 64 * columnWidth) < .1 && style.fontVariantLigatures === "none"
                 && (style.wordSpacing === "normal" || parseFloat(style.wordSpacing) === 0);
@@ -1278,7 +1283,17 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
         };
     }
     const navigation = Object.freeze<ViewportNavigation>({
-        fixedPitch: () => fixedPitch,
+        fixedTabSize: () => fixedPitch ? tabCells : undefined,
+        singleCell(letter) {
+            let same = letterWidths.get(letter);
+            if (same === undefined) {
+                narrowProbe.textContent = letter.repeat(64);
+                same = Math.abs(parseFloat(win.getComputedStyle(narrowProbe).width) - 64 * columnWidth) < .1;
+                narrowProbe.textContent = "i".repeat(64);
+                letterWidths.set(letter, same);
+            }
+            return same;
+        },
         horizontalPoint(buffer, range, direction, extend) {
             const collapse = !extend && range.anchor !== range.head;
             const leftward = direction < 0;
