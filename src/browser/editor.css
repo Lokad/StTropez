@@ -7,6 +7,11 @@
 .st-documentation .st-documentation-link { color: inherit; text-decoration: underline; }
 .st-documentation button.st-documentation-link { display: inline; border: 0; border-radius: 0; background: none; padding: 0; font: inherit; cursor: pointer; }
 .st-documentation > :last-child { margin-bottom: 0; }
+.st-viewport, .st-comparison {
+    --_st-paper: var(--st-background, #131b27);
+    --_st-ink: var(--st-foreground, #e1e7ef);
+    --_st-muted: color-mix(in srgb, var(--_st-ink) 78%, var(--_st-paper));
+}
 .st-viewport {
     direction: ltr;
     position: relative;
@@ -51,7 +56,7 @@
 .st-column-ruler { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--st-column-ruler, #71849c40); }
 .st-current-line-background { position: absolute; left: var(--st-gutter-width); right: 0; pointer-events: none;
     box-shadow: inset 0 1px var(--st-current-line-border, #71849c66), inset 0 -1px var(--st-current-line-border, #71849c66); }
-.st-current-line-background::before { content: ""; position: absolute; inset: 0; z-index: -2; background: var(--st-current-line, #ffffff08); }
+.st-current-line-background::before { content: ""; position: absolute; inset: 0; z-index: -2; background: var(--st-current-line, color-mix(in srgb, var(--_st-ink) 7%, var(--_st-paper))); }
 .st-viewport-row { position: absolute; top: 0; left: 0; white-space: pre; direction: ltr; }
 .st-viewport-row [data-ornament] { pointer-events: none; user-select: none; }
 .st-viewport-row [data-ornament="point"] { position: relative; }
@@ -76,17 +81,29 @@
 .st-occurrence-text { background: var(--st-occurrence-text, #8a8a8a33); }
 .st-occurrence-read, .st-occurrence-write { background: var(--st-occurrence-read, #649ed638); }
 .st-occurrence-write { outline: 1px solid var(--st-occurrence-border, #649ed6); outline-offset: -1px; }
-.st-viewport-row .st-search-match { background: var(--st-search-match, #5c4719); outline: 1px solid var(--st-search-border, #a88c40); outline-offset: -1px; }
+.st-viewport-row .st-search-match {
+    --_st-match-edge: var(--st-search-border, var(--_st-muted));
+    color: var(--_st-ink);
+    background: var(--st-search-match, color-mix(in srgb, goldenrod 24%, var(--_st-paper)));
+    outline: 1px solid var(--_st-match-edge);
+    outline-offset: -1px;
+}
+.st-viewport .st-search-match.st-search-current {
+    --_st-match-edge: var(--st-search-current-border, var(--_st-ink));
+    background-color: var(--st-search-current, var(--st-selection, #24496b));
+    outline-width: 2px;
+    outline-offset: -2px;
+}
 .st-viewport-row .st-search-match:not([data-ornament]) { position: relative; }
 /* Give a matched glyph with no advance a visible edge without inserting space in the text. */
 .st-viewport-row .st-search-match:not([data-ornament])::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0;
-    width: max(0px, calc(2px - 100%)); background: var(--st-search-border, #a88c40); pointer-events: none; }
-.st-viewport-row .st-search-match[data-ornament="point"]::after { border-color: var(--st-search-border, #a88c40); }
-.st-viewport-row .st-fold-summary { position: absolute; left: 100%; top: 0; margin-left: .75em; padding: 0 .35em; border-radius: 3px; color: var(--st-fold-summary, #91a5bd); background: var(--st-fold-summary-background, #7e8da51a); font-size: .85em; pointer-events: auto; cursor: pointer; direction: ltr; }
+    width: max(0px, calc(2px - 100%)); background: var(--_st-match-edge); pointer-events: none; }
+.st-viewport-row .st-search-match[data-ornament="point"]::after { border-color: var(--_st-match-edge); }
+.st-viewport-row .st-fold-summary { position: absolute; left: 100%; top: 0; margin-left: .75em; padding: 0 .35em; border-radius: 3px; color: var(--st-fold-summary, var(--_st-muted)); background: var(--st-fold-summary-background, #7e8da51a); font-size: .85em; pointer-events: auto; cursor: pointer; direction: ltr; }
 .st-viewport-row .st-fold-summary::after { content: attr(data-label); }
 .st-comparison-padding { position: absolute; top: 0; left: 0; pointer-events: none; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--st-padding-mark, #7e8da51a) 5px 6px); }
 .st-viewport-gutter { position: absolute; inset: 0 auto 0 0; width: var(--st-gutter-width); z-index: 1; contain: strict; overflow: hidden; pointer-events: auto;
-    user-select: none; cursor: default; color: var(--st-gutter-foreground, #90a0b5); background: var(--st-background, #131b27); }
+    user-select: none; cursor: default; color: var(--st-gutter-foreground, var(--_st-muted)); background: var(--st-background, #131b27); }
 .st-viewport-gutter[data-scrolled] { box-shadow: 1px 0 color-mix(in srgb, currentColor 50%, transparent); }
 .st-line-numbers span { position: absolute; left: 0; right: 15px; text-align: right; }
 .st-line-numbers [data-current] { color: var(--st-foreground, #e1e7ef); font-weight: 600; }
@@ -121,9 +138,9 @@
 .st-text-drop-caret { position: absolute; width: 2px; pointer-events: none; background: var(--st-foreground, #e1e7ef); }
 .st-text-drag-preview { position: fixed; left: 8px; top: 8px; max-width: 320px; max-height: 80px; overflow: hidden; white-space: pre-wrap;
     padding: 4px 8px; pointer-events: none; color: var(--st-foreground, #e1e7ef); background: var(--st-background, #131b27); border: 1px solid currentColor; }
-.st-comparison { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: .5rem; color: #d7deea; background: #161b25; }
+.st-comparison { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: .5rem; color: var(--_st-ink); background: var(--_st-paper); }
 .st-comparison-controls { display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .5rem; }
-.st-comparison-controls button { font: inherit; }
+.st-comparison-controls button { font: inherit; color: var(--_st-ink); background: var(--_st-paper); border: 1px solid var(--_st-muted); }
 .st-comparison-controls output { display: inline-grid; }
 .st-comparison-controls output > span, .st-comparison-controls output::after { grid-area: 1 / 1; }
 .st-comparison-controls output::after { content: attr(data-pending-label); visibility: hidden; }
@@ -135,16 +152,16 @@
 .st-comparison-panes > section { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .st-comparison-panes h3 { font: inherit; margin: 0; padding: .5rem; }
 .st-comparison-editor { flex: 1 1 auto; height: 440px; min-height: 0; }
-.st-comparison-line-baseline { background-color: var(--st-comparison-baseline-line, #4d252c); --st-change-bar: var(--st-comparison-baseline-bar, #d07886); }
-.st-comparison-line-working { background-color: var(--st-comparison-working-line, #183d30); --st-change-bar: var(--st-comparison-working-bar, #64be8d); }
+.st-comparison-line-baseline { background-color: var(--st-comparison-baseline-line, color-mix(in srgb, crimson 12%, var(--_st-paper))); --st-change-bar: var(--st-comparison-baseline-bar, #d07886); }
+.st-comparison-line-working { background-color: var(--st-comparison-working-line, color-mix(in srgb, seagreen 12%, var(--_st-paper))); --st-change-bar: var(--st-comparison-working-bar, #64be8d); }
 /* The text fragment moves horizontally. Paint its backdrop from the fixed edge beside the gutter. */
 .st-viewport-row:is(.st-comparison-line-baseline, .st-comparison-line-working)::before {
     content: ""; position: absolute; top: 0; bottom: 0; left: calc(0px - var(--st-fragment-left));
     width: var(--st-text-area-width); background-color: inherit; box-shadow: inset 3px 0 var(--st-change-bar);
     z-index: -1; pointer-events: none;
 }
-.st-comparison-removed { background-color: var(--st-comparison-removed, #873e4e); }
-.st-comparison-added { background-color: var(--st-comparison-added, #246246); }
+.st-comparison-removed { background-color: var(--st-comparison-removed, color-mix(in srgb, crimson 24%, var(--_st-paper))); }
+.st-comparison-added { background-color: var(--st-comparison-added, color-mix(in srgb, seagreen 28%, var(--_st-paper))); }
 @media (forced-colors: active) {
     .st-current-line-background { outline: 1px dotted CanvasText; outline-offset: -1px; }
     .st-viewport-row.st-comparison-line-baseline::before { box-sizing: border-box; border-left: 3px dashed CanvasText; }

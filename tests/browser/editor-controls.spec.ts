@@ -52,19 +52,28 @@ async function contrast(element: Locator) {
 }
 
 test("a host palette keeps Find, completion and review text legible", async ({ page }) => {
-    await page.goto("/controls/");
     const source = page.getByRole("textbox", { name: "colors.ts" });
     for (const [background, foreground, selection] of [
         ["#f4f4f4", "#383a42", "#b7d7fa"], ["#131b27", "#e1e7ef", "#24496b"]
     ]) {
-        const style = await page.addStyleTag({ content: `:root {
+        const content = `:root {
             --st-background: ${background}; --st-foreground: ${foreground}; --st-selection: ${selection};
-        }` });
+        }`;
+        await page.goto("/controls/");
+        await page.addStyleTag({ content });
         await source.press("Control+f");
         const query = page.getByRole("textbox", { name: "Find text" });
         await query.fill("accent");
         await expect(page.locator(".st-find-status")).toContainText("2");
         expect(await contrast(page.locator(".st-find-status"))).toBeGreaterThanOrEqual(4.5);
+        await query.press("Enter");
+        const current = page.locator(".st-search-current").first();
+        const other = page.locator(".st-search-match:not(.st-search-current)").first();
+        await expect(current).toBeVisible();
+        await expect(other).toBeVisible();
+        for (const mark of [current, other]) expect(await contrast(mark)).toBeGreaterThanOrEqual(4.5);
+        const inactiveFill = await other.evaluate(node => getComputedStyle(node).backgroundColor);
+        await expect(current).not.toHaveCSS("background-color", inactiveFill);
         await query.press("Escape");
         await source.press("Control+Space");
         const options = page.getByRole("option");
@@ -85,7 +94,25 @@ test("a host palette keeps Find, completion and review text legible", async ({ p
             expect(await contrast(excerpt)).toBeGreaterThanOrEqual(4.5);
         }
         await name.press("Escape");
-        await style.evaluate(node => node.parentNode?.removeChild(node));
+        await page.evaluate(async () => {
+            const path = "/controls/app.js";
+            const { editor } = await import(path) as typeof import("../fixtures/controls/main.ts");
+            const folding = editor.view.folding;
+            const length = editor.workspace.document(editor.view.documentId).buffer.length;
+            folding.setRanges(folding.getSnapshot(), [{ id: "body", from: 0, to: length, collapsed: true }]);
+        });
+        const summary = page.locator(".st-fold-summary");
+        await expect(summary).toBeVisible();
+        expect(await contrast(summary)).toBeGreaterThanOrEqual(4.5);
+        await page.goto("/comparison/");
+        await page.addStyleTag({ content });
+        for (const selector of [".st-comparison h3", ".st-line-numbers span:not([data-current])",
+            ".st-comparison-line-baseline", ".st-comparison-line-working", ".st-comparison-removed",
+            ".st-comparison-added"]) {
+            const node = page.locator(selector).first();
+            await expect(node).toBeVisible();
+            expect(await contrast(node), selector).toBeGreaterThanOrEqual(4.5);
+        }
     }
 });
 

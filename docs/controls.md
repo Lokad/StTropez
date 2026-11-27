@@ -1,7 +1,7 @@
 # Built-in controls
 
 Find, completion, hover, signature help, rename, quick fixes, locations and the color picker share the editor palette.
-Each control is optional. Set the palette on an ancestor of both the editor and its Find bar.
+Each control is optional. Set the palette on a common ancestor of the editor, comparison and Find bar.
 
 ## Use
 
@@ -69,6 +69,12 @@ toggle use the system highlight and an outline.
 | Rename | `.st-rename`, `del`, `ins` | `--st-rename-removed`, `--st-rename-added` |
 | Quick fixes | `.st-code-actions`, `[data-chosen="true"]` | `--st-actions-background`, `--st-actions-selected`, rename excerpt colors |
 | Color picker | `.st-color-picker`, `del`, `ins` | `--st-actions-background`, rename excerpt colors |
+| Find matches | `.st-search-match`, `.st-search-current` | `--st-search-match`, `--st-search-border`, `--st-search-current`, `--st-search-current-border` |
+| Comparison | `.st-comparison`, `.st-comparison-removed`, `.st-comparison-added` | `--st-comparison-baseline-line`, `--st-comparison-working-line`, `--st-comparison-baseline-bar`, `--st-comparison-working-bar`, `--st-comparison-removed`, `--st-comparison-added`, `--st-padding-mark` |
+| Gutter, folds and active line | `.st-viewport-gutter`, `.st-fold-summary` | `--st-gutter-foreground`, `--st-fold-summary`, `--st-fold-summary-background`, `--st-current-line`, `--st-current-line-border` |
+| Viewport | Set on the surrounding host | `--st-font-size`, `--st-line-height`, `--st-column-ruler`, `--st-minimap-border`, `--st-minimap-marker` |
+| Source annotations | Set on the surrounding host | `--st-bracket-background`, `--st-bracket-border`, `--st-snippet-field-border`, `--st-character-warning-background`, `--st-character-warning-border` |
+| Language annotations | Set on the surrounding host | `--st-definition-link-color`, `--st-diagnostic-color`, `--st-diagnostic-warning-color`, `--st-diagnostic-information-color`, `--st-diagnostic-hint-color`, `--st-occurrence-text`, `--st-occurrence-read`, `--st-occurrence-border` |
 
 ## Host responsibilities
 

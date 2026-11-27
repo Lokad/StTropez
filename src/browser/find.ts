@@ -185,8 +185,11 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
         const ranges = matches.matchesIn(line.from, ending ? next : line.to);
         const end = ending || line.from === line.to ? emptyList : matches.matchesIn(line.to, line.to);
         const selected = state.current === null ? undefined : matches.at(state.current);
-        return [...ranges, ...end].map(range => ({ ...(ending && range.from >= line.to ? { from: line.to, to: line.to } : range), className: "st-search-match",
-            ...(selected?.from === range.from && selected.to === range.to && { properties: { "--st-search-border": "var(--st-search-current-border, #ffe494)" } }) }));
+        return [...ranges, ...end].map(range => ({
+            ...(ending && range.from >= line.to ? { from: line.to, to: line.to } : range),
+            className: selected?.from === range.from && selected.to === range.to
+                ? "st-search-match st-search-current" : "st-search-match",
+        }));
     } });
     let layer = store.get().highlightMatches ? addHighlights() : undefined;
     function refuseReplacement(reason: ReplacementRefusal, planning: boolean) {
