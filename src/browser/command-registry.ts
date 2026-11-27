@@ -1,3 +1,4 @@
+import { invalidRange } from "../core/bounds.ts";
 import { listenUntil } from "./listen.ts";
 import type { TextEditor } from "./text-editor.ts";
 
@@ -217,7 +218,7 @@ export function createCommandRegistry(apple: boolean, available: () => boolean, 
             const [first, last] = sequence(keys);
             if (!lookup(id)) throw new Error(`Unknown command: ${id}`);
             const group: Strokes = bindings.get(first) ?? new Map(), choices = group.get(last) ?? [], priority = options?.priority ?? 0;
-            if (!Number.isFinite(priority)) throw new RangeError("Key binding priority must be finite.");
+            if (!Number.isFinite(priority)) invalidRange("key binding priority");
             if (last ? group.has("") : group.size && !group.has(""))
                 throw new Error(`Key binding conflicts: ${keys}`);
             const binding = { id, keys: keys.trim().replace(/\s+/g, " "), shared: options?.shared ?? false, priority, repeat: options?.repeat ?? true };

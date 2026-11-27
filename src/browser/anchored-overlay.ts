@@ -100,7 +100,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
     if (element.ownerDocument !== owner || editor.signal.aborted) throw new Error("An overlay needs a live editor in the same document.");
     const { priority = 0, onHide } = options;
     const dismissOn = new Set(options.dismissOn);
-    if (!Number.isFinite(priority)) throw new RangeError("Overlay priority must be finite.");
+    if (!Number.isFinite(priority)) invalidRange("overlay priority");
     const source = workspace.observeDocument(view.documentId);
     const peers = activeOverlays.get(editor) ?? new Set<Placement>();
     activeOverlays.set(editor, peers);
@@ -200,7 +200,7 @@ export function mountAnchoredOverlay(editor: TextEditor, element: HTMLElement, o
         if (disposed) return;
         const from = "offset" in next ? next.offset : next.from, to = "offset" in next ? next.offset : next.to;
         if (!isOffsetRange(from, to)) invalidRange("overlay anchor");
-        if (target && !element.contains(target)) throw new RangeError("Focus target must belong to the overlay.");
+        if (target && !element.contains(target)) invalidRange("overlay focus target");
         if (surface && !surface.claim()) return;
         focusTarget = target;
         anchor = Object.freeze({ ...next });

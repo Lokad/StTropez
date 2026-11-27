@@ -1,10 +1,10 @@
 import { emptyList } from "../core/empty-list.ts";
-import { isPositiveInteger } from "../core/bounds.ts";
+import { invalidRange, isPositiveInteger } from "../core/bounds.ts";
 
 /** A ruler after N measured columns; normalization owns the caller's array. */
 export function resolveColumnRulers(columns: readonly number[] = emptyList): readonly number[] {
     if (columns.length > 128 || Array.from(columns).some(column => !isPositiveInteger(column))) {
-        throw new RangeError("Column rulers require at most 128 positive safe-integer columns.");
+        invalidRange("column rulers");
     }
     return columns.length ? Object.freeze([...new Set(columns)].sort((a, b) => a - b)) : emptyList;
 }

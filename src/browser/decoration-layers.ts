@@ -43,7 +43,7 @@ class RangeIndex {
         this.ranges = ranges.map(range => {
             const { from, to } = range;
             if (!isOffsetRange(from, to, length))
-                throw new RangeError("Decoration lies outside its document revision.");
+                invalidRange("decoration range");
             return Object.freeze({ ...range, from, to, ...(range.properties && { properties: Object.freeze({ ...range.properties }) }) });
         }).sort((a, b) => a.from - b.from);
         this.annotations = this.ranges.filter(r => r.afterLine).sort((a, b) => a.to - b.to);
@@ -111,7 +111,7 @@ export function createDecorationLayers(current: () => DocumentSnapshot | undefin
     let disposed = false;
     function register(options: DecorationLayerOptions): Entry {
         if (disposed || !live()) throw new Error("Decoration layers require a live view.");
-        if (!Number.isFinite(options.order)) throw new RangeError("Decoration layer order must be finite.");
+        if (!Number.isFinite(options.order)) invalidRange("decoration order");
         const entry: Entry = { order: options.order, minimap: options.minimap !== false };
         const at = partitionPoint(entries.length, i => entries[i]!.order <= entry.order);
         entries.splice(at, 0, entry);

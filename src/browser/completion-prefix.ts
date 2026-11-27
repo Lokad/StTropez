@@ -1,3 +1,4 @@
+import { invalidRange } from "../core/bounds.ts";
 import type { TextBuffer } from "../core/text-buffer.ts";
 import { codeWordConstituentPattern } from "../core/word-patterns.ts";
 import type { LspCompletion, LspCompletionFallback } from "../protocol/index.ts";
@@ -30,7 +31,7 @@ export function completionWordRange(buffer: TextBuffer, offset: number): LspComp
         high += point.length;
     }
     if (low === 0 && from > 0 || high === text.length && to < buffer.length) {
-        throw new RangeError("Completion word extends beyond the bounded window.");
+        invalidRange("completion prefix");
     }
     return { from: from + low, to: offset, replaceTo: from + high };
 }

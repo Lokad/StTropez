@@ -1080,9 +1080,9 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
             validateScroll(scroll);
             if (value && (!isNonNegativeInteger(value.revision) || !isNonNegativeInteger(value.offset)
                 || !Number.isFinite(value.left) || value.left < 0 || value.affinity !== "before" && value.affinity !== "after")) invalidRange("horizontal view anchor");
-            if (value?.revision === document.revision && value.offset > document.buffer.length) throw new RangeError("Horizontal view anchor is outside the document.");
+            if (value?.revision === document.revision && value.offset > document.buffer.length) invalidRange("horizontal view anchor");
             if (vertical && (!isNonNegativeInteger(vertical.revision) || !isNonNegativeInteger(vertical.offset) || !Number.isFinite(vertical.topRemainder) || vertical.aligned !== undefined && vertical.aligned !== true)) invalidRange("vertical view anchor");
-            if (vertical?.revision === document.revision && vertical.offset > document.buffer.length) throw new RangeError("Vertical view anchor is outside the document.");
+            if (vertical?.revision === document.revision && vertical.offset > document.buffer.length) invalidRange("vertical view anchor");
             const selected = selectionToRestore(document, view, state, options);
             const folds = currentFolds();
             const regions = saved && saved.revision === document.revision && saved.viewId !== view.id

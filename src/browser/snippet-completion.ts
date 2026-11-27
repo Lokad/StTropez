@@ -1,3 +1,4 @@
+import { invalidRange } from "../core/bounds.ts";
 import { createSelectionSet, type SelectionSet } from "../core/selections.ts";
 import { planLinkedFieldEdit, type SnippetEditPlan, type SnippetStop } from "../core/snippets.ts";
 import { lspCompletionPlan, type LspCompletion } from "../protocol/lsp-features.ts";
@@ -16,15 +17,15 @@ export function planFieldCompletion(item: LspCompletion, mode: "insert" | "repla
     const heads = primaries.map((edit, index) => {
         const selection = selections.ranges[index]!;
         if (edit.from > Math.min(selection.anchor, selection.head) || edit.to < Math.max(selection.anchor, selection.head))
-            throw new RangeError("Completion does not cover the selected placeholder text.");
+            invalidRange("completion placeholder");
         delta += edit.insert.length - (edit.to - edit.from);
         const head = edit.to + delta;
         return { anchor: head, head };
     });
     const field = planLinkedFieldEdit(buffer, stops, active, primaries, selections,
         createSelectionSet(buffer.length + delta, heads, selections.primary), true, item.additional);
-    if (!field) throw new RangeError("Completion would leave the active snippet field.");
+    if (!field) invalidRange("completion snippet field");
     const length = field.edits.reduce((n, edit) => n + edit.insert.length - (edit.to - edit.from), buffer.length);
-    if (length > item.insertion.maxUnits) throw new RangeError("Completion exceeds the document limit.");
+    if (length > item.insertion.maxUnits) invalidRange("completion length");
     return field;
 }

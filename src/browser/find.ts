@@ -170,7 +170,7 @@ export function findForView(workspace: Workspace, editor: FindHost, options: Fin
         const state = store.get();
         if (!valid() || capture.revision !== state.revision || capture.matchesVersion !== state.matchesVersion
             || readDocument().revision !== state.revision) return emptyMatches;
-        if (to > state.length) throw new RangeError("Match range exceeds document length.");
+        if (to > state.length) invalidRange("match range");
         return matches.matchesIn(from, to);
     };
     const addHighlights = () => editor.decorations?.addProvider({ order: 60, minimap: false, provide: line => {
