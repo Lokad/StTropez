@@ -15,7 +15,7 @@ const hex = (color: LspColor) => "#" + channels
 
 /** Review formats against the swatch that opened the picker, even when the caret is elsewhere. */
 export function mountColorPicker(editor: TextEditor, colors: DocumentColorController, capture: () => Capture | undefined,
-    signal: AbortSignal) {
+    signal: AbortSignal, applyOnChange: boolean) {
     const { panel, status: message, list, pages, showEdits, node, button, text } =
         reviewPanel(editor, signal, "st-color-picker", "Color picker");
     panel.setAttribute("role", "dialog");
@@ -51,6 +51,7 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
     let source: Capture | undefined;
     let choice: DocumentColorChoice | undefined;
     let proposed: LspColor;
+    let committed = false;
     function closeLater(target: Capture | undefined, focus?: boolean) {
         queueMicrotask(() => {
             if (source === target) close(focus ?? panel.matches(":focus-within"));
@@ -72,7 +73,8 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
     onAbort(signal, () => close());
     function review() {
         const state = colors.getSnapshot();
-        state.presentations[format.selectedIndex]?.select({ review: true });
+        const selected = state.presentations[format.selectedIndex]?.select({ review: true });
+        if (committed && selected?.status === "done" && selected.value.apply().status === "done") close(true);
     }
     function render() {
         if (!source) return;
@@ -90,6 +92,7 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
             if (selection?.apply().status === "done") close(true);
         }, apply);
         apply.disabled = !selection?.canApply;
+        apply.hidden = applyOnChange;
         showEdits(selection);
         message.textContent = text(status === "failed" ? detail
             : status === "discovering" || status === "previewing" ? "Getting color formats…"
@@ -114,6 +117,7 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
         if (!target) return false;
         if (!surface.claim()) { target.cancel(); return false; }
         source = target;
+        committed = false;
         proposed = mark.color;
         rgb.value = hex(proposed);
         alpha.value = String(proposed.alpha * 100);
@@ -142,6 +146,7 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
     });
     listen(fields, "input", event => {
         if (!source || event.target === format) return;
+        committed = false;
         if (event.target === alpha) proposed = { ...proposed, alpha: alpha.valueAsNumber / 100 };
         else {
             const value = parseInt(rgb.value.slice(1), 16);
@@ -153,7 +158,10 @@ export function mountColorPicker(editor: TextEditor, colors: DocumentColorContro
         if (alpha.validity.valid) timer = win.setTimeout(update, 120);
         else message.textContent = text("Enter an opacity between 0 and 100.");
     });
-    listen(format, "change", review);
+    listen(fields, "change", event => {
+        committed = applyOnChange;
+        if (committed || event.target === format) review();
+    });
     onAbort(signal, colors.subscribe(render));
     return { open, close };
 }

@@ -29,7 +29,7 @@ const language = attachEditorLanguage(editor, provider, {
             { select: true, focus: true, expectedRevision: at.document.revision });
     } } },
     rename: { popup: true },
-    colors: { picker: true },
+    colors: { picker: "apply-on-change" },
     reviewCommandEdit: () => false,
     codeActions: {
         popup: true,

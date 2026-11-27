@@ -36,7 +36,7 @@ export type DocumentColorSnapshot = Readonly<{
     message: string; changed: boolean;
 }>;
 export type DocumentColorControllerOptions = Readonly<{
-    picker?: boolean;
+    picker?: boolean | "apply-on-change";
     swatches?: boolean | ((item: LspDocumentColor) => void);
     canCapture?: () => boolean; prepareRequest?: (kind: "discovery" | "presentation") => LspPrepare | undefined;
 }>;
@@ -282,7 +282,7 @@ export function mountDocumentColors(editor: TextEditor, owner: LspDocumentOwner,
     });
     try {
         if (options.picker && typeof options.swatches !== "function") {
-            picker = mountColorPicker(editor, controller, capture, signal);
+            picker = mountColorPicker(editor, controller, capture, signal, options.picker === "apply-on-change");
         }
         setSwatches(!!(options.swatches ?? picker));
         return controller;

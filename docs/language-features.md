@@ -272,8 +272,9 @@ lists survive caret movement. Edits, a new request, revoked authority or disposa
 
 ### Document colors
 
-`colors: { picker: true }` shows swatches, opacity, formats and edit review. Opening preserves selection.
-Apply takes one Undo and returns editor focus. Escape dismisses. `swatches: true` paints only. Pass
+`colors: { picker: true }` shows swatches, opacity, formats and edit review. Use `picker: "apply-on-change"`
+to apply when the user commits a field or format. Both modes preserve the selection, group the edit into one
+Undo and return focus to the editor. Escape dismisses the picker. `swatches: true` paints only. Pass
 `colorAt(offset)` or a `colors.request()` choice to `openPicker`.
 
 Custom pickers call `choice.presentations(rgba)` with channels in `[0, 1]`. On a new value,

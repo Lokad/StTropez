@@ -82,11 +82,14 @@ const mounts: Mounts = {
         return mountHover(editor, owner, { ...settings, ...(diagnostics && { diagnostics }), popup: {
             ...popup, ...options.linkPolicy, actions(point, state) {
                 const actions: HoverPopupAction[] = [];
-                if (state.status === "ready" && options.codeActions?.popup && editor.commands.get("quickfix.show")?.enabled) {
+                const { anchor, head } = editor.view.getSnapshot().selection;
+                const inSelection = point.offset >= Math.min(anchor, head) && point.offset <= Math.max(anchor, head);
+                const hasFix = state.diagnostics.length || inSelection
+                    && features.codeActions?.getSnapshot().choices.some(choice => choice.disabled === null);
+                if (hasFix && options.codeActions?.popup && editor.commands.get("quickfix.show")?.enabled) {
                     actions.push({ label: editor.strings.text("Code actions"), run() {
-                        const { selection } = editor.view.getSnapshot();
-                        if ((point.offset < Math.min(selection.head, selection.anchor) || point.offset > Math.max(selection.head, selection.anchor))
-                            && editor.reveal({ from: point.offset, to: point.offset }, { expectedRevision: point.revision, select: true }).status !== "done") return;
+                        if (!inSelection && editor.reveal({ from: point.offset, to: point.offset },
+                            { expectedRevision: point.revision, select: true }).status !== "done") return;
                         editor.commands.run("quickfix.show");
                     } });
                 }

@@ -45,8 +45,8 @@ Inside a call, signature help can stay open while you choose a completion. Openi
 popup dismisses both. Pointer hover waits until the editor has no active popup. Escape dismisses
 one popup at a time. The Find bar has its own lifetime.
 
-A hover card offers Code actions at the inspected position, Edit color on a swatch and Open link when
-the attachment supplies those controls and a link opener. `hover.popup.actions(point, state)` can
+A hover card offers Code actions on a diagnostic or a selection with known fixes. Edit color appears
+on swatches and Open link on links accepted by the attachment. `hover.popup.actions(point, state)` can
 return host buttons with a `label` and a `run` callback. Stale buttons expire with the card.
 
 `navigation.chooser.capture(kind, offset)` captures a destination callback or returns `undefined` to decline.

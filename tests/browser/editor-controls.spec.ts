@@ -309,17 +309,35 @@ test("pointer inspection yields to the picker and one Escape closes it", async (
     await expect(dialog).toBeHidden();
     await expect(source).toBeFocused();
     await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);');
+    await swatch.click();
+    const alpha = dialog.getByRole("spinbutton", { name: "Opacity (%)" });
+    await expect(dialog.locator("ins").first()).toBeVisible();
+    await alpha.fill("50");
+    await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);');
+    await alpha.press("Tab");
+    await page.clock.runFor(200);
+    await expect(dialog).toBeHidden();
+    await expect(source).toHaveValue('// color presentation\nconst accent = "rgba(95, 174, 153, 0.5)";\nuse(accent);');
+    await source.press("ControlOrMeta+z");
+    await expect(source).toHaveValue('const accent = "#5fae99";\nuse(accent);');
 });
 
 test("hover actions use the inspected position and expire with the card", async ({ page }) => {
     await page.routeWebSocket("**/lsp-fixture", client => {
         const server = client.connectToServer();
+        const range = { start: { line: 0, character: 6 }, end: { line: 0, character: 12 } };
+        server.onMessage(packet => {
+            const message = JSON.parse(packet.toString());
+            if (message.method === "textDocument/publishDiagnostics") {
+                message.params.diagnostics = [{ range, message: "Check this declaration." }];
+                client.send(JSON.stringify(message));
+            } else client.send(packet);
+        });
         client.onMessage(packet => {
             const request = JSON.parse(packet.toString());
             if (request.method === "textDocument/hover" && request.params.position.character === 18) {
                 client.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: null }));
             } else if (request.method === "textDocument/documentLink") {
-                const range = { start: { line: 0, character: 6 }, end: { line: 0, character: 12 } };
                 client.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: [{ range, target: "file:///guide" }] }));
             } else server.send(packet);
         });
@@ -336,6 +354,9 @@ test("hover actions use the inspected position and expire with the card", async 
         }, offset);
     }
     const card = page.locator(".st-hover");
+    await inspect(2);
+    await expect(card).toContainText("Fixture");
+    await expect(card.getByRole("button", { name: "Code actions" })).toHaveCount(0);
     await inspect(18);
     const custom = card.getByRole("button", { name: "Inspect offset" });
     await custom.click();
