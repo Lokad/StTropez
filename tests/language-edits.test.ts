@@ -16,7 +16,7 @@ test("deleting the last visible line leaves the caret on the preceding collapsed
     const result = planLanguageEdit(buffer, carets, "delete-lines", config, folds);
     assert.equal(buffer.apply(result.edits).buffer.text(), "head\r\ninner");
     assert.equal(result.selectionSet.ranges[0]!.head, 3);
-    assert.throws(() => planLanguageEdit(buffer, carets, "delete-lines", config, new FoldIndex(2, [])), /planning buffer/);
+    assert.throws(() => planLanguageEdit(buffer, carets, "delete-lines", config, new FoldIndex(2, [])), { code: "invalid-fold-line-count" });
 });
 
 function plan(text: string, ranges: readonly Selection[], command: Parameters<typeof planLanguageEdit>[2], config = configuration) {
@@ -400,7 +400,7 @@ test("a no-op language plan owns its raw selections", () => {
 test("language planning reports invalid selections and propagates a host rule failure", () => {
     const buffer = TextBuffer.from("x");
     assert.throws(() => planLanguageEdit(buffer, { ranges: [{ anchor: 1, head: 1 }, { anchor: 0, head: 0 }], primary: 0 },
-        "indent", resolveLanguageConfiguration()), /normalized range order/);
+        "indent", resolveLanguageConfiguration()), { code: "invalid-selection-order" });
     const failure = new Error("host rule failed");
     assert.throws(() => planLanguageEdit(buffer, createSelectionSet(1, [{ anchor: 0, head: 0 }]), "newline",
         resolveLanguageConfiguration({ enter: () => { throw failure; } })), error => error === failure);

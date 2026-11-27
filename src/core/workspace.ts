@@ -1,5 +1,5 @@
 import { done, refused } from "./outcome.ts";
-import { isNonNegativeInteger } from "./bounds.ts";
+import { invalidRange, isNonNegativeInteger } from "./bounds.ts";
 import type { TextEdit } from "./changes.ts";
 import { compactDocumentEdit, replacementSpan, textDifference } from "./changes.ts";
 import { documentChange } from "./document-change.ts";
@@ -420,7 +420,7 @@ export class Workspace {
     }
     #applyDocuments(requests: readonly DocumentEditRequest[], action?: (tx: TextTransaction) => void): BatchEditResult {
         this.#scope.assertWritable();
-        if (!requests.length) throw new RangeError("A text transaction needs at least one document.");
+        if (!requests.length) invalidRange("transaction documents");
         const ids = new Set<DocumentId>(), first = requests[0]!;
         const { kind = "replace", group, reset = false } = first.history ?? {};
         validateHistoryGroup(group);
@@ -664,7 +664,7 @@ export class Workspace {
     adoptSavedDocuments(versions: readonly Readonly<{ documentId: DocumentId; text: string | TextBuffer; serverVersion: string | null; expectedRevision?: number }>[],
         options: Readonly<{ history: "record" | "reset"; source?: string }>): BatchEditResult {
         this.#scope.assertWritable();
-        if (!versions.length) throw new RangeError("At least one saved document is required.");
+        if (!versions.length) invalidRange("saved documents");
         if ((options.source !== undefined && typeof options.source !== "string") || (options.history !== "record" && options.history !== "reset"))
             throw new TypeError("Invalid saved text options.");
         const documents = new Set<DocumentId>(), history: HistoryChange[] = [];

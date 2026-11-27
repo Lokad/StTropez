@@ -13,7 +13,7 @@ export type SelectionEditPlan = Readonly<{ edits: readonly TextEdit[]; selection
 const normalizedSets = new WeakMap<readonly Selection[], SelectionSet>();
 
 function checkEndpoints(length: number, anchor: number, head: number) {
-    if (!isOffset(anchor, length) || !isOffset(head, length)) throw new RangeError("Selection is outside the document.");
+    if (!isOffset(anchor, length) || !isOffset(head, length)) invalidRange("selection offset");
 }
 
 function normalizeSelection(length: number, { anchor, head, anchorAffinity, headAffinity }: Selection): Readonly<Required<Selection>> {
@@ -25,11 +25,11 @@ function normalizeSelection(length: number, { anchor, head, anchorAffinity, head
 
 function knownSelectionSet(length: number, ranges: readonly Selection[], primary: number) {
     if (!isNonNegativeInteger(length)) invalidRange("document length");
-    if (!ranges.length || !isIndex(primary, ranges.length)) throw new RangeError("A selection set needs ranges and a valid primary index.");
+    if (!ranges.length || !isIndex(primary, ranges.length)) invalidRange("primary selection");
     const known = normalizedSets.get(ranges);
     if (known?.primary === primary) {
         const last = ranges.at(-1)!;
-        if (Math.max(last.anchor, last.head) > length) throw new RangeError("Selection is outside the document.");
+        if (Math.max(last.anchor, last.head) > length) invalidRange("selection offset");
         return known;
     }
 }
@@ -177,7 +177,7 @@ export function orderedSelections(length: number, { ranges, primary }: Selection
         const from = Math.min(anchor, head);
         const to = Math.max(anchor, head);
         if (overlaps(previousFrom, previousTo, from, to)) {
-            throw new RangeError("Selection edits require normalized range order.");
+            invalidRange("selection order");
         }
         previousFrom = from;
         previousTo = to;

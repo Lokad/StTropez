@@ -1,3 +1,4 @@
+import { invalidRange } from "./bounds.ts";
 import { lineBoundary, lineContentEnd, lineEnding } from "./newlines.ts";
 import { collapsedLineBlock, type FoldIndex } from "./folding.ts";
 import { createClosingBracketCursor } from "./bracket-matching.ts";
@@ -449,7 +450,7 @@ function indent(buffer: TextBuffer, selections: SelectionSet, command: "indent" 
 /** Plan one complete edit against the captured text, selections and folds. */
 export function planLanguageEdit(buffer: TextBuffer, input: SelectionSet, command: EditingCommand | TypedCharacter,
     config: ResolvedLanguageConfiguration, folds?: FoldIndex): SelectionEditPlan {
-    if (folds && folds.lineCount !== buffer.lineCount) throw new RangeError("Fold index must cover the planning buffer.");
+    if (folds && folds.lineCount !== buffer.lineCount) invalidRange("fold line count");
     const selections = orderedSelections(buffer.length, input);
 
     const read = (from: number, to: number) => buffer.slice(from, to);

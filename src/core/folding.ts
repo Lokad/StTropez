@@ -70,15 +70,15 @@ export function createFoldRegions(buffer: TextBuffer, ranges: readonly FoldRange
         if (!r.id.length || r.id.length > 256 || ids.has(r.id)) throw new TypeError("Expected unique fold identities.");
         if (r.group !== undefined && !r.group) throw new TypeError("Expected a nonempty fold group.");
         ids.add(r.id); const value = region(buffer, r.id, r.from, r.to, collapsed, r.group);
-        if (!value) throw new RangeError("A fold needs a header and at least one body row."); return value;
+        if (!value) invalidRange("fold body"); return value;
     });
     if (!prepared) {
         regions.sort(compareRegions);
         const stack: FoldRegion[] = [];
         for (let i = 0; i < regions.length; i++) {
             const r = regions[i]!;
-            if (i && regions[i - 1]!.lineFrom === r.lineFrom) throw new RangeError("A fold header has one identity.");
-            if (!appendNestedFold(stack, r)) throw new RangeError("Fold regions must nest or remain disjoint.");
+            if (i && regions[i - 1]!.lineFrom === r.lineFrom) invalidRange("fold header");
+            if (!appendNestedFold(stack, r)) invalidRange("fold nesting");
         }
     }
     const next = prepared && unchanged ? prepared : regions;
@@ -260,7 +260,7 @@ export class FoldIndex {
         if (!isPositiveInteger(lineCount)) invalidRange("fold line count");
         const values = regions.length ? regions : retain(empty);
         const metadata = owned.get(values);
-        if (!metadata || metadata.maxLineTo > lineCount) throw new RangeError("Expected validated fold row intervals.");
+        if (!metadata || metadata.maxLineTo > lineCount) invalidRange("fold intervals");
         const previous = indexed.get(values);
         if (previous) { installIndex(this, lineCount, layouts.get(previous)!); return; }
         const hidden: Hidden[] = [];

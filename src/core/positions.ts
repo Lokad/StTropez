@@ -1,4 +1,4 @@
-import { isOffset } from "./bounds.ts";
+import { invalidRange, isOffset } from "./bounds.ts";
 import { validateTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { batchGeometry, composeGeometry, geometryChanges, geometryInvalidates, geometryPieces, pieceAt, pieceOffset } from "./position-geometry.ts";
@@ -25,11 +25,11 @@ const batchChanges = Symbol("batch text changes");
 type UnchangedEdges = Readonly<{ prefix: number; suffix: number }>;
 
 function position(length: number, offset: number): void {
-    if (!isOffset(offset, length)) throw new RangeError("Position is outside the original document.");
+    if (!isOffset(offset, length)) invalidRange("original position");
 }
 function validateRange(length: number, from: number, to: number): void {
     position(length, from); position(length, to);
-    if (to < from) throw new RangeError("Anchored ranges must be ordered.");
+    if (to < from) invalidRange("anchor order");
 }
 export function anchoredRange(length: number, from: number, to: number, options: Readonly<{
     fromAffinity?: Affinity; toAffinity?: Affinity; onDelete?: "collapse" | "invalidate" }> = {}): AnchoredRange {
@@ -79,7 +79,7 @@ class ChangePositionMap implements PositionMapping {
         }
         this.#changes = Object.freeze(indexed);
         this.newLength = oldLength + delta;
-        if (!Number.isSafeInteger(this.newLength)) throw new RangeError("Resulting length exceeds safe positions.");
+        if (!Number.isSafeInteger(this.newLength)) invalidRange("mapped length");
         Object.freeze(this);
     }
     [unchangedEdges](): UnchangedEdges {
@@ -259,7 +259,7 @@ export function composePositionMaps(...input: readonly PositionMapping[]): Posit
 export function composePositionMapList(input: readonly PositionMapping[]): PositionMapping {
     if (!input.length) throw new Error("At least one position map is required.");
     const maps = Object.freeze([...input]);
-    for (let index = 1; index < maps.length; index++) if (maps[index - 1]!.newLength !== maps[index]!.oldLength) throw new RangeError("Position map dimensions do not join.");
+    for (let index = 1; index < maps.length; index++) if (maps[index - 1]!.newLength !== maps[index]!.oldLength) invalidRange("map dimensions");
     if (maps.every(knownMapping)) {
         const join = (from: number, to: number): ChangePositionMap | ComposedPositionMap => {
             if (to - from === 1) return maps[from]!;

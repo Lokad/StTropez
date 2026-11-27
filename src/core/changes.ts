@@ -26,7 +26,7 @@ export function validateTextEdits(length: number, edits: readonly TextEdit[]): v
     for (const edit of edits) {
         if (!Number.isSafeInteger(edit.from) || !Number.isSafeInteger(edit.to) || edit.from < end
             || edit.to < edit.from || edit.to > length) {
-            throw new RangeError("Edits must be sorted, non-overlapping, and within the document.");
+            invalidRange("edit ranges");
         }
         end = edit.to;
     }

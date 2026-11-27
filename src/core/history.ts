@@ -1,4 +1,4 @@
-import { isNonNegativeInteger } from "./bounds.ts";
+import { invalidRange, isNonNegativeInteger } from "./bounds.ts";
 import { appendStep, finishSteps, type StepRun, type TextStep } from "./text-transaction.ts";
 import type { SelectionSet } from "./selections.ts";
 export type { Selection } from "./selections.ts";
@@ -60,7 +60,7 @@ export class TextHistory {
     constructor(options: HistoryOptions = {}) {
         this.#limits = { groups: options.maxGroups ?? Number.MAX_SAFE_INTEGER, changes: options.maxChanges ?? Number.MAX_SAFE_INTEGER,
             units: options.maxChangedUnits ?? 8_388_608, selections: options.maxSelectionRanges ?? 1_000_000 };
-        if (Object.values(this.#limits).some(value => !isNonNegativeInteger(value))) throw new RangeError("History limits must be nonnegative safe integers.");
+        if (Object.values(this.#limits).some(value => !isNonNegativeInteger(value))) invalidRange("history limits");
     }
     snapshot(id: string): HistorySnapshot {
         const doc = this.#documents.get(id), undoDepth = doc ? doc.cursor - doc.start : 0;

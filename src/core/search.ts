@@ -1,4 +1,4 @@
-import { isPositiveInteger } from "./bounds.ts";
+import { invalidRange, isPositiveInteger } from "./bounds.ts";
 import type { TextBuffer } from "./text-buffer.ts";
 import { wordConstituent } from "./words.ts";
 import { highSurrogate as high, lowSurrogate as low } from "./utf16.ts";
@@ -53,7 +53,7 @@ export class LiteralSearch {
         if (!query.length) this.dispose();
     }
     next(maxUnits = 32_768, maxMatches = 8_192): SearchStep {
-        if (![maxUnits, maxMatches].every(isPositiveInteger)) throw new RangeError("Search budgets must be positive integers.");
+        if (![maxUnits, maxMatches].every(isPositiveInteger)) invalidRange("search budget");
         const matches: SearchMatch[] = []; let readUnits = 0;
         while (!this.#done && readUnits < maxUnits && matches.length < maxMatches) {
             if (this.#pending) {

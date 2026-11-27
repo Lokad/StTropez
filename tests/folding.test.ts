@@ -11,13 +11,13 @@ test("nested collapsed rows keep independent child state and index visible rows 
     ]);
     const index = new FoldIndex(buffer.lineCount, ranges);
     assert.equal(index.regions, ranges); assert.equal(index.headerAt(1), ranges[1]);
-    assert.throws(() => new FoldIndex(2, ranges), /row interval/);
+    assert.throws(() => new FoldIndex(2, ranges), { code: "invalid-fold-intervals" });
     const construct = (values: typeof ranges) => new FoldIndex(buffer.lineCount, createFoldRegions(buffer, values));
     const foreign = ranges.map(r => ({ ...r })), copied = construct(foreign);
     foreign[0]!.collapsed = false; assert.equal(copied.regions[0]!.collapsed, true);
-    assert.throws(() => new FoldIndex(buffer.lineCount, Object.freeze([Object.freeze({ ...ranges[0]!, lineTo: 999 })])), /row interval/);
+    assert.throws(() => new FoldIndex(buffer.lineCount, Object.freeze([Object.freeze({ ...ranges[0]!, lineTo: 999 })])), { code: "invalid-fold-intervals" });
     const crossing = Object.freeze(ranges.map((r, i) => Object.freeze(i ? { ...r, to: buffer.length, lineTo: buffer.lineCount } : { ...r })));
-    assert.throws(() => construct(crossing), /nest or remain disjoint/);
+    assert.throws(() => construct(crossing), { code: "invalid-fold-nesting" });
     assert.equal(index.visibleLineCount, 3); assert.deepEqual([0, 1, 2].map(row => index.lineAt(row)), [0, 4, 5]);
     assert.deepEqual([0, 1, 2, 3, 4, 5].map(line => index.rowAt(line)), [0, 0, 0, 0, 1, 2]);
     assert.equal(index.hiddenBy(2)?.id, "outer"); assert.equal(index.headerAt(1)?.id, "inner");

@@ -35,7 +35,7 @@ export class GraphemeIndex {
     ceil(offset: number): number { const i = this.#floorIndex(offset), at = this.boundaryAt(i); return at === offset ? at : this.boundaryAt(i + 1); }
     preceding(offset: number): number | null { const i = this.#floorIndex(offset), at = this.boundaryAt(i); return at < offset ? at : i === 0 ? null : this.boundaryAt(i - 1); }
     following(offset: number): number | null { const i = this.#floorIndex(offset); return i + 1 === this.boundaryCount ? null : this.boundaryAt(i + 1); }
-    clusterIndexAt(offset: number): number { if (offset === this.to) throw new RangeError("No grapheme contains the end offset."); return this.#floorIndex(offset); }
+    clusterIndexAt(offset: number): number { if (offset === this.to) invalidRange("grapheme offset"); return this.#floorIndex(offset); }
     /** Explicit materialization. Bounded consumers should query boundaryAt/clusterAt. */
     boundaries(fromIndex = 0, toIndex = this.boundaryCount): readonly number[] { range(this.boundaryCount, fromIndex, toIndex); const values: number[] = []; for (let i = fromIndex; i < toIndex; i++) values.push(this.boundaryAt(i)); return Object.freeze(values); }
     static { publish = (source, from, to, blocks, count) => new GraphemeIndex(source, from, to, blocks, count); }

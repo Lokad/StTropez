@@ -359,7 +359,7 @@ test("several-caret plans reject mismatched, overlapping, incomplete and oversiz
     assert.throws(() => lspCompletionPlan(bounded, "replace", undefined, carets), /limit/);
     const overlap = (await captured("aaaaaa")).capture, ranges = createSelectionSet(6, [{ anchor: 2, head: 2 }, { anchor: 3, head: 3 }]);
     const overlapping = decodeLspCompletions([{ ...wire, textEdit: { range: range(0, 0, 4), newText: "x" } }], overlap, 2).items[0]!;
-    assert.throws(() => lspCompletionPlan(overlapping, "replace", undefined, ranges), /non-overlapping/);
+    assert.throws(() => lspCompletionPlan(overlapping, "replace", undefined, ranges), { code: "invalid-edit-ranges" });
     assert.equal(capture.document.buffer.text(), "    aa\n    aa\n");
 });
 

@@ -62,7 +62,7 @@ export function reindentInsertionText(value: string, sourceColumns: number, cont
             to++;
         }
         columns = Math.max(0, columns + context.columns - sourceColumns);
-        if (!Number.isSafeInteger(columns)) throw new RangeError("Adjusted insertion exceeds the insertion limit.");
+        if (!Number.isSafeInteger(columns)) invalidRange("insertion limit");
         runs.push({ from: end + 1, to, columns, tabEnds });
         const tabs = context.insertSpaces ? 0 : Math.floor(columns / context.tabSize), spaces = context.insertSpaces ? columns : columns % context.tabSize;
         let same = to - end - 1 === tabs + spaces;
@@ -71,7 +71,7 @@ export function reindentInsertionText(value: string, sourceColumns: number, cont
     }
     // Validate the final size before constructing any expanded indentation. Later CRLF
     // contractions can offset earlier growth, so intermediate lengths are not limits.
-    if (!Number.isSafeInteger(length) || length > maxUnits) throw new RangeError("Adjusted insertion exceeds the insertion limit.");
+    if (!Number.isSafeInteger(length) || length > maxUnits) invalidRange("insertion limit");
     const indents = new Map<number, string>();
     const edits = changes.map(change => {
         const columns = change.insert; if (typeof columns === "string") return { ...change, insert: columns };

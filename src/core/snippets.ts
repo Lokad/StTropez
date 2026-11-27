@@ -123,7 +123,7 @@ function finishSnippetEdit(length: number, stops: readonly SnippetStop[], active
         }
         replacements.sort((a, b) => a.from - b.from || a.to - b.to);
         if (edits.some(({ edit }) => edit.from === edit.to && insertedAt.has(edit.from)))
-            throw new RangeError("Additional insertion coincides with a mirrored insertion.");
+            invalidRange("mirrored insertion");
     }
     Object.freeze(replacements); validateTextEdits(length, replacements);
     const occurrences = stops.flatMap(item => item.ranges).sort((a, b) => a.order - b.order);
@@ -133,7 +133,7 @@ function finishSnippetEdit(length: number, stops: readonly SnippetStop[], active
             const extra = additional[nextExtra++]!; delta += extra.insert.length - (extra.to - extra.from);
         }
         if (nextExtra < additional.length && additional[nextExtra]!.from < range.to)
-            throw new RangeError("Additional completion edit touches a snippet field.");
+            invalidRange("snippet edit overlap");
         const edit = activeRanges.get(range)?.edit, growth = edit ? edit.insert.length - (edit.to - edit.from) : 0;
         const from = range.from + delta, to = range.to + delta + growth;
         mapped.set(range, Object.freeze({ ...range, from, to })); delta += growth;
@@ -200,19 +200,19 @@ export function snippetChoiceText(stop: SnippetStop, range: SnippetOccurrence, c
             const tabs = context.insertSpaces || target - columns < first ? 0 : 1 + Math.floor((target - columns - first) / context.tabSize);
             const spaces = target - columns - (tabs ? first + (tabs - 1) * context.tabSize : 0);
             const limit = Math.min(Number.MAX_SAFE_INTEGER, maxUnits - (tabs + spaces - end));
-            if (limit < 0) throw new RangeError("Snippet choice exceeds the insertion limit.");
+            if (limit < 0) invalidRange("snippet insertion limit");
             const adjusted = adjustInsertionText(value, context, limit).text;
             return "\t".repeat(tabs) + " ".repeat(spaces) + adjusted.slice(end);
         }
         return adjustInsertionText(value, range.insertion, maxUnits).text;
     }
-    if (value.length > maxUnits) throw new RangeError("Snippet choice exceeds the insertion limit."); return value;
+    if (value.length > maxUnits) invalidRange("snippet insertion limit"); return value;
 }
 export function planSnippetChoice(buffer: TextBuffer, stops: readonly SnippetStop[], active: number, choice: number, primary = 0, maxUnits = Number.MAX_SAFE_INTEGER): SnippetEditPlan | undefined {
     if (!isNonNegativeInteger(maxUnits)) invalidRange("snippet document limit");
     const stop = stops[active]; if (!stop || stop.index === 0 || !stop.ranges[primary] || stop.choices[choice] === undefined) return;
     let remaining = maxUnits - buffer.length + stop.ranges.reduce((n, range) => n + range.to - range.from, 0);
-    if (remaining < 0) throw new RangeError("Snippet choice exceeds the document limit.");
+    if (remaining < 0) invalidRange("snippet document limit");
     const edits = stop.ranges.map(range => {
         const insert = snippetChoiceText(stop, range, choice, remaining)!; remaining -= insert.length;
         return { edit: { from: range.from, to: range.to, insert }, anchor: insert.length, head: insert.length };

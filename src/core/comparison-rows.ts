@@ -90,7 +90,7 @@ function bounds(a: TextBuffer, b: TextBuffer, h: DiffHunk): Span {
     if (!Object.isFrozen(h) || !Object.isFrozen(h.baseline) || !Object.isFrozen(h.working)) throw new Error("Comparison hunks must be immutable captures.");
     for (const [buffer, range] of [[a, h.baseline], [b, h.working]] as const)
         if (!isOffsetRange(range.from, range.to, buffer.length)) invalidRange("comparison hunk");
-    if (h.baseline.from === h.baseline.to && h.working.from === h.working.to) throw new RangeError("Empty comparison hunk.");
+    if (h.baseline.from === h.baseline.to && h.working.from === h.working.to) invalidRange("empty hunk");
     const ae = a.lineAt(h.baseline.to), be = b.lineAt(h.working.to);
     // Scalar trimming can leave either end inside a row. Include that row on BOTH sides:
     // deleting a newline merges the following source row into the preceding target row.
@@ -133,7 +133,7 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
                     anchor: bv.header >= 0 ? bv.header : b0 + Math.min(at, nb) });
                 else workingLines += count;
                 runCount++;
-                rows += count; if (!Number.isSafeInteger(rows)) throw new RangeError("Too many aligned rows.");
+                rows += count; if (!Number.isSafeInteger(rows)) invalidRange("aligned row count");
             }
             at += count; if (checkpoint(work)) yield;
         }
@@ -145,7 +145,7 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
     }
     let pending: Span | undefined, endA = -1, endB = -1;
     for (const h of hunks) {
-        if (h.baseline.from < endA || h.working.from < endB) throw new RangeError("Unordered comparison hunks.");
+        if (h.baseline.from < endA || h.working.from < endB) invalidRange("hunk order");
         const span = bounds(a, b, h); endA = h.baseline.to; endB = h.working.to;
         if (checkpoint(work)) yield;
         if (pending && (span.a0 <= pending.a1 || span.b0 <= pending.b1)) { pending.a1 = Math.max(pending.a1, span.a1); pending.b1 = Math.max(pending.b1, span.b1); }
