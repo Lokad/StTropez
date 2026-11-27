@@ -228,6 +228,7 @@ Declarations start at `browser/index.d.ts` in the assets directory.
 | [`InlineDecoration`](../src/browser/viewport.ts) | type |  |
 | [`InputConflictDetail`](../src/browser/input-events.ts) | type | A recovery notification, not permission to apply an edit. |
 | [`inputConflictEvent`](../src/browser/input-events.ts) | value | Dispatched on the editor's input. |
+| [`isEditorIdle`](../src/browser/captured-view.ts) | function | A mounted, enabled editor with no composition or host insertion in progress. |
 | [`LanguageCommandOptions`](../src/browser/language-command.ts) | type |  |
 | [`LanguageCommands`](../src/browser/language-command.ts) | type |  |
 | [`LineClass`](../src/browser/viewport.ts) | type |  |

@@ -43,7 +43,7 @@ export type { ControlStrings } from "./control-strings.ts";
 export type { CompletionController, CompletionControllerOptions, CompletionSnapshot, CompletionSnippet, CompletionChoice } from "./completion-controller.ts";
 export type { EditorEditIntent, EditorPasteHandler, EditorRevealOptions, EditorRevealRange, EditorSettings, ResolvedEditorSettings, LinePrompt, TextEditor, TextEditorSnapshot, TextEditorDiagnostics, TextEditorActivity, TextEditorCommand, TextEditorEdit, TextEditorEditTransform, TextEditorOptions } from "./text-editor.ts";
 export type { CapturedInsertion } from "./captured-insertion.ts";
-export { captureViewRequest } from "./captured-view.ts";
+export { captureViewRequest, isEditorIdle } from "./captured-view.ts";
 export type { CapturedViewRequest, CapturedViewOptions } from "./captured-view.ts";
 export { bindFindCommands, type FindCommandOptions } from "./find-controls.ts";
 export { mountFindBar, type FindBarOptions, type FindBar } from "./find-bar.ts";

@@ -1,4 +1,4 @@
-import type { InlineDecoration, PresentedLine, TextEditor } from "../../src/browser/index.ts";
+import { isEditorIdle, type InlineDecoration, type PresentedLine, type TextEditor } from "../../src/browser/index.ts";
 import type { LanguageConfiguration } from "../../src/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
 import { CleanupScope } from "../shared/cleanup-scope.ts";
@@ -166,8 +166,7 @@ export function mountHostIntegrations(
         editor.focus();
     };
     const annotate = () => {
-        const snapshot = editor.activity();
-        if (snapshot.input !== "idle") return;
+        if (!isEditorIdle(editor)) return;
         editor.captureView();
         const selected = editor.view.getSnapshot();
         const added = model.add(

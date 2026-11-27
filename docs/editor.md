@@ -70,7 +70,7 @@ Select and focus are opt-in, including in read-only panes. `align` accepts `"nea
 ### Input and host commands
 
 Keyboard moves and column selections finish before the next input. A following paste has its own Undo step.
-Before saving or running a draft, check that each editing pane reports `activity().input === "idle"`.
+Before saving or running a draft, check that `isEditorIdle(editor)` is true for each editing pane.
 Listen for `inputConflictEvent` to recover text rejected by an edit or host transform.
 [Host example](getting-started.md#add-features-to-a-browser-ide)
 

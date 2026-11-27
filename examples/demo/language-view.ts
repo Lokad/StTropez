@@ -1,5 +1,5 @@
 import { completionFeedback } from "../shared/language/completion-feedback.ts";
-import { attachEditorLanguage } from "../../src/browser/index.ts";
+import { attachEditorLanguage, isEditorIdle } from "../../src/browser/index.ts";
 import type { TextEditor, CompletionController, CompletionSnippet, NavigationOrigin } from "../../src/browser/index.ts";
 import type { LspWorkspace } from "../../src/protocol/index.ts";
 import type { DemoFile, DemoProject } from "./project.ts";
@@ -130,10 +130,7 @@ export function mountDemoLanguage(
         const attach = (provider: LspWorkspace) => {
             if (!valid()) return;
             try {
-                const idle = () => {
-                    const activity = editor.activity();
-                    return valid() && activity.input === "idle";
-                };
+                const idle = () => valid() && isEditorIdle(editor);
                 const tools = attachEditorLanguage(editor, provider, {
                     ...demoActionPolicy(workspace, file, language, idle),
                     occurrences: {},

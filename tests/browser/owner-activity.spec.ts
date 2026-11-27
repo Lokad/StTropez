@@ -4,6 +4,7 @@ import { fixtureModules } from "../helpers/fixture-modules.ts";
 const serveModules = fixtureModules({
     core: "src/index.ts",
     browser: "src/browser/text-editor.ts",
+    captures: "src/browser/captured-view.ts",
     readiness: "tests/fixtures/readiness.ts",
     rows: "src/core/comparison-rows.ts",
 });
@@ -15,6 +16,7 @@ test("owner activity retains immutable captures without collecting metrics and f
         const path = "/owner-activity/";
         const { Workspace } = await import(path + "core.js") as typeof import("../../src/index.ts");
         const { mountEditor } = await import(path + "browser.js") as typeof import("../../src/browser/text-editor.ts");
+        const { isEditorIdle } = await import(path + "captures.js") as typeof import("../../src/browser/captured-view.ts");
         const { editorSettled, viewportSettled } = await import(path + "readiness.js") as typeof import("../fixtures/readiness.ts");
         const { ComparisonRowsCursor } = await import(path + "rows.js") as typeof import("../../src/core/comparison-rows.ts");
         const workspace = new Workspace(), source = workspace.createTextResource({ scope: "test", resource: "activity", variant: "text" }, "Activity", { value: "const sample = 123;\n".repeat(100) });
@@ -26,7 +28,9 @@ test("owner activity retains immutable captures without collecting metrics and f
         const ready = () => editorSettled(readyEditor), frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
         const settle = async () => { for (let i = 0; i < 60; i++) { await frame(); if (ready()) return; } throw new Error("Editor did not settle"); };
         const states: Record<string, unknown> = {};
-        const state = (name: string) => { states[name] = { input: editor.activity(), painted: viewport.activity(), ready: ready() }; };
+        const state = (name: string) => {
+            states[name] = { input: editor.activity(), painted: viewport.activity(), ready: ready(), idle: isEditorIdle(editor) };
+        };
         try {
             state("mount"); await settle(); editor.focus(); await settle();
             const idleInput = editor.activity(), idleViewport = viewport.activity();
@@ -90,8 +94,10 @@ test("owner activity retains immutable captures without collecting metrics and f
     expect(result.states["alignment queued"]).toMatchObject({ painted: { aligned: false, alignmentId: null } });
     expect(result.states["alignment painted"]).toMatchObject({ painted: { aligned: true, alignmentId: 42 } });
     expect(result.states["alignment cleared"]).toMatchObject({ painted: { aligned: false, alignmentId: null } });
-    expect(result.states["insertion captured"]).toMatchObject({ ready: false, input: { input: "host-insertion" } });
-    expect(result.states["composition painted"]).toMatchObject({ ready: true, painted: { pending: false }, input: { pendingCaret: false, input: "composing" } });
-    expect(result.states["composition ended"]).toMatchObject({ input: { input: "idle" } });
+    expect(result.states["insertion captured"]).toMatchObject({ idle: false, ready: false, input: { input: "host-insertion" } });
+    expect(result.states["composition painted"]).toMatchObject({ idle: false, ready: true,
+        painted: { pending: false }, input: { pendingCaret: false, input: "composing" } });
+    expect(result.states["composition ended"]).toMatchObject({ idle: true, input: { input: "idle" } });
+    expect(result.states["disposed"]).toMatchObject({ idle: false });
     expect(result.states["disposed"]).toMatchObject({ ready: false, input: { disposed: true, input: "idle", pendingCaret: false }, painted: { disposed: true, pending: false } });
 });

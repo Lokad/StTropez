@@ -1,4 +1,9 @@
-import { captureViewRequest, type CapturedViewRequest, type TextEditor } from "../../src/browser/index.ts";
+import {
+    captureViewRequest,
+    isEditorIdle,
+    type CapturedViewRequest,
+    type TextEditor
+} from "../../src/browser/index.ts";
 import type { CleanupScope } from "../shared/cleanup-scope.ts";
 
 const shortcuts = {
@@ -41,17 +46,7 @@ export function mountLanguageCommands(
     scope.defer(cancel);
     function capture(signal?: AbortSignal) {
         if (signal?.aborted || editor.signal.aborted) return;
-        const source = captureViewRequest(editor, {
-            available: () => {
-                const input = editor.activity();
-                return (
-                    editor.element.isConnected &&
-                    !editor.getSnapshot().disabled &&
-                    !input.disposed &&
-                    input.input === "idle"
-                );
-            }
-        });
+        const source = captureViewRequest(editor, { available: () => isEditorIdle(editor) });
         if (!source) return;
         pending = source;
         const expire = () => {

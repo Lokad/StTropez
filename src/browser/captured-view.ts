@@ -15,13 +15,14 @@ export function isMountedEditor(editor: TextEditor, workspace = editor.workspace
     return workspace === editor.workspace && editor.element.isConnected && ownsEditorView(editor);
 }
 
-export function editorReadyForRequest(editor: TextEditor): boolean {
+/** A mounted, enabled editor with no composition or host insertion in progress. */
+export function isEditorIdle(editor: TextEditor): boolean {
     const activity = editor.activity();
     return isMountedEditor(editor) && !editor.getSnapshot().disabled && !activity.disposed && activity.input === "idle";
 }
 
 export function canInspectView(editor: TextEditor, canCapture?: () => boolean): boolean {
-    return editorReadyForRequest(editor) && (canCapture?.() ?? true);
+    return isEditorIdle(editor) && (canCapture?.() ?? true);
 }
 
 /** Changes to the text, selections or fold projection can retire a view request. */

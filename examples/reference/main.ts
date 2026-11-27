@@ -2,6 +2,7 @@ import { discoverIndentationFolds, TextBuffer, Workspace, type SaveReview, type 
 import type { ReferenceViewState, TextComparison } from "sttropez/browser";
 import {
     BrowserLspWorkspace,
+    isEditorIdle,
     mountFindBar,
     createFoldingController,
     mountTextComparison,
@@ -169,8 +170,7 @@ function showSaveState() {
           : "No unsaved changes";
 }
 function editPending() {
-    const { input } = current.editor.activity();
-    return input !== "idle" || find.getSnapshot()?.status === "replacing";
+    return !isEditorIdle(current.editor) || find.getSnapshot()?.status === "replacing";
 }
 function readyForHostAction() {
     if (editPending()) {

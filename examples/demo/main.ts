@@ -1,5 +1,6 @@
 import { isSaveKey, isUnmodifiedShortcut, usesAppleShortcuts } from "../shared/host-shortcuts.ts";
 import {
+    isEditorIdle,
     mountTextEditor,
     mountTextComparison,
     mountFindBar,
@@ -572,8 +573,7 @@ function detachLanguage(): void {
     }
 }
 function editorBusy(): boolean {
-    const activity = editor?.activity();
-    return !!activity && activity.input !== "idle";
+    return !!editor && !isEditorIdle(editor);
 }
 function projectBusy(): boolean {
     return editorBusy() || find.getSnapshot()?.status === "replacing";

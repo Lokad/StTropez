@@ -9,7 +9,7 @@ import type { LspDocumentOwner } from "../protocol/lsp-client.ts";
 import type { LspApplyEdit, LspWorkspaceEdit } from "../protocol/lsp-features.ts";
 import type { LspDocument, LspRequestContext } from "../protocol/lsp-session.ts";
 import { isStaleRequest, staleRequest, type JsonValue } from "../protocol/wire.ts";
-import { captureRequest, editorReadyForRequest } from "./captured-view.ts";
+import { captureRequest, isEditorIdle } from "./captured-view.ts";
 import { retainEditProject, writableEdit } from "./edit-project.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -35,7 +35,7 @@ export type LanguageCommands = Observable<readonly ChangedDocument[]> & Readonly
 export function captureEditCommand(editor: TextEditor, options: LanguageCommandOptions, expire: () => void, selectionBound = true) {
     const { view } = editor;
     function available(id: DocumentId) {
-        return editorReadyForRequest(editor) && (options.canCapture?.(id) ?? true);
+        return isEditorIdle(editor) && (options.canCapture?.(id) ?? true);
     }
     const capture = () => captureRequest(editor, { available: () => available(view.documentId) }, selectionBound);
     const first = capture();

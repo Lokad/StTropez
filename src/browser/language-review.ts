@@ -1,6 +1,6 @@
 import { Store } from "../core/observable.ts";
 import type { DocumentId } from "../core/workspace.ts";
-import { captureViewRequest, editorReadyForRequest, requireLanguageView } from "./captured-view.ts";
+import { captureViewRequest, isEditorIdle, requireLanguageView } from "./captured-view.ts";
 import type { CapturedViewRequest } from "./captured-view.ts";
 import { controllerObservable } from "./controller-observable.ts";
 import type { TextEditor } from "./text-editor.ts";
@@ -24,7 +24,7 @@ export function languageReview<J extends Job, S>(editor: TextEditor, name: strin
     const events = new AbortController();
     const active: { job: J | undefined } = { job: undefined };
     const available = (id: DocumentId) =>
-        !events.signal.aborted && editorReadyForRequest(editor) && (canCapture?.(id) ?? true);
+        !events.signal.aborted && isEditorIdle(editor) && (canCapture?.(id) ?? true);
     function release() {
         const j = active.job;
         active.job = undefined;
