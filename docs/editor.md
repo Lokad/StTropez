@@ -221,7 +221,9 @@ export function undoMenuItem(editor: TextEditor) {
 Translate with `strings.commandLabel(id, fallback)`. For a host chord, choose a free sequence such as `editor.keymap.bind("Mod+k Mod+y", id)`.
 `keymap.unbind(keys)` clears those keys.
 
-- Logical keys win over physical keys such as `Code:BracketLeft`. `Space` and `Plus` are literals.
+- The keymap checks the normalized character first, then the physical binding such as `Code:BracketLeft`.
+  Ctrl and Command punctuation use the key's layout mapping. For a symbol produced with Shift, an explicit
+  physical binding takes precedence over dropping Shift. `Space` and `Plus` are literals.
 - Host priority defaults to 0, above built-ins. Highest wins, newest wins ties. Disabled or declined
   commands (`false`) fall through.
 - Duplicate IDs and single-key/chord-prefix conflicts throw. Both strokes need the same control,

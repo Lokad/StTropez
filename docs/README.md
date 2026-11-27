@@ -4,7 +4,7 @@
 
 ## Choose a task
 
-- [Move a tab or keep a draft](getting-started.md#switch-and-move-tabs)
+- [Switch files and keep a draft](getting-started.md#switch-and-move-tabs)
 - [Mount an editor in React](getting-started.md#mount-an-editor-in-react)
 - [Add a tokenizer](getting-started.md#plug-in-a-standalone-tokenizer)
 - [Find a keyboard shortcut](editor.md#shortcuts)

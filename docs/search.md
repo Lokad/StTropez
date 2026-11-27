@@ -68,11 +68,7 @@ literal repair, navigation uses confirmed `retained` results. `matchesIn(from, t
 unclipped matches intersecting `[from, to)`. A stale revision or `matchesVersion` yields none. An empty
 interval can return a point match, even at EOF.
 
-### Notice reasons
-
 Use `reason` for decisions, `message` for display and `status` for progress.
-
-
 `replacedCount` includes accepted no-ops. `count` counts current matches. Refusals distinguish permissions,
 composition, unavailable pane or backend, cancellation, invalid regex syntax and other search or replacement failures. Rejected
 transactions forward the workspace reason. Progress can retain an earlier notice.

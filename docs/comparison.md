@@ -114,7 +114,7 @@ tickets. Acceptance checks edit permission at capture and completion. Refresh an
 persistence, dirty state and Undo alone.
 
 Reversion captures both versions, generation, working selections and edit authority. Renew confirmation if
-any change, even if a temporary lock has since cleared. A new baseline request or target replacement also
+any change, including withdrawal and restoration of edit permission. A new baseline request or target replacement also
 expires it. Empty reversion adds no history.
 
 Unavailable capture can throw. Stale completion returns `false`. Complete, cancel or `finish()` each ticket.

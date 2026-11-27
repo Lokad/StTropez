@@ -193,12 +193,6 @@ With `transient: true`, opening a language or host popup dismisses the previous 
 `dismissOn` accepts `"focus-leave"` and `"outside-pointerdown"`. `onHide(reason, hadFocus)` reports
 dismissal, expiry and clipping. Editor disposal releases overlays and removes detached elements.
 
-### Input adapter ownership
-
-A standalone viewport’s `bindInput(focus)` returns gutter focus to the input and removes the root tab stop.
-`setComposing(active)` guards fold clicks. Dispose the binding before replacing it. Editors bind their own
-adapter.
-
 ### Rendering limits
 
 Paint covers visible rows plus four at each edge. Lines up to 512 UTF-16 units keep full shaping context.
