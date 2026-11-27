@@ -109,7 +109,7 @@ test("multiple carets follow the same tab stops and accented text as a single ca
         await page.evaluate(offsets => window.editingFixture.selections(offsets.map(head => ({ head, anchor: head }))), carets);
         await page.keyboard.press("ArrowDown");
         expect(await heads()).toEqual(expected);
-        await style.evaluate(node => node.remove());
+        await style.evaluate(node => node.parentNode?.removeChild(node));
     }
 });
 
