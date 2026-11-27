@@ -1,4 +1,4 @@
-import { invalidRange, isIndex, isNonNegativeInteger, isOffsetRange } from "./bounds.ts";
+import { invalidState, invalidRange, isIndex, isNonNegativeInteger, isOffsetRange } from "./bounds.ts";
 import { changedTextEdits } from "./changes.ts";
 import type { TextEdit } from "./changes.ts";
 import { PositionMap } from "./positions.ts";
@@ -108,7 +108,7 @@ function* sharedEdge(a: Root, b: Root, side: "start" | "end", range: PairRange):
     const left: Span[] = a && range.from < range.to ? [{ node: a, from: range.from, to: range.to }] : [];
     const right: Span[] = b && range.otherFrom < range.otherTo ? [{ node: b, from: range.otherFrom, to: range.otherTo }] : [];
     const descend = (stack: Span[]) => {
-        const span = stack.pop()!; if (span.node.kind !== "branch") throw new Error("Expected a shared-edge branch.");
+        const span = stack.pop()!; if (span.node.kind !== "branch") invalidState("tree branch");
         const { left: first, right: second } = span.node, split = first.length;
         const before = span.from < split ? { node: first, from: span.from, to: Math.min(span.to, split) } : undefined;
         const after = span.to > split ? { node: second, from: Math.max(0, span.from - split), to: span.to - split } : undefined;
@@ -367,7 +367,7 @@ export class TextBuffer {
                 || node.length !== node.left.length + node.right.length || node.breaks !== node.left.breaks + node.right.breaks
                 || node.prefix !== (node.left.breaks ? node.left.prefix : node.left.length + node.right.prefix)
                 || node.suffix !== (node.right.breaks ? node.right.suffix : node.right.length + node.left.suffix)
-                || node.longest !== Math.max(node.left.longest, node.right.longest, node.left.suffix + node.right.prefix)) throw new Error("Inconsistent text tree.");
+                || node.longest !== Math.max(node.left.longest, node.right.longest, node.left.suffix + node.right.prefix)) invalidState("tree measurements");
             visit(node.left); visit(node.right);
         };
         versions.forEach(version => visit(version.#root));

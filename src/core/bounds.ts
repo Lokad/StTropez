@@ -31,3 +31,7 @@ export function invalidRange(subject: string): never {
 export function invalidType(subject: string): never {
     return invalid(subject, TypeError);
 }
+
+export function invalidState(subject: string): never {
+    return invalid(subject, Error);
+}

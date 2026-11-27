@@ -1,4 +1,4 @@
-import { invalidRange, isIndex, isOffsetRange } from "./bounds.ts";
+import { invalidState, invalidRange, isIndex, isOffsetRange } from "./bounds.ts";
 import type { PositionMapping } from "./positions.ts";
 import type { DiffHunk } from "./diff.ts";
 import { FoldIndex } from "./folding.ts";
@@ -87,7 +87,7 @@ export type { ComparisonRowIndex };
 export type ComparisonRows = Readonly<{ baseline: ComparisonRowIndex; working: ComparisonRowIndex; rowCount: number; runCount: number }>;
 
 function bounds(a: TextBuffer, b: TextBuffer, h: DiffHunk): Span {
-    if (!Object.isFrozen(h) || !Object.isFrozen(h.baseline) || !Object.isFrozen(h.working)) throw new Error("Comparison hunks must be immutable captures.");
+    if (!Object.isFrozen(h) || !Object.isFrozen(h.baseline) || !Object.isFrozen(h.working)) invalidState("comparison capture");
     for (const [buffer, range] of [[a, h.baseline], [b, h.working]] as const)
         if (!isOffsetRange(range.from, range.to, buffer.length)) invalidRange("comparison hunk");
     if (h.baseline.from === h.baseline.to && h.working.from === h.working.to) invalidRange("empty hunk");
@@ -124,7 +124,7 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
         while (at < length) {
             const limit = at < paired ? paired - at : length - at;
             const av = visible(at < na ? a0 + at : null, limit, "baseline"), bv = visible(at < nb ? b0 + at : null, limit, "working");
-            const count = Math.min(av.length, bv.length); if (count < 1) throw new Error("Alignment did not advance.");
+            const count = Math.min(av.length, bv.length); if (count < 1) invalidState("comparison alignment");
             if (av.line !== null || bv.line !== null) {
                 if (av.line === null) baselineGaps.push({ row: rows, end: rows + count, before: baselineLines,
                     anchor: av.header >= 0 ? av.header : a0 + Math.min(at, na) });
@@ -139,7 +139,7 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
         }
     }
     function* flush(span: Span): Generator<void> {
-        if (span.a0 < ac || span.b0 < bc || span.a0 - ac !== span.b0 - bc) throw new Error("Comparison line boundaries disagree.");
+        if (span.a0 < ac || span.b0 < bc || span.a0 - ac !== span.b0 - bc) invalidState("comparison alignment");
         yield* emit(ac, span.a0 - ac, bc, span.b0 - bc);
         yield* emit(span.a0, span.a1 - span.a0, span.b0, span.b1 - span.b0); ac = span.a1; bc = span.b1;
     }
@@ -152,10 +152,10 @@ function* plan(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af: Fol
         else { if (pending) yield* flush(pending); pending = span; }
     }
     if (pending) yield* flush(pending);
-    if (a.lineCount - ac !== b.lineCount - bc) throw new Error("Comparison suffix rows disagree.");
+    if (a.lineCount - ac !== b.lineCount - bc) invalidState("comparison alignment");
     yield* emit(ac, a.lineCount - ac, bc, b.lineCount - bc);
     if (baselineLines !== af.visibleLineCount || workingLines !== bf.visibleLineCount)
-        throw new Error("Comparison lost its source rows.");
+        invalidState("comparison alignment");
     return Object.freeze({ baseline: new ComparisonRowIndex(a, af, baselineGaps),
         working: new ComparisonRowIndex(b, bf, workingGaps), rowCount: rows, runCount });
 }
@@ -165,7 +165,7 @@ export type ComparisonRowsProgress = Readonly<{ status: KernelStatus; work: numb
 export class ComparisonRowsCursor {
     readonly #driver: KernelCursor<ComparisonRowsProgress>;
     constructor(a: TextBuffer, b: TextBuffer, hunks: readonly DiffHunk[], af = new FoldIndex(a.lineCount), bf = new FoldIndex(b.lineCount)) {
-        if (!Object.isFrozen(hunks) || af.lineCount !== a.lineCount || bf.lineCount !== b.lineCount) throw new Error("Expected captured comparison/fold coordinates.");
+        if (!Object.isFrozen(hunks) || af.lineCount !== a.lineCount || bf.lineCount !== b.lineCount) invalidState("comparison capture");
         const work = { units: 0 };
         this.#driver = kernelCursor(plan(a, b, hunks, af, bf, work), () => work.units,
             (status, result, failure): ComparisonRowsProgress => Object.freeze({ status, work: work.units, result, failure }), "Alignment");
