@@ -26,6 +26,7 @@ const storage = referenceStorage(initial);
 const pane = document.querySelector<HTMLElement>("#pane")!;
 const workingTools = document.querySelector<HTMLFieldSetElement>("#working-tools")!;
 const find = mountFindBar(document.querySelector<HTMLElement>("#search")!, {
+    placement: "overlay",
     createWorker: () => new Worker(new URL("./regex-worker.js", import.meta.url), { type: "module" })
 });
 document.querySelector("#find")!.addEventListener("click", () => find.open());

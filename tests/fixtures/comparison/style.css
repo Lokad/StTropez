@@ -3,5 +3,5 @@ h1 { font-size: 24px; margin-bottom: 8px; }
 nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 button { padding: 6px 10px; }
 #host-status { display: block; margin-bottom: 12px; }
-main { border: 1px solid #465069; }
+main { height: clamp(20rem, 65vh, 38rem); border: 1px solid #465069; }
 #after { margin-top: 16px; }

@@ -5,6 +5,8 @@ import { paintedCharacter } from "../helpers/painted-character.ts";
 test("the reference Find replaces the selected word, reports wrapping and returns focus for Undo", async ({ page }) => {
     await page.goto("/reference/");
     const source = page.getByRole("textbox", { name: "quote.ts" });
+    const pane = page.locator("#pane");
+    const before = await pane.boundingBox();
     await source.press("Control+Home");
     await source.press("Control+Shift+ArrowRight");
     await source.press("Control+h");
@@ -12,6 +14,10 @@ test("the reference Find replaces the selected word, reports wrapping and return
     const replacement = page.getByRole("textbox", { name: "Replacement text" });
     await expect(query).toHaveValue(/^export\s*$/);
     await expect(replacement).toBeFocused();
+    expect(await pane.boundingBox()).toEqual(before);
+    const overlay = await page.getByRole("region", { name: "Find and replace" }).boundingBox();
+    expect(overlay!.y).toBeCloseTo(before!.y, 0);
+    expect(overlay!.x + overlay!.width).toBeCloseTo(before!.x + before!.width, 0);
     await query.fill("quote");
     const status = page.locator(".st-find-status");
     await expect(status).toHaveText("1 of 2");
@@ -465,6 +471,14 @@ test("returning to Changes restores the saved view and layout across working edi
     await save.click();
     await changes.click();
     const panes = page.locator(".st-comparison-panes > section");
+    for (const height of [650, 1000]) {
+        await page.setViewportSize({ width: 1100, height });
+        const container = await page.locator("#pane").boundingBox();
+        for (const editor of await page.locator(".st-comparison-editor").all()) {
+            const bounds = await editor.boundingBox();
+            expect(bounds!.y + bounds!.height).toBeCloseTo(container!.y + container!.height - 1, 0);
+        }
+    }
     const baseline = panes.first().getByRole("textbox");
     const working = panes.last().getByRole("textbox");
     const link = page.getByLabel("Link review scrolling");

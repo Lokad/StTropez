@@ -2,6 +2,9 @@
 
 Find, completion, hover, signature help, rename, quick fixes, locations and the color picker share the editor palette.
 Each control is optional. Set the palette on a common ancestor of the editor, comparison and Find bar.
+The comparison fills a container with a definite height. For a floating Find bar, pass
+`placement: "overlay"` to `mountFindBar` and position a common ancestor of its host and the editor
+with `position: relative`. Opening Find then keeps the editor's height and scroll position.
 
 ## Use
 

@@ -9,6 +9,7 @@ import { bindFindCommands } from "./find-controls.ts";
 import { resolveControlStrings, type ControlStrings } from "./control-strings.ts";
 
 export type FindBarOptions = Readonly<{
+    placement?: "docked" | "overlay";
     createWorker?: () => Worker;
     targetLabel?: (editor: TextEditor) => string;
     strings?: ControlStrings;
@@ -45,6 +46,7 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
         return child;
     }
     const bar = node("section", "find-bar", host);
+    bar.dataset.placement = options.placement ?? "docked";
     bar.hidden = true;
     bar.setAttribute("aria-label", text("Find and replace"));
     function field(parent: HTMLElement, part: string, label: string, placeholder: string) {
@@ -63,12 +65,12 @@ export function mountFindBar(host: HTMLElement, options: FindBarOptions = {}): F
         control.type = "button";
         control.textContent = text(caption);
         control.title = text(label);
-        control.setAttribute("aria-label", text(label));
+        control.setAttribute("aria-label", control.title);
         control.onclick = action;
         return control;
     }
     const expand = button(bar, "replace-toggle", "Replace…", () => {
-        showReplacement(Boolean(row.hidden));
+        showReplacement(row.hidden);
         (row.hidden ? query : replacement).focus({ preventScroll: true });
     });
     const query = field(bar, "find-query", "Find text", "Find in this file");
