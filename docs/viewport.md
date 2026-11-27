@@ -46,7 +46,8 @@ Set CSS properties on the host. A comparison passes them to both panes.
 }
 ```
 
-After changing a font or theme, `invalidate()` refreshes measurements and the minimap.
+Changing a class, inline style or `data-theme` on the editor or an ancestor refreshes its measurements
+and minimap. Call `invalidate()` when editing stylesheet rules directly.
 
 ### Decoration layers
 

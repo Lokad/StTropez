@@ -7,16 +7,39 @@ export function hitTestRoot(element: Element): DocumentOrShadowRoot {
     return element.isConnected ? element.getRootNode() as Document | ShadowRoot : element.ownerDocument;
 }
 
+function parent(element: Element): Element | null {
+    const root = element.getRootNode();
+    return element.parentElement ?? ("host" in root ? (root as ShadowRoot).host : null);
+}
+
+/** Watch inherited host styles without observing row painting or other editors' subtrees. */
+export function watchViewportStyle(element: HTMLElement, invalidate: () => void) {
+    const ancestors = new Set<Node>();
+    const observer = new MutationObserver(records => {
+        if (records.some(change => Array.from(change.removedNodes).some(node => ancestors.has(node)))) refresh();
+        else if (!records.some(change => change.type === "attributes")) return;
+        invalidate();
+    });
+    function refresh() {
+        observer.disconnect();
+        ancestors.clear();
+        for (let node: Element | null = element; node; node = parent(node)) {
+            ancestors.add(node);
+            observer.observe(node, { attributeFilter: ["class", "style", "data-theme"], childList: node !== element });
+        }
+    }
+    refresh();
+    return { refresh, dispose: () => observer.disconnect() };
+}
+
 /** CSS zoom scales client rectangles, while scrolling and inline styles keep local CSS units. */
 export function cssZoom(element: Element): number {
     const value = element.currentCSSZoom;
     if (Number.isFinite(value) && value > 0) return value;
     // Older engines can implement zoom before exposing its effective value.
     let result = 1;
-    for (let ancestor: Element | null = element; ancestor;) {
+    for (let ancestor: Element | null = element; ancestor; ancestor = parent(ancestor)) {
         result *= parseFloat(element.ownerDocument.defaultView!.getComputedStyle(ancestor).zoom) || 1;
-        const root = ancestor.getRootNode();
-        ancestor = ancestor.parentElement ?? ("host" in root ? (root as ShadowRoot).host : null);
     }
     return result;
 }

@@ -1,7 +1,7 @@
 import { listenUntil } from "./listen.ts";
 import { editorElement } from "./editor-element.ts";
 import { invalidType, invalidRange, isIndex, isNonNegativeInteger, isOffset, isPositiveInteger } from "../core/bounds.ts";
-import { clientBox, cssZoom, minimapWidth } from "./dom-coordinates.ts";
+import { clientBox, cssZoom, minimapWidth, watchViewportStyle } from "./dom-coordinates.ts";
 import { isFocused } from "./dom-focus.ts";
 import { Store, type Observable } from "../core/observable.ts";
 import { lineContentEnd } from "../core/newlines.ts";
@@ -964,7 +964,14 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
             PageUp: [0, -height * .9], PageDown: [0, height * .9] }[event.key];
         if (delta) { event.preventDefault(); setScroll({ left: position(x, left + delta[0]!), top: position(y, top + delta[1]!) }); }
     });
-    const observer = new ResizeObserver(schedule); observer.observe(root); observer.observe(probe);
+    const styles = watchViewportStyle(root, invalidate);
+    const observer = new ResizeObserver(() => {
+        styles.refresh();
+        schedule();
+    });
+    observer.observe(root);
+    observer.observe(probe);
+    observer.observe(narrowProbe);
     listen(owner.fonts, "loadingdone", invalidate);
     listen(owner.fonts, "loadingerror", invalidate);
     const subscriptions = [workspace.onDocumentChange(documentId, change => {
@@ -1138,6 +1145,7 @@ export function mountViewport(host: HTMLElement, workspace: Workspace, documentI
             inputOwner?.detach(); inputOwner = undefined;
             settings = defaultSettings;
             observer.disconnect();
+            styles.dispose();
             listeners.abort();
             subscriptions.forEach(unsubscribe => unsubscribe());
             clearPresentation();

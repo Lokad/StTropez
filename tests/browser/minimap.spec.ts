@@ -22,6 +22,10 @@ test("minimap gestures preserve focus and multiple selections as the document pr
     const bitmap = () => canvas.evaluate(c => (c as HTMLCanvasElement).toDataURL());
     await expect.poll(() => canvas.evaluate(c => (c as HTMLCanvasElement).width)).toBeGreaterThan(0);
     const original = await bitmap(), trackBox = (await track.boundingBox())!;
+    await page.evaluate(() => window.presentationFixture.host.style.setProperty("--st-foreground", "#e02222"));
+    await expect.poll(bitmap).not.toBe(original);
+    await page.evaluate(() => window.presentationFixture.host.style.removeProperty("--st-foreground"));
+    await expect.poll(bitmap).toBe(original);
     expect(await page.evaluate(({ x, y }) => window.presentationFixture.editor.viewport.hitTest(x + 5, y + 5), trackBox)).toBeUndefined();
     const snapshot = () => page.evaluate(() => window.presentationFixture.editor.viewport.getDiagnostics());
     await page.mouse.click(trackBox.x + 8, trackBox.y + trackBox.height / 2);
