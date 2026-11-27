@@ -95,10 +95,10 @@ export function readRequest(source: LspWorkspaceScope, interruptions: Set<() => 
     interruptions.add(interrupt);
     return Object.freeze({
         commandNames: source.commandNames,
-        request(method, params) {
+        request(method, params, timeoutMs) {
             check();
             documents();
-            return own(source.request(method, params));
+            return own(source.request(method, params, timeoutMs));
         },
         requestDocument(method, document, params) {
             check();

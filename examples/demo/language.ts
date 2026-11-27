@@ -3,7 +3,7 @@ import { BrowserLspWorkspace } from "../../src/browser/index.ts";
 import { ProtocolDecodeError, createLspFoldingClient, lspRangeOffsets } from "../../src/protocol/index.ts";
 import type { LspFoldingClient, LspWorkspace } from "../../src/protocol/index.ts";
 import { decodeLspDiagnostics } from "../../src/kernels/index.ts";
-import type { LspWorkspaceScope, RpcCall, LspScopeAccess, LspTargetResolver } from "../../src/protocol/index.ts";
+import type { LspWorkspaceScope, LspCall, LspScopeAccess, LspTargetResolver } from "../../src/protocol/index.ts";
 import { HostCell } from "../shared/observable.ts";
 import type { DemoFile } from "./project.ts";
 import type { DemoProvider, DemoProviderFactory } from "./provider-contract.ts";
@@ -54,7 +54,7 @@ export class DemoLanguage {
     private stopProvider: (() => void) | undefined;
     private readonly stopWorkspace: () => void;
     private timer: ReturnType<typeof setTimeout> | undefined;
-    private readonly calls = new Set<RpcCall<unknown>>();
+    private readonly calls = new Set<LspCall<unknown>>();
     private readonly diagnostics = new DemoDiagnosticState();
     private lifecycle = 0;
     private diagnosticGeneration = 0;

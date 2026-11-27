@@ -118,7 +118,7 @@ test("document synchronization waits exclude unrelated work and expire changed c
     let read = false, flushed = false;
     const request = session.requestDocument("textDocument/hover", small, () => ({})); void request.result.then(() => { read = true; }, () => {});
     void session.flush().then(() => { flushed = true; }, () => {});
-    await settled(); await session.request("fixture/barrier").result;
+    await request.result;
     assert.equal(read, true, "A synchronized document must not wait for an unrelated queued open."); assert.equal(flushed, false);
     small.update(40, 41, TextBuffer.from("changed"));
     const waiting = session.requestDocument("textDocument/hover", small, () => ({}));
@@ -412,7 +412,10 @@ test("reconnect reopens current captures, clears registrations and never replays
     const host = fixture(t), session = new LspSession({ ...host, features: ["textDocument/hover"] }); t.after(() => session.dispose()); const initial = input(), document = session.bindDocument(initial);
     let handled = 0; const remove = session.onRequest("host/custom", () => { handled++; return { ok: true }; }); await session.connect(); const first = host.peers[0]!;
     await first.rpc.sendRequest(RegistrationRequest.type, { registrations: [{ id: "temporary", method: "textDocument/hover", registerOptions: { documentSelector: null } }] });
-    first.rpc.onRequest("fixture/command", () => new Promise(() => {})); const call = session.request("fixture/command", { captured: initial.documentId }), rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32097); await settled();
+    first.rpc.onRequest("fixture/command", () => new Promise(() => {}));
+    const call = session.request("fixture/command", { captured: initial.documentId });
+    const rejected = assert.rejects(call.result, error => error instanceof RpcError && error.code === -32801);
+    await settled();
     session.disconnect(); await rejected; const latest = initial.buffer.replace(0, 0, "offline"); document.update(initial.revision, 99, latest); await session.connect(); await settled();
     const second = host.peers[1]!; assert.equal(second.documents.get(initial.uri)?.getText(), latest.slice(0, latest.length)); assert.equal(second.documents.get(initial.uri)?.version, 1); assert.equal(session.getSnapshot().registrations.length, 0);
     assert.equal(second.wire.messages[0]!.some(value => (value as { method?: string }).method === "fixture/command"), false);

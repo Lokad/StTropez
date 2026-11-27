@@ -11,18 +11,20 @@ import { cooperateDuringScan, LspLineIndex } from "./lsp-positions.ts";
 import { defaultDocumentUnits, LspSession, updateBinding } from "./lsp-session.ts";
 import type { LspDocument, LspDocumentCapture, LspDocumentFeature, LspFeature, LspDocumentSnapshot, LspSessionOptions, LspSessionSnapshot } from "./lsp-session.ts";
 import { readRequest, requestContext, scopeRequestHandler } from "./lsp-scope-requests.ts";
-import type { RpcCall } from "./json-rpc.ts";
 import type { JsonValue } from "./wire.ts";
 import { decodeLspDiagnostics } from "./lsp-features.ts";
 import type { LspDiagnostics } from "./lsp-features.ts";
 import type { LspResolvedTarget, LspTargetResolver, LspTargetContext, LspTargetSource, ResolveRetainedTarget } from "./lsp-targets.ts";
 
 /** Preparation can synchronize the capture and send custom requests on its behalf. */
-export type LspScopeAccess = Pick<LspSession, "request" | "commandNames"> & Readonly<{ flush: () => Promise<void> }>;
+export type LspScopeAccess = Pick<LspSession, "commandNames"> & Readonly<{
+    request: (method: string, params?: JsonValue, timeoutMs?: number) => ReturnType<LspSession["request"]>;
+    flush: () => Promise<void>;
+}>;
 export type LspReadRequest = LspScopeAccess & Pick<LspSession, "requestDocument"> & Readonly<{ dispose: () => void }>;
 export const beginReadRequest = Symbol("LSP read request");
 export const bindProject = Symbol("bind captured documents");
-type ScopeAccess = Pick<LspSession, "flush" | "bindDocument" | "synchronized" | "requestDocument" | "canRequest" | "featureOptions" | "commandNames" | "requestCommand" | "request" | "notify" | "onRequest" | "onNotification" | "snapshotOwnership"> & Readonly<{
+type ScopeAccess = Pick<LspSession, "flush" | "bindDocument" | "synchronized" | "requestDocument" | "canRequest" | "featureOptions" | "commandNames" | "requestCommand" | "notify" | "onRequest" | "onNotification" | "snapshotOwnership"> & Pick<LspScopeAccess, "request"> & Readonly<{
     /** Start or join the owner's shared connection; cancellation expires only this scope's wait. */
     ensureConnected: () => Promise<void>;
     /** Cancel this scope's intents, retaining its bindings, handlers and shared connection. */
@@ -307,7 +309,8 @@ export class LspWorkspace {
         };
         if (!isLspUri(uri)) throw new TypeError("Invalid target URI.");
         if (!connected() || !context.isCurrent()) throw staleRequest();
-        const open = this.#workspace.documentForUri(uri);
+        // A server command gets its edit scope from the host. An open sibling does not extend that scope.
+        const open = context.purpose === "edit" && !context.source ? undefined : this.#workspace.documentForUri(uri);
         const source: LspTargetSource | undefined = open ? { document: open } : await this.#options.resolveTarget?.(uri, context);
         if (!source) return;
         let lease: ResourceLease | undefined, released = false;
@@ -533,7 +536,14 @@ export class LspWorkspace {
                 const calls = documentCalls.get(document) ?? new Set(); documentCalls.set(document, calls); calls.add(call);
                 const settled = () => { calls.delete(call); if (!calls.size) documentCalls.delete(document); }; void call.result.then(settled, settled); return call;
             },
-            request: (method: string, params?: JsonValue): RpcCall<JsonValue> => { writable(); return track(this.#session.request(method, params)); },
+            request: (method, params, timeoutMs) => {
+                writable();
+                const bindings = Array.from(handles.values(), entry => {
+                    this.#synchronize(entry);
+                    return entry.binding;
+                });
+                return track(this.#session.request(method, params, timeoutMs, bindings));
+            },
             notify: (method, params) => { writable(); this.#session.notify(method, params); },
             onRequest: (method, handler) => {
                 writable();

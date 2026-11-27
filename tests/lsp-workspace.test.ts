@@ -269,7 +269,7 @@ test("workspace batches and grouped history retain bounded wire edits; skipped r
     const scope = f.provider.createScope(), binding = scope.attachDocument(id); await scope.ensureConnected();
     const uri = binding.getSnapshot().uri, peer = f.peers[0]!;
     const verify = async (bounded: boolean) => {
-        await scope.flush(); await scope.request("test/barrier").result;
+        await scope.request("test/barrier").result;
         const doc = f.workspace.document(id), changes = peer.changes.at(-1)!.contentChanges;
         assert.equal(peer.documents.get(uri)!.getText(), doc.buffer.slice(0, doc.buffer.length));
         if (bounded) { assert.equal(changes.length, 2); assert.ok(changes.reduce((sum, change) => sum + change.text.length, 0) < 32); }
@@ -341,8 +341,11 @@ test("feature scopes wait for their captured project without flushing unrelated 
     const run = () => client.run({ document: f.workspace.document(f.source.id), offset: 0 }).result;
     await run(); blocked = true; f.edit(f.companion.id, "large\n".repeat(10_000)); other.attachDocument(f.companion.id);
     let completed = false, flushed = false;
-    void run().then(() => { completed = true; }, () => {}); void other.flush().then(() => { flushed = true; }, () => {});
-    await settled(); await other.request("test/barrier").result;
+    const independent = run().then(() => { completed = true; });
+    void other.flush().then(() => { flushed = true; }, () => {});
+    await independent;
+    const expiredRequest = other.request("test/barrier", {}, 10);
+    await assert.rejects(expiredRequest.result, error => error instanceof RpcError && error.code === -32098);
     assert.equal(completed, true, "The feature's preparation barrier must cover only its captured documents."); assert.equal(flushed, false);
     blocked = false; for (const callback of queued) callback(); queued.clear(); await other.flush();
     assert.equal(flushed, true); assert.deepEqual(f.errors, []);

@@ -548,7 +548,7 @@ export class LspSession {
             this.#waiters.delete(waiter);
         }
     }
-    #waitForSync(entries?: readonly Entry[]): LspCall<void> {
+    #waitForSync(entries?: readonly Entry[]): LspCall<void> & { ready?: true } {
         this.#ready(); const generation = this.#syncGeneration, captures = entries?.map(entry => ({ entry, snapshot: entry.snapshot }));
         const ready = captures ? () => {
             let synchronized = true;
@@ -559,7 +559,7 @@ export class LspSession {
             }
             return synchronized;
         } : undefined;
-        try { if (ready ? ready() : !this.#dirty.size && !this.#scheduled && !this.#pumping) return { result: Promise.resolve(), cancel: () => {} }; }
+        try { if (ready ? ready() : !this.#dirty.size && !this.#scheduled && !this.#pumping) return { ready: true, result: Promise.resolve(), cancel: () => {} }; }
         catch (error) { return { result: Promise.reject(error), cancel: () => {} }; }
         this.#kick();
         if (this.#waiters.size >= wireLimits.synchronizationWaits) throw new RpcError(rpcCodes.pendingLimit, "Too many pending synchronization waits.");
@@ -603,7 +603,47 @@ export class LspSession {
         if (reserved(method)) throw new TypeError("Use the LSP lifecycle or captured document API.");
         return this.#ready();
     }
-    request(method: string, params?: JsonValue): RpcCall<JsonValue> { return this.#customConnection(method).request(method, params); }
+    request(method: string, params?: JsonValue, timeoutMs = this.#timeoutMs, documents?: readonly LspDocument[]): LspCall<JsonValue> {
+        const rpc = this.#customConnection(method);
+        if (!isPositiveInteger(timeoutMs)) invalidRange("RPC deadline");
+        const waiting = this.#waitForSync(documents?.map(document => this.#entry(document)));
+        let wire: RpcCall<JsonValue> | undefined;
+        let failure: RpcError | undefined;
+        const interrupt = (error: RpcError) => {
+            failure ??= error;
+            waiting.cancel();
+            wire?.cancel();
+        };
+        const check = () => {
+            if (failure) throw failure;
+            if (this.#rpc !== rpc) throw staleRequest();
+        };
+        if (waiting.ready) wire = rpc.request(method, params, timeoutMs);
+        const result = (async () => {
+            let deadline: (() => void) | undefined;
+            try {
+                if (!wire) {
+                    deadline = this.#options.schedule(timeoutMs, () => interrupt(new RpcError(rpcCodes.timeout, "RPC deadline.")));
+                    await waiting.result;
+                    check();
+                    wire = rpc.request(method, params, timeoutMs);
+                }
+                const reply = await wire.result;
+                check();
+                return reply;
+            } catch (error) {
+                check();
+                throw error;
+            } finally {
+                this.#release(deadline);
+                if (!wire) {
+                    waiting.cancel();
+                    void waiting.result.catch(() => {});
+                }
+            }
+        })();
+        return Object.freeze({ result, cancel: () => interrupt(cancelledRequest()) });
+    }
     notify(method: string, params?: JsonValue): void { this.#customConnection(method).notify(method, params); }
     onRequest(method: string, handler: RequestHandler): () => void {
         this.#writable(); if (!method || method.startsWith("rpc.") || reservedIncoming(method) || method === "window/showMessageRequest" || this.#requests.has(method) || this.#requests.size >= wireLimits.handlers) throw new TypeError("Reserved, duplicate or excessive LSP handler.");

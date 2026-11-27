@@ -104,6 +104,7 @@ spanning range.
 | `flush(handles)` | Captured changes reached the wire. Changed revision, binding or sync capability rejects the wait. Analysis may follow. |
 | `synchronized(handle)`, `captureProject()` | Sent snapshot, line index and version for one binding, or synchronized captures by URI. |
 | `requestDocument` | Flushes and checks binding, revision and relevant registrations. |
+| `scope.request(method, params?, timeoutMs?)` | Sends after the scope's captured documents synchronize. The deadline includes that wait. Reconnecting expires the call. |
 | `scope.captureBinding(binding, method?)` | Observes local text without retaining it. Closure, replacement, reconnect, relevant registration change or scope disposal expires the snapshot. |
 | `isBindingCurrent` | Checks identity across edits. Check or map the revision to reuse a range. |
 
@@ -122,6 +123,7 @@ colors, folds and occurrences. [Feature contracts](language-features.md) · [Fol
 Registrations validate as a batch. Selectors use language, URI scheme and decoded path, with case-sensitive
 globs by default. For host URI paths use `pathForUri` and rebind or reconnect when it changes.
 `resolveTarget` authorizes and loads out-of-project URIs. Identity is rechecked after loading.
+For a server command, an edit outside the captured project needs the resolver's approval even when that file is open.
 
 Use `scope.request` and `notify` for custom messages. `onRequest` and `onNotification` survive reconnect
 until removed or disposed. Lifecycle and sync methods are reserved. Authorize the request and resource.
